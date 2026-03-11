@@ -1,16 +1,24 @@
 import SwiftUI
 
 struct DriverTabView: View {
+
+    @Environment(AppDataStore.self) private var store
+
     var body: some View {
         TabView {
             Tab("Home", systemImage: "house.fill") {
-                placeholderTab(title: "Driver Home", icon: "steering.wheel", color: .cyan)
+                NavigationStack {
+                    DriverHomeView()
+                        .navigationDestination(for: UUID.self) { id in
+                            TripDetailView(tripId: id)
+                        }
+                }
             }
             Tab("Trips", systemImage: "map.fill") {
                 placeholderTab(title: "My Trips", icon: "location.fill", color: .green)
             }
             Tab("Vehicle", systemImage: "car.fill") {
-                placeholderTab(title: "My Vehicle", icon: "car.fill", color: .orange)
+                placeholderTab(title: "Inspection", icon: "checklist", color: .orange)
             }
             Tab("Profile", systemImage: "person.fill") {
                 settingsTab()
@@ -37,7 +45,7 @@ struct DriverTabView: View {
                     .font(.system(size: 24, weight: .bold))
                     .foregroundStyle(.white)
 
-                Text("Coming soon")
+                Text("Coming Soon")
                     .font(.system(size: 15))
                     .foregroundStyle(.white.opacity(0.5))
             }
@@ -83,4 +91,5 @@ struct DriverTabView: View {
 
 #Preview {
     DriverTabView()
+        .environment(AppDataStore.shared)
 }

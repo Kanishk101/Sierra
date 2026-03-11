@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Monitors app lifecycle and triggers biometric re-authentication when the app
 /// returns from background after the inactivity threshold (60 seconds).
-@Observable
+@MainActor @Observable
 final class AppLifecycleMonitor {
 
     static let shared = AppLifecycleMonitor()
@@ -16,7 +16,29 @@ final class AppLifecycleMonitor {
 
     private init() {}
 
-    // MARK: - Scene Phase Handlers
+    // MARK: - Scene Phase
+
+    /// Unified handler for scene phase changes.
+    func handleScenePhaseChange(to phase: ScenePhase, hasSession: Bool) {
+        guard hasSession else { return }
+
+        switch phase {
+        case .background:
+            backgroundedAt = Date()
+
+        case .active:
+            if let bg = backgroundedAt,
+               Date().timeIntervalSince(bg) > lockThresholdSeconds {
+                showBiometricLock = true
+            }
+            backgroundedAt = nil
+
+        default:
+            break
+        }
+    }
+
+    // MARK: - Legacy API (backward compat)
 
     func didEnterBackground() {
         backgroundedAt = Date()
@@ -24,15 +46,14 @@ final class AppLifecycleMonitor {
 
     func didBecomeActive() {
         guard AuthManager.shared.isAuthenticated else { return }
-
-        if let bg = backgroundedAt {
-            let elapsed = Date().timeIntervalSince(bg)
-            if elapsed > lockThresholdSeconds {
-                showBiometricLock = true
-            }
+        if let bg = backgroundedAt,
+           Date().timeIntervalSince(bg) > lockThresholdSeconds {
+            showBiometricLock = true
         }
         backgroundedAt = nil
     }
+
+    // MARK: - Actions
 
     func biometricUnlocked() {
         showBiometricLock = false

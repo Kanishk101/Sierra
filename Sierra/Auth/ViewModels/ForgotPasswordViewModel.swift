@@ -1,0 +1,161 @@
+import Foundation
+import SwiftUI
+
+/// Steps in the Forgot Password flow.
+enum ForgotPasswordStep {
+    case enterEmail
+    case enterCode
+    case newPassword
+    case success
+}
+
+/// ViewModel for the 3-step forgot password flow.
+@MainActor @Observable
+final class ForgotPasswordViewModel {
+
+    // MARK: - Navigation
+
+    var step: ForgotPasswordStep = .enterEmail
+
+    // MARK: - Step 1: Email
+
+    var email: String = ""
+    var emailError: String?
+
+    // MARK: - Step 2: OTP
+
+    var digits: [String] = Array(repeating: "", count: 6)
+    var focusedIndex: Int? = 0
+    var codeError: String?
+    var shakeCount: Int = 0
+
+    // MARK: - Step 3: New Password
+
+    var newPassword: String = ""
+    var confirmPassword: String = ""
+
+    // MARK: - UI State
+
+    var isLoading: Bool = false
+    var errorMessage: String?
+
+    // MARK: - Computed
+
+    var maskedEmail: String {
+        AuthManager.shared.maskedEmail
+    }
+
+    var strength: PasswordStrength {
+        PasswordStrength.evaluate(newPassword)
+    }
+
+    var hasMinLength: Bool { newPassword.count >= 8 }
+    var hasUppercase: Bool { newPassword.range(of: "[A-Z]", options: .regularExpression) != nil }
+    var hasNumber: Bool    { newPassword.range(of: "[0-9]", options: .regularExpression) != nil }
+    var hasSpecialChar: Bool { newPassword.range(of: "[^A-Za-z0-9]", options: .regularExpression) != nil }
+
+    var allRequirementsMet: Bool {
+        hasMinLength && hasUppercase && hasNumber && hasSpecialChar
+    }
+
+    var passwordsMatch: Bool {
+        !confirmPassword.isEmpty && newPassword == confirmPassword
+    }
+
+    var canSubmitNewPassword: Bool {
+        allRequirementsMet && passwordsMatch && !isLoading
+    }
+
+    var confirmPasswordError: String? {
+        guard !confirmPassword.isEmpty else { return nil }
+        return passwordsMatch ? nil : "Passwords don't match"
+    }
+
+    // MARK: - Step 1 Action
+
+    func sendResetCode() async {
+        emailError = nil
+        let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !trimmed.isEmpty else {
+            emailError = "Email is required"
+            return
+        }
+        guard trimmed.contains("@") && trimmed.contains(".") else {
+            emailError = "Enter a valid email address"
+            return
+        }
+
+        isLoading = true
+        let found = await AuthManager.shared.requestPasswordReset(email: trimmed)
+        isLoading = false
+
+        if found {
+            withAnimation(.easeInOut(duration: 0.3)) {
+                step = .enterCode
+            }
+        } else {
+            emailError = "No account found with this email"
+        }
+    }
+
+    // MARK: - Step 2 Action
+
+    func verifyResetCode() {
+        let code = digits.joined()
+        guard code.count == 6 else {
+            codeError = "Enter all 6 digits"
+            return
+        }
+
+        // For demo, the reset OTP is also "123456"
+        if code == "123456" {
+            codeError = nil
+            withAnimation(.easeInOut(duration: 0.3)) {
+                step = .newPassword
+            }
+        } else {
+            codeError = "Incorrect code. Please try again."
+            withAnimation(.default) {
+                shakeCount += 1
+            }
+        }
+    }
+
+    // MARK: - Step 3 Action
+
+    func resetPassword() async {
+        guard canSubmitNewPassword else { return }
+        isLoading = true
+        errorMessage = nil
+
+        do {
+            try await AuthManager.shared.resetPassword(
+                code: digits.joined(),
+                newPassword: newPassword
+            )
+            isLoading = false
+            withAnimation(.easeInOut(duration: 0.3)) {
+                step = .success
+            }
+        } catch {
+            isLoading = false
+            errorMessage = "Failed to reset password. Please try again."
+        }
+    }
+
+    // MARK: - Navigation
+
+    func goBack() {
+        withAnimation(.easeInOut(duration: 0.3)) {
+            switch step {
+            case .enterCode:
+                step = .enterEmail
+            case .newPassword:
+                step = .enterCode
+            default:
+                break
+            }
+        }
+    }
+}

@@ -3,10 +3,13 @@ import SwiftUI
 private let navyDark = Color(hex: "0D1B2A")
 private let accentOrange = Color(red: 1.0, green: 0.584, blue: 0.0)
 
+/// Full-screen biometric lock overlay.
+/// Triggered when the app returns from background after 60s.
 struct BiometricLockView: View {
+
     @State private var appeared = false
     @State private var errorMessage: String?
-    @State private var showPasswordFallback = false
+    @State private var showTryAgain = false
     @State private var isAuthenticating = false
 
     private let biometric = BiometricManager.shared
@@ -25,7 +28,7 @@ struct BiometricLockView: View {
             VStack(spacing: 0) {
                 Spacer()
 
-                // Logo
+                // App logo
                 Image(systemName: "truck.box.fill")
                     .font(.system(size: 44, weight: .light))
                     .foregroundStyle(accentOrange)
@@ -44,7 +47,7 @@ struct BiometricLockView: View {
                         .padding(.bottom, 40)
                 }
 
-                // Biometric icon button
+                // Face ID icon button
                 biometricButton
                     .scaleEffect(appeared ? 1 : 0.8)
                     .opacity(appeared ? 1 : 0)
@@ -60,24 +63,43 @@ struct BiometricLockView: View {
                         .transition(.opacity)
                 }
 
+                // Try Again button (appears after failure)
+                if showTryAgain {
+                    Button {
+                        Task { await attemptBiometric() }
+                    } label: {
+                        Text("Try Again")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 48)
+                            .background(
+                                accentOrange,
+                                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            )
+                    }
+                    .padding(.horizontal, 40)
+                    .padding(.top, 20)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+
                 Spacer()
 
                 // Password fallback
-                if showPasswordFallback {
-                    passwordFallbackButton
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
+                passwordFallbackButton
+                    .opacity(showTryAgain ? 1 : 0.4)
             }
         }
+        .interactiveDismissDisabled(true)
         .animation(.easeInOut(duration: 0.2), value: errorMessage)
-        .animation(.spring(duration: 0.3), value: showPasswordFallback)
+        .animation(.spring(duration: 0.3), value: showTryAgain)
         .onAppear {
             withAnimation(.spring(duration: 0.5, bounce: 0.25)) {
                 appeared = true
             }
-            // Auto-trigger after 0.5s
+            // Auto-trigger after 0.4s delay
             Task {
-                try? await Task.sleep(for: .milliseconds(500))
+                try? await Task.sleep(for: .milliseconds(400))
                 await attemptBiometric()
             }
         }
@@ -103,9 +125,9 @@ struct BiometricLockView: View {
                             .tint(.white)
                     } else {
                         Image(systemName: biometric.biometricIconName)
-                            .font(.system(size: 44))
+                            .font(.system(size: 60))
                             .foregroundStyle(accentOrange)
-                            .symbolEffect(.pulse, isActive: appeared)
+                            .symbolEffect(.pulse, isActive: appeared && !showTryAgain)
                     }
                 }
 
@@ -124,10 +146,9 @@ struct BiometricLockView: View {
 
     private var passwordFallbackButton: some View {
         Button {
+            // Sign out and route to LoginView
+            AuthManager.shared.signOut()
             lifecycle.passwordFallbackUsed()
-            // Sign out to force password re-entry
-            AuthManager.shared.needsReauth = true
-            AuthManager.shared.isAuthenticated = false
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "lock.fill")
@@ -138,7 +159,10 @@ struct BiometricLockView: View {
             .foregroundStyle(.white.opacity(0.5))
             .frame(maxWidth: .infinity)
             .frame(height: 48)
-            .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .background(
+                .white.opacity(0.06),
+                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+            )
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .strokeBorder(.white.opacity(0.08), lineWidth: 1)
@@ -158,26 +182,24 @@ struct BiometricLockView: View {
 
         isAuthenticating = true
         errorMessage = nil
+        showTryAgain = false
 
         do {
             try await biometric.authenticate(reason: "Unlock FleetOS")
             // Success — dismiss lock screen
             lifecycle.biometricUnlocked()
-        } catch let error as BiometricManager.BiometricError {
+        } catch let error as BiometricError {
             switch error {
             case .userCancelled:
-                // Show password fallback
-                showPasswordFallback = true
-            case .lockedOut:
-                errorMessage = error.errorDescription
-                showPasswordFallback = true
+                // Don't show error, just show try again
+                showTryAgain = true
             default:
                 errorMessage = error.errorDescription
-                showPasswordFallback = true
+                showTryAgain = true
             }
         } catch {
             errorMessage = "Authentication failed. Please try again."
-            showPasswordFallback = true
+            showTryAgain = true
         }
 
         isAuthenticating = false

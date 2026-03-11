@@ -9,7 +9,7 @@ struct AdminDashboardView: View {
     private var store = StaffApplicationStore.shared
 
     enum AdminTab: Int, CaseIterable {
-        case dashboard, vehicles, quickAction, staff, reports
+        case dashboard, vehicles, quickAction, staff, trips
     }
 
     var body: some View {
@@ -18,9 +18,9 @@ struct AdminDashboardView: View {
             Group {
                 switch selectedTab {
                 case .dashboard:   DashboardHomeView()
-                case .vehicles:    VehicleListView()
+                case .vehicles:    NavigationStack { VehicleListView() }
                 case .staff:       PendingApprovalsView()
-                case .reports:     ReportsView()
+                case .trips:       NavigationStack { TripsListView() }
                 case .quickAction: DashboardHomeView() // never shown, intercepted
                 }
             }
@@ -43,7 +43,7 @@ struct AdminDashboardView: View {
             tabBarItem(.vehicles, icon: "car.fill", label: "Vehicles")
             centerPlusButton
             tabBarItem(.staff, icon: "person.2.fill", label: "Staff", badgeCount: store.pendingCount)
-            tabBarItem(.reports, icon: "chart.bar.doc.horizontal.fill", label: "Reports")
+            tabBarItem(.trips, icon: "arrow.triangle.swap", label: "Trips")
         }
         .padding(.top, 8)
         .padding(.bottom, 4)

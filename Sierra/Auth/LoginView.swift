@@ -6,6 +6,11 @@ private let accentOrange = Color(red: 1.0, green: 0.584, blue: 0.0) // #FF9500
 struct LoginView: View {
     @State private var viewModel = LoginViewModel()
     @State private var cardAppeared = false
+    @State private var showTwoFactor = false
+    @State private var showForgotPassword = false
+    @State private var showDestination = false
+    @State private var showBiometricEnrollment = false
+    @State private var twoFactorVM: TwoFactorViewModel?
 
     var body: some View {
         ZStack {
@@ -60,10 +65,49 @@ struct LoginView: View {
                 cardAppeared = true
             }
         }
-        .fullScreenCover(isPresented: $viewModel.loginSuccess) {
+        .fullScreenCover(isPresented: $showTwoFactor) {
+            if let vm = twoFactorVM {
+                TwoFactorView(viewModel: vm)
+            }
+        }
+        .fullScreenCover(isPresented: $showDestination) {
             if let destination = viewModel.authDestination {
                 destinationView(for: destination)
             }
+        }
+        .sheet(isPresented: $showForgotPassword) {
+            ForgotPasswordView()
+        }
+        .sheet(isPresented: $showBiometricEnrollment, onDismiss: {
+            // After enrollment prompt dismissed, show destination
+            showDestination = true
+        }) {
+            BiometricEnrollmentSheet()
+                .presentationDetents([.medium])
+        }
+        .onChange(of: viewModel.loginSuccess) { _, success in
+            guard success else { return }
+            // Login succeeded — generate OTP and show 2FA
+            AuthManager.shared.generateOTP()
+            twoFactorVM = TwoFactorViewModel(
+                subtitle: "Enter the code sent to verify your identity.",
+                maskedEmail: AuthManager.shared.maskedEmail,
+                onVerified: { [self] in
+                    showTwoFactor = false
+                    // Check if we should prompt for biometric enrollment
+                    if BiometricEnrollmentSheet.shouldPrompt() {
+                        showBiometricEnrollment = true
+                    } else {
+                        showDestination = true
+                    }
+                },
+                onCancelled: { [self] in
+                    showTwoFactor = false
+                    viewModel.loginSuccess = false
+                    viewModel.authDestination = nil
+                }
+            )
+            showTwoFactor = true
         }
     }
 
@@ -109,6 +153,7 @@ struct LoginView: View {
                         .font(.system(size: 16))
                         .foregroundStyle(.white)
                         .keyboardType(.emailAddress)
+                        .textContentType(.emailAddress)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                 }
@@ -149,6 +194,7 @@ struct LoginView: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: 16))
                     .foregroundStyle(.white)
+                    .textContentType(.password)
 
                     Button {
                         withAnimation(.easeInOut(duration: 0.15)) {
@@ -221,6 +267,16 @@ struct LoginView: View {
                 }
                 .disabled(viewModel.isLoading)
                 .transition(.opacity.combined(with: .scale(scale: 0.95)))
+            }
+
+            // Forgot Password link
+            Button {
+                showForgotPassword = true
+            } label: {
+                Text("Forgot Password?")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(accentOrange.opacity(0.8))
+                    .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
         .padding(24)

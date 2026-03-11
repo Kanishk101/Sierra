@@ -85,7 +85,7 @@ final class LoginViewModel {
             }
         } catch {
             isLoading = false
-            if let bioError = error as? BiometricManager.BiometricError {
+            if let bioError = error as? BiometricError {
                 switch bioError {
                 case .userCancelled:
                     break // User cancelled, don't show error

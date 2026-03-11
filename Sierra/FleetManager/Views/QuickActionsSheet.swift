@@ -6,6 +6,8 @@ private let accentOrange = Color(red: 1.0, green: 0.584, blue: 0.0)
 struct QuickActionsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showCreateStaff = false
+    @State private var showAddVehicle = false
+    @State private var showCreateTrip = false
 
     private struct QuickAction: Identifiable {
         let id = UUID()
@@ -38,10 +40,11 @@ struct QuickActionsSheet: View {
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 14) {
                 ForEach(actions) { action in
                     Button {
-                        if action.tag == "staff" {
-                            showCreateStaff = true
-                        } else {
-                            dismiss()
+                        switch action.tag {
+                        case "staff":    showCreateStaff = true
+                        case "vehicle":  showAddVehicle = true
+                        case "delivery": showCreateTrip = true
+                        default:         dismiss()
                         }
                     } label: {
                         VStack(spacing: 14) {
@@ -73,6 +76,14 @@ struct QuickActionsSheet: View {
         .background(Color(hex: "F2F3F7").ignoresSafeArea())
         .sheet(isPresented: $showCreateStaff) {
             CreateStaffView()
+                .presentationDetents([.large])
+        }
+        .sheet(isPresented: $showAddVehicle) {
+            AddVehicleView()
+                .presentationDetents([.large])
+        }
+        .sheet(isPresented: $showCreateTrip) {
+            CreateTripView()
                 .presentationDetents([.large])
         }
     }

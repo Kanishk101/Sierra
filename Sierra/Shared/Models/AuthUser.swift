@@ -8,4 +8,7 @@ struct AuthUser: Codable, Equatable {
     var isProfileComplete: Bool
     var isApproved: Bool
     var name: String?
+    var rejectionReason: String?
+    var phone: String?
+    var createdAt: Date?
 }

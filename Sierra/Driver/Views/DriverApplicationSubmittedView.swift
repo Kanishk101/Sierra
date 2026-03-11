@@ -342,21 +342,6 @@ struct DriverApplicationSubmittedView: View {
     }
 }
 
-// MARK: - Checkmark Shape
-
-struct CheckmarkShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let w = rect.width
-        let h = rect.height
-        // Start at left-center, down to bottom-center, up to top-right
-        path.move(to: CGPoint(x: w * 0.15, y: h * 0.50))
-        path.addLine(to: CGPoint(x: w * 0.40, y: h * 0.75))
-        path.addLine(to: CGPoint(x: w * 0.85, y: h * 0.25))
-        return path
-    }
-}
-
 #Preview {
     DriverApplicationSubmittedView()
 }

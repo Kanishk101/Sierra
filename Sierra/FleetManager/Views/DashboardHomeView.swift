@@ -5,10 +5,9 @@ private let navyDark = Color(hex: "0D1B2A")
 private let navyMid = Color(hex: "1B3A6B")
 
 struct DashboardHomeView: View {
+    @Environment(AppDataStore.self) private var store
     @State private var showProfile = false
 
-    private let vehicles = Vehicle.samples
-    private let staff = StaffMember.samples
     private let activity = ActivityLog.samples
 
     private var greeting: String {
@@ -78,6 +77,8 @@ struct DashboardHomeView: View {
     // MARK: - Stats Grid
 
     private var statsGrid: some View {
+        let vehicles = store.vehicles
+        let staff = store.staff
         let activeCount = vehicles.filter { $0.status == .active }.count
         let pending = vehicles.filter { $0.status == .inMaintenance }.count
         let staffCount = staff.count
@@ -113,7 +114,7 @@ struct DashboardHomeView: View {
     // MARK: - Alerts
 
     private var alertsSection: some View {
-        let expiring = vehicles.filter { $0.documentsExpiringSoon }
+        let expiring = store.vehicles.filter { $0.documentsExpiringSoon }
         return Group {
             if !expiring.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {

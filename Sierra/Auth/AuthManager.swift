@@ -34,6 +34,13 @@ final class AuthManager {
     var isAuthenticated: Bool = false
     var needsReauth: Bool = false
 
+    // OTP state
+    private var currentOTP: String = ""
+    var pendingOTPEmail: String?
+
+    // Password reset OTP (separate from login OTP)
+    private var resetOTP: String = ""
+
     /// 5-minute auto-lock threshold.
     private let autoLockSeconds: TimeInterval = 300
 
@@ -46,6 +53,7 @@ final class AuthManager {
     }
 
     private let demoUsers: [DemoCredential] = [
+        // Admin — fully set up
         DemoCredential(
             email: "admin@fleeeos.com",
             password: "Admin@123",
@@ -58,7 +66,63 @@ final class AuthManager {
                 isApproved: true,
                 name: "Fleet Admin"
             )
-        )
+        ),
+        // Driver — first login, needs password change + onboarding + approval
+        DemoCredential(
+            email: "driver@fleeeos.com",
+            password: "Driver@123",
+            user: AuthUser(
+                id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!,
+                email: "driver@fleeeos.com",
+                role: .driver,
+                isFirstLogin: true,
+                isProfileComplete: false,
+                isApproved: false,
+                name: "James Turner"
+            )
+        ),
+        // Maintenance — first login, needs password change + onboarding + approval
+        DemoCredential(
+            email: "mech@fleeeos.com",
+            password: "Mech@123",
+            user: AuthUser(
+                id: UUID(uuidString: "00000000-0000-0000-0000-000000000003")!,
+                email: "mech@fleeeos.com",
+                role: .maintenancePersonnel,
+                isFirstLogin: true,
+                isProfileComplete: false,
+                isApproved: false,
+                name: "Tom Bradley"
+            )
+        ),
+        // Approved Driver — skips onboarding, goes straight to DriverDashboard
+        DemoCredential(
+            email: "driver2@fleeeos.com",
+            password: "Driver2@123",
+            user: AuthUser(
+                id: UUID(uuidString: "D0000000-0000-0000-0000-000000000001")!,
+                email: "driver2@fleeeos.com",
+                role: .driver,
+                isFirstLogin: false,
+                isProfileComplete: true,
+                isApproved: true,
+                name: "James Turner"
+            )
+        ),
+        // Approved Maintenance — skips onboarding, goes straight to MaintenanceDashboard
+        DemoCredential(
+            email: "mech2@fleeeos.com",
+            password: "Mech2@123",
+            user: AuthUser(
+                id: UUID(uuidString: "D0000000-0000-0000-0000-000000000004")!,
+                email: "mech2@fleeeos.com",
+                role: .maintenancePersonnel,
+                isFirstLogin: false,
+                isProfileComplete: true,
+                isApproved: true,
+                name: "Sarah Miller"
+            )
+        ),
     ]
 
     // MARK: - Init
@@ -152,6 +216,81 @@ final class AuthManager {
             if !user.isApproved { return .pendingApproval }
             return .maintenanceDashboard
         }
+    }
+
+    // MARK: - Password Verification (Demo)
+
+    /// Verify a password against the current user's demo credential.
+    func verifyDemoPassword(_ password: String) -> Bool {
+        guard let email = currentUser?.email else { return false }
+        return demoUsers.first(where: { $0.email.lowercased() == email.lowercased() })?.password == password
+    }
+
+    // MARK: - OTP
+
+    /// Generate a 6-digit OTP (hardcoded "123456" for demo).
+    @discardableResult
+    func generateOTP() -> String {
+        currentOTP = "123456"
+        pendingOTPEmail = currentUser?.email
+        print("📧 OTP for \(pendingOTPEmail ?? "unknown"): \(currentOTP)")
+        return currentOTP
+    }
+
+    /// Verify a submitted OTP code.
+    func verifyOTP(_ code: String) -> Bool {
+        let match = code == currentOTP
+        if match { currentOTP = "" }
+        return match
+    }
+
+    /// Masked email: first char + "***" + "@" + domain
+    var maskedEmail: String {
+        guard let email = pendingOTPEmail,
+              let atIndex = email.firstIndex(of: "@") else {
+            return "***@***.com"
+        }
+        let firstChar = email.prefix(1)
+        let domain = email[atIndex...]
+        return "\(firstChar)***\(domain)"
+    }
+
+    // MARK: - Password Reset
+
+    /// Request a password reset code for an email address.
+    func requestPasswordReset(email: String) async -> Bool {
+        // Simulate network delay
+        try? await Task.sleep(for: .milliseconds(800))
+
+        guard demoUsers.contains(where: { $0.email.lowercased() == email.lowercased() }) else {
+            return false
+        }
+
+        pendingOTPEmail = email
+        resetOTP = "123456"
+        print("📧 Password reset OTP for \(email): \(resetOTP)")
+        return true
+    }
+
+    /// Reset password using the verification code.
+    func resetPassword(code: String, newPassword: String) async throws {
+        try await Task.sleep(for: .milliseconds(600))
+
+        guard code == resetOTP else {
+            throw AuthError.invalidCredentials
+        }
+
+        // Hash and store the new password
+        let hashed = CryptoService.hash(password: newPassword)
+        _ = KeychainService.save(hashed, forKey: Keys.hashedCredential)
+
+        resetOTP = ""
+        pendingOTPEmail = nil
+    }
+
+    /// Check if an email exists in the demo accounts.
+    func emailExists(_ email: String) -> Bool {
+        demoUsers.contains(where: { $0.email.lowercased() == email.lowercased() })
     }
 
     // MARK: - Auto-Lock (5 min background)

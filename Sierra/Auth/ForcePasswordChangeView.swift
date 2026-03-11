@@ -6,6 +6,7 @@ private let accentOrange = Color(red: 1.0, green: 0.584, blue: 0.0)
 struct ForcePasswordChangeView: View {
     @State private var viewModel = ForcePasswordChangeViewModel()
     @State private var appeared = false
+    @State private var showDestination = false
 
     var body: some View {
         ZStack {
@@ -49,7 +50,23 @@ struct ForcePasswordChangeView: View {
                 appeared = true
             }
         }
-        .fullScreenCover(isPresented: $viewModel.passwordChanged) {
+        // Gap 1: Show TwoFactorView after password change for OTP re-verification
+        .fullScreenCover(isPresented: $viewModel.awaitingOTP) {
+            TwoFactorView(viewModel: TwoFactorViewModel(
+                subtitle: "Confirm your new password by verifying your identity.",
+                maskedEmail: AuthManager.shared.maskedEmail,
+                onVerified: { [self] in
+                    viewModel.awaitingOTP = false
+                    showDestination = true
+                },
+                onCancelled: { [self] in
+                    viewModel.awaitingOTP = false
+                    AuthManager.shared.signOut()
+                }
+            ))
+        }
+        // Navigate to role-specific destination after OTP success
+        .fullScreenCover(isPresented: $showDestination) {
             if let dest = viewModel.nextDestination {
                 destinationView(for: dest)
             }

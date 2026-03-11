@@ -24,15 +24,19 @@ struct SierraApp: App {
                         .zIndex(999)
                 }
             }
+            .environment(AppDataStore.shared)
             .animation(.easeInOut(duration: 0.25), value: lifecycle.showBiometricLock)
         }
         .onChange(of: scenePhase) { _, newPhase in
+            lifecycle.handleScenePhaseChange(
+                to: newPhase,
+                hasSession: AuthManager.shared.currentUser != nil
+            )
+            // Also update AuthManager auto-lock timestamps
             switch newPhase {
             case .background:
-                lifecycle.didEnterBackground()
                 AuthManager.shared.appDidEnterBackground()
             case .active:
-                lifecycle.didBecomeActive()
                 AuthManager.shared.appWillEnterForeground()
             default:
                 break

@@ -25,6 +25,16 @@ enum PasswordStrength: Int, Comparable {
         case .strong: .green
         }
     }
+
+    /// Evaluate password strength from a plain-text password string.
+    static func evaluate(_ password: String) -> PasswordStrength {
+        guard password.count >= 8 else { return .weak }
+        let hasUpper = password.range(of: "[A-Z]", options: .regularExpression) != nil
+        let hasDigit = password.range(of: "[0-9]", options: .regularExpression) != nil
+        let hasSpecial = password.range(of: "[^A-Za-z0-9]", options: .regularExpression) != nil
+        if hasUpper && hasDigit && hasSpecial { return .strong }
+        return .fair
+    }
 }
 
 @Observable
@@ -47,6 +57,7 @@ final class ForcePasswordChangeViewModel {
     var currentPasswordError: String?
     var passwordChanged: Bool = false
     var nextDestination: AuthDestination?
+    var awaitingOTP: Bool = false
 
     // MARK: - Strength
 
@@ -92,12 +103,7 @@ final class ForcePasswordChangeViewModel {
     // MARK: - Actions
 
     func validatePasswordStrength(_ password: String) -> PasswordStrength {
-        guard password.count >= 8 else { return .weak }
-        let hasUpper = password.range(of: "[A-Z]", options: .regularExpression) != nil
-        let hasDigit = password.range(of: "[0-9]", options: .regularExpression) != nil
-        let hasSpecial = password.range(of: "[^A-Za-z0-9]", options: .regularExpression) != nil
-        if hasUpper && hasDigit && hasSpecial { return .strong }
-        return .fair
+        PasswordStrength.evaluate(password)
     }
 
     @MainActor
@@ -111,9 +117,10 @@ final class ForcePasswordChangeViewModel {
         // Simulate network delay
         try? await Task.sleep(for: .milliseconds(1000))
 
-        // Verify current password matches the temp password from the demo account
-        // In production this would verify against the stored hashed password
-        guard currentPassword == "Admin@123" || verifyCurrentPassword() else {
+        // Verify current password: check against this user's demo credential
+        // or against the stored hashed credential (for production use)
+        let isValidCurrent = AuthManager.shared.verifyDemoPassword(currentPassword) || verifyCurrentPassword()
+        guard isValidCurrent else {
             isLoading = false
             currentPasswordError = "Current password is incorrect"
             return
@@ -129,7 +136,7 @@ final class ForcePasswordChangeViewModel {
             AuthManager.shared.currentUser = user
             _ = KeychainService.save(user, forKey: "com.fleetOS.currentUser")
 
-            // Determine next destination based on role
+            // Determine next destination based on role (used after OTP verification)
             switch user.role {
             case .driver:
                 nextDestination = .driverOnboarding
@@ -140,8 +147,12 @@ final class ForcePasswordChangeViewModel {
             }
         }
 
+        // Gap 1: Generate OTP for identity re-verification after password change
+        AuthManager.shared.generateOTP()
+
         isLoading = false
-        passwordChanged = true
+        // Trigger the TwoFactorView fullScreenCover
+        awaitingOTP = true
     }
 
     // MARK: - Private
