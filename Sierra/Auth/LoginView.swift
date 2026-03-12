@@ -3,13 +3,120 @@ import SwiftUI
 struct LoginView: View {
     @State private var viewModel = LoginViewModel()
     @State private var cardAppeared = false
-    @State private var showTwoFactor = false
     @State private var showForgotPassword = false
-    @State private var showDestination = false
     @State private var showBiometricEnrollment = false
+
+    // 2FA is presented as fullScreenCover — only when authState == .requiresTwoFactor
+    @State private var twoFactorContext: TwoFactorContext?
     @State private var twoFactorVM: TwoFactorViewModel?
+    @State private var showTwoFactor = false
+
+    // Dashboard is presented as fullScreenCover — only after 2FA success or biometric
+    @State private var resolvedDestination: AuthDestination?
+    @State private var showDestination = false
 
     var body: some View {
+        ZStack {
+            // ── Login content layer ──
+            loginContentLayer
+
+            // ── 2FA overlay layer — covers everything when active ──
+            if showTwoFactor, let vm = twoFactorVM {
+                TwoFactorView(viewModel: vm)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .zIndex(100)
+            }
+        }
+        .animation(.easeInOut(duration: 0.35), value: showTwoFactor)
+        .onAppear {
+            #if DEBUG
+            print("👁 [LoginView] appeared — view is in hierarchy")
+            #endif
+            withAnimation(.spring(duration: 0.6, bounce: 0.3)) {
+                cardAppeared = true
+            }
+        }
+        .onDisappear {
+            #if DEBUG
+            print("💀 [LoginView] disappeared — view LEFT hierarchy")
+            print("💀 [LoginView] authState at disappear: \(viewModel.authState)")
+            #endif
+        }
+        // (2FA is now a ZStack overlay — no fullScreenCover needed)
+        // ── Dashboard (fullScreenCover) ──
+        // Only shown after 2FA success OR biometric success
+        .fullScreenCover(isPresented: $showDestination) {
+            if let dest = resolvedDestination {
+                destinationView(for: dest)
+            }
+        }
+        // ── Forgot Password (sheet) ──
+        .sheet(isPresented: $showForgotPassword) {
+            ForgotPasswordView()
+        }
+        // ── Biometric Enrollment (sheet) ──
+        .sheet(isPresented: $showBiometricEnrollment, onDismiss: {
+            // After enrollment decision, show dashboard
+            showDestination = true
+        }) {
+            BiometricEnrollmentSheet()
+                .presentationDetents([.medium])
+        }
+        // ── React to authState changes ──
+        .onChange(of: viewModel.authState) { _, newState in
+            #if DEBUG
+            print("👁 [LoginView.onChange] authState fired: \(newState)")
+            #endif
+            switch newState {
+            case .requiresTwoFactor(let ctx):
+                // Credential login succeeded → show 2FA screen
+                // Do NOT show dashboard — 2FA must complete first
+                twoFactorContext = ctx
+                // Create the VM once and store it — never recreate inline
+                twoFactorVM = TwoFactorViewModel(
+                    context: ctx,
+                    onVerified: {
+                        #if DEBUG
+                        print("🔐 [LoginView.onVerified] 2FA verified — calling completeAuthentication in 0.1s")
+                        #endif
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            AuthManager.shared.completeAuthentication()
+                        }
+                    },
+                    onCancelled: {
+                        // User cancelled 2FA — return to login
+                        showTwoFactor = false
+                        twoFactorContext = nil
+                        twoFactorVM = nil
+                        viewModel.twoFactorCancelled()
+                    }
+                )
+                // Dismiss keyboard, then show 2FA overlay
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                showTwoFactor = true
+
+            case .authenticated(let destination):
+                // Biometric login succeeded → skip 2FA, go to dashboard
+                resolvedDestination = destination
+                if BiometricEnrollmentSheet.shouldPrompt() {
+                    showBiometricEnrollment = true
+                } else {
+                    showDestination = true
+                }
+
+            case .error:
+                // Error is displayed via errorMessage computed property
+                break
+
+            case .idle, .loading:
+                break
+            }
+        }
+    }
+
+    // MARK: - Login Content Layer
+
+    private var loginContentLayer: some View {
         ZStack {
             // Dark navy → deep blue gradient
             LinearGradient(
@@ -50,59 +157,6 @@ struct LoginView: View {
                     .frame(minHeight: geo.size.height)
                 }
                 .scrollDismissesKeyboard(.interactively)
-            }
-        }
-        .onAppear {
-            withAnimation(.spring(duration: 0.6, bounce: 0.3)) {
-                cardAppeared = true
-            }
-        }
-        .fullScreenCover(isPresented: $showTwoFactor) {
-            if let vm = twoFactorVM {
-                TwoFactorView(viewModel: vm)
-            }
-        }
-        .fullScreenCover(isPresented: $showDestination) {
-            if let destination = viewModel.authDestination {
-                destinationView(for: destination)
-            }
-        }
-        .sheet(isPresented: $showForgotPassword) {
-            ForgotPasswordView()
-        }
-        .sheet(isPresented: $showBiometricEnrollment, onDismiss: {
-            showDestination = true
-        }) {
-            BiometricEnrollmentSheet()
-                .presentationDetents([.medium])
-        }
-        .onChange(of: viewModel.loginSuccess) { _, success in
-            guard success else { return }
-
-            if viewModel.usedBiometric {
-                // ── Face ID / Touch ID login → skip 2FA entirely ──
-                showDestination = true
-            } else {
-                // ── Credential login → send OTP to email → verify ──
-                AuthManager.shared.generateOTP()
-                twoFactorVM = TwoFactorViewModel(
-                    subtitle: "Enter the 6-digit code sent to your email.",
-                    maskedEmail: AuthManager.shared.maskedEmail,
-                    onVerified: { [self] in
-                        showTwoFactor = false
-                        if BiometricEnrollmentSheet.shouldPrompt() {
-                            showBiometricEnrollment = true
-                        } else {
-                            showDestination = true
-                        }
-                    },
-                    onCancelled: { [self] in
-                        showTwoFactor = false
-                        viewModel.loginSuccess = false
-                        viewModel.authDestination = nil
-                    }
-                )
-                showTwoFactor = true
             }
         }
     }
@@ -223,6 +277,7 @@ struct LoginView: View {
 
             // Sign In button
             Button {
+                print("🚀 Sign In button tapped — calling viewModel.signIn()")
                 Task { await viewModel.signIn() }
             } label: {
                 Text("Sign In")

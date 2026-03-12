@@ -5,15 +5,23 @@ struct ContentView: View {
     private var authManager = AuthManager.shared
 
     var body: some View {
+        let _ = print("🚀 ContentView.body evaluated — isAuthenticated=\(authManager.isAuthenticated)")
         Group {
             if !hasCompletedOnboarding {
                 OnboardingView()
             } else if authManager.isAuthenticated, !authManager.needsReauth {
+                #if DEBUG
+                let _ = print("🏠 [ContentView] isAuthenticated=true → showing DASHBOARD")
+                let _ = print("🏠 [ContentView] This fires BEFORE 2FA if AuthManager sets isAuthenticated early")
+                #endif
                 // Active session — show destination
                 if let user = authManager.currentUser {
                     destinationView(for: authManager.destination(for: user))
                 }
             } else {
+                #if DEBUG
+                let _ = print("🏠 [ContentView] isAuthenticated=false → showing LOGIN")
+                #endif
                 LoginView()
             }
         }

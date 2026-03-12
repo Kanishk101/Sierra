@@ -10,22 +10,37 @@ final class LoginViewModel {
     var password: String = ""
     var isPasswordVisible: Bool = false
 
-    // MARK: - UI State
+    // MARK: - Auth State (single source of truth)
 
-    var isLoading: Bool = false
-    var errorMessage: String?
-    var loginSuccess: Bool = false
-    var authDestination: AuthDestination?
+    /// Replaces the old `loginSuccess` Bool + `authDestination` + `usedBiometric`.
+    /// Navigation is driven entirely by this enum.
+    var authState: AuthState = .idle
 
-    /// `true` when the current successful login used biometrics (skip 2FA).
-    var usedBiometric: Bool = false
+    enum AuthState: Equatable {
+        case idle
+        case loading
+        case requiresTwoFactor(context: TwoFactorContext)
+        case authenticated(destination: AuthDestination)
+        case error(String)
+
+        static func == (lhs: AuthState, rhs: AuthState) -> Bool {
+            switch (lhs, rhs) {
+            case (.idle, .idle), (.loading, .loading):
+                return true
+            case (.requiresTwoFactor(let a), .requiresTwoFactor(let b)):
+                return a.userID == b.userID
+            case (.authenticated(let a), .authenticated(let b)):
+                return a == b
+            case (.error(let a), .error(let b)):
+                return a == b
+            default:
+                return false
+            }
+        }
+    }
 
     // MARK: - Biometric
 
-    /// Show the Face ID / Touch ID button only when:
-    ///  1. Device hardware supports biometrics
-    ///  2. User previously opted-in via the enrollment sheet
-    ///  3. There is an existing session token to restore
     var showBiometricButton: Bool {
         BiometricManager.shared.canUseBiometrics()
             && BiometricEnrollmentSheet.isBiometricEnabled()
@@ -45,75 +60,123 @@ final class LoginViewModel {
     var emailError: String?
     var passwordError: String?
 
-    // MARK: - Sign In (Credential)
+    // MARK: - Computed
+
+    var isLoading: Bool { authState == .loading }
+
+    var errorMessage: String? {
+        if case .error(let msg) = authState { return msg }
+        return nil
+    }
+
+    // MARK: - Sign In (Credential → 2FA required)
 
     @MainActor
     func signIn() async {
+        print("🚀 LoginViewModel.signIn() called")
+        #if DEBUG
+        print("📋 [LoginViewModel.signIn] Called")
+        #endif
         emailError = nil
         passwordError = nil
-        errorMessage = nil
 
         guard validate() else { return }
 
-        isLoading = true
-        usedBiometric = false
+        authState = .loading
 
         do {
             let role = try await AuthManager.shared.signIn(email: email, password: password)
-            isLoading = false
-            if let user = AuthManager.shared.currentUser {
-                authDestination = AuthManager.shared.destination(for: user)
+            #if DEBUG
+            print("📋 [LoginViewModel.signIn] AuthManager.signIn returned")
+            print("📋 [LoginViewModel.signIn] AuthManager.isAuthenticated = \(AuthManager.shared.isAuthenticated)")
+            print("📋 [LoginViewModel.signIn] AuthManager.currentUser = \(AuthManager.shared.currentUser?.email ?? "nil")")
+            #endif
+            let user = AuthManager.shared.currentUser
+
+            // Resolve destination from user profile state
+            let destination: AuthDestination
+            if let user {
+                destination = AuthManager.shared.destination(for: user)
             } else {
-                authDestination = defaultDestination(for: role)
+                destination = defaultDestination(for: role)
             }
-            loginSuccess = true
+
+            // Build 2FA context — do NOT navigate to dashboard yet
+            AuthManager.shared.generateOTP()
+
+            let context = TwoFactorContext(
+                userID: user?.id.uuidString ?? UUID().uuidString,
+                role: role,
+                method: .email,
+                maskedDestination: AuthManager.shared.maskedEmail,
+                sessionToken: "",
+                authDestination: destination
+            )
+
+            // This triggers TwoFactorView — NOT the dashboard
+            #if DEBUG
+            print("📋 [LoginViewModel.signIn] About to set authState = .requiresTwoFactor")
+            #endif
+            authState = .requiresTwoFactor(context: context)
+            #if DEBUG
+            print("📋 [LoginViewModel.signIn] authState is now: \(authState)")
+            #endif
+
         } catch {
-            isLoading = false
-            errorMessage = "Invalid credentials"
+            authState = .error("Invalid credentials")
         }
     }
 
-    // MARK: - Biometric Sign In (skips 2FA)
+    // MARK: - Biometric Sign In (skips 2FA entirely)
 
     @MainActor
     func biometricSignIn() async {
-        errorMessage = nil
-        isLoading = true
+        authState = .loading
 
         do {
             try await BiometricManager.shared.authenticate()
-            // Biometric succeeded — restore the existing session
             if let _ = AuthManager.shared.restoreSession(),
                let user = AuthManager.shared.currentUser {
-                isLoading = false
-                usedBiometric = true
-                authDestination = AuthManager.shared.destination(for: user)
-                loginSuccess = true
+                let destination = AuthManager.shared.destination(for: user)
+                // Biometric → go straight to dashboard, skip 2FA
+                authState = .authenticated(destination: destination)
             } else {
-                isLoading = false
-                errorMessage = "Session expired. Please sign in with your password."
+                authState = .error("Session expired. Please sign in with your password.")
                 AuthManager.shared.signOut()
             }
         } catch {
-            isLoading = false
             if let bioError = error as? BiometricError {
                 switch bioError {
                 case .userCancelled:
-                    break // User cancelled, don't show error
+                    authState = .idle
                 default:
-                    errorMessage = bioError.errorDescription
+                    authState = .error(bioError.errorDescription ?? "Biometric authentication failed.")
                 }
             } else {
-                errorMessage = "Biometric authentication failed."
+                authState = .error("Biometric authentication failed.")
             }
         }
+    }
+
+    // MARK: - 2FA Completed
+
+    /// Called by TwoFactorView when OTP verification succeeds.
+    func twoFactorCompleted() {
+        guard case .requiresTwoFactor(let ctx) = authState else { return }
+        authState = .authenticated(destination: ctx.authDestination)
+    }
+
+    /// Called when user cancels 2FA (back to sign in).
+    func twoFactorCancelled() {
+        AuthManager.shared.signOut()
+        authState = .idle
     }
 
     // MARK: - Dismiss Error
 
     func dismissError() {
         withAnimation(.easeOut(duration: 0.2)) {
-            errorMessage = nil
+            authState = .idle
         }
     }
 

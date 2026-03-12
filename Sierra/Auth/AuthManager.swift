@@ -31,7 +31,12 @@ final class AuthManager {
     // MARK: - State
 
     var currentUser: AuthUser?
-    var isAuthenticated: Bool = false
+    var isAuthenticated: Bool = false {
+        didSet {
+            print("🚨🚨🚨 isAuthenticated SET: \(oldValue) → \(isAuthenticated)")
+            print("🚨 CALL STACK:\n\(Thread.callStackSymbols.prefix(10).joined(separator: "\n"))")
+        }
+    }
     var needsReauth: Bool = false
 
     // OTP state
@@ -136,6 +141,10 @@ final class AuthManager {
     /// Authenticate with email + password.
     /// - Returns: The authenticated user's role for routing.
     func signIn(email: String, password: String) async throws -> UserRole {
+        print("🚀 AuthManager.signIn() called — isAuthenticated BEFORE=\(isAuthenticated)")
+        #if DEBUG
+        print("🔑 [AuthManager.signIn] Called with email: \(email)")
+        #endif
         // Simulate a tiny network delay for realism
         try await Task.sleep(for: .milliseconds(800))
 
@@ -162,14 +171,35 @@ final class AuthManager {
         }
 
         currentUser = user
-        isAuthenticated = true
+        // NOTE: Do NOT set isAuthenticated here.
+        // Credential login must complete 2FA first.
+        // isAuthenticated is set only via completeAuthentication() after 2FA succeeds.
+
+        #if DEBUG
+        print("🔑 [AuthManager.signIn] Completed. isAuthenticated=\(isAuthenticated) currentUser=\(currentUser?.email ?? "nil")")
+        #endif
+        print("🚀 AuthManager.signIn() returning — isAuthenticated AFTER=\(isAuthenticated)")
 
         return user.role
+    }
+
+    // MARK: - Complete Authentication (post-2FA)
+
+    /// Called exclusively after successful 2FA verification.
+    /// Never call this from signIn() — credentials alone do not authenticate.
+    func completeAuthentication() {
+        isAuthenticated = true
+        #if DEBUG
+        print("✅ [AuthManager.completeAuthentication] isAuthenticated = true — 2FA complete")
+        #endif
     }
 
     // MARK: - Sign Out
 
     func signOut() {
+        #if DEBUG
+        print("🔑 [AuthManager.signOut] Clearing session")
+        #endif
         currentUser = nil
         isAuthenticated = false
         needsReauth = false
@@ -189,6 +219,9 @@ final class AuthManager {
         }
         currentUser = user
         isAuthenticated = true
+        #if DEBUG
+        print("🔑 [AuthManager.restoreSession] isAuthenticated=true (biometric path)")
+        #endif
         return user.role
     }
 

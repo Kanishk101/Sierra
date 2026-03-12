@@ -2,7 +2,8 @@ import Foundation
 import SwiftUI
 
 /// ViewModel for the 2FA OTP verification screen.
-/// Supports both login 2FA and post-password-change OTP re-verification.
+/// Uses `OTPVerificationServiceProtocol` so the UI works identically
+/// with email, SMS, or authenticator backends.
 @MainActor @Observable
 final class TwoFactorViewModel {
 
@@ -13,91 +14,175 @@ final class TwoFactorViewModel {
 
     // MARK: - State
 
-    var failCount: Int = 0
+    var state: TwoFactorState = .idle
+    var expiryCountdown: Int = 600
+    var resendCooldown: Int = 0
     var shakeCount: Int = 0
-    var isLockedOut: Bool = false
-    var lockoutSecondsRemaining: Int = 30
-    var resendSecondsRemaining: Int = 60
-    var canResend: Bool = false
-    var errorMessage: String?
-    var isVerified: Bool = false
+    var banner: SierraAlertType?
     var isLoading: Bool = false
 
     // MARK: - Configuration
 
-    var subtitle: String
-    var maskedEmail: String
-    var onVerified: () -> Void
-    var onCancelled: () -> Void
+    let context: TwoFactorContext
+    var onVerified: (() -> Void)?
+    var onCancelled: (() -> Void)?
 
-    // MARK: - Private
+    // MARK: - Dependencies
 
-    private var resendTask: Task<Void, Never>?
-    private var lockoutTask: Task<Void, Never>?
+    private let service: OTPVerificationServiceProtocol
+    private var expiryTimer: Task<Void, Never>?
+    private var cooldownTimer: Task<Void, Never>?
 
     // MARK: - Init
 
     init(
+        context: TwoFactorContext,
+        service: OTPVerificationServiceProtocol = MockOTPVerificationService(),
+        onVerified: (() -> Void)? = nil,
+        onCancelled: (() -> Void)? = nil
+    ) {
+        self.context = context
+        self.service = service
+        self.onVerified = onVerified
+        self.onCancelled = onCancelled
+    }
+
+    // Backward-compat init for existing callers
+    convenience init(
         subtitle: String,
         maskedEmail: String,
         onVerified: @escaping () -> Void,
         onCancelled: @escaping () -> Void
     ) {
-        self.subtitle = subtitle
-        self.maskedEmail = maskedEmail
-        self.onVerified = onVerified
-        self.onCancelled = onCancelled
-        startResendCountdown()
+        let ctx = TwoFactorContext(
+            userID: AuthManager.shared.currentUser?.id.uuidString ?? "",
+            role: AuthManager.shared.currentUser?.role ?? .fleetManager,
+            method: .email,
+            maskedDestination: maskedEmail,
+            sessionToken: "",
+            authDestination: AuthManager.shared.currentUser.map { AuthManager.shared.destination(for: $0) } ?? .fleetManagerDashboard
+        )
+        self.init(context: ctx, onVerified: onVerified, onCancelled: onCancelled)
+    }
+
+    // MARK: - Computed
+
+    var enteredCode: String { digits.joined() }
+    var isCodeComplete: Bool { digits.allSatisfy { $0.count == 1 } }
+    var canResend: Bool { resendCooldown == 0 && state != .sending && state != .verifying }
+    var maskedEmail: String { context.maskedDestination }
+    var methodIcon: String { context.method.icon }
+    var instructionText: String { context.method.instructionText }
+    var subtitle: String { context.method.instructionText }
+
+    var isLockedOut: Bool {
+        if case .locked = state { return true }
+        return false
+    }
+
+    var isVerified: Bool {
+        state == .success
+    }
+
+    var failCount: Int {
+        if case .failed(let remaining) = state {
+            return 3 - remaining
+        }
+        return 0
+    }
+
+    var lockoutSecondsRemaining: Int {
+        if case .locked(let unlockAt) = state {
+            return max(0, Int(unlockAt.timeIntervalSinceNow))
+        }
+        return 0
+    }
+
+    var resendSecondsRemaining: Int { resendCooldown }
+
+    var expiryDisplayText: String {
+        let m = expiryCountdown / 60
+        let s = expiryCountdown % 60
+        return String(format: "%d:%02d", m, s)
     }
 
     // MARK: - Actions
 
-    func verifyCode() {
-        let code = digits.joined()
-        guard code.count == 6 else { return }
+    func onAppear() {
+        Task { await sendOTP() }
+    }
 
+    func sendOTP() async {
+        state = .sending
         isLoading = true
-        let success = AuthManager.shared.verifyOTP(code)
-        isLoading = false
+        do {
+            let result = try await service.sendOTP(context: context)
+            state = .awaitingEntry
+            isLoading = false
+            startExpiryCountdown(until: result.expiresAt)
+            startResendCooldown(until: result.cooldownUntil)
+        } catch {
+            state = .idle
+            isLoading = false
+            banner = .error("Failed to send code. Please try again.")
+        }
+    }
 
-        if success {
-            isVerified = true
-            onVerified()
-        } else {
-            failCount += 1
-            withAnimation(.default) {
-                shakeCount += 1
-            }
-            if failCount >= 3 {
-                errorMessage = "Too many failed attempts. Please wait."
-                startLockoutCountdown()
-            } else {
-                errorMessage = "Incorrect code. \(3 - failCount) attempt\(3 - failCount == 1 ? "" : "s") remaining."
+    func verifyCode() {
+        guard isCodeComplete else { return }
+        state = .verifying
+        isLoading = true
+        Task {
+            do {
+                let result = try await service.verifyOTP(code: enteredCode, context: context)
+                isLoading = false
+                if result.success {
+                    expiryTimer?.cancel()
+                    state = .success
+                    SecureSessionStore.shared.save(
+                        token: result.fullSessionToken ?? "",
+                        role: context.role
+                    )
+                    onVerified?()
+                } else if result.isLocked, let lockUntil = result.lockUntil {
+                    state = .locked(unlockAt: lockUntil)
+                    banner = .error("Too many incorrect attempts. Account temporarily locked.")
+                    startLockoutCountdown(until: lockUntil)
+                } else {
+                    let remaining = result.attemptsRemaining ?? 0
+                    state = .failed(attemptsRemaining: remaining)
+                    withAnimation(.default) { shakeCount += 1 }
+                    clearDigits()
+                    banner = .warning("Incorrect code. \(remaining) attempt\(remaining == 1 ? "" : "s") remaining.")
+                }
+            } catch {
+                state = .awaitingEntry
+                isLoading = false
+                banner = .error("Verification failed. Check your connection.")
             }
         }
     }
 
     func tryAgain() {
         clearDigits()
-        errorMessage = nil
+        state = .awaitingEntry
+        banner = nil
     }
 
     func resendCode() {
         guard canResend else { return }
-        AuthManager.shared.generateOTP()
-        canResend = false
-        resendSecondsRemaining = 60
-        errorMessage = nil
-        failCount = 0
         clearDigits()
-        startResendCountdown()
+        Task {
+            await sendOTP()
+            banner = .info("A new code has been sent to \(maskedEmail).")
+        }
     }
 
     func cancelAndGoBack() {
-        resendTask?.cancel()
-        lockoutTask?.cancel()
+        expiryTimer?.cancel()
+        cooldownTimer?.cancel()
         AuthManager.shared.signOut()
-        onCancelled()
+        onCancelled?()
     }
 
     func clearDigits() {
@@ -107,35 +192,45 @@ final class TwoFactorViewModel {
 
     // MARK: - Timers
 
-    private func startResendCountdown() {
-        resendTask?.cancel()
-        resendTask = Task { [weak self] in
-            while let self, self.resendSecondsRemaining > 0 {
+    private func startExpiryCountdown(until date: Date) {
+        expiryTimer?.cancel()
+        expiryCountdown = max(0, Int(date.timeIntervalSinceNow))
+        expiryTimer = Task { [weak self] in
+            while let self, self.expiryCountdown > 0 && !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
                 guard !Task.isCancelled else { return }
-                self.resendSecondsRemaining -= 1
+                self.expiryCountdown -= 1
             }
             if !Task.isCancelled {
-                self?.canResend = true
+                self?.state = .expired
+                self?.banner = .warning("Code expired. Please request a new one.")
             }
         }
     }
 
-    private func startLockoutCountdown() {
-        isLockedOut = true
-        lockoutSecondsRemaining = 30
-        lockoutTask?.cancel()
-        lockoutTask = Task { [weak self] in
-            while let self, self.lockoutSecondsRemaining > 0 {
+    private func startResendCooldown(until date: Date) {
+        cooldownTimer?.cancel()
+        resendCooldown = max(0, Int(date.timeIntervalSinceNow))
+        cooldownTimer = Task { [weak self] in
+            while let self, self.resendCooldown > 0 && !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
                 guard !Task.isCancelled else { return }
-                self.lockoutSecondsRemaining -= 1
+                self.resendCooldown -= 1
+            }
+        }
+    }
+
+    private func startLockoutCountdown(until date: Date) {
+        Task {
+            var remaining = max(0, Int(date.timeIntervalSinceNow))
+            while remaining > 0 && !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                remaining -= 1
             }
             if !Task.isCancelled {
-                self?.isLockedOut = false
-                self?.failCount = 0
-                self?.errorMessage = nil
-                self?.clearDigits()
+                state = .awaitingEntry
+                banner = nil
+                clearDigits()
             }
         }
     }
