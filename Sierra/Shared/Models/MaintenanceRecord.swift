@@ -1,14 +1,5 @@
 import Foundation
 
-// MARK: - Maintenance Status
-
-enum MaintenanceStatus: String, Codable, CaseIterable {
-    case open        = "Open"
-    case inProgress  = "In Progress"
-    case completed   = "Completed"
-    case cancelled   = "Cancelled"
-}
-
 // MARK: - Maintenance Record
 
 struct MaintenanceRecord: Identifiable, Codable {

@@ -7,7 +7,7 @@ struct ChangePasswordView: View {
     var body: some View {
         ZStack {
             LinearGradient(
-                colors: [Color(hex: "0D1B2A"), Color(hex: "1B3A6B")],
+                colors: [SierraTheme.Colors.summitNavy, SierraTheme.Colors.sierraBlue],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
@@ -21,11 +21,11 @@ struct ChangePasswordView: View {
                     .foregroundStyle(.white.opacity(0.7))
 
                 Text("Change Password")
-                    .font(.system(size: 28, weight: .bold))
+                    .font(SierraFont.title1)
                     .foregroundStyle(.white)
 
                 Text("You must change your password on first login.")
-                    .font(.system(size: 15))
+                    .font(SierraFont.subheadline)
                     .foregroundStyle(.white.opacity(0.6))
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 40)
@@ -33,7 +33,7 @@ struct ChangePasswordView: View {
                 VStack(spacing: 16) {
                     SecureField("New Password", text: $newPassword)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 16))
+                        .font(SierraFont.bodyText)
                         .foregroundStyle(.white)
                         .padding()
                         .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -44,7 +44,7 @@ struct ChangePasswordView: View {
 
                     SecureField("Confirm Password", text: $confirmPassword)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 16))
+                        .font(SierraFont.bodyText)
                         .foregroundStyle(.white)
                         .padding()
                         .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -57,11 +57,11 @@ struct ChangePasswordView: View {
                         // Password change logic to be implemented with backend
                     } label: {
                         Text("Update Password")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(Color(hex: "0D1B2A"))
+                            .font(SierraFont.body(17, weight: .semibold))
+                            .foregroundStyle(SierraTheme.Colors.primaryText)
                             .frame(maxWidth: .infinity)
                             .frame(height: 54)
-                            .background(.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }
                     .padding(.top, 8)
                 }

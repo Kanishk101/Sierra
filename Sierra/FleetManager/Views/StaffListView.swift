@@ -1,8 +1,5 @@
 import SwiftUI
 
-private let navyDark = Color(hex: "0D1B2A")
-private let accentOrange = Color(red: 1.0, green: 0.584, blue: 0.0)
-
 struct StaffListView: View {
     @State private var selectedSegment: StaffRole = .driver
     @State private var staffMembers = StaffMember.samples
@@ -22,13 +19,13 @@ struct StaffListView: View {
                         Text("Maintenance").tag(StaffRole.maintenance)
                     }
                     .pickerStyle(.segmented)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 12)
+                    .padding(.horizontal, Spacing.lg)
+                    .padding(.vertical, Spacing.sm)
 
                     List {
                         ForEach(filteredStaff) { member in
                             staffRow(member)
-                                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                                .listRowInsets(EdgeInsets(top: 6, leading: Spacing.md, bottom: 6, trailing: Spacing.md))
                                 .listRowSeparator(.hidden)
                                 .listRowBackground(Color.clear)
                         }
@@ -36,23 +33,15 @@ struct StaffListView: View {
                     .listStyle(.plain)
                     .scrollContentBackground(.hidden)
                     .refreshable {
-                        // Simulate pull-to-refresh
                         try? await Task.sleep(for: .milliseconds(800))
                     }
                 }
-                .background(Color(hex: "F2F3F7").ignoresSafeArea())
+                .background(SierraTheme.Colors.appBackground.ignoresSafeArea())
 
                 // FAB
-                Button { showAddSheet = true } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 22, weight: .bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 56, height: 56)
-                        .background(accentOrange, in: Circle())
-                        .shadow(color: accentOrange.opacity(0.4), radius: 12, y: 6)
-                }
-                .padding(.trailing, 24)
-                .padding(.bottom, 24)
+                SierraFAB { showAddSheet = true }
+                    .padding(.trailing, Spacing.xl)
+                    .padding(.bottom, Spacing.xl)
             }
             .navigationTitle("Staff")
             .navigationBarTitleDisplayMode(.inline)
@@ -67,50 +56,50 @@ struct StaffListView: View {
     // MARK: - Staff Row
 
     private func staffRow(_ member: StaffMember) -> some View {
-        HStack(spacing: 14) {
-            // Avatar initials
-            initialsCircle(member.initials, size: 44, bg: avatarColor(for: member.status))
+        HStack(spacing: Spacing.md) {
+            SierraAvatarView(
+                initials: member.initials,
+                size: 44,
+                gradient: avatarGradient(for: member)
+            )
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
                 Text(member.name)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(navyDark)
+                    .sierraStyle(.cardTitle)
                 Text(member.email)
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
+                    .sierraStyle(.caption)
             }
 
             Spacer()
 
             staffStatusBadge(member.status)
         }
-        .padding(14)
-        .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
+        .padding(Spacing.md)
+        .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+        .sierraShadow(SierraTheme.Shadow.card)
     }
 
     private func staffStatusBadge(_ status: StaffStatus) -> some View {
-        let (text, color): (String, Color) = switch status {
-        case .active:          ("Active", .green)
-        case .pendingApproval: ("Pending", .orange)
-        case .suspended:       ("Suspended", .red)
+        let (text, dotColor, bgColor, fgColor): (String, Color, Color, Color) = switch status {
+        case .active:          ("Active", SierraTheme.Colors.alpineMint, SierraTheme.Colors.alpineMint.opacity(0.12), SierraTheme.Colors.alpineDark)
+        case .pendingApproval: ("Pending", SierraTheme.Colors.warning, SierraTheme.Colors.warning.opacity(0.12), SierraTheme.Colors.warning)
+        case .suspended:       ("Suspended", SierraTheme.Colors.danger, SierraTheme.Colors.danger.opacity(0.12), SierraTheme.Colors.danger)
         }
-        return Text(text)
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(color)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(color.opacity(0.12), in: Capsule())
+        return SierraBadge(
+            label: text,
+            dotColor: dotColor,
+            backgroundColor: bgColor,
+            foregroundColor: fgColor,
+            size: .compact
+        )
     }
 
-    private func avatarColor(for status: StaffStatus) -> Color {
-        switch status {
-        case .active:          return Color(hex: "1B3A6B")
-        case .pendingApproval: return .orange
-        case .suspended:       return .red.opacity(0.7)
+    private func avatarGradient(for member: StaffMember) -> [Color] {
+        switch member.role {
+        case .driver:      SierraAvatarView.driver()
+        case .maintenance: SierraAvatarView.maintenance()
         }
     }
-
 }
 
 #Preview {

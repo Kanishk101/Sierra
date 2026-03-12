@@ -1,7 +1,5 @@
 import SwiftUI
 
-private let navyDark = Color(hex: "0D1B2A")
-private let accentOrange = Color(red: 1.0, green: 0.584, blue: 0.0)
 
 /// 3-step forgot password flow: Email → Code → New Password → Success
 struct ForgotPasswordView: View {
@@ -14,7 +12,7 @@ struct ForgotPasswordView: View {
             ZStack {
                 // Background
                 LinearGradient(
-                    colors: [Color(hex: "0D1B2A"), Color(hex: "1B3A6B")],
+                    colors: [SierraTheme.Colors.summitNavy, SierraTheme.Colors.sierraBlue],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
@@ -61,7 +59,7 @@ struct ForgotPasswordView: View {
             }
         } label: {
             Image(systemName: "chevron.left")
-                .font(.system(size: 16, weight: .semibold))
+                .font(SierraFont.body(16, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.6))
         }
     }
@@ -79,16 +77,16 @@ struct ForgotPasswordView: View {
                     // Icon
                     Image(systemName: "envelope.badge.fill")
                         .font(.system(size: 50, weight: .light))
-                        .foregroundStyle(accentOrange)
+                        .foregroundStyle(SierraTheme.Colors.ember)
                         .symbolRenderingMode(.hierarchical)
 
                     VStack(spacing: 8) {
                         Text("Forgot Password?")
-                            .font(.system(size: 24, weight: .bold))
+                            .font(SierraFont.title2)
                             .foregroundStyle(.white)
 
                         Text("Enter your email address and we'll send\nyou a verification code.")
-                            .font(.system(size: 15))
+                            .font(SierraFont.subheadline)
                             .foregroundStyle(.white.opacity(0.55))
                             .multilineTextAlignment(.center)
                             .lineSpacing(3)
@@ -98,13 +96,13 @@ struct ForgotPasswordView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 10) {
                             Image(systemName: "envelope.fill")
-                                .font(.system(size: 14))
+                                .font(SierraFont.caption1)
                                 .foregroundStyle(.white.opacity(0.4))
                                 .frame(width: 20)
 
                             TextField("Email address", text: $viewModel.email)
                                 .textFieldStyle(.plain)
-                                .font(.system(size: 16))
+                                .font(SierraFont.bodyText)
                                 .foregroundStyle(.white)
                                 .keyboardType(.emailAddress)
                                 .autocorrectionDisabled()
@@ -116,15 +114,15 @@ struct ForgotPasswordView: View {
                         .overlay(
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
                                 .strokeBorder(
-                                    viewModel.emailError != nil ? .red.opacity(0.7) : .white.opacity(0.1),
+                                    viewModel.emailError != nil ? SierraTheme.Colors.danger.opacity(0.7) : .white.opacity(0.1),
                                     lineWidth: 1
                                 )
                         )
 
                         if let error = viewModel.emailError {
                             Text(error)
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(.red.opacity(0.9))
+                                .font(SierraFont.caption2)
+                                .foregroundStyle(SierraTheme.Colors.danger.opacity(0.9))
                                 .padding(.leading, 4)
                         }
                     }
@@ -135,11 +133,11 @@ struct ForgotPasswordView: View {
                         Task { await viewModel.sendResetCode() }
                     } label: {
                         Text("Send Reset Code")
-                            .font(.system(size: 17, weight: .semibold))
+                            .font(SierraFont.body(17, weight: .semibold))
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
                             .frame(height: 54)
-                            .background(accentOrange, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .background(SierraTheme.Colors.ember, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }
                     .padding(.horizontal, 24)
 
@@ -163,16 +161,16 @@ struct ForgotPasswordView: View {
 
                     Image(systemName: "lock.shield.fill")
                         .font(.system(size: 50, weight: .light))
-                        .foregroundStyle(accentOrange)
+                        .foregroundStyle(SierraTheme.Colors.ember)
                         .symbolRenderingMode(.hierarchical)
 
                     VStack(spacing: 8) {
                         Text("Enter Verification Code")
-                            .font(.system(size: 24, weight: .bold))
+                            .font(SierraFont.title2)
                             .foregroundStyle(.white)
 
                         Text("Enter the 6-digit code sent to\n\(viewModel.maskedEmail)")
-                            .font(.system(size: 15))
+                            .font(SierraFont.subheadline)
                             .foregroundStyle(.white.opacity(0.55))
                             .multilineTextAlignment(.center)
                             .lineSpacing(3)
@@ -188,19 +186,19 @@ struct ForgotPasswordView: View {
 
                     if let error = viewModel.codeError {
                         Text(error)
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(.red)
+                            .font(SierraFont.caption1)
+                            .foregroundStyle(SierraTheme.Colors.danger)
                     }
 
                     Button {
                         viewModel.verifyResetCode()
                     } label: {
                         Text("Verify Code")
-                            .font(.system(size: 17, weight: .semibold))
+                            .font(SierraFont.body(17, weight: .semibold))
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
                             .frame(height: 54)
-                            .background(accentOrange, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .background(SierraTheme.Colors.ember, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }
                     .padding(.horizontal, 24)
 
@@ -224,16 +222,16 @@ struct ForgotPasswordView: View {
 
                     Image(systemName: "key.fill")
                         .font(.system(size: 50, weight: .light))
-                        .foregroundStyle(accentOrange)
+                        .foregroundStyle(SierraTheme.Colors.ember)
                         .symbolRenderingMode(.hierarchical)
 
                     VStack(spacing: 8) {
                         Text("Set New Password")
-                            .font(.system(size: 24, weight: .bold))
+                            .font(SierraFont.title2)
                             .foregroundStyle(.white)
 
                         Text("Choose a strong password for your account.")
-                            .font(.system(size: 15))
+                            .font(SierraFont.subheadline)
                             .foregroundStyle(.white.opacity(0.55))
                     }
 
@@ -254,16 +252,16 @@ struct ForgotPasswordView: View {
 
                             if let error = viewModel.confirmPasswordError {
                                 Text(error)
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundStyle(.red.opacity(0.9))
+                                    .font(SierraFont.caption2)
+                                    .foregroundStyle(SierraTheme.Colors.danger.opacity(0.9))
                                     .padding(.leading, 4)
                             }
                         }
 
                         if let error = viewModel.errorMessage {
                             Text(error)
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundStyle(.red)
+                                .font(SierraFont.caption1)
+                                .foregroundStyle(SierraTheme.Colors.danger)
                         }
 
                         // Submit
@@ -271,12 +269,12 @@ struct ForgotPasswordView: View {
                             Task { await viewModel.resetPassword() }
                         } label: {
                             Text("Reset Password")
-                                .font(.system(size: 17, weight: .semibold))
+                                .font(SierraFont.body(17, weight: .semibold))
                                 .foregroundStyle(viewModel.canSubmitNewPassword ? .white : .white.opacity(0.4))
                                 .frame(maxWidth: .infinity)
                                 .frame(height: 54)
                                 .background(
-                                    viewModel.canSubmitNewPassword ? accentOrange : Color.gray.opacity(0.25),
+                                    viewModel.canSubmitNewPassword ? SierraTheme.Colors.ember : Color.gray.opacity(0.25),
                                     in: RoundedRectangle(cornerRadius: 14, style: .continuous)
                                 )
                         }
@@ -303,13 +301,13 @@ struct ForgotPasswordView: View {
     private func passwordField(_ placeholder: String, text: Binding<String>) -> some View {
         HStack(spacing: 10) {
             Image(systemName: "lock.fill")
-                .font(.system(size: 14))
+                .font(SierraFont.caption1)
                 .foregroundStyle(.white.opacity(0.4))
                 .frame(width: 20)
 
             SecureField(placeholder, text: text)
                 .textFieldStyle(.plain)
-                .font(.system(size: 16))
+                .font(SierraFont.bodyText)
                 .foregroundStyle(.white)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
@@ -335,11 +333,11 @@ struct ForgotPasswordView: View {
 
             VStack(spacing: 10) {
                 Text("Password Reset!")
-                    .font(.system(size: 26, weight: .bold))
+                    .font(SierraFont.title2)
                     .foregroundStyle(.white)
 
                 Text("Your password has been updated.\nYou can now sign in with your new password.")
-                    .font(.system(size: 15))
+                    .font(SierraFont.subheadline)
                     .foregroundStyle(.white.opacity(0.6))
                     .multilineTextAlignment(.center)
                     .lineSpacing(3)
@@ -351,11 +349,11 @@ struct ForgotPasswordView: View {
                 dismiss()
             } label: {
                 Text("Back to Login")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(navyDark)
+                    .font(SierraFont.body(17, weight: .semibold))
+                    .foregroundStyle(SierraTheme.Colors.primaryText)
                     .frame(maxWidth: .infinity)
                     .frame(height: 54)
-                    .background(.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 32)
@@ -372,7 +370,7 @@ struct ForgotPasswordView: View {
                     .scaleEffect(1.3)
                     .tint(.white)
                 Text("Processing…")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(SierraFont.caption1)
                     .foregroundStyle(.white.opacity(0.8))
             }
             .padding(32)

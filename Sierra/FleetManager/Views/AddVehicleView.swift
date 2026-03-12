@@ -1,7 +1,5 @@
 import SwiftUI
 
-private let navyDark = Color(hex: "0D1B2A")
-private let accentOrange = Color(red: 1.0, green: 0.584, blue: 0.0)
 
 /// Form to add or edit a vehicle. Presented as .sheet.
 struct AddVehicleView: View {
@@ -47,7 +45,7 @@ struct AddVehicleView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color(hex: "F2F3F7").ignoresSafeArea()
+                SierraTheme.Colors.appBackground.ignoresSafeArea()
 
                 Form {
                     // Basic Info
@@ -68,8 +66,8 @@ struct AddVehicleView: View {
                                 }
                             if let err = vinError {
                                 Text(err)
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(.red)
+                                    .font(SierraFont.caption2)
+                                    .foregroundStyle(SierraTheme.Colors.danger)
                             }
                         }
                         TextField("License Plate *", text: $licensePlate)
@@ -137,7 +135,7 @@ struct AddVehicleView: View {
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(.white)
             Text(isEditing ? "Vehicle updated!" : "Vehicle added!")
-                .font(.system(size: 15, weight: .semibold))
+                .font(SierraFont.subheadline)
                 .foregroundStyle(.white)
         }
         .padding(.horizontal, 20)

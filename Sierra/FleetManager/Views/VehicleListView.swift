@@ -1,8 +1,5 @@
 import SwiftUI
 
-private let navyDark = Color(hex: "0D1B2A")
-private let accentOrange = Color(red: 1.0, green: 0.584, blue: 0.0)
-
 struct VehicleListView: View {
 
     @Environment(AppDataStore.self) private var store
@@ -14,9 +11,7 @@ struct VehicleListView: View {
 
     private var filteredVehicles: [Vehicle] {
         store.vehicles.filter { v in
-            // Status filter
             if let filter = selectedFilter, v.status != filter { return false }
-            // Search filter
             if !searchText.isEmpty {
                 let q = searchText.lowercased()
                 return v.name.lowercased().contains(q)
@@ -31,12 +26,10 @@ struct VehicleListView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Filter chips
                 filterChips
-                    .padding(.vertical, 10)
-                    .background(Color(hex: "F2F3F7"))
+                    .padding(.vertical, Spacing.sm)
+                    .background(SierraTheme.Colors.appBackground)
 
-                // Vehicle list
                 if filteredVehicles.isEmpty {
                     emptyState
                 } else {
@@ -45,7 +38,7 @@ struct VehicleListView: View {
                             NavigationLink(value: vehicle.id) {
                                 vehicleRow(vehicle)
                             }
-                            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                            .listRowInsets(EdgeInsets(top: 6, leading: Spacing.md, bottom: 6, trailing: Spacing.md))
                             .listRowSeparator(.hidden)
                             .listRowBackground(Color.clear)
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -59,7 +52,7 @@ struct VehicleListView: View {
                                 } label: {
                                     Label("Edit", systemImage: "pencil")
                                 }
-                                .tint(.orange)
+                                .tint(SierraTheme.Colors.ember)
                             }
                         }
                     }
@@ -67,7 +60,7 @@ struct VehicleListView: View {
                     .scrollContentBackground(.hidden)
                 }
             }
-            .background(Color(hex: "F2F3F7").ignoresSafeArea())
+            .background(SierraTheme.Colors.appBackground.ignoresSafeArea())
             .navigationTitle("Vehicles")
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $searchText, prompt: "Search vehicles…")
@@ -78,8 +71,7 @@ struct VehicleListView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showAddSheet = true } label: {
                         Image(systemName: "plus")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(navyDark)
+                            .font(SierraFont.body(17, weight: .semibold))
                     }
                 }
             }
@@ -110,7 +102,7 @@ struct VehicleListView: View {
 
     private var filterChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
+            HStack(spacing: Spacing.sm) {
                 filterChip("All", isSelected: selectedFilter == nil) {
                     selectedFilter = nil
                 }
@@ -120,24 +112,24 @@ struct VehicleListView: View {
                     }
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
         }
     }
 
     private func filterChip(_ label: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(isSelected ? .white : navyDark)
-                .padding(.horizontal, 14)
+                .font(SierraFont.caption1)
+                .foregroundStyle(isSelected ? .white : SierraTheme.Colors.primaryText)
+                .padding(.horizontal, Spacing.md)
                 .padding(.vertical, 7)
                 .background(
-                    isSelected ? accentOrange : .clear,
+                    isSelected ? SierraTheme.Colors.ember : .clear,
                     in: Capsule()
                 )
                 .overlay(
                     Capsule()
-                        .strokeBorder(isSelected ? .clear : navyDark.opacity(0.2), lineWidth: 1)
+                        .strokeBorder(isSelected ? .clear : SierraTheme.Colors.mist, lineWidth: 1)
                 )
         }
         .buttonStyle(.plain)
@@ -146,63 +138,37 @@ struct VehicleListView: View {
     // MARK: - Vehicle Row
 
     private func vehicleRow(_ vehicle: Vehicle) -> some View {
-        HStack(spacing: 14) {
+        HStack(spacing: Spacing.md) {
             Image(systemName: "car.fill")
                 .font(.system(size: 20))
-                .foregroundStyle(navyDark.opacity(0.7))
+                .foregroundStyle(SierraTheme.Colors.sierraBlue.opacity(0.7))
                 .frame(width: 44, height: 44)
-                .background(navyDark.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .background(SierraTheme.Colors.sierraBlue.opacity(0.06), in: RoundedRectangle(cornerRadius: Radius.avatar, style: .continuous))
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
                 Text(vehicle.name)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(navyDark)
+                    .sierraStyle(.cardTitle)
                 Text("\(vehicle.model) · \(vehicle.licensePlate)")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
+                    .sierraStyle(.caption)
             }
 
             Spacer()
 
-            statusBadge(vehicle.status)
+            SierraBadge(vehicle.status, size: .compact)
         }
-        .padding(14)
-        .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
-    }
-
-    private func statusBadge(_ status: VehicleStatus) -> some View {
-        let (text, color): (String, Color) = switch status {
-        case .active:        ("Active", .green)
-        case .inMaintenance: ("Maint.", .orange)
-        case .idle:          ("Idle", Color(hex: "8E8E93"))
-        }
-        return Text(text)
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(color)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(color.opacity(0.12), in: Capsule())
+        .padding(Spacing.md)
+        .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+        .sierraShadow(SierraTheme.Shadow.card)
     }
 
     // MARK: - Empty State
 
     private var emptyState: some View {
-        VStack(spacing: 12) {
-            Spacer()
-            Image(systemName: "car.fill")
-                .font(.system(size: 40))
-                .foregroundStyle(.gray.opacity(0.4))
-            Text("No vehicles found")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(.secondary)
-            Text(emptySubtitle)
-                .font(.system(size: 14))
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
-            Spacer()
-        }
-        .frame(maxWidth: .infinity)
+        SierraEmptyState(
+            icon: "car.fill",
+            title: "No vehicles found",
+            message: emptySubtitle
+        )
     }
 
     private var emptySubtitle: String {
@@ -211,6 +177,8 @@ struct VehicleListView: View {
         case .active:        return "No active vehicles at the moment."
         case .inMaintenance: return "No vehicles currently in maintenance."
         case .idle:          return "No idle vehicles available."
+        case .outOfService:  return "No out-of-service vehicles."
+        case .assigned:      return "No assigned vehicles at the moment."
         case .none:          return "Add your first vehicle to get started."
         }
     }

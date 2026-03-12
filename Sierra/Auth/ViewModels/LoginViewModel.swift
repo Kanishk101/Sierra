@@ -17,10 +17,19 @@ final class LoginViewModel {
     var loginSuccess: Bool = false
     var authDestination: AuthDestination?
 
+    /// `true` when the current successful login used biometrics (skip 2FA).
+    var usedBiometric: Bool = false
+
     // MARK: - Biometric
 
+    /// Show the Face ID / Touch ID button only when:
+    ///  1. Device hardware supports biometrics
+    ///  2. User previously opted-in via the enrollment sheet
+    ///  3. There is an existing session token to restore
     var showBiometricButton: Bool {
-        BiometricManager.shared.canUseBiometrics() && AuthManager.shared.hasSessionToken()
+        BiometricManager.shared.canUseBiometrics()
+            && BiometricEnrollmentSheet.isBiometricEnabled()
+            && AuthManager.shared.hasSessionToken()
     }
 
     var biometricLabel: String {
@@ -36,7 +45,7 @@ final class LoginViewModel {
     var emailError: String?
     var passwordError: String?
 
-    // MARK: - Sign In
+    // MARK: - Sign In (Credential)
 
     @MainActor
     func signIn() async {
@@ -47,6 +56,7 @@ final class LoginViewModel {
         guard validate() else { return }
 
         isLoading = true
+        usedBiometric = false
 
         do {
             let role = try await AuthManager.shared.signIn(email: email, password: password)
@@ -63,7 +73,7 @@ final class LoginViewModel {
         }
     }
 
-    // MARK: - Biometric Sign In
+    // MARK: - Biometric Sign In (skips 2FA)
 
     @MainActor
     func biometricSignIn() async {
@@ -76,6 +86,7 @@ final class LoginViewModel {
             if let _ = AuthManager.shared.restoreSession(),
                let user = AuthManager.shared.currentUser {
                 isLoading = false
+                usedBiometric = true
                 authDestination = AuthManager.shared.destination(for: user)
                 loginSuccess = true
             } else {

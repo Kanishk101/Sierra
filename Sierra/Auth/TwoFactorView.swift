@@ -1,7 +1,5 @@
 import SwiftUI
 
-private let navyDark = Color(hex: "0D1B2A")
-private let accentOrange = Color(red: 1.0, green: 0.584, blue: 0.0)
 
 /// 2FA OTP verification screen.
 /// Used for both post-login and post-password-change OTP flows.
@@ -13,7 +11,7 @@ struct TwoFactorView: View {
         ZStack {
             // Background
             LinearGradient(
-                colors: [Color(hex: "0D1B2A"), Color(hex: "1B3A6B")],
+                colors: [SierraTheme.Colors.summitNavy, SierraTheme.Colors.sierraBlue],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
@@ -58,23 +56,23 @@ struct TwoFactorView: View {
         VStack(spacing: 14) {
             Image(systemName: "truck.box.fill")
                 .font(.system(size: 50, weight: .light))
-                .foregroundStyle(accentOrange)
+                .foregroundStyle(SierraTheme.Colors.ember)
                 .symbolRenderingMode(.hierarchical)
 
             Text("Verify Identity")
-                .font(.system(size: 24, weight: .bold))
+                .font(SierraFont.title2)
                 .foregroundStyle(.white)
 
             Text(viewModel.subtitle)
-                .font(.system(size: 15))
+                .font(SierraFont.subheadline)
                 .foregroundStyle(.white.opacity(0.55))
                 .multilineTextAlignment(.center)
                 .lineSpacing(3)
                 .padding(.horizontal, 32)
 
             Text("Code sent to \(viewModel.maskedEmail)")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(accentOrange.opacity(0.8))
+                .font(SierraFont.caption1)
+                .foregroundStyle(SierraTheme.Colors.ember.opacity(0.8))
         }
     }
 
@@ -94,8 +92,8 @@ struct TwoFactorView: View {
             // Error message
             if let error = viewModel.errorMessage {
                 Text(error)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.red)
+                    .font(SierraFont.caption1)
+                    .foregroundStyle(SierraTheme.Colors.danger)
                     .multilineTextAlignment(.center)
                     .transition(.opacity)
             }
@@ -112,12 +110,12 @@ struct TwoFactorView: View {
                 viewModel.verifyCode()
             } label: {
                 Text("Verify")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(SierraFont.body(17, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .frame(height: 54)
                     .background(
-                        verifyButtonEnabled ? accentOrange : Color.gray.opacity(0.3),
+                        verifyButtonEnabled ? SierraTheme.Colors.ember : Color.gray.opacity(0.3),
                         in: RoundedRectangle(cornerRadius: 14, style: .continuous)
                     )
             }
@@ -147,10 +145,10 @@ struct TwoFactorView: View {
         VStack(spacing: 8) {
             Image(systemName: "lock.circle.fill")
                 .font(.system(size: 28))
-                .foregroundStyle(.orange)
+                .foregroundStyle(SierraTheme.Colors.warning)
 
             Text("Too many attempts")
-                .font(.system(size: 15, weight: .semibold))
+                .font(SierraFont.subheadline)
                 .foregroundStyle(.white)
 
             Text("Try again in \(viewModel.lockoutSecondsRemaining)s")
@@ -159,10 +157,10 @@ struct TwoFactorView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity)
-        .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(SierraTheme.Colors.warning.opacity(0.1), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(.orange.opacity(0.2), lineWidth: 1)
+                .strokeBorder(SierraTheme.Colors.warning.opacity(0.2), lineWidth: 1)
         )
     }
 
@@ -174,19 +172,19 @@ struct TwoFactorView: View {
                 viewModel.tryAgain()
             } label: {
                 Text("Try Again")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(SierraFont.subheadline)
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .frame(height: 44)
-                    .background(accentOrange.opacity(0.8), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .background(SierraTheme.Colors.ember.opacity(0.8), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
 
             Button {
                 viewModel.cancelAndGoBack()
             } label: {
                 Text("Cancel & Go Back")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.red.opacity(0.8))
+                    .font(SierraFont.caption1)
+                    .foregroundStyle(SierraTheme.Colors.danger.opacity(0.8))
             }
         }
     }
@@ -196,18 +194,18 @@ struct TwoFactorView: View {
     private var resendSection: some View {
         HStack(spacing: 4) {
             Text("Didn't receive a code?")
-                .font(.system(size: 13))
+                .font(SierraFont.caption1)
                 .foregroundStyle(.white.opacity(0.4))
 
             if viewModel.canResend {
                 Button("Resend") {
                     viewModel.resendCode()
                 }
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(accentOrange)
+                .font(SierraFont.caption1)
+                .foregroundStyle(SierraTheme.Colors.ember)
             } else {
                 Text("Resend in \(viewModel.resendSecondsRemaining)s")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(SierraFont.caption1)
                     .foregroundStyle(.white.opacity(0.3))
             }
         }
@@ -221,9 +219,9 @@ struct TwoFactorView: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "arrow.left")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(SierraFont.caption1)
                 Text("Cancel & Go Back")
-                    .font(.system(size: 15, weight: .medium))
+                    .font(SierraFont.subheadline)
             }
             .foregroundStyle(.white.opacity(0.5))
         }
@@ -239,7 +237,7 @@ struct TwoFactorView: View {
                     .scaleEffect(1.3)
                     .tint(.white)
                 Text("Verifying…")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(SierraFont.caption1)
                     .foregroundStyle(.white.opacity(0.8))
             }
             .padding(32)

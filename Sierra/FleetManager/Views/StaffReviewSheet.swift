@@ -1,7 +1,5 @@
 import SwiftUI
 
-private let navyDark = Color(hex: "0D1B2A")
-private let accentOrange = Color(red: 1.0, green: 0.584, blue: 0.0)
 
 struct StaffReviewSheet: View {
     let application: StaffApplication
@@ -70,7 +68,7 @@ struct StaffReviewSheet: View {
                     }
                 }
             }
-            .background(Color(hex: "F2F3F7").ignoresSafeArea())
+            .background(SierraTheme.Colors.appBackground.ignoresSafeArea())
             .navigationTitle("Review Application")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -105,33 +103,33 @@ struct StaffReviewSheet: View {
 
     private var profileHeader: some View {
         VStack(spacing: 14) {
-            initialsCircle(application.initials, size: 64, bg: accentOrange)
+            initialsCircle(application.initials, size: 64, bg: SierraTheme.Colors.ember)
 
             VStack(spacing: 4) {
                 Text(application.name)
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(navyDark)
+                    .font(SierraFont.title3)
+                    .foregroundStyle(SierraTheme.Colors.primaryText)
                 Text(application.email)
-                    .font(.system(size: 14))
+                    .font(SierraFont.caption1)
                     .foregroundStyle(.secondary)
             }
 
             HStack(spacing: 8) {
                 Label(application.role.displayName, systemImage: application.role == .driver ? "car.fill" : "wrench.fill")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(navyDark.opacity(0.6))
+                    .font(SierraFont.caption1)
+                    .foregroundStyle(SierraTheme.Colors.granite)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 5)
-                    .background(navyDark.opacity(0.06), in: Capsule())
+                    .background(SierraTheme.Colors.sierraBlue.opacity(0.06), in: Capsule())
 
                 Text("Submitted \(application.daysAgo)")
-                    .font(.system(size: 12))
+                    .font(SierraFont.caption2)
                     .foregroundStyle(.secondary)
             }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 20)
-        .background(.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
     }
 
@@ -142,15 +140,15 @@ struct StaffReviewSheet: View {
     private func detailSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title)
-                .font(.system(size: 14, weight: .bold))
-                .foregroundStyle(navyDark.opacity(0.5))
+                .font(SierraFont.body(14, weight: .bold))
+                .foregroundStyle(SierraTheme.Colors.granite)
                 .textCase(.uppercase)
                 .tracking(0.5)
 
             VStack(spacing: 0) {
                 content()
             }
-            .background(.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .shadow(color: .black.opacity(0.03), radius: 4, y: 2)
         }
     }
@@ -159,12 +157,12 @@ struct StaffReviewSheet: View {
         VStack(spacing: 0) {
             HStack {
                 Text(label)
-                    .font(.system(size: 14))
+                    .font(SierraFont.caption1)
                     .foregroundStyle(.secondary)
                 Spacer()
                 Text(value)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(navyDark)
+                    .font(SierraFont.caption1)
+                    .foregroundStyle(SierraTheme.Colors.primaryText)
                     .multilineTextAlignment(.trailing)
             }
             .padding(.horizontal, 16)
@@ -179,21 +177,21 @@ struct StaffReviewSheet: View {
         HStack(spacing: 12) {
             Image(systemName: icon)
                 .font(.system(size: 18))
-                .foregroundStyle(accentOrange)
+                .foregroundStyle(SierraTheme.Colors.ember)
                 .frame(width: 38, height: 38)
-                .background(accentOrange.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(SierraTheme.Colors.ember.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(navyDark)
+                    .font(SierraFont.caption1)
+                    .foregroundStyle(SierraTheme.Colors.primaryText)
                 Text(number)
                     .font(.system(size: 13, design: .monospaced))
                     .foregroundStyle(.secondary)
                 if let expiry {
                     Text("Expires: \(expiry)")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.orange)
+                        .font(SierraFont.caption2)
+                        .foregroundStyle(SierraTheme.Colors.warning)
                 }
             }
 
@@ -252,17 +250,17 @@ struct StaffReviewSheet: View {
                     if let specs = application.specializations, !specs.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Specializations")
-                                .font(.system(size: 14))
+                                .font(SierraFont.caption1)
                                 .foregroundStyle(.secondary)
 
                             FlowLayout(spacing: 6) {
                                 ForEach(specs, id: \.self) { spec in
                                     Text(spec)
-                                        .font(.system(size: 12, weight: .medium))
-                                        .foregroundStyle(navyDark.opacity(0.7))
+                                        .font(SierraFont.caption2)
+                                        .foregroundStyle(SierraTheme.Colors.secondaryText)
                                         .padding(.horizontal, 10)
                                         .padding(.vertical, 5)
-                                        .background(accentOrange.opacity(0.1), in: Capsule())
+                                        .background(SierraTheme.Colors.ember.opacity(0.1), in: Capsule())
                                 }
                             }
                         }
@@ -282,15 +280,15 @@ struct StaffReviewSheet: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Image(systemName: "xmark.octagon.fill")
-                    .font(.system(size: 16))
-                    .foregroundStyle(.red)
+                    .font(SierraFont.bodyText)
+                    .foregroundStyle(SierraTheme.Colors.danger)
                 Text("Rejected")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(.red)
+                    .font(SierraFont.body(14, weight: .bold))
+                    .foregroundStyle(SierraTheme.Colors.danger)
             }
             Text(reason)
-                .font(.system(size: 14))
-                .foregroundStyle(navyDark.opacity(0.7))
+                .font(SierraFont.caption1)
+                .foregroundStyle(SierraTheme.Colors.secondaryText)
                 .lineSpacing(3)
         }
         .padding(16)
@@ -305,16 +303,16 @@ struct StaffReviewSheet: View {
     private var rejectReasonInput: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Reason for Rejection")
-                .font(.system(size: 14, weight: .bold))
-                .foregroundStyle(navyDark)
+                .font(SierraFont.body(14, weight: .bold))
+                .foregroundStyle(SierraTheme.Colors.primaryText)
 
             TextEditor(text: $viewModel.rejectionReason)
-                .font(.system(size: 15))
-                .foregroundStyle(navyDark)
+                .font(SierraFont.subheadline)
+                .foregroundStyle(SierraTheme.Colors.primaryText)
                 .scrollContentBackground(.hidden)
                 .frame(minHeight: 80)
                 .padding(12)
-                .background(.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .strokeBorder(.red.opacity(0.3), lineWidth: 1)
@@ -327,7 +325,7 @@ struct StaffReviewSheet: View {
                 }
             } label: {
                 Text("Confirm Rejection")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(SierraFont.subheadline)
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .frame(height: 46)
@@ -353,14 +351,14 @@ struct StaffReviewSheet: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "xmark")
-                        .font(.system(size: 14, weight: .bold))
+                        .font(SierraFont.body(14, weight: .bold))
                     Text("Reject")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(SierraFont.body(16, weight: .semibold))
                 }
-                .foregroundStyle(.red)
+                .foregroundStyle(SierraTheme.Colors.danger)
                 .frame(maxWidth: .infinity)
                 .frame(height: 52)
-                .background(.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .strokeBorder(.red.opacity(0.4), lineWidth: 1.5)
@@ -370,9 +368,9 @@ struct StaffReviewSheet: View {
             Button { showApproveAlert = true } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 14, weight: .bold))
+                        .font(SierraFont.body(14, weight: .bold))
                     Text("Approve")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(SierraFont.body(16, weight: .semibold))
                 }
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
@@ -396,9 +394,9 @@ struct StaffReviewSheet: View {
             VStack(spacing: 14) {
                 ProgressView()
                     .scaleEffect(1.2)
-                    .tint(accentOrange)
+                    .tint(SierraTheme.Colors.ember)
                 Text("Processing…")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(SierraFont.caption1)
                     .foregroundStyle(.secondary)
             }
             .padding(28)

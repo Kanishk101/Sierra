@@ -11,15 +11,8 @@ enum FuelType: String, Codable, CaseIterable, CustomStringConvertible {
     var description: String { rawValue }
 }
 
-// MARK: - Vehicle Status
-
-enum VehicleStatus: String, Codable, CaseIterable {
-    case active        = "Active"
-    case inMaintenance = "In Maintenance"
-    case idle          = "Idle"
-}
-
 // MARK: - Vehicle
+
 
 struct Vehicle: Identifiable, Codable {
     let id: UUID

@@ -1,6 +1,5 @@
 import SwiftUI
 
-private let navyDark = Color(hex: "0D1B2A")
 
 struct AdminProfileView: View {
     @Environment(\.dismiss) private var dismiss
@@ -14,19 +13,19 @@ struct AdminProfileView: View {
                 .padding(.top, 10)
 
             // Avatar
-            initialsCircle("FA", size: 72, bg: Color(red: 1.0, green: 0.584, blue: 0.0))
+            initialsCircle("FA", size: 72, bg: SierraTheme.Colors.ember)
 
             VStack(spacing: 4) {
                 Text("Fleet Admin")
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(navyDark)
+                    .font(SierraFont.title3)
+                    .foregroundStyle(SierraTheme.Colors.primaryText)
 
                 Text("admin@fleeeos.com")
-                    .font(.system(size: 15))
+                    .font(SierraFont.subheadline)
                     .foregroundStyle(.secondary)
 
                 Text("Fleet Manager")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(SierraFont.caption1)
                     .foregroundStyle(.blue)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 4)
@@ -42,11 +41,11 @@ struct AdminProfileView: View {
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "rectangle.portrait.and.arrow.right")
-                        .font(.system(size: 16))
+                        .font(SierraFont.bodyText)
                     Text("Log Out")
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(SierraFont.body(17, weight: .semibold))
                 }
-                .foregroundStyle(.red)
+                .foregroundStyle(SierraTheme.Colors.danger)
                 .frame(maxWidth: .infinity)
                 .frame(height: 50)
                 .background(.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -58,7 +57,7 @@ struct AdminProfileView: View {
             .padding(.horizontal, 24)
             .padding(.bottom, 16)
         }
-        .background(Color(hex: "F2F3F7").ignoresSafeArea())
+        .background(SierraTheme.Colors.appBackground.ignoresSafeArea())
     }
 }
 

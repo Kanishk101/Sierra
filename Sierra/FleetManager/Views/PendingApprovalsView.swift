@@ -1,7 +1,5 @@
 import SwiftUI
 
-private let navyDark = Color(hex: "0D1B2A")
-private let accentOrange = Color(red: 1.0, green: 0.584, blue: 0.0)
 
 struct PendingApprovalsView: View {
     @State private var viewModel = StaffApprovalViewModel()
@@ -43,7 +41,7 @@ struct PendingApprovalsView: View {
                     }
                 }
             }
-            .background(Color(hex: "F2F3F7").ignoresSafeArea())
+            .background(SierraTheme.Colors.appBackground.ignoresSafeArea())
             .navigationTitle("Staff Applications")
             .navigationBarTitleDisplayMode(.inline)
             .animation(.easeInOut(duration: 0.25), value: viewModel.selectedFilter)
@@ -62,15 +60,15 @@ struct PendingApprovalsView: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(app.name)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(navyDark)
+                    .font(SierraFont.body(16, weight: .semibold))
+                    .foregroundStyle(SierraTheme.Colors.primaryText)
 
                 HStack(spacing: 8) {
                     roleBadge(app.role)
                     Text("·")
                         .foregroundStyle(.tertiary)
                     Text(app.daysAgo)
-                        .font(.system(size: 12))
+                        .font(SierraFont.caption2)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -79,17 +77,17 @@ struct PendingApprovalsView: View {
 
             if app.status == .pending {
                 Text("Review")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(accentOrange)
+                    .font(SierraFont.caption1)
+                    .foregroundStyle(SierraTheme.Colors.ember)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 7)
-                    .background(accentOrange.opacity(0.1), in: Capsule())
+                    .background(SierraTheme.Colors.ember.opacity(0.1), in: Capsule())
             } else {
                 statusBadge(app.status)
             }
         }
         .padding(16)
-        .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
     }
 
@@ -98,20 +96,20 @@ struct PendingApprovalsView: View {
     private func roleBadge(_ role: UserRole) -> some View {
         Text(role.displayName)
             .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(navyDark.opacity(0.6))
+            .foregroundStyle(SierraTheme.Colors.granite)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
-            .background(navyDark.opacity(0.06), in: Capsule())
+            .background(SierraTheme.Colors.sierraBlue.opacity(0.06), in: Capsule())
     }
 
     private func statusBadge(_ status: ApprovalStatus) -> some View {
         let (text, color): (String, Color) = switch status {
-        case .pending:  ("Pending", .orange)
+        case .pending:  ("Pending", SierraTheme.Colors.warning)
         case .approved: ("Approved", .green)
         case .rejected: ("Rejected", .red)
         }
         return Text(text)
-            .font(.system(size: 12, weight: .semibold))
+            .font(SierraFont.caption2)
             .foregroundStyle(color)
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
@@ -120,9 +118,9 @@ struct PendingApprovalsView: View {
 
     private func avatarColor(for status: ApprovalStatus) -> Color {
         switch status {
-        case .pending:  .orange
-        case .approved: Color(hex: "1B3A6B")
-        case .rejected: .red.opacity(0.7)
+        case .pending:  SierraTheme.Colors.warning
+        case .approved: SierraTheme.Colors.sierraBlue
+        case .rejected: SierraTheme.Colors.danger.opacity(0.7)
         }
     }
 

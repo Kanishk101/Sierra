@@ -1,6 +1,5 @@
 import SwiftUI
 
-private let accentOrange = Color(red: 1.0, green: 0.584, blue: 0.0)
 
 /// One-time sheet asking the user to enable Face ID after first successful login.
 /// Stores the preference and prompt flag in Keychain.
@@ -21,16 +20,16 @@ struct BiometricEnrollmentSheet: View {
             // Face ID icon
             Image(systemName: biometric.biometricIconName)
                 .font(.system(size: 64))
-                .foregroundStyle(accentOrange)
+                .foregroundStyle(SierraTheme.Colors.ember)
                 .padding(.bottom, 8)
 
             Text("Enable \(biometric.biometricDisplayName)?")
-                .font(.system(size: 22, weight: .bold))
+                .font(SierraFont.title3)
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
 
             Text("Use \(biometric.biometricDisplayName) for faster, more secure sign-in to FleetOS.")
-                .font(.system(size: 15))
+                .font(SierraFont.subheadline)
                 .foregroundStyle(.white.opacity(0.55))
                 .multilineTextAlignment(.center)
                 .lineSpacing(3)
@@ -43,12 +42,12 @@ struct BiometricEnrollmentSheet: View {
                 enableBiometric()
             } label: {
                 Text("Allow \(biometric.biometricDisplayName)")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(SierraFont.body(17, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .frame(height: 54)
                     .background(
-                        accentOrange,
+                        SierraTheme.Colors.ember,
                         in: RoundedRectangle(cornerRadius: 14, style: .continuous)
                     )
             }
@@ -58,7 +57,7 @@ struct BiometricEnrollmentSheet: View {
                 skipBiometric()
             } label: {
                 Text("Skip for Now")
-                    .font(.system(size: 15, weight: .medium))
+                    .font(SierraFont.subheadline)
                     .foregroundStyle(.white.opacity(0.5))
             }
             .padding(.bottom, 20)
@@ -66,7 +65,7 @@ struct BiometricEnrollmentSheet: View {
         .padding(24)
         .background(
             LinearGradient(
-                colors: [Color(hex: "0D1B2A"), Color(hex: "1B3A6B")],
+                colors: [SierraTheme.Colors.summitNavy, SierraTheme.Colors.sierraBlue],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )

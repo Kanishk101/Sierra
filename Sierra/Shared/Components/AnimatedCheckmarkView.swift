@@ -61,7 +61,7 @@ struct CheckmarkShape: Shape {
 
 #Preview {
     ZStack {
-        Color(hex: "0D1B2A").ignoresSafeArea()
+        SierraTheme.Colors.summitNavy.ignoresSafeArea()
         AnimatedCheckmarkView(size: 120, color: .green)
     }
 }

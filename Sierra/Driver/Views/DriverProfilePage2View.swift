@@ -1,8 +1,6 @@
 import SwiftUI
 import PhotosUI
 
-private let navyDark = Color(hex: "0D1B2A")
-private let accentOrange = Color(red: 1.0, green: 0.584, blue: 0.0)
 
 struct DriverProfilePage2View: View {
     @Bindable var viewModel: DriverProfileViewModel
@@ -22,10 +20,10 @@ struct DriverProfilePage2View: View {
                     // Header
                     VStack(spacing: 4) {
                         Text("Documentation")
-                            .font(.system(size: 22, weight: .bold))
-                            .foregroundStyle(navyDark)
+                            .font(SierraFont.title3)
+                            .foregroundStyle(SierraTheme.Colors.primaryText)
                         Text("Upload your identity documents")
-                            .font(.system(size: 15))
+                            .font(SierraFont.subheadline)
                             .foregroundStyle(.secondary)
                     }
                     .padding(.top, 8)
@@ -36,7 +34,7 @@ struct DriverProfilePage2View: View {
                         VStack(alignment: .leading, spacing: 5) {
                             HStack(spacing: 10) {
                                 Image(systemName: "number")
-                                    .font(.system(size: 14))
+                                    .font(SierraFont.caption1)
                                     .foregroundStyle(.secondary)
                                     .frame(width: 20)
 
@@ -46,12 +44,12 @@ struct DriverProfilePage2View: View {
                                 ))
                                 .textFieldStyle(.plain)
                                 .font(.system(size: 16, design: .monospaced))
-                                .foregroundStyle(navyDark)
+                                .foregroundStyle(SierraTheme.Colors.primaryText)
                                 .keyboardType(.numberPad)
                             }
                             .padding(.horizontal, 16)
                             .frame(height: 52)
-                            .background(.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                                     .strokeBorder(viewModel.aadhaarError != nil ? .red.opacity(0.5) : .clear, lineWidth: 1)
@@ -88,20 +86,20 @@ struct DriverProfilePage2View: View {
                         VStack(alignment: .leading, spacing: 5) {
                             HStack(spacing: 10) {
                                 Image(systemName: "number")
-                                    .font(.system(size: 14))
+                                    .font(SierraFont.caption1)
                                     .foregroundStyle(.secondary)
                                     .frame(width: 20)
 
                                 TextField("License Number", text: $viewModel.licenseNumber)
                                     .textFieldStyle(.plain)
-                                    .font(.system(size: 16))
-                                    .foregroundStyle(navyDark)
+                                    .font(SierraFont.bodyText)
+                                    .foregroundStyle(SierraTheme.Colors.primaryText)
                                     .autocorrectionDisabled()
                                     .textInputAutocapitalization(.characters)
                             }
                             .padding(.horizontal, 16)
                             .frame(height: 52)
-                            .background(.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                                     .strokeBorder(viewModel.licenseNumberError != nil ? .red.opacity(0.5) : .clear, lineWidth: 1)
@@ -116,11 +114,11 @@ struct DriverProfilePage2View: View {
                         // Expiry date
                         HStack(spacing: 10) {
                             Image(systemName: "calendar.badge.clock")
-                                .font(.system(size: 14))
+                                .font(SierraFont.caption1)
                                 .foregroundStyle(.secondary)
                                 .frame(width: 20)
                             Text("Expiry Date")
-                                .font(.system(size: 15))
+                                .font(SierraFont.subheadline)
                                 .foregroundStyle(.secondary)
                             Spacer()
                             DatePicker("", selection: $viewModel.licenseExpiryDate, in: Date()..., displayedComponents: .date)
@@ -128,7 +126,7 @@ struct DriverProfilePage2View: View {
                         }
                         .padding(.horizontal, 16)
                         .frame(height: 52)
-                        .background(.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .shadow(color: .black.opacity(0.03), radius: 4, y: 2)
 
                         // Image uploads
@@ -218,10 +216,10 @@ struct DriverProfilePage2View: View {
                     VStack(spacing: 8) {
                         Image(systemName: "camera.fill")
                             .font(.system(size: 20))
-                            .foregroundStyle(accentOrange)
+                            .foregroundStyle(SierraTheme.Colors.ember)
 
                         Text(label)
-                            .font(.system(size: 13, weight: .medium))
+                            .font(SierraFont.caption1)
                             .foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity)
@@ -229,7 +227,7 @@ struct DriverProfilePage2View: View {
                     .background(
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
                             .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
-                            .foregroundStyle(accentOrange.opacity(0.4))
+                            .foregroundStyle(SierraTheme.Colors.ember.opacity(0.4))
                     )
                 }
                 .buttonStyle(.plain)
@@ -247,11 +245,11 @@ struct DriverProfilePage2View: View {
                 viewModel.goBack()
             } label: {
                 Text("Back")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(navyDark)
+                    .font(SierraFont.body(17, weight: .semibold))
+                    .foregroundStyle(SierraTheme.Colors.primaryText)
                     .frame(maxWidth: .infinity)
                     .frame(height: 54)
-                    .background(navyDark.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .background(SierraTheme.Colors.sierraBlue.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
             .frame(maxWidth: .infinity)
 
@@ -259,11 +257,11 @@ struct DriverProfilePage2View: View {
                 Task { await viewModel.submitProfile() }
             } label: {
                 Text("Submit Application")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(SierraFont.body(17, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .frame(height: 54)
-                    .background(accentOrange, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .background(SierraTheme.Colors.ember, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
             .frame(maxWidth: .infinity)
         }
@@ -280,11 +278,11 @@ struct DriverProfilePage2View: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 6) {
                 Image(systemName: icon)
-                    .font(.system(size: 14))
-                    .foregroundStyle(accentOrange)
+                    .font(SierraFont.caption1)
+                    .foregroundStyle(SierraTheme.Colors.ember)
                 Text(title)
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(navyDark.opacity(0.5))
+                    .font(SierraFont.body(14, weight: .bold))
+                    .foregroundStyle(SierraTheme.Colors.granite)
                     .textCase(.uppercase)
                     .tracking(0.5)
             }
@@ -297,7 +295,7 @@ struct DriverProfilePage2View: View {
 
     private func inlineError(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 12, weight: .medium))
+            .font(SierraFont.caption2)
             .foregroundStyle(.red.opacity(0.85))
             .padding(.leading, 4)
             .transition(.opacity)
@@ -310,9 +308,9 @@ struct DriverProfilePage2View: View {
             VStack(spacing: 16) {
                 ProgressView()
                     .scaleEffect(1.3)
-                    .tint(accentOrange)
+                    .tint(SierraTheme.Colors.ember)
                 Text("Submitting profile…")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(SierraFont.caption1)
                     .foregroundStyle(.secondary)
             }
             .padding(32)

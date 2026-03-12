@@ -1,7 +1,5 @@
 import SwiftUI
 
-private let navyDark = Color(hex: "0D1B2A")
-private let accentOrange = Color(red: 1.0, green: 0.584, blue: 0.0)
 
 struct MaintenanceApplicationSubmittedView: View {
     @State private var checkmarkProgress: CGFloat = 0
@@ -16,7 +14,7 @@ struct MaintenanceApplicationSubmittedView: View {
     var body: some View {
         ZStack {
             LinearGradient(
-                colors: [Color(hex: "0D1B2A"), Color(hex: "1B3A6B")],
+                colors: [SierraTheme.Colors.summitNavy, SierraTheme.Colors.sierraBlue],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
@@ -67,11 +65,11 @@ struct MaintenanceApplicationSubmittedView: View {
 
                     VStack(spacing: 10) {
                         Text("Application Submitted!")
-                            .font(.system(size: 26, weight: .bold))
+                            .font(SierraFont.title2)
                             .foregroundStyle(.white)
 
                         Text("Your technician profile is under review.\nA fleet administrator will verify your credentials shortly.")
-                            .font(.system(size: 15))
+                            .font(SierraFont.subheadline)
                             .foregroundStyle(.white.opacity(0.55))
                             .multilineTextAlignment(.center)
                             .lineSpacing(4)
@@ -108,25 +106,25 @@ struct MaintenanceApplicationSubmittedView: View {
         HStack(spacing: 12) {
             Image(systemName: isRejected ? "xmark.octagon.fill" : "clock.fill")
                 .font(.system(size: 20))
-                .foregroundStyle(isRejected ? .red : .orange)
+                .foregroundStyle(isRejected ? .red : SierraTheme.Colors.warning)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("Status")
-                    .font(.system(size: 12))
+                    .font(SierraFont.caption2)
                     .foregroundStyle(.white.opacity(0.5))
                 Text(isRejected ? "Application Rejected" : "Pending Review")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(SierraFont.body(16, weight: .semibold))
                     .foregroundStyle(.white)
             }
 
             Spacer()
 
             Text(isRejected ? "Rejected" : "Pending")
-                .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(isRejected ? .red : .orange)
+                .font(SierraFont.body(12, weight: .bold))
+                .foregroundStyle(isRejected ? .red : SierraTheme.Colors.warning)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
-                .background((isRejected ? Color.red : .orange).opacity(0.15), in: Capsule())
+                .background((isRejected ? Color.red : SierraTheme.Colors.warning).opacity(0.15), in: Capsule())
         }
         .padding(18)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -143,15 +141,15 @@ struct MaintenanceApplicationSubmittedView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 14))
-                    .foregroundStyle(.red)
+                    .font(SierraFont.caption1)
+                    .foregroundStyle(SierraTheme.Colors.danger)
                 Text("Rejection Reason")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(SierraFont.body(14, weight: .bold))
                     .foregroundStyle(.white)
             }
 
             Text(reason)
-                .font(.system(size: 14))
+                .font(SierraFont.caption1)
                 .foregroundStyle(.white.opacity(0.7))
                 .lineSpacing(3)
 
@@ -160,14 +158,14 @@ struct MaintenanceApplicationSubmittedView: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "envelope.fill")
-                        .font(.system(size: 13))
+                        .font(SierraFont.caption1)
                     Text("Contact Admin")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(SierraFont.caption1)
                 }
                 .foregroundStyle(.white)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
-                .background(.red.opacity(0.7), in: Capsule())
+                .background(SierraTheme.Colors.danger.opacity(0.7), in: Capsule())
             }
             .padding(.top, 4)
         }
@@ -192,10 +190,10 @@ struct MaintenanceApplicationSubmittedView: View {
                     ProgressView().scaleEffect(0.8).tint(.white)
                 } else {
                     Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(SierraFont.subheadline)
                 }
                 Text(isRefreshing ? "Checking…" : "Refresh Status")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(SierraFont.subheadline)
             }
             .foregroundStyle(.white.opacity(0.7))
             .frame(maxWidth: .infinity)
@@ -216,9 +214,9 @@ struct MaintenanceApplicationSubmittedView: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "rectangle.portrait.and.arrow.right")
-                    .font(.system(size: 14))
+                    .font(SierraFont.caption1)
                 Text("Sign Out")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(SierraFont.subheadline)
             }
             .foregroundStyle(.white.opacity(0.5))
             .frame(maxWidth: .infinity)
@@ -241,16 +239,16 @@ struct MaintenanceApplicationSubmittedView: View {
                     .frame(width: 120, height: 120)
                 Image(systemName: "checkmark.seal.fill")
                     .font(.system(size: 60))
-                    .foregroundStyle(.green)
+                    .foregroundStyle(SierraTheme.Colors.alpineMint)
                     .symbolRenderingMode(.hierarchical)
             }
 
             VStack(spacing: 10) {
                 Text("You're Approved!")
-                    .font(.system(size: 28, weight: .bold))
+                    .font(SierraFont.title1)
                     .foregroundStyle(.white)
                 Text("Welcome to FleetOS. You can now access maintenance features.")
-                    .font(.system(size: 15))
+                    .font(SierraFont.subheadline)
                     .foregroundStyle(.white.opacity(0.6))
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 40)
@@ -267,7 +265,7 @@ struct MaintenanceApplicationSubmittedView: View {
                 }
             } label: {
                 Text("Get Started")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(SierraFont.body(17, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .frame(height: 54)

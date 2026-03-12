@@ -49,7 +49,7 @@ struct PasswordStrengthView: View {
 
             HStack {
                 Text(strength.label)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(SierraFont.caption2)
                     .foregroundStyle(strength.color)
                 Spacer()
             }
@@ -72,11 +72,11 @@ struct PasswordStrengthView: View {
     private func requirementRow(_ text: String, met: Bool) -> some View {
         HStack(spacing: 8) {
             Image(systemName: met ? "checkmark.circle.fill" : "xmark.circle")
-                .font(.system(size: 14))
+                .font(SierraFont.caption1)
                 .foregroundStyle(met ? .green : .white.opacity(0.3))
 
             Text(text)
-                .font(.system(size: 13, weight: .medium))
+                .font(SierraFont.caption1)
                 .foregroundStyle(met ? .white.opacity(0.9) : .white.opacity(0.4))
         }
         .animation(.easeInOut(duration: 0.15), value: met)
@@ -85,7 +85,7 @@ struct PasswordStrengthView: View {
 
 #Preview {
     ZStack {
-        Color(hex: "0D1B2A").ignoresSafeArea()
+        SierraTheme.Colors.summitNavy.ignoresSafeArea()
         PasswordStrengthView(password: "Test@12")
             .padding()
     }

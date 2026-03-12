@@ -25,8 +25,6 @@ struct SixDigitInputView: View {
     var shakeCount: Int = 0
     var onComplete: () -> Void
 
-    private let navyDark = Color(hex: "0D1B2A")
-    private let accentOrange = Color(red: 1.0, green: 0.584, blue: 0.0)
 
     var body: some View {
         HStack(spacing: 10) {
@@ -106,7 +104,6 @@ struct SingleDigitField: View {
     let onBackspace: () -> Void
     var onPaste: ((String) -> Void)? = nil
 
-    private let accentOrange = Color(red: 1.0, green: 0.584, blue: 0.0)
 
     var body: some View {
         BackspaceDetectingTextField(
@@ -118,7 +115,7 @@ struct SingleDigitField: View {
         .frame(width: 45, height: 56)
         .multilineTextAlignment(.center)
         .font(.system(size: 22, weight: .bold, design: .rounded))
-        .foregroundStyle(Color(hex: "0D1B2A"))
+        .foregroundStyle(SierraTheme.Colors.primaryText)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(.white)
@@ -126,12 +123,12 @@ struct SingleDigitField: View {
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(
-                    isFocused ? accentOrange : Color.gray.opacity(0.25),
+                    isFocused ? SierraTheme.Colors.ember : Color.gray.opacity(0.25),
                     lineWidth: isFocused ? 2 : 1
                 )
         )
         .shadow(
-            color: isFocused ? accentOrange.opacity(0.15) : .clear,
+            color: isFocused ? SierraTheme.Colors.ember.opacity(0.15) : .clear,
             radius: 6, y: 2
         )
         .contentShape(Rectangle())
@@ -157,8 +154,8 @@ struct BackspaceDetectingTextField: UIViewRepresentable {
         tf.font = .systemFont(ofSize: 22, weight: .bold)
         tf.delegate = context.coordinator
         tf.onBackspace = onBackspace
-        tf.textColor = UIColor(Color(hex: "0D1B2A"))
-        tf.tintColor = UIColor(Color(red: 1.0, green: 0.584, blue: 0.0))
+        tf.textColor = UIColor(SierraTheme.Colors.primaryText)
+        tf.tintColor = UIColor(SierraTheme.Colors.ember)
         return tf
     }
 

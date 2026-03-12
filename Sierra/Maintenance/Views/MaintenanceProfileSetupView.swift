@@ -1,7 +1,5 @@
 import SwiftUI
 
-private let navyDark = Color(hex: "0D1B2A")
-private let accentOrange = Color(red: 1.0, green: 0.584, blue: 0.0)
 
 struct MaintenanceProfileSetupView: View {
     @State private var viewModel = MaintenanceProfileViewModel()
@@ -27,7 +25,7 @@ struct MaintenanceProfileSetupView: View {
             }
             .animation(.easeInOut(duration: 0.3), value: viewModel.currentStep)
         }
-        .background(Color(hex: "F2F3F7").ignoresSafeArea())
+        .background(SierraTheme.Colors.appBackground.ignoresSafeArea())
         .interactiveDismissDisabled()
         .navigationBarBackButtonHidden(true)
         .fullScreenCover(isPresented: $viewModel.profileSubmitted) {
@@ -38,17 +36,17 @@ struct MaintenanceProfileSetupView: View {
     private var stepIndicator: some View {
         VStack(spacing: 10) {
             Text("Step \(viewModel.currentStep) of 2")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(navyDark)
+                .font(SierraFont.caption1)
+                .foregroundStyle(SierraTheme.Colors.primaryText)
 
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(navyDark.opacity(0.08))
+                        .fill(SierraTheme.Colors.sierraBlue.opacity(0.08))
                         .frame(height: 6)
 
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(accentOrange)
+                        .fill(SierraTheme.Colors.ember)
                         .frame(
                             width: geo.size.width * (CGFloat(viewModel.currentStep) / 2.0),
                             height: 6

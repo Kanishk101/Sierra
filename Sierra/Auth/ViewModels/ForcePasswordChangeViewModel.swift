@@ -21,7 +21,7 @@ enum PasswordStrength: Int, Comparable {
     var color: Color {
         switch self {
         case .weak:   .red
-        case .fair:   .orange
+        case .fair:   SierraTheme.Colors.warning
         case .strong: .green
         }
     }

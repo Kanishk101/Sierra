@@ -1,8 +1,5 @@
 import SwiftUI
 
-/// Accent orange used across the auth flow.
-private let accentOrange = Color(red: 1.0, green: 0.584, blue: 0.0) // #FF9500
-
 struct LoginView: View {
     @State private var viewModel = LoginViewModel()
     @State private var cardAppeared = false
@@ -16,7 +13,7 @@ struct LoginView: View {
         ZStack {
             // Dark navy → deep blue gradient
             LinearGradient(
-                colors: [Color(hex: "0D1B2A"), Color(hex: "1B3A6B")],
+                colors: [SierraTheme.Colors.summitNavy, SierraTheme.Colors.sierraBlue],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
@@ -43,16 +40,11 @@ struct LoginView: View {
                 ScrollView {
                     VStack(spacing: 0) {
                         Spacer(minLength: 80)
-
-                        // Logo & title
                         headerSection
                             .padding(.bottom, 40)
-
-                        // Login card
                         loginCard
                             .scaleEffect(cardAppeared ? 1 : 0.92)
                             .opacity(cardAppeared ? 1 : 0)
-
                         Spacer(minLength: 80)
                     }
                     .frame(minHeight: geo.size.height)
@@ -79,7 +71,6 @@ struct LoginView: View {
             ForgotPasswordView()
         }
         .sheet(isPresented: $showBiometricEnrollment, onDismiss: {
-            // After enrollment prompt dismissed, show destination
             showDestination = true
         }) {
             BiometricEnrollmentSheet()
@@ -87,86 +78,91 @@ struct LoginView: View {
         }
         .onChange(of: viewModel.loginSuccess) { _, success in
             guard success else { return }
-            // Login succeeded — generate OTP and show 2FA
-            AuthManager.shared.generateOTP()
-            twoFactorVM = TwoFactorViewModel(
-                subtitle: "Enter the code sent to verify your identity.",
-                maskedEmail: AuthManager.shared.maskedEmail,
-                onVerified: { [self] in
-                    showTwoFactor = false
-                    // Check if we should prompt for biometric enrollment
-                    if BiometricEnrollmentSheet.shouldPrompt() {
-                        showBiometricEnrollment = true
-                    } else {
-                        showDestination = true
+
+            if viewModel.usedBiometric {
+                // ── Face ID / Touch ID login → skip 2FA entirely ──
+                showDestination = true
+            } else {
+                // ── Credential login → send OTP to email → verify ──
+                AuthManager.shared.generateOTP()
+                twoFactorVM = TwoFactorViewModel(
+                    subtitle: "Enter the 6-digit code sent to your email.",
+                    maskedEmail: AuthManager.shared.maskedEmail,
+                    onVerified: { [self] in
+                        showTwoFactor = false
+                        if BiometricEnrollmentSheet.shouldPrompt() {
+                            showBiometricEnrollment = true
+                        } else {
+                            showDestination = true
+                        }
+                    },
+                    onCancelled: { [self] in
+                        showTwoFactor = false
+                        viewModel.loginSuccess = false
+                        viewModel.authDestination = nil
                     }
-                },
-                onCancelled: { [self] in
-                    showTwoFactor = false
-                    viewModel.loginSuccess = false
-                    viewModel.authDestination = nil
-                }
-            )
-            showTwoFactor = true
+                )
+                showTwoFactor = true
+            }
         }
     }
 
     // MARK: - Header
 
     private var headerSection: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: Spacing.sm) {
             ZStack {
                 Circle()
                     .fill(.ultraThinMaterial)
                     .frame(width: 100, height: 100)
-                    .shadow(color: accentOrange.opacity(0.15), radius: 24, y: 8)
+                    .shadow(color: SierraTheme.Colors.ember.opacity(0.15), radius: 24, y: 8)
 
                 Image(systemName: "truck.box.fill")
                     .font(.system(size: 60, weight: .light))
-                    .foregroundStyle(accentOrange)
+                    .foregroundStyle(SierraTheme.Colors.ember)
                     .symbolRenderingMode(.hierarchical)
             }
 
             Text("FleetOS")
-                .font(.system(size: 28, weight: .bold, design: .default))
-                .foregroundStyle(Color(hex: "0D1B2A"))
-                .padding(.horizontal, 20)
-                .padding(.vertical, 6)
-                .background(.white, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .font(SierraFont.title1)
+                .foregroundStyle(SierraTheme.Colors.primaryText)
+                .padding(.horizontal, Spacing.lg)
+                .padding(.vertical, Spacing.xxs)
+                .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
         }
     }
 
     // MARK: - Login Card
 
     private var loginCard: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: Spacing.lg) {
             // Email field
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                HStack(spacing: Spacing.sm) {
                     Image(systemName: "envelope.fill")
-                        .font(.system(size: 15))
+                        .font(SierraFont.subheadline)
                         .foregroundStyle(.white.opacity(0.45))
                         .frame(width: 20)
 
                     TextField("Email", text: $viewModel.email)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 16))
+                        .font(SierraFont.bodyText)
                         .foregroundStyle(.white)
                         .keyboardType(.emailAddress)
                         .textContentType(.emailAddress)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
                 .frame(height: 52)
                 .background(
                     .white.opacity(0.08),
-                    in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                         .strokeBorder(
-                            viewModel.emailError != nil ? .red.opacity(0.7) : .white.opacity(0.1),
+                            viewModel.emailError != nil ? SierraTheme.Colors.danger.opacity(0.7) : .white.opacity(0.1),
                             lineWidth: 1
                         )
                 )
@@ -177,10 +173,10 @@ struct LoginView: View {
             }
 
             // Password field
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                HStack(spacing: Spacing.sm) {
                     Image(systemName: "lock.fill")
-                        .font(.system(size: 15))
+                        .font(SierraFont.subheadline)
                         .foregroundStyle(.white.opacity(0.45))
                         .frame(width: 20)
 
@@ -192,7 +188,7 @@ struct LoginView: View {
                         }
                     }
                     .textFieldStyle(.plain)
-                    .font(.system(size: 16))
+                    .font(SierraFont.bodyText)
                     .foregroundStyle(.white)
                     .textContentType(.password)
 
@@ -202,20 +198,20 @@ struct LoginView: View {
                         }
                     } label: {
                         Image(systemName: viewModel.isPasswordVisible ? "eye.slash.fill" : "eye.fill")
-                            .font(.system(size: 15))
+                            .font(SierraFont.subheadline)
                             .foregroundStyle(.white.opacity(0.35))
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.md)
                 .frame(height: 52)
                 .background(
                     .white.opacity(0.08),
-                    in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                         .strokeBorder(
-                            viewModel.passwordError != nil ? .red.opacity(0.7) : .white.opacity(0.1),
+                            viewModel.passwordError != nil ? SierraTheme.Colors.danger.opacity(0.7) : .white.opacity(0.1),
                             lineWidth: 1
                         )
                 )
@@ -230,38 +226,38 @@ struct LoginView: View {
                 Task { await viewModel.signIn() }
             } label: {
                 Text("Sign In")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(SierraFont.body(17, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .frame(height: 54)
                     .background(
-                        accentOrange,
-                        in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        SierraTheme.Colors.ember,
+                        in: RoundedRectangle(cornerRadius: Radius.button, style: .continuous)
                     )
             }
             .disabled(viewModel.isLoading)
-            .padding(.top, 4)
+            .padding(.top, Spacing.xxs)
 
             // Biometric button
             if viewModel.showBiometricButton {
                 Button {
                     Task { await viewModel.biometricSignIn() }
                 } label: {
-                    HStack(spacing: 8) {
+                    HStack(spacing: Spacing.xs) {
                         Image(systemName: viewModel.biometricIcon)
                             .font(.system(size: 20))
                         Text(viewModel.biometricLabel)
-                            .font(.system(size: 15, weight: .medium))
+                            .font(SierraFont.subheadline)
                     }
                     .foregroundStyle(.white.opacity(0.7))
                     .frame(maxWidth: .infinity)
                     .frame(height: 48)
                     .background(
                         .white.opacity(0.06),
-                        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                     )
                     .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                             .strokeBorder(.white.opacity(0.1), lineWidth: 1)
                     )
                 }
@@ -274,18 +270,18 @@ struct LoginView: View {
                 showForgotPassword = true
             } label: {
                 Text("Forgot Password?")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(accentOrange.opacity(0.8))
+                    .font(SierraFont.caption1)
+                    .foregroundStyle(SierraTheme.Colors.ember.opacity(0.8))
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
-        .padding(24)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .padding(Spacing.xl)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: Radius.xxl, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.xxl, style: .continuous)
                 .strokeBorder(.white.opacity(0.08), lineWidth: 1)
         )
-        .padding(.horizontal, 24)
+        .padding(.horizontal, Spacing.xl)
         .animation(.easeInOut(duration: 0.2), value: viewModel.emailError)
         .animation(.easeInOut(duration: 0.2), value: viewModel.passwordError)
     }
@@ -293,38 +289,38 @@ struct LoginView: View {
     // MARK: - Error Banner
 
     private func errorBanner(message: String) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: Spacing.sm) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 16))
+                .font(SierraFont.bodyText)
             Text(message)
-                .font(.system(size: 14, weight: .medium))
+                .font(SierraFont.caption1)
             Spacer()
             Button {
                 viewModel.dismissError()
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(SierraFont.body(12, weight: .bold))
                     .foregroundStyle(.white.opacity(0.7))
             }
         }
         .foregroundStyle(.white)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.md)
         .background(
-            Color.red.opacity(0.9),
-            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            SierraTheme.Colors.danger.opacity(0.9),
+            in: RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
         )
-        .padding(.horizontal, 20)
-        .padding(.top, 8)
+        .padding(.horizontal, Spacing.lg)
+        .padding(.top, Spacing.xs)
     }
 
     // MARK: - Inline Error
 
     private func inlineError(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(.red.opacity(0.9))
-            .padding(.leading, 4)
+            .font(SierraFont.caption1)
+            .foregroundStyle(SierraTheme.Colors.danger.opacity(0.9))
+            .padding(.leading, Spacing.xxs)
             .transition(.opacity)
     }
 
@@ -335,16 +331,16 @@ struct LoginView: View {
             Color.black.opacity(0.35)
                 .ignoresSafeArea()
 
-            VStack(spacing: 16) {
+            VStack(spacing: Spacing.md) {
                 ProgressView()
                     .scaleEffect(1.3)
                     .tint(.white)
                 Text("Authenticating…")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(SierraFont.caption1)
                     .foregroundStyle(.white.opacity(0.8))
             }
-            .padding(32)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .padding(Spacing.xxl)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
         }
         .transition(.opacity)
         .animation(.easeInOut(duration: 0.2), value: viewModel.isLoading)

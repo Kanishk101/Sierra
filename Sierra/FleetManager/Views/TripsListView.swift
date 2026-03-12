@@ -1,7 +1,5 @@
 import SwiftUI
 
-private let navyDark = Color(hex: "0D1B2A")
-private let accentOrange = Color(red: 1.0, green: 0.584, blue: 0.0)
 
 struct TripsListView: View {
 
@@ -22,7 +20,7 @@ struct TripsListView: View {
             // Filter tabs
             filterTabs
                 .padding(.vertical, 10)
-                .background(Color(hex: "F2F3F7"))
+                .background(SierraTheme.Colors.appBackground)
 
             if filteredTrips.isEmpty {
                 emptyState
@@ -41,7 +39,7 @@ struct TripsListView: View {
                 .scrollContentBackground(.hidden)
             }
         }
-        .background(Color(hex: "F2F3F7").ignoresSafeArea())
+        .background(SierraTheme.Colors.appBackground.ignoresSafeArea())
         .navigationTitle("Trips")
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(for: UUID.self) { id in
@@ -51,8 +49,8 @@ struct TripsListView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showCreateTrip = true } label: {
                     Image(systemName: "plus")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(navyDark)
+                        .font(SierraFont.body(17, weight: .semibold))
+                        .foregroundStyle(SierraTheme.Colors.primaryText)
                 }
             }
         }
@@ -82,13 +80,13 @@ struct TripsListView: View {
     private func filterChip(_ label: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(isSelected ? .white : navyDark)
+                .font(SierraFont.caption1)
+                .foregroundStyle(isSelected ? .white : SierraTheme.Colors.primaryText)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 7)
-                .background(isSelected ? accentOrange : .clear, in: Capsule())
+                .background(isSelected ? SierraTheme.Colors.ember : .clear, in: Capsule())
                 .overlay(
-                    Capsule().strokeBorder(isSelected ? .clear : navyDark.opacity(0.2), lineWidth: 1)
+                    Capsule().strokeBorder(isSelected ? .clear : SierraTheme.Colors.cloud, lineWidth: 1)
                 )
         }
         .buttonStyle(.plain)
@@ -121,49 +119,49 @@ struct TripsListView: View {
 
                 // Route
                 Text("\(trip.origin) → \(trip.destination)")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(navyDark)
+                    .font(SierraFont.subheadline)
+                    .foregroundStyle(SierraTheme.Colors.primaryText)
 
                 // Driver + Vehicle
                 HStack(spacing: 6) {
                     if let dId = trip.driverId,
                        let driver = store.staffMember(forId: dId) {
                         Text(driver.name)
-                            .font(.system(size: 13))
+                            .font(SierraFont.caption1)
                             .foregroundStyle(.secondary)
                     }
                     if let vId = trip.vehicleId,
                        let vehicle = store.vehicle(forId: vId) {
                         Text("· \(vehicle.licensePlate)")
-                            .font(.system(size: 13))
+                            .font(SierraFont.caption1)
                             .foregroundStyle(.secondary)
                     }
                 }
 
                 // Date
                 Text(trip.scheduledDate.formatted(.dateTime.month(.abbreviated).day().hour().minute()))
-                    .font(.system(size: 12))
+                    .font(SierraFont.caption2)
                     .foregroundStyle(.tertiary)
             }
             .padding(.leading, 12)
             .padding(.vertical, 4)
         }
         .padding(12)
-        .background(.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
     }
 
     private func statusColor(_ status: TripStatus) -> Color {
         switch status {
-        case .scheduled: .blue
-        case .active:    .green
-        case .completed: .gray
-        case .cancelled: .red
+        case .scheduled: SierraTheme.Colors.info
+        case .active:    SierraTheme.Colors.alpineMint
+        case .completed: SierraTheme.Colors.granite
+        case .cancelled: SierraTheme.Colors.danger
         }
     }
 
     private func priorityBadge(_ priority: TripPriority) -> some View {
-        let color: Color = priority == .urgent ? .red : .orange
+        let color: Color = priority == .urgent ? .red : SierraTheme.Colors.warning
         return Text(priority.rawValue.uppercased())
             .font(.system(size: 10, weight: .bold))
             .foregroundStyle(color)
@@ -181,10 +179,10 @@ struct TripsListView: View {
                 .font(.system(size: 40))
                 .foregroundStyle(.gray.opacity(0.4))
             Text("No trips found")
-                .font(.system(size: 18, weight: .semibold))
+                .font(SierraFont.body(18, weight: .semibold))
                 .foregroundStyle(.secondary)
             Text(emptySubtitle)
-                .font(.system(size: 14))
+                .font(SierraFont.caption1)
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
             Spacer()

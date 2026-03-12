@@ -52,7 +52,7 @@ struct OnboardingPageView: View {
     OnboardingPageView(page: OnboardingPage.pages[0])
         .background(
             LinearGradient(
-                colors: [Color(hex: "0D1B2A"), Color(hex: "1B3A6B")],
+                colors: [SierraTheme.Colors.summitNavy, SierraTheme.Colors.sierraBlue],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )

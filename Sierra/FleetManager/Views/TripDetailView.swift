@@ -1,7 +1,5 @@
 import SwiftUI
 
-private let navyDark = Color(hex: "0D1B2A")
-private let accentOrange = Color(red: 1.0, green: 0.584, blue: 0.0)
 
 struct TripDetailView: View {
 
@@ -47,7 +45,7 @@ struct TripDetailView: View {
                 VStack(alignment: .center, spacing: 8) {
                     Text(t.taskId)
                         .font(.system(size: 20, weight: .bold, design: .monospaced))
-                        .foregroundStyle(navyDark)
+                        .foregroundStyle(SierraTheme.Colors.primaryText)
 
                     statusBadge(t.status)
                 }
@@ -67,17 +65,17 @@ struct TripDetailView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("From")
-                                .font(.system(size: 12))
+                                .font(SierraFont.caption2)
                                 .foregroundStyle(.secondary)
                             Text(t.origin)
-                                .font(.system(size: 15, weight: .semibold))
+                                .font(SierraFont.subheadline)
                         }
                         VStack(alignment: .leading, spacing: 2) {
                             Text("To")
-                                .font(.system(size: 12))
+                                .font(SierraFont.caption2)
                                 .foregroundStyle(.secondary)
                             Text(t.destination)
-                                .font(.system(size: 15, weight: .semibold))
+                                .font(SierraFont.subheadline)
                         }
                     }
                 }
@@ -86,7 +84,7 @@ struct TripDetailView: View {
                     Image(systemName: "calendar")
                         .foregroundStyle(.secondary)
                     Text(t.scheduledDate.formatted(.dateTime.month(.abbreviated).day().year().hour().minute()))
-                        .font(.system(size: 14))
+                        .font(SierraFont.caption1)
                 }
             }
 
@@ -101,14 +99,14 @@ struct TripDetailView: View {
                             .frame(width: 40, height: 40)
                             .overlay(
                                 Text(driver.initials)
-                                    .font(.system(size: 14, weight: .bold))
+                                    .font(SierraFont.body(14, weight: .bold))
                                     .foregroundStyle(.blue)
                             )
                         VStack(alignment: .leading, spacing: 2) {
                             Text(driver.name)
-                                .font(.system(size: 15, weight: .semibold))
+                                .font(SierraFont.subheadline)
                             Text(driver.phone)
-                                .font(.system(size: 13))
+                                .font(SierraFont.caption1)
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
@@ -125,18 +123,18 @@ struct TripDetailView: View {
                     HStack(spacing: 12) {
                         Image(systemName: "car.fill")
                             .font(.system(size: 18))
-                            .foregroundStyle(navyDark.opacity(0.6))
+                            .foregroundStyle(SierraTheme.Colors.granite)
                             .frame(width: 40, height: 40)
-                            .background(navyDark.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+                            .background(SierraTheme.Colors.sierraBlue.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
                         VStack(alignment: .leading, spacing: 2) {
                             Text("\(vehicle.name) \(vehicle.model)")
-                                .font(.system(size: 15, weight: .semibold))
+                                .font(SierraFont.subheadline)
                             HStack(spacing: 6) {
                                 Text(vehicle.licensePlate)
                                     .font(.system(size: 12, design: .monospaced))
                                     .foregroundStyle(.secondary)
                                 Text("· \(vehicle.fuelType.description)")
-                                    .font(.system(size: 12))
+                                    .font(SierraFont.caption2)
                                     .foregroundStyle(.secondary)
                             }
                         }
@@ -161,10 +159,10 @@ struct TripDetailView: View {
                 if !t.notes.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Notes")
-                            .font(.system(size: 13))
+                            .font(SierraFont.caption1)
                             .foregroundStyle(.secondary)
                         Text(t.notes)
-                            .font(.system(size: 14))
+                            .font(SierraFont.caption1)
                     }
                 }
 
@@ -184,12 +182,12 @@ struct TripDetailView: View {
                     if let start = t.actualStartDate {
                         HStack {
                             Image(systemName: "play.circle.fill")
-                                .foregroundStyle(.green)
+                                .foregroundStyle(SierraTheme.Colors.alpineMint)
                             Text("Started")
                                 .foregroundStyle(.secondary)
                             Spacer()
                             Text(start.formatted(.dateTime.month(.abbreviated).day().hour().minute()))
-                                .font(.system(size: 14))
+                                .font(SierraFont.caption1)
                         }
                     }
                     if let end = t.actualEndDate {
@@ -200,7 +198,7 @@ struct TripDetailView: View {
                                 .foregroundStyle(.secondary)
                             Spacer()
                             Text(end.formatted(.dateTime.month(.abbreviated).day().hour().minute()))
-                                .font(.system(size: 14))
+                                .font(SierraFont.caption1)
                         }
                     }
                 }
@@ -215,7 +213,7 @@ struct TripDetailView: View {
                         HStack {
                             Spacer()
                             Label("Cancel Trip", systemImage: "xmark.circle.fill")
-                                .font(.system(size: 16, weight: .semibold))
+                                .font(SierraFont.body(16, weight: .semibold))
                             Spacer()
                         }
                     }
@@ -234,7 +232,7 @@ struct TripDetailView: View {
         case .cancelled: ("Cancelled", .red)
         }
         return Text(text)
-            .font(.system(size: 13, weight: .semibold))
+            .font(SierraFont.caption1)
             .foregroundStyle(color)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
@@ -245,11 +243,11 @@ struct TripDetailView: View {
         let color: Color = switch priority {
         case .low:    .gray
         case .normal: .blue
-        case .high:   .orange
+        case .high:   SierraTheme.Colors.warning
         case .urgent: .red
         }
         return Text(priority.rawValue)
-            .font(.system(size: 12, weight: .semibold))
+            .font(SierraFont.caption2)
             .foregroundStyle(color)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)

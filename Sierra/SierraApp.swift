@@ -15,7 +15,8 @@ struct SierraApp: App {
     var body: some Scene {
         WindowGroup {
             ZStack {
-                ContentView()
+            ContentView()
+                .applySierraTheme()
 
                 // Biometric lock overlay — covers all roles
                 if lifecycle.showBiometricLock {

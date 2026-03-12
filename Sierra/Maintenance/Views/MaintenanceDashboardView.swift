@@ -1,7 +1,5 @@
 import SwiftUI
 
-private let navyDark = Color(hex: "0D1B2A")
-private let accentOrange = Color(red: 1.0, green: 0.584, blue: 0.0)
 
 struct MaintenanceDashboardView: View {
     @State private var selectedTab: MaintenanceTab = .tasks
@@ -40,7 +38,7 @@ struct MaintenanceDashboardView: View {
                     Text("Profile")
                 }
         }
-        .tint(accentOrange)
+        .tint(SierraTheme.Colors.ember)
     }
 
     // MARK: - Coming Soon
@@ -52,29 +50,29 @@ struct MaintenanceDashboardView: View {
 
                 Image(systemName: icon)
                     .font(.system(size: 48, weight: .light))
-                    .foregroundStyle(accentOrange.opacity(0.5))
+                    .foregroundStyle(SierraTheme.Colors.ember.opacity(0.5))
 
                 Text(title)
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(navyDark)
+                    .font(SierraFont.title3)
+                    .foregroundStyle(SierraTheme.Colors.primaryText)
 
                 Text(subtitle)
-                    .font(.system(size: 15))
+                    .font(SierraFont.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 48)
 
                 Text("Coming Soon")
                     .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(accentOrange)
+                    .foregroundStyle(SierraTheme.Colors.ember)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 7)
-                    .background(accentOrange.opacity(0.1), in: Capsule())
+                    .background(SierraTheme.Colors.ember.opacity(0.1), in: Capsule())
 
                 Spacer()
             }
             .frame(maxWidth: .infinity)
-            .background(Color(hex: "F2F3F7").ignoresSafeArea())
+            .background(SierraTheme.Colors.appBackground.ignoresSafeArea())
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
         }
@@ -93,47 +91,47 @@ struct MaintenanceDashboardView: View {
 
                 ZStack {
                     Circle()
-                        .fill(navyDark)
+                        .fill(SierraTheme.Colors.summitNavy)
                         .frame(width: 80, height: 80)
                     Text(initials)
-                        .font(.system(size: 28, weight: .bold))
+                        .font(SierraFont.title1)
                         .foregroundStyle(.white)
                 }
 
                 VStack(spacing: 6) {
                     Text(user?.name ?? "Maintenance Staff")
-                        .font(.system(size: 22, weight: .bold))
-                        .foregroundStyle(navyDark)
+                        .font(SierraFont.title3)
+                        .foregroundStyle(SierraTheme.Colors.primaryText)
 
                     Text(user?.email ?? "")
-                        .font(.system(size: 14))
+                        .font(SierraFont.caption1)
                         .foregroundStyle(.secondary)
                 }
 
                 // Role badge
                 HStack(spacing: 6) {
                     Image(systemName: "wrench.fill")
-                        .font(.system(size: 12))
+                        .font(SierraFont.caption2)
                     Text("Maintenance Personnel")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(SierraFont.caption1)
                 }
-                .foregroundStyle(navyDark.opacity(0.6))
+                .foregroundStyle(SierraTheme.Colors.granite)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 7)
-                .background(navyDark.opacity(0.06), in: Capsule())
+                .background(SierraTheme.Colors.sierraBlue.opacity(0.06), in: Capsule())
 
                 // Approval status
                 HStack(spacing: 8) {
                     Image(systemName: user?.isApproved == true ? "checkmark.seal.fill" : "clock.fill")
-                        .font(.system(size: 16))
-                        .foregroundStyle(user?.isApproved == true ? .green : .orange)
+                        .font(SierraFont.bodyText)
+                        .foregroundStyle(user?.isApproved == true ? .green : SierraTheme.Colors.warning)
                     Text(user?.isApproved == true ? "Approved" : "Pending Approval")
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(navyDark)
+                        .font(SierraFont.subheadline)
+                        .foregroundStyle(SierraTheme.Colors.primaryText)
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity)
-                .background(.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .shadow(color: .black.opacity(0.03), radius: 4, y: 2)
                 .padding(.horizontal, 24)
 
@@ -145,11 +143,11 @@ struct MaintenanceDashboardView: View {
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "rectangle.portrait.and.arrow.right")
-                            .font(.system(size: 14))
+                            .font(SierraFont.caption1)
                         Text("Sign Out")
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(SierraFont.subheadline)
                     }
-                    .foregroundStyle(.red.opacity(0.7))
+                    .foregroundStyle(SierraTheme.Colors.danger.opacity(0.7))
                     .frame(maxWidth: .infinity)
                     .frame(height: 48)
                     .background(.red.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -158,7 +156,7 @@ struct MaintenanceDashboardView: View {
                 .padding(.bottom, 24)
             }
             .frame(maxWidth: .infinity)
-            .background(Color(hex: "F2F3F7").ignoresSafeArea())
+            .background(SierraTheme.Colors.appBackground.ignoresSafeArea())
             .navigationTitle("Profile")
             .navigationBarTitleDisplayMode(.inline)
         }

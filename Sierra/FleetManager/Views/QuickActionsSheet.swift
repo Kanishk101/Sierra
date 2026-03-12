@@ -1,8 +1,5 @@
 import SwiftUI
 
-private let navyDark = Color(hex: "0D1B2A")
-private let accentOrange = Color(red: 1.0, green: 0.584, blue: 0.0)
-
 struct QuickActionsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showCreateStaff = false
@@ -18,26 +15,26 @@ struct QuickActionsSheet: View {
     }
 
     private let actions: [QuickAction] = [
-        QuickAction(icon: "shippingbox.fill", label: "Create Delivery Task", color: .blue, tag: "delivery"),
-        QuickAction(icon: "car.badge.gearshape", label: "Add Vehicle", color: .green, tag: "vehicle"),
-        QuickAction(icon: "wrench.and.screwdriver.fill", label: "Create Maintenance Request", color: accentOrange, tag: "maintenance"),
-        QuickAction(icon: "person.badge.plus", label: "Add Staff Member", color: .purple, tag: "staff"),
+        QuickAction(icon: "shippingbox.fill", label: "Create Delivery Task", color: SierraTheme.Colors.info, tag: "delivery"),
+        QuickAction(icon: "car.badge.gearshape", label: "Add Vehicle", color: SierraTheme.Colors.alpineMint, tag: "vehicle"),
+        QuickAction(icon: "wrench.and.screwdriver.fill", label: "Create Maintenance Request", color: SierraTheme.Colors.ember, tag: "maintenance"),
+        QuickAction(icon: "person.badge.plus", label: "Add Staff Member", color: SierraTheme.Colors.sierraBlue, tag: "staff"),
     ]
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: Spacing.md) {
             // Drag indicator
             Capsule()
-                .fill(.secondary.opacity(0.3))
+                .fill(SierraTheme.Colors.mist)
                 .frame(width: 36, height: 5)
-                .padding(.top, 10)
+                .padding(.top, Spacing.sm)
 
             Text("Quick Actions")
-                .font(.system(size: 20, weight: .bold))
-                .foregroundStyle(navyDark)
-                .padding(.top, 4)
+                .font(SierraFont.title3)
+                .foregroundStyle(SierraTheme.Colors.primaryText)
+                .padding(.top, Spacing.xxs)
 
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 14) {
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: Spacing.md), GridItem(.flexible(), spacing: Spacing.md)], spacing: Spacing.md) {
                 ForEach(actions) { action in
                     Button {
                         switch action.tag {
@@ -47,33 +44,36 @@ struct QuickActionsSheet: View {
                         default:         dismiss()
                         }
                     } label: {
-                        VStack(spacing: 14) {
+                        VStack(spacing: Spacing.md) {
                             Image(systemName: action.icon)
-                                .font(.system(size: 28, weight: .light))
+                                .font(.system(size: 26, weight: .light))
                                 .foregroundStyle(action.color)
-                                .frame(width: 56, height: 56)
-                                .background(action.color.opacity(0.1), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                .frame(width: 52, height: 52)
+                                .background(action.color.opacity(0.10), in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
 
                             Text(action.label)
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(navyDark)
+                                .font(SierraFont.caption1)
+                                .foregroundStyle(SierraTheme.Colors.primaryText)
                                 .multilineTextAlignment(.center)
                                 .lineLimit(2)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 20)
-                        .background(.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                        .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
+                        .padding(.vertical, Spacing.lg)
+                        .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: Radius.xl, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
+                                .strokeBorder(SierraTheme.Colors.cloud, lineWidth: 1)
+                        )
                     }
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, Spacing.lg)
 
             Spacer()
         }
-        .background(Color(hex: "F2F3F7").ignoresSafeArea())
+        .background(SierraTheme.Colors.appBackground.ignoresSafeArea())
         .sheet(isPresented: $showCreateStaff) {
             CreateStaffView()
                 .presentationDetents([.large])

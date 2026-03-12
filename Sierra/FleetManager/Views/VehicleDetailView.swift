@@ -1,7 +1,5 @@
 import SwiftUI
 
-private let navyDark = Color(hex: "0D1B2A")
-private let accentOrange = Color(red: 1.0, green: 0.584, blue: 0.0)
 
 struct VehicleDetailView: View {
 
@@ -89,23 +87,23 @@ struct VehicleDetailView: View {
                     if let driver = store.staffMember(forId: driverId) {
                         HStack(spacing: 12) {
                             Circle()
-                                .fill(accentOrange.opacity(0.15))
+                                .fill(SierraTheme.Colors.ember.opacity(0.15))
                                 .frame(width: 36, height: 36)
                                 .overlay(
                                     Text(driver.initials)
                                         .font(.system(size: 13, weight: .bold))
-                                        .foregroundStyle(accentOrange)
+                                        .foregroundStyle(SierraTheme.Colors.ember)
                                 )
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(driver.name)
-                                    .font(.system(size: 15, weight: .semibold))
+                                    .font(SierraFont.subheadline)
                                 Text(driver.phone)
-                                    .font(.system(size: 13))
+                                    .font(SierraFont.caption1)
                                     .foregroundStyle(.secondary)
                             }
                             Spacer()
                             Image(systemName: "chevron.right")
-                                .font(.system(size: 12))
+                                .font(SierraFont.caption2)
                                 .foregroundStyle(.secondary)
                         }
                     } else {
@@ -127,7 +125,7 @@ struct VehicleDetailView: View {
                     HStack {
                         Spacer()
                         Label("Delete Vehicle", systemImage: "trash.fill")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(SierraFont.body(16, weight: .semibold))
                         Spacer()
                     }
                 }
@@ -153,29 +151,29 @@ struct VehicleDetailView: View {
         let (statusText, statusColor, showWarning): (String, Color, Bool) = {
             if daysLeft < 0 { return ("Expired", .red, true) }
             if daysLeft < 8 { return ("Critical", .red, true) }
-            if daysLeft <= 30 { return ("Expiring Soon", .orange, true) }
+            if daysLeft <= 30 { return ("Expiring Soon", SierraTheme.Colors.warning, true) }
             return ("Valid", .green, false)
         }()
 
         return HStack {
             if showWarning {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 14))
+                    .font(SierraFont.caption1)
                     .foregroundStyle(statusColor)
             }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(label)
-                    .font(.system(size: 15, weight: .medium))
+                    .font(SierraFont.subheadline)
                 Text(expiry.formatted(date: .abbreviated, time: .omitted))
-                    .font(.system(size: 13))
+                    .font(SierraFont.caption1)
                     .foregroundStyle(.secondary)
             }
 
             Spacer()
 
             Text(statusText)
-                .font(.system(size: 12, weight: .semibold))
+                .font(SierraFont.caption2)
                 .foregroundStyle(statusColor)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)

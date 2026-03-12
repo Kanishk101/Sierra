@@ -1,7 +1,5 @@
 import SwiftUI
 
-private let navyDark = Color(hex: "0D1B2A")
-private let accentOrange = Color(red: 1.0, green: 0.584, blue: 0.0)
 
 /// Shared rejection screen for Driver and Maintenance roles.
 /// Shown as .fullScreenCover when user's profile is rejected.
@@ -14,7 +12,7 @@ struct RejectedView: View {
     var body: some View {
         ZStack {
             LinearGradient(
-                colors: [Color(hex: "0D1B2A"), Color(hex: "1B3A6B")],
+                colors: [SierraTheme.Colors.summitNavy, SierraTheme.Colors.sierraBlue],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
@@ -26,18 +24,18 @@ struct RejectedView: View {
                 // Red X icon
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 60))
-                    .foregroundStyle(.red)
+                    .foregroundStyle(SierraTheme.Colors.danger)
                     .padding(.bottom, 20)
                     .scaleEffect(appeared ? 1 : 0.5)
                     .opacity(appeared ? 1 : 0)
 
                 Text("Application Rejected")
-                    .font(.system(size: 26, weight: .bold))
+                    .font(SierraFont.title2)
                     .foregroundStyle(.white)
                     .padding(.bottom, 8)
 
                 Text("Your Fleet Manager has reviewed your\nprofile and it was not approved.")
-                    .font(.system(size: 15))
+                    .font(SierraFont.subheadline)
                     .foregroundStyle(.white.opacity(0.6))
                     .multilineTextAlignment(.center)
                     .lineSpacing(3)
@@ -49,11 +47,11 @@ struct RejectedView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(spacing: 6) {
                             Image(systemName: "exclamationmark.triangle.fill")
-                                .font(.system(size: 14))
-                                .foregroundStyle(.orange)
+                                .font(SierraFont.caption1)
+                                .foregroundStyle(SierraTheme.Colors.warning)
                             Text("Reason")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(.orange)
+                                .font(SierraFont.caption1)
+                                .foregroundStyle(SierraTheme.Colors.warning)
                         }
                         Text(reason)
                             .font(.system(size: 14).italic())
@@ -63,12 +61,12 @@ struct RejectedView: View {
                     .padding(16)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
-                        Color.orange.opacity(0.12),
+                        SierraTheme.Colors.warning.opacity(0.12),
                         in: RoundedRectangle(cornerRadius: 12, style: .continuous)
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .strokeBorder(.orange.opacity(0.2), lineWidth: 1)
+                            .strokeBorder(SierraTheme.Colors.warning.opacity(0.2), lineWidth: 1)
                     )
                     .padding(.horizontal, 28)
                     .padding(.bottom, 28)
@@ -81,15 +79,15 @@ struct RejectedView: View {
                     Link(destination: url) {
                         HStack(spacing: 8) {
                             Image(systemName: "envelope.fill")
-                                .font(.system(size: 15))
+                                .font(SierraFont.subheadline)
                             Text("Contact Admin")
-                                .font(.system(size: 16, weight: .semibold))
+                                .font(SierraFont.body(16, weight: .semibold))
                         }
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
                         .frame(height: 52)
                         .background(
-                            accentOrange,
+                            SierraTheme.Colors.ember,
                             in: RoundedRectangle(cornerRadius: 14, style: .continuous)
                         )
                     }
@@ -101,8 +99,8 @@ struct RejectedView: View {
                     AuthManager.shared.signOut()
                 } label: {
                     Text("Sign Out")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(.red)
+                        .font(SierraFont.body(16, weight: .semibold))
+                        .foregroundStyle(SierraTheme.Colors.danger)
                         .frame(maxWidth: .infinity)
                         .frame(height: 48)
                         .background(.clear)

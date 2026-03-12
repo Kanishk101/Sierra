@@ -1,9 +1,5 @@
 import SwiftUI
 
-private let accentOrange = Color(red: 1.0, green: 0.584, blue: 0.0)
-private let navyDark = Color(hex: "0D1B2A")
-private let navyMid = Color(hex: "1B3A6B")
-
 struct DashboardHomeView: View {
     @Environment(AppDataStore.self) private var store
     @State private var showProfile = false
@@ -28,23 +24,23 @@ struct DashboardHomeView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 20) {
+                VStack(spacing: Spacing.lg) {
                     greetingCard
                     statsGrid
                     alertsSection
                     recentActivitySection
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 8)
-                .padding(.bottom, 32)
+                .padding(.horizontal, Spacing.lg)
+                .padding(.top, Spacing.xs)
+                .padding(.bottom, Spacing.xxl)
             }
-            .background(Color(hex: "F2F3F7").ignoresSafeArea())
+            .background(SierraTheme.Colors.appBackground.ignoresSafeArea())
             .navigationTitle("Dashboard")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showProfile = true } label: {
-                        initialsCircle("FA", size: 34, bg: accentOrange)
+                        SierraAvatarView(initials: "FA", size: 34, gradient: SierraAvatarView.admin())
                     }
                 }
             }
@@ -58,19 +54,23 @@ struct DashboardHomeView: View {
     // MARK: - Greeting Card
 
     private var greetingCard: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: Spacing.xxs) {
             Text("\(greeting), Admin")
-                .font(.system(size: 24, weight: .bold))
+                .font(SierraFont.title1)
                 .foregroundStyle(.white)
             Text(dateString)
-                .font(.system(size: 15))
+                .font(SierraFont.bodyText)
                 .foregroundStyle(.white.opacity(0.65))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(24)
+        .padding(Spacing.xl)
         .background(
-            LinearGradient(colors: [navyDark, navyMid], startPoint: .topLeading, endPoint: .bottomTrailing),
-            in: RoundedRectangle(cornerRadius: 20, style: .continuous)
+            LinearGradient(
+                colors: [SierraTheme.Colors.summitNavy, SierraTheme.Colors.sierraBlue],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
         )
     }
 
@@ -81,34 +81,18 @@ struct DashboardHomeView: View {
         let staff = store.staff
         let activeCount = vehicles.filter { $0.status == .active }.count
         let pending = vehicles.filter { $0.status == .inMaintenance }.count
-        let staffCount = staff.count
 
-        return LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 14) {
-            statCard(value: "\(vehicles.count)", label: "Total Vehicles", icon: "car.fill", tint: .blue)
-            statCard(value: "\(activeCount)", label: "Active Trips", icon: "location.fill", tint: .green)
-            statCard(value: "\(pending)", label: "Pending Maint.", icon: "wrench.fill", tint: accentOrange)
-            statCard(value: "\(staffCount)", label: "Staff Count", icon: "person.2.fill", tint: .purple)
+        return LazyVGrid(columns: [GridItem(.flexible(), spacing: Spacing.md), GridItem(.flexible(), spacing: Spacing.md)], spacing: Spacing.md) {
+            StatCardView.vehicles(count: vehicles.count)
+            StatCardView.active(count: activeCount)
+            StatCardView(
+                label: "Maintenance",
+                value: "\(pending)",
+                accentColor: SierraTheme.Colors.warning,
+                icon: "wrench.fill"
+            )
+            StatCardView.pending(count: staff.count)
         }
-    }
-
-    private func statCard(value: String, label: String, icon: String, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Image(systemName: icon)
-                    .font(.system(size: 16))
-                    .foregroundStyle(tint)
-                Spacer()
-                Text(value)
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
-                    .foregroundStyle(navyDark)
-            }
-            Text(label)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.secondary)
-        }
-        .padding(16)
-        .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
     }
 
     // MARK: - Alerts
@@ -117,32 +101,33 @@ struct DashboardHomeView: View {
         let expiring = store.vehicles.filter { $0.documentsExpiringSoon }
         return Group {
             if !expiring.isEmpty {
-                VStack(alignment: .leading, spacing: 12) {
-                    sectionHeader("Document Alerts", icon: "exclamationmark.triangle.fill", tint: .orange)
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    sectionHeader("Document Alerts", icon: "exclamationmark.triangle.fill", tint: SierraTheme.Colors.warning)
                     ForEach(expiring) { v in
-                        HStack(spacing: 12) {
+                        HStack(spacing: Spacing.sm) {
                             Image(systemName: "doc.badge.clock.fill")
                                 .font(.system(size: 18))
-                                .foregroundStyle(.orange)
+                                .foregroundStyle(SierraTheme.Colors.warning)
 
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(v.name)
-                                    .font(.system(size: 15, weight: .semibold))
-                                    .foregroundStyle(navyDark)
+                                    .sierraStyle(.cardTitle)
                                 Text("\(v.licensePlate) · Documents expiring soon")
-                                    .font(.system(size: 13))
-                                    .foregroundStyle(.secondary)
+                                    .sierraStyle(.caption)
                             }
                             Spacer()
                             Image(systemName: "chevron.right")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(.tertiary)
+                                .font(SierraFont.caption2)
+                                .foregroundStyle(SierraTheme.Colors.granite)
                         }
-                        .padding(14)
-                        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .padding(Spacing.md)
+                        .background(
+                            SierraTheme.Colors.warning.opacity(0.08),
+                            in: RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                        )
                         .overlay(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .strokeBorder(.orange.opacity(0.2), lineWidth: 1)
+                            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                                .strokeBorder(SierraTheme.Colors.warning.opacity(0.2), lineWidth: 1)
                         )
                     }
                 }
@@ -153,26 +138,26 @@ struct DashboardHomeView: View {
     // MARK: - Recent Activity
 
     private var recentActivitySection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionHeader("Recent Activity", icon: "clock.fill", tint: navyMid)
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            sectionHeader("Recent Activity", icon: "clock.fill", tint: SierraTheme.Colors.sierraBlue)
             ForEach(activity) { log in
-                HStack(spacing: 12) {
+                HStack(spacing: Spacing.sm) {
                     typeBadge(log.type)
 
                     VStack(alignment: .leading, spacing: 3) {
                         Text(log.description)
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(navyDark)
+                            .font(SierraFont.subheadline)
+                            .foregroundStyle(SierraTheme.Colors.primaryText)
                             .lineLimit(2)
                         Text(log.timeAgo)
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
+                            .font(SierraFont.caption1)
+                            .foregroundStyle(SierraTheme.Colors.granite)
                     }
                     Spacer()
                 }
-                .padding(14)
-                .background(.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
+                .padding(Spacing.md)
+                .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+                .sierraShadow(SierraTheme.Shadow.card)
             }
         }
     }
@@ -180,30 +165,30 @@ struct DashboardHomeView: View {
     // MARK: - Helpers
 
     private func sectionHeader(_ title: String, icon: String, tint: Color) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: Spacing.xxs) {
             Image(systemName: icon)
-                .font(.system(size: 14))
+                .font(SierraFont.caption1)
                 .foregroundStyle(tint)
             Text(title)
-                .font(.system(size: 16, weight: .bold))
-                .foregroundStyle(navyDark)
+                .font(SierraFont.headline)
+                .foregroundStyle(SierraTheme.Colors.primaryText)
         }
-        .padding(.top, 4)
+        .padding(.top, Spacing.xxs)
     }
 
     private func typeBadge(_ type: ActivityType) -> some View {
         let (icon, color): (String, Color) = switch type {
-        case .trip:        ("location.fill", .blue)
-        case .maintenance: ("wrench.fill", .orange)
-        case .fuel:        ("fuelpump.fill", .green)
-        case .staff:       ("person.fill", .purple)
-        case .alert:       ("exclamationmark.triangle.fill", .red)
+        case .trip:        ("location.fill", SierraTheme.Colors.info)
+        case .maintenance: ("wrench.fill", SierraTheme.Colors.warning)
+        case .fuel:        ("fuelpump.fill", SierraTheme.Colors.alpineMint)
+        case .staff:       ("person.fill", SierraTheme.Colors.sierraBlue)
+        case .alert:       ("exclamationmark.triangle.fill", SierraTheme.Colors.danger)
         }
         return Image(systemName: icon)
-            .font(.system(size: 14))
+            .font(SierraFont.caption1)
             .foregroundStyle(color)
             .frame(width: 34, height: 34)
-            .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
     }
 }
 

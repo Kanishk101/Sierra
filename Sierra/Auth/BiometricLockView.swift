@@ -1,7 +1,5 @@
 import SwiftUI
 
-private let navyDark = Color(hex: "0D1B2A")
-private let accentOrange = Color(red: 1.0, green: 0.584, blue: 0.0)
 
 /// Full-screen biometric lock overlay.
 /// Triggered when the app returns from background after 60s.
@@ -19,7 +17,7 @@ struct BiometricLockView: View {
         ZStack {
             // Background
             LinearGradient(
-                colors: [Color(hex: "0D1B2A"), Color(hex: "1B3A6B")],
+                colors: [SierraTheme.Colors.summitNavy, SierraTheme.Colors.sierraBlue],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
@@ -31,7 +29,7 @@ struct BiometricLockView: View {
                 // App logo
                 Image(systemName: "truck.box.fill")
                     .font(.system(size: 44, weight: .light))
-                    .foregroundStyle(accentOrange)
+                    .foregroundStyle(SierraTheme.Colors.ember)
                     .padding(.bottom, 6)
 
                 Text("FleetOS")
@@ -42,7 +40,7 @@ struct BiometricLockView: View {
                 // Welcome message
                 if let user = AuthManager.shared.currentUser {
                     Text("Welcome back, \(user.name ?? "User")")
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(SierraFont.body(18, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.8))
                         .padding(.bottom, 40)
                 }
@@ -55,8 +53,8 @@ struct BiometricLockView: View {
                 // Error message
                 if let error = errorMessage {
                     Text(error)
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(.red.opacity(0.9))
+                        .font(SierraFont.caption1)
+                        .foregroundStyle(SierraTheme.Colors.danger.opacity(0.9))
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 40)
                         .padding(.top, 16)
@@ -69,12 +67,12 @@ struct BiometricLockView: View {
                         Task { await attemptBiometric() }
                     } label: {
                         Text("Try Again")
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(SierraFont.subheadline)
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
                             .frame(height: 48)
                             .background(
-                                accentOrange,
+                                SierraTheme.Colors.ember,
                                 in: RoundedRectangle(cornerRadius: 12, style: .continuous)
                             )
                     }
@@ -126,13 +124,13 @@ struct BiometricLockView: View {
                     } else {
                         Image(systemName: biometric.biometricIconName)
                             .font(.system(size: 60))
-                            .foregroundStyle(accentOrange)
+                            .foregroundStyle(SierraTheme.Colors.ember)
                             .symbolEffect(.pulse, isActive: appeared && !showTryAgain)
                     }
                 }
 
                 Text("Sign in with \(biometric.biometricDisplayName)")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(SierraFont.body(16, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.7))
             }
         }
@@ -152,9 +150,9 @@ struct BiometricLockView: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "lock.fill")
-                    .font(.system(size: 13))
+                    .font(SierraFont.caption1)
                 Text("Use Password Instead")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(SierraFont.subheadline)
             }
             .foregroundStyle(.white.opacity(0.5))
             .frame(maxWidth: .infinity)

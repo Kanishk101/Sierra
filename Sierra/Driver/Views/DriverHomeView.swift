@@ -1,7 +1,5 @@
 import SwiftUI
 
-private let navyDark = Color(hex: "0D1B2A")
-private let accentOrange = Color(red: 1.0, green: 0.584, blue: 0.0)
 
 /// Driver home screen embedded in the Home tab.
 /// Shows greeting, availability toggle, and current assignment.
@@ -48,7 +46,7 @@ struct DriverHomeView: View {
                 Spacer(minLength: 20)
             }
         }
-        .background(Color(hex: "F2F3F7").ignoresSafeArea())
+        .background(SierraTheme.Colors.appBackground.ignoresSafeArea())
         .navigationTitle("Home")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -60,18 +58,18 @@ struct DriverHomeView: View {
     private var greetingCard: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(greetingText)
-                .font(.system(size: 22, weight: .bold))
+                .font(SierraFont.title3)
                 .foregroundStyle(.white)
 
             Text(Date().formatted(.dateTime.weekday(.wide).month(.wide).day()))
-                .font(.system(size: 14))
+                .font(SierraFont.caption1)
                 .foregroundStyle(.white.opacity(0.55))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
         .background(
             LinearGradient(
-                colors: [Color(hex: "0D1B2A"), Color(hex: "1B3A6B")],
+                colors: [SierraTheme.Colors.summitNavy, SierraTheme.Colors.sierraBlue],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             ),
@@ -100,13 +98,13 @@ struct DriverHomeView: View {
     private var availabilityCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("My Availability")
-                .font(.system(size: 16, weight: .bold))
-                .foregroundStyle(navyDark)
+                .font(SierraFont.body(16, weight: .bold))
+                .foregroundStyle(SierraTheme.Colors.primaryText)
 
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(isAvailable ? "Available for Trips" : "Unavailable")
-                        .font(.system(size: 15, weight: .medium))
+                        .font(SierraFont.subheadline)
                         .foregroundStyle(isAvailable ? .green : .secondary)
                 }
 
@@ -123,7 +121,7 @@ struct DriverHomeView: View {
             }
         }
         .padding(16)
-        .background(.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
     }
 
@@ -141,8 +139,8 @@ struct DriverHomeView: View {
         VStack(alignment: .leading, spacing: 12) {
             // Header
             Text("ACTIVE ASSIGNMENT")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(accentOrange)
+                .font(SierraFont.body(11, weight: .bold))
+                .foregroundStyle(SierraTheme.Colors.ember)
                 .kerning(1.2)
 
             // Task ID
@@ -155,15 +153,15 @@ struct DriverHomeView: View {
 
             // Route
             Text("\(trip.origin) → \(trip.destination)")
-                .font(.system(size: 16, weight: .bold))
-                .foregroundStyle(navyDark)
+                .font(SierraFont.body(16, weight: .bold))
+                .foregroundStyle(SierraTheme.Colors.primaryText)
 
             // Vehicle info
             if let vId = trip.vehicleId,
                let vehicle = store.vehicle(forId: vId) {
                 HStack(spacing: 8) {
                     Image(systemName: "car.fill")
-                        .font(.system(size: 12))
+                        .font(SierraFont.caption2)
                         .foregroundStyle(.secondary)
                     Text(vehicle.licensePlate)
                         .font(.system(size: 12, weight: .medium, design: .monospaced))
@@ -172,7 +170,7 @@ struct DriverHomeView: View {
                         .padding(.vertical, 2)
                         .background(Color.gray.opacity(0.1), in: Capsule())
                     Text("\(vehicle.name) \(vehicle.model)")
-                        .font(.system(size: 13))
+                        .font(SierraFont.caption1)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -180,23 +178,23 @@ struct DriverHomeView: View {
             // Scheduled time
             HStack(spacing: 6) {
                 Image(systemName: "clock")
-                    .font(.system(size: 12))
+                    .font(SierraFont.caption2)
                     .foregroundStyle(.secondary)
                 Text(trip.scheduledDate.formatted(.dateTime.month(.abbreviated).day().hour().minute()))
-                    .font(.system(size: 13))
+                    .font(SierraFont.caption1)
                     .foregroundStyle(.secondary)
             }
 
             // View Details button
             NavigationLink(value: trip.id) {
                 Text("View Details")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(accentOrange)
+                    .font(SierraFont.caption1)
+                    .foregroundStyle(SierraTheme.Colors.ember)
                     .frame(maxWidth: .infinity)
                     .frame(height: 40)
                     .overlay(
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .strokeBorder(accentOrange.opacity(0.5), lineWidth: 1.5)
+                            .strokeBorder(SierraTheme.Colors.ember.opacity(0.5), lineWidth: 1.5)
                     )
             }
         }
@@ -204,7 +202,7 @@ struct DriverHomeView: View {
         .background {
             HStack(spacing: 0) {
                 Rectangle()
-                    .fill(accentOrange)
+                    .fill(SierraTheme.Colors.ember)
                     .frame(width: 4)
                 Color.white
             }
@@ -225,11 +223,11 @@ struct DriverHomeView: View {
                 .padding(.top, 20)
 
             Text("No Trip Assigned")
-                .font(.system(size: 18, weight: .bold))
+                .font(SierraFont.body(18, weight: .bold))
                 .foregroundStyle(.gray)
 
             Text("Your Fleet Manager hasn't assigned\na delivery task yet.")
-                .font(.system(size: 14))
+                .font(SierraFont.caption1)
                 .foregroundStyle(.gray.opacity(0.7))
                 .multilineTextAlignment(.center)
                 .lineSpacing(2)
@@ -238,11 +236,11 @@ struct DriverHomeView: View {
             if isAvailable {
                 HStack(spacing: 6) {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 14))
-                        .foregroundStyle(.green)
+                        .font(SierraFont.caption1)
+                        .foregroundStyle(SierraTheme.Colors.alpineMint)
                     Text("You're Available — waiting for assignment")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.green)
+                        .font(SierraFont.caption1)
+                        .foregroundStyle(SierraTheme.Colors.alpineMint)
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
@@ -251,32 +249,32 @@ struct DriverHomeView: View {
                 VStack(spacing: 10) {
                     HStack(spacing: 6) {
                         Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 14))
-                            .foregroundStyle(.orange)
+                            .font(SierraFont.caption1)
+                            .foregroundStyle(SierraTheme.Colors.warning)
                         Text("Set yourself as Available to receive trips")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(.orange)
+                            .font(SierraFont.caption1)
+                            .foregroundStyle(SierraTheme.Colors.warning)
                     }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
-                    .background(.orange.opacity(0.08), in: Capsule())
+                    .background(SierraTheme.Colors.warning.opacity(0.08), in: Capsule())
 
                     Button {
                         toggleAvailability(true)
                     } label: {
                         Text("Set Available")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(SierraFont.caption1)
                             .foregroundStyle(.white)
                             .padding(.horizontal, 20)
                             .padding(.vertical, 8)
-                            .background(accentOrange, in: Capsule())
+                            .background(SierraTheme.Colors.ember, in: Capsule())
                     }
                 }
             }
         }
         .padding(.bottom, 20)
         .frame(maxWidth: .infinity)
-        .background(.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
     }
 }

@@ -8,7 +8,7 @@ struct DriverOnboardingView: View {
     var body: some View {
         ZStack {
             LinearGradient(
-                colors: [Color(hex: "0D1B2A"), Color(hex: "1B3A6B")],
+                colors: [SierraTheme.Colors.summitNavy, SierraTheme.Colors.sierraBlue],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
@@ -23,11 +23,11 @@ struct DriverOnboardingView: View {
                         .foregroundStyle(.white.opacity(0.7))
 
                     Text("Complete Your Profile")
-                        .font(.system(size: 28, weight: .bold))
+                        .font(SierraFont.title1)
                         .foregroundStyle(.white)
 
                     Text("Fill in your details to get started.")
-                        .font(.system(size: 15))
+                        .font(SierraFont.subheadline)
                         .foregroundStyle(.white.opacity(0.6))
 
                     VStack(spacing: 16) {
@@ -39,11 +39,11 @@ struct DriverOnboardingView: View {
                             // Profile submission to be implemented with backend
                         } label: {
                             Text("Submit Profile")
-                                .font(.system(size: 17, weight: .semibold))
-                                .foregroundStyle(Color(hex: "0D1B2A"))
+                                .font(SierraFont.body(17, weight: .semibold))
+                                .foregroundStyle(SierraTheme.Colors.primaryText)
                                 .frame(maxWidth: .infinity)
                                 .frame(height: 54)
-                                .background(.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                         }
                         .padding(.top, 8)
                     }
@@ -65,13 +65,13 @@ struct DriverOnboardingView: View {
     private func formField(placeholder: String, text: Binding<String>, icon: String) -> some View {
         HStack(spacing: 10) {
             Image(systemName: icon)
-                .font(.system(size: 15))
+                .font(SierraFont.subheadline)
                 .foregroundStyle(.white.opacity(0.5))
                 .frame(width: 20)
 
             TextField(placeholder, text: text)
                 .textFieldStyle(.plain)
-                .font(.system(size: 16))
+                .font(SierraFont.bodyText)
                 .foregroundStyle(.white)
         }
         .padding(.horizontal, 16)

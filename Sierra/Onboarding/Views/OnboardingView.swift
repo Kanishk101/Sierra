@@ -7,7 +7,7 @@ struct OnboardingView: View {
         ZStack {
             // Full-bleed gradient background
             LinearGradient(
-                colors: [Color(hex: "0D1B2A"), Color(hex: "1B3A6B")],
+                colors: [SierraTheme.Colors.summitNavy, SierraTheme.Colors.sierraBlue],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
@@ -62,11 +62,11 @@ struct OnboardingView: View {
                             viewModel.getStarted()
                         } label: {
                             Text("Get Started")
-                                .font(.system(size: 17, weight: .semibold))
-                                .foregroundStyle(Color(hex: "0D1B2A"))
+                                .font(SierraFont.body(17, weight: .semibold))
+                                .foregroundStyle(SierraTheme.Colors.primaryText)
                                 .frame(maxWidth: .infinity)
                                 .frame(height: 56)
-                                .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                         }
                         .padding(.horizontal, 24)
                         .transition(.opacity.combined(with: .scale(scale: 0.95)))
@@ -78,9 +78,9 @@ struct OnboardingView: View {
                             } label: {
                                 HStack(spacing: 6) {
                                     Text("Next")
-                                        .font(.system(size: 17, weight: .semibold))
+                                        .font(SierraFont.body(17, weight: .semibold))
                                     Image(systemName: "arrow.right")
-                                        .font(.system(size: 15, weight: .semibold))
+                                        .font(SierraFont.subheadline)
                                 }
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 28)

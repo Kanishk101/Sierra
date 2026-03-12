@@ -1,7 +1,5 @@
 import SwiftUI
 
-private let navyDark = Color(hex: "0D1B2A")
-private let accentOrange = Color(red: 1.0, green: 0.584, blue: 0.0)
 
 struct ForcePasswordChangeView: View {
     @State private var viewModel = ForcePasswordChangeViewModel()
@@ -11,7 +9,7 @@ struct ForcePasswordChangeView: View {
     var body: some View {
         ZStack {
             LinearGradient(
-                colors: [Color(hex: "0D1B2A"), Color(hex: "1B3A6B")],
+                colors: [SierraTheme.Colors.summitNavy, SierraTheme.Colors.sierraBlue],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
@@ -81,15 +79,15 @@ struct ForcePasswordChangeView: View {
         VStack(spacing: 12) {
             Image(systemName: "lock.rotation.fill")
                 .font(.system(size: 50, weight: .light))
-                .foregroundStyle(accentOrange)
+                .foregroundStyle(SierraTheme.Colors.ember)
                 .symbolRenderingMode(.hierarchical)
 
             Text("Set Your New Password")
-                .font(.system(size: 24, weight: .bold))
+                .font(SierraFont.title2)
                 .foregroundStyle(.white)
 
             Text("For your security, you must set a personal\npassword before continuing.")
-                .font(.system(size: 15))
+                .font(SierraFont.subheadline)
                 .foregroundStyle(.white.opacity(0.55))
                 .multilineTextAlignment(.center)
                 .lineSpacing(3)
@@ -158,12 +156,12 @@ struct ForcePasswordChangeView: View {
                 Task { await viewModel.setNewPassword() }
             } label: {
                 Text("Set Password")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(SierraFont.body(17, weight: .semibold))
                     .foregroundStyle(viewModel.canSubmit ? .white : .white.opacity(0.4))
                     .frame(maxWidth: .infinity)
                     .frame(height: 54)
                     .background(
-                        viewModel.canSubmit ? accentOrange : Color.gray.opacity(0.25),
+                        viewModel.canSubmit ? SierraTheme.Colors.ember : Color.gray.opacity(0.25),
                         in: RoundedRectangle(cornerRadius: 14, style: .continuous)
                     )
             }
@@ -201,7 +199,7 @@ struct ForcePasswordChangeView: View {
 
             HStack {
                 Text(viewModel.strength.label)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(SierraFont.caption2)
                     .foregroundStyle(viewModel.strength.color)
                 Spacer()
             }
@@ -227,11 +225,11 @@ struct ForcePasswordChangeView: View {
     private func requirementRow(_ text: String, met: Bool) -> some View {
         HStack(spacing: 8) {
             Image(systemName: met ? "checkmark.circle.fill" : "xmark.circle")
-                .font(.system(size: 14))
+                .font(SierraFont.caption1)
                 .foregroundStyle(met ? .green : .white.opacity(0.3))
 
             Text(text)
-                .font(.system(size: 13, weight: .medium))
+                .font(SierraFont.caption1)
                 .foregroundStyle(met ? .white.opacity(0.9) : .white.opacity(0.4))
         }
         .animation(.easeInOut(duration: 0.15), value: met)
@@ -248,7 +246,7 @@ struct ForcePasswordChangeView: View {
     ) -> some View {
         HStack(spacing: 10) {
             Image(systemName: "lock.fill")
-                .font(.system(size: 14))
+                .font(SierraFont.caption1)
                 .foregroundStyle(.white.opacity(0.4))
                 .frame(width: 20)
 
@@ -260,7 +258,7 @@ struct ForcePasswordChangeView: View {
                 }
             }
             .textFieldStyle(.plain)
-            .font(.system(size: 16))
+            .font(SierraFont.bodyText)
             .foregroundStyle(.white)
             .autocorrectionDisabled()
             .textInputAutocapitalization(.never)
@@ -271,7 +269,7 @@ struct ForcePasswordChangeView: View {
                 }
             } label: {
                 Image(systemName: isVisible.wrappedValue ? "eye.slash.fill" : "eye.fill")
-                    .font(.system(size: 14))
+                    .font(SierraFont.caption1)
                     .foregroundStyle(.white.opacity(0.3))
             }
         }
@@ -286,8 +284,8 @@ struct ForcePasswordChangeView: View {
 
     private func inlineError(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(.red.opacity(0.9))
+            .font(SierraFont.caption2)
+            .foregroundStyle(SierraTheme.Colors.danger.opacity(0.9))
             .padding(.leading, 4)
             .transition(.opacity)
     }
@@ -295,9 +293,9 @@ struct ForcePasswordChangeView: View {
     private func errorBanner(_ message: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 14))
+                .font(SierraFont.caption1)
             Text(message)
-                .font(.system(size: 13, weight: .medium))
+                .font(SierraFont.caption1)
         }
         .foregroundStyle(.white)
         .padding(12)
@@ -315,7 +313,7 @@ struct ForcePasswordChangeView: View {
                     .scaleEffect(1.3)
                     .tint(.white)
                 Text("Updating password…")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(SierraFont.caption1)
                     .foregroundStyle(.white.opacity(0.8))
             }
             .padding(32)

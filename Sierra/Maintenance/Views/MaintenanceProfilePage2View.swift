@@ -1,8 +1,6 @@
 import SwiftUI
 import PhotosUI
 
-private let navyDark = Color(hex: "0D1B2A")
-private let accentOrange = Color(red: 1.0, green: 0.584, blue: 0.0)
 
 struct MaintenanceProfilePage2View: View {
     @Bindable var viewModel: MaintenanceProfileViewModel
@@ -20,10 +18,10 @@ struct MaintenanceProfilePage2View: View {
                 VStack(spacing: 24) {
                     VStack(spacing: 4) {
                         Text("Professional Documents")
-                            .font(.system(size: 22, weight: .bold))
-                            .foregroundStyle(navyDark)
+                            .font(SierraFont.title3)
+                            .foregroundStyle(SierraTheme.Colors.primaryText)
                         Text("Upload your identity & professional credentials")
-                            .font(.system(size: 15))
+                            .font(SierraFont.subheadline)
                             .foregroundStyle(.secondary)
                     }
                     .padding(.top, 8)
@@ -33,7 +31,7 @@ struct MaintenanceProfilePage2View: View {
                         VStack(alignment: .leading, spacing: 5) {
                             HStack(spacing: 10) {
                                 Image(systemName: "number")
-                                    .font(.system(size: 14))
+                                    .font(SierraFont.caption1)
                                     .foregroundStyle(.secondary)
                                     .frame(width: 20)
                                 TextField("XXXX XXXX XXXX", text: Binding(
@@ -42,12 +40,12 @@ struct MaintenanceProfilePage2View: View {
                                 ))
                                 .textFieldStyle(.plain)
                                 .font(.system(size: 16, design: .monospaced))
-                                .foregroundStyle(navyDark)
+                                .foregroundStyle(SierraTheme.Colors.primaryText)
                                 .keyboardType(.numberPad)
                             }
                             .padding(.horizontal, 16)
                             .frame(height: 52)
-                            .background(.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                                     .strokeBorder(viewModel.aadhaarError != nil ? .red.opacity(0.5) : .clear, lineWidth: 1)
@@ -74,11 +72,11 @@ struct MaintenanceProfilePage2View: View {
                         // Certification type picker
                         HStack(spacing: 10) {
                             Image(systemName: "doc.text.fill")
-                                .font(.system(size: 14))
+                                .font(SierraFont.caption1)
                                 .foregroundStyle(.secondary)
                                 .frame(width: 20)
                             Text("Type")
-                                .font(.system(size: 15))
+                                .font(SierraFont.subheadline)
                                 .foregroundStyle(.secondary)
                             Spacer()
                             Picker("", selection: $viewModel.certificationType) {
@@ -86,11 +84,11 @@ struct MaintenanceProfilePage2View: View {
                                     Text($0.rawValue).tag($0)
                                 }
                             }
-                            .tint(navyDark)
+                            .tint(SierraTheme.Colors.primaryText)
                         }
                         .padding(.horizontal, 16)
                         .frame(height: 52)
-                        .background(.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .shadow(color: .black.opacity(0.03), radius: 4, y: 2)
 
                         // Certification number
@@ -102,11 +100,11 @@ struct MaintenanceProfilePage2View: View {
                         // Expiry date
                         HStack(spacing: 10) {
                             Image(systemName: "calendar.badge.clock")
-                                .font(.system(size: 14))
+                                .font(SierraFont.caption1)
                                 .foregroundStyle(.secondary)
                                 .frame(width: 20)
                             Text("Expiry Date")
-                                .font(.system(size: 15))
+                                .font(SierraFont.subheadline)
                                 .foregroundStyle(.secondary)
                             Spacer()
                             DatePicker("", selection: $viewModel.certExpiryDate, in: Date()..., displayedComponents: .date)
@@ -114,7 +112,7 @@ struct MaintenanceProfilePage2View: View {
                         }
                         .padding(.horizontal, 16)
                         .frame(height: 52)
-                        .background(.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .shadow(color: .black.opacity(0.03), radius: 4, y: 2)
 
                         // Certificate image
@@ -130,26 +128,26 @@ struct MaintenanceProfilePage2View: View {
                         // Years of experience
                         HStack(spacing: 10) {
                             Image(systemName: "clock.fill")
-                                .font(.system(size: 14))
+                                .font(SierraFont.caption1)
                                 .foregroundStyle(.secondary)
                                 .frame(width: 20)
                             Text("Years of Experience")
-                                .font(.system(size: 15))
+                                .font(SierraFont.subheadline)
                                 .foregroundStyle(.secondary)
                             Spacer()
                             Stepper("\(viewModel.yearsOfExperience) yrs", value: $viewModel.yearsOfExperience, in: 0...40)
-                                .font(.system(size: 15, weight: .medium))
-                                .foregroundStyle(navyDark)
+                                .font(SierraFont.subheadline)
+                                .foregroundStyle(SierraTheme.Colors.primaryText)
                         }
                         .padding(.horizontal, 16)
                         .frame(height: 52)
-                        .background(.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .shadow(color: .black.opacity(0.03), radius: 4, y: 2)
 
                         // Specialization chips
                         VStack(alignment: .leading, spacing: 10) {
                             Text("Specializations")
-                                .font(.system(size: 14, weight: .medium))
+                                .font(SierraFont.caption1)
                                 .foregroundStyle(.secondary)
 
                             FlowLayout(spacing: 8) {
@@ -159,7 +157,7 @@ struct MaintenanceProfilePage2View: View {
                             }
                         }
                         .padding(16)
-                        .background(.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .shadow(color: .black.opacity(0.03), radius: 4, y: 2)
                     }
                 }
@@ -195,9 +193,9 @@ struct MaintenanceProfilePage2View: View {
                 ZStack {
                     Color.black.opacity(0.3).ignoresSafeArea()
                     VStack(spacing: 16) {
-                        ProgressView().scaleEffect(1.3).tint(accentOrange)
+                        ProgressView().scaleEffect(1.3).tint(SierraTheme.Colors.ember)
                         Text("Submitting profile…")
-                            .font(.system(size: 14, weight: .medium))
+                            .font(SierraFont.caption1)
                             .foregroundStyle(.secondary)
                     }
                     .padding(32)
@@ -223,18 +221,18 @@ struct MaintenanceProfilePage2View: View {
                         .font(.system(size: 10, weight: .bold))
                 }
                 Text(spec.rawValue)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(SierraFont.caption1)
             }
-            .foregroundStyle(isSelected ? .white : navyDark.opacity(0.7))
+            .foregroundStyle(isSelected ? .white : SierraTheme.Colors.summitNavy.opacity(0.7))
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
             .background(
-                isSelected ? accentOrange : Color.clear,
+                isSelected ? SierraTheme.Colors.ember : Color.clear,
                 in: Capsule()
             )
             .overlay(
                 Capsule()
-                    .strokeBorder(isSelected ? accentOrange : navyDark.opacity(0.15), lineWidth: 1)
+                    .strokeBorder(isSelected ? SierraTheme.Colors.ember : SierraTheme.Colors.summitNavy.opacity(0.15), lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
@@ -268,9 +266,9 @@ struct MaintenanceProfilePage2View: View {
                     VStack(spacing: 8) {
                         Image(systemName: "camera.fill")
                             .font(.system(size: 20))
-                            .foregroundStyle(accentOrange)
+                            .foregroundStyle(SierraTheme.Colors.ember)
                         Text(label)
-                            .font(.system(size: 13, weight: .medium))
+                            .font(SierraFont.caption1)
                             .foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity)
@@ -278,7 +276,7 @@ struct MaintenanceProfilePage2View: View {
                     .background(
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
                             .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
-                            .foregroundStyle(accentOrange.opacity(0.4))
+                            .foregroundStyle(SierraTheme.Colors.ember.opacity(0.4))
                     )
                 }
                 .buttonStyle(.plain)
@@ -294,21 +292,21 @@ struct MaintenanceProfilePage2View: View {
         HStack(spacing: 12) {
             Button { viewModel.goBack() } label: {
                 Text("Back")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(navyDark)
+                    .font(SierraFont.body(17, weight: .semibold))
+                    .foregroundStyle(SierraTheme.Colors.primaryText)
                     .frame(maxWidth: .infinity)
                     .frame(height: 54)
-                    .background(navyDark.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .background(SierraTheme.Colors.sierraBlue.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
             .frame(maxWidth: .infinity)
 
             Button { Task { await viewModel.submitProfile() } } label: {
                 Text("Submit Application")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(SierraFont.body(17, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .frame(height: 54)
-                    .background(accentOrange, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .background(SierraTheme.Colors.ember, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
             .frame(maxWidth: .infinity)
         }
@@ -325,11 +323,11 @@ struct MaintenanceProfilePage2View: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 6) {
                 Image(systemName: icon)
-                    .font(.system(size: 14))
-                    .foregroundStyle(accentOrange)
+                    .font(SierraFont.caption1)
+                    .foregroundStyle(SierraTheme.Colors.ember)
                 Text(title)
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(navyDark.opacity(0.5))
+                    .font(SierraFont.body(14, weight: .bold))
+                    .foregroundStyle(SierraTheme.Colors.granite)
                     .textCase(.uppercase)
                     .tracking(0.5)
             }
@@ -341,19 +339,19 @@ struct MaintenanceProfilePage2View: View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 10) {
                 Image(systemName: icon)
-                    .font(.system(size: 14))
+                    .font(SierraFont.caption1)
                     .foregroundStyle(.secondary)
                     .frame(width: 20)
                 TextField(placeholder, text: text)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 15))
-                    .foregroundStyle(navyDark)
+                    .font(SierraFont.subheadline)
+                    .foregroundStyle(SierraTheme.Colors.primaryText)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(autocap)
             }
             .padding(.horizontal, 16)
             .frame(height: 52)
-            .background(.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .strokeBorder(error != nil ? .red.opacity(0.5) : .clear, lineWidth: 1)
@@ -368,7 +366,7 @@ struct MaintenanceProfilePage2View: View {
 
     private func inlineError(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 12, weight: .medium))
+            .font(SierraFont.caption2)
             .foregroundStyle(.red.opacity(0.85))
             .padding(.leading, 4)
             .transition(.opacity)

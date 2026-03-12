@@ -6,7 +6,7 @@ struct PendingApprovalView: View {
     var body: some View {
         ZStack {
             LinearGradient(
-                colors: [Color(hex: "0D1B2A"), Color(hex: "1B3A6B")],
+                colors: [SierraTheme.Colors.summitNavy, SierraTheme.Colors.sierraBlue],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
@@ -34,11 +34,11 @@ struct PendingApprovalView: View {
 
                 VStack(spacing: 12) {
                     Text("Pending Approval")
-                        .font(.system(size: 28, weight: .bold))
+                        .font(SierraFont.title1)
                         .foregroundStyle(.white)
 
                     Text("Your account is under review by the fleet administrator. You'll be notified once approved.")
-                        .font(.system(size: 15))
+                        .font(SierraFont.subheadline)
                         .foregroundStyle(.white.opacity(0.6))
                         .multilineTextAlignment(.center)
                         .lineSpacing(4)
@@ -51,7 +51,7 @@ struct PendingApprovalView: View {
                     AuthManager.shared.signOut()
                 } label: {
                     Text("Sign Out")
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(SierraFont.body(17, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.7))
                         .frame(maxWidth: .infinity)
                         .frame(height: 50)
