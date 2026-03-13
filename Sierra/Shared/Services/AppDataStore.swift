@@ -1,31 +1,5 @@
 import Foundation
 
-// MARK: - Maintenance Task (placeholder for Phase 5)
-
-enum TaskPriority: String, Codable, CaseIterable {
-    case low    = "Low"
-    case medium = "Medium"
-    case high   = "High"
-}
-
-enum MaintenanceTaskStatus: String, Codable, CaseIterable {
-    case pending    = "Pending"
-    case inProgress = "In Progress"
-    case completed  = "Completed"
-}
-
-struct MaintenanceTask: Identifiable, Codable {
-    let id: UUID
-    var vehicleId: String
-    var assignedToId: String?
-    var title: String
-    var taskDescription: String
-    var priority: TaskPriority
-    var status: MaintenanceTaskStatus
-    var createdDate: Date
-    var dueDate: Date
-}
-
 // MARK: - App Data Store
 
 /// Centralized, observable data store for all app entities.
@@ -72,7 +46,8 @@ final class AppDataStore {
 
     func rejectStaff(id: UUID, reason: String) {
         guard let index = staff.firstIndex(where: { $0.id == id }) else { return }
-        staff[index].status = .suspended // use suspended as "rejected" for now
+        staff[index].status = .suspended
+        staff[index].rejectionReason = reason
     }
 
     func removeStaff(id: UUID) {
@@ -122,7 +97,7 @@ final class AppDataStore {
             member.role == .driver
             && member.status == .active
             && member.availability == .available
-            && !activeDriverIds.contains(member.id.uuidString)
+            && !activeDriverIds.contains(member.id)
         }
     }
 
@@ -134,21 +109,39 @@ final class AppDataStore {
         }
     }
 
-    /// Returns the first active or scheduled trip for a given driver ID.
-    func activeTrip(forDriverId id: String) -> Trip? {
+    /// Returns the first active or scheduled trip for a given driver UUID.
+    func activeTrip(forDriverId id: UUID) -> Trip? {
         trips.first { trip in
             trip.driverId == id
             && (trip.status == .active || trip.status == .scheduled)
         }
     }
 
-    /// Look up a vehicle by its UUID string.
-    func vehicle(forId id: String) -> Vehicle? {
-        vehicles.first { $0.id.uuidString == id }
+    /// Returns the first active or scheduled trip for a given driver UUID string (legacy compat).
+    func activeTrip(forDriverId id: String) -> Trip? {
+        guard let uuid = UUID(uuidString: id) else { return nil }
+        return activeTrip(forDriverId: uuid)
     }
 
-    /// Look up a staff member by their UUID string.
+    /// Look up a vehicle by its UUID.
+    func vehicle(forId id: UUID) -> Vehicle? {
+        vehicles.first { $0.id == id }
+    }
+
+    /// Look up a vehicle by its UUID string (legacy compat).
+    func vehicle(forId id: String) -> Vehicle? {
+        guard let uuid = UUID(uuidString: id) else { return nil }
+        return vehicle(forId: uuid)
+    }
+
+    /// Look up a staff member by their UUID.
+    func staffMember(forId id: UUID) -> StaffMember? {
+        staff.first { $0.id == id }
+    }
+
+    /// Look up a staff member by their UUID string (legacy compat).
     func staffMember(forId id: String) -> StaffMember? {
-        staff.first { $0.id.uuidString == id }
+        guard let uuid = UUID(uuidString: id) else { return nil }
+        return staffMember(forId: uuid)
     }
 }

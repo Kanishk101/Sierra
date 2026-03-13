@@ -40,9 +40,12 @@ final class StaffApplicationStore {
         updateUserApproval(id: id, approved: true)
 
         // Simulated push notification
-        let name = applications[idx].name
+        let app = applications[idx]
+        let member = AppDataStore.shared.staffMember(forId: app.staffMemberId)
+        let name = member?.displayName ?? app.staffMemberId.uuidString
+        let email = member?.email ?? ""
         print("\n🔔 PUSH NOTIFICATION ─────────────")
-        print("To: \(applications[idx].email)")
+        print("To: \(email)")
         print("Title: Application Approved!")
         print("Body: Congratulations \(name)! Your FleetOS account has been approved. You can now sign in and start using the app.")
         print("──────────────────────────────────\n")
@@ -54,9 +57,12 @@ final class StaffApplicationStore {
         applications[idx].status = .rejected
         applications[idx].rejectionReason = reason
 
-        let name = applications[idx].name
+        let app = applications[idx]
+        let member = AppDataStore.shared.staffMember(forId: app.staffMemberId)
+        let name = member?.displayName ?? app.staffMemberId.uuidString
+        let email = member?.email ?? ""
         print("\n🔔 PUSH NOTIFICATION ─────────────")
-        print("To: \(applications[idx].email)")
+        print("To: \(email)")
         print("Title: Application Requires Attention")
         print("Body: Hi \(name), your FleetOS application needs revision. Reason: \(reason). Please contact your fleet administrator.")
         print("──────────────────────────────────\n")
