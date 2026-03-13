@@ -5,8 +5,8 @@ import Foundation
 // Used by all service files as `supabase`
 
 let supabase = SupabaseClient(
-    supabaseURL: URL(string: "https://tufmgxaycmeohczdvjsr.supabase.co")!,
-    supabaseKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR1Zm1neGF5Y21lb2hjemR2anNyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzMjM3MTksImV4cCI6MjA4ODg5OTcxOX0.Fy5DbP0VyfxrLgaQDtgDep9-E7ZcdrM92LFOcupW168"
+    supabaseURL: URL(string: "https://ldqcdngdlbbiojlnbnjg.supabase.co")!,
+    supabaseKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxkcWNkbmdkbGJiaW9qbG5ibmpnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzODUzMjMsImV4cCI6MjA4ODk2MTMyM30.gQm6e-Uafm5bXfpbNEDCbl6bFgi1Cweg-tHE58nNdRE"
 )
 
 // MARK: - SupabaseManager (Wrapper for legacy code compatibility)
