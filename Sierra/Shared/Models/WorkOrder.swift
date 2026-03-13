@@ -28,8 +28,7 @@ struct WorkOrder: Identifiable, Codable {
     var repairDescription: String        // repair_description (default '')
     var labourCostTotal: Double          // labour_cost_total (default 0)
     var partsCostTotal: Double           // parts_cost_total (default 0)
-    /// Read-only GENERATED column: labour_cost_total + parts_cost_total
-    let totalCost: Double?               // total_cost (GENERATED)
+    let totalCost: Double                // total_cost (GENERATED)
 
     // MARK: Scheduling
     var startedAt: Date?                 // started_at

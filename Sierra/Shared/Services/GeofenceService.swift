@@ -1,11 +1,12 @@
 import Foundation
 import Supabase
 
-private let supabase = SupabaseManager.shared.client
+// Uses global `supabase` constant from SupabaseManager.swift
 
-// MARK: - GeofencePayload
+// MARK: - GeofenceInsertPayload
+// Excludes: id, created_at, updated_at
 
-struct GeofencePayload: Encodable {
+struct GeofenceInsertPayload: Encodable {
     let name: String
     let description: String
     let latitude: Double
@@ -17,10 +18,7 @@ struct GeofencePayload: Encodable {
     let alertOnExit: Bool
 
     enum CodingKeys: String, CodingKey {
-        case name
-        case description
-        case latitude
-        case longitude
+        case name, description, latitude, longitude
         case radiusMeters     = "radius_meters"
         case isActive         = "is_active"
         case createdByAdminId = "created_by_admin_id"
@@ -28,16 +26,16 @@ struct GeofencePayload: Encodable {
         case alertOnExit      = "alert_on_exit"
     }
 
-    init(from geofence: Geofence) {
-        self.name             = geofence.name
-        self.description      = geofence.description
-        self.latitude         = geofence.latitude
-        self.longitude        = geofence.longitude
-        self.radiusMeters     = geofence.radiusMeters
-        self.isActive         = geofence.isActive
-        self.createdByAdminId = geofence.createdByAdminId.uuidString
-        self.alertOnEntry     = geofence.alertOnEntry
-        self.alertOnExit      = geofence.alertOnExit
+    init(from g: Geofence) {
+        name             = g.name
+        description      = g.description
+        latitude         = g.latitude
+        longitude        = g.longitude
+        radiusMeters     = g.radiusMeters
+        isActive         = g.isActive
+        createdByAdminId = g.createdByAdminId.uuidString
+        alertOnEntry     = g.alertOnEntry
+        alertOnExit      = g.alertOnExit
     }
 }
 
@@ -46,7 +44,7 @@ struct GeofencePayload: Encodable {
 struct GeofenceService {
 
     static func fetchAllGeofences() async throws -> [Geofence] {
-        return try await supabase
+        try await supabase
             .from("geofences")
             .select()
             .order("name", ascending: true)
@@ -55,7 +53,7 @@ struct GeofenceService {
     }
 
     static func fetchActiveGeofences() async throws -> [Geofence] {
-        return try await supabase
+        try await supabase
             .from("geofences")
             .select()
             .eq("is_active", value: true)
@@ -65,18 +63,16 @@ struct GeofenceService {
     }
 
     static func addGeofence(_ geofence: Geofence) async throws {
-        let payload = GeofencePayload(from: geofence)
         try await supabase
             .from("geofences")
-            .insert(payload)
+            .insert(GeofenceInsertPayload(from: geofence))
             .execute()
     }
 
     static func updateGeofence(_ geofence: Geofence) async throws {
-        let payload = GeofencePayload(from: geofence)
         try await supabase
             .from("geofences")
-            .update(payload)
+            .update(GeofenceInsertPayload(from: geofence))
             .eq("id", value: geofence.id.uuidString)
             .execute()
     }
@@ -85,6 +81,15 @@ struct GeofenceService {
         try await supabase
             .from("geofences")
             .delete()
+            .eq("id", value: id.uuidString)
+            .execute()
+    }
+
+    static func toggleGeofence(id: UUID, isActive: Bool) async throws {
+        struct Payload: Encodable { let is_active: Bool }
+        try await supabase
+            .from("geofences")
+            .update(Payload(is_active: isActive))
             .eq("id", value: id.uuidString)
             .execute()
     }

@@ -1,11 +1,18 @@
 import Foundation
 import Supabase
 
-private let supabase = SupabaseManager.shared.client
+// Uses global `supabase` constant from SupabaseManager.swift
 
-// MARK: - MaintenanceProfilePayload
+private let iso: ISO8601DateFormatter = {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return f
+}()
 
-struct MaintenanceProfilePayload: Encodable {
+// MARK: - MaintenanceProfileInsertPayload
+// Excludes: id, created_at, updated_at
+
+struct MaintenanceProfileInsertPayload: Encodable {
     let staffMemberId: String
     let certificationType: String
     let certificationNumber: String
@@ -34,21 +41,64 @@ struct MaintenanceProfilePayload: Encodable {
         case notes
     }
 
-    init(from profile: MaintenanceProfile) {
-        let fmt = ISO8601DateFormatter()
-        fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        self.staffMemberId             = profile.staffMemberId.uuidString
-        self.certificationType         = profile.certificationType
-        self.certificationNumber       = profile.certificationNumber
-        self.issuingAuthority         = profile.issuingAuthority
-        self.certificationExpiry       = fmt.string(from: profile.certificationExpiry)
-        self.certificationDocumentUrl  = profile.certificationDocumentUrl
-        self.yearsOfExperience         = profile.yearsOfExperience
-        self.specializations           = profile.specializations
-        self.totalTasksAssigned        = profile.totalTasksAssigned
-        self.totalTasksCompleted       = profile.totalTasksCompleted
-        self.aadhaarDocumentUrl        = profile.aadhaarDocumentUrl
-        self.notes                     = profile.notes
+    init(from p: MaintenanceProfile) {
+        staffMemberId            = p.staffMemberId.uuidString
+        certificationType        = p.certificationType
+        certificationNumber      = p.certificationNumber
+        issuingAuthority         = p.issuingAuthority
+        certificationExpiry      = iso.string(from: p.certificationExpiry)
+        certificationDocumentUrl = p.certificationDocumentUrl
+        yearsOfExperience        = p.yearsOfExperience
+        specializations          = p.specializations
+        totalTasksAssigned       = p.totalTasksAssigned
+        totalTasksCompleted      = p.totalTasksCompleted
+        aadhaarDocumentUrl       = p.aadhaarDocumentUrl
+        notes                    = p.notes
+    }
+}
+
+// MARK: - MaintenanceProfileUpdatePayload
+// Excludes: id, staff_member_id, created_at, updated_at
+
+struct MaintenanceProfileUpdatePayload: Encodable {
+    let certificationType: String
+    let certificationNumber: String
+    let issuingAuthority: String
+    let certificationExpiry: String
+    let certificationDocumentUrl: String?
+    let yearsOfExperience: Int
+    let specializations: [String]
+    let totalTasksAssigned: Int
+    let totalTasksCompleted: Int
+    let aadhaarDocumentUrl: String?
+    let notes: String?
+
+    enum CodingKeys: String, CodingKey {
+        case certificationType         = "certification_type"
+        case certificationNumber       = "certification_number"
+        case issuingAuthority          = "issuing_authority"
+        case certificationExpiry       = "certification_expiry"
+        case certificationDocumentUrl  = "certification_document_url"
+        case yearsOfExperience         = "years_of_experience"
+        case specializations
+        case totalTasksAssigned        = "total_tasks_assigned"
+        case totalTasksCompleted       = "total_tasks_completed"
+        case aadhaarDocumentUrl        = "aadhaar_document_url"
+        case notes
+    }
+
+    init(from p: MaintenanceProfile) {
+        certificationType        = p.certificationType
+        certificationNumber      = p.certificationNumber
+        issuingAuthority         = p.issuingAuthority
+        certificationExpiry      = iso.string(from: p.certificationExpiry)
+        certificationDocumentUrl = p.certificationDocumentUrl
+        yearsOfExperience        = p.yearsOfExperience
+        specializations          = p.specializations
+        totalTasksAssigned       = p.totalTasksAssigned
+        totalTasksCompleted      = p.totalTasksCompleted
+        aadhaarDocumentUrl       = p.aadhaarDocumentUrl
+        notes                    = p.notes
     }
 }
 
@@ -57,7 +107,7 @@ struct MaintenanceProfilePayload: Encodable {
 struct MaintenanceProfileService {
 
     static func fetchAllMaintenanceProfiles() async throws -> [MaintenanceProfile] {
-        return try await supabase
+        try await supabase
             .from("maintenance_profiles")
             .select()
             .order("created_at", ascending: false)
@@ -65,38 +115,36 @@ struct MaintenanceProfileService {
             .value
     }
 
-    static func fetchMaintenanceProfile(staffMemberId: UUID) async throws -> MaintenanceProfile {
-        return try await supabase
+    static func fetchMaintenanceProfile(staffMemberId: UUID) async throws -> MaintenanceProfile? {
+        let rows: [MaintenanceProfile] = try await supabase
             .from("maintenance_profiles")
             .select()
             .eq("staff_member_id", value: staffMemberId.uuidString)
-            .single()
             .execute()
             .value
+        return rows.first
     }
 
     static func addMaintenanceProfile(_ profile: MaintenanceProfile) async throws {
-        let payload = MaintenanceProfilePayload(from: profile)
         try await supabase
             .from("maintenance_profiles")
-            .insert(payload)
+            .insert(MaintenanceProfileInsertPayload(from: profile))
             .execute()
     }
 
     static func updateMaintenanceProfile(_ profile: MaintenanceProfile) async throws {
-        let payload = MaintenanceProfilePayload(from: profile)
         try await supabase
             .from("maintenance_profiles")
-            .update(payload)
+            .update(MaintenanceProfileUpdatePayload(from: profile))
             .eq("id", value: profile.id.uuidString)
             .execute()
     }
 
-    static func deleteMaintenanceProfile(id: UUID) async throws {
+    static func deleteMaintenanceProfile(staffMemberId: UUID) async throws {
         try await supabase
             .from("maintenance_profiles")
             .delete()
-            .eq("id", value: id.uuidString)
+            .eq("staff_member_id", value: staffMemberId.uuidString)
             .execute()
     }
 }

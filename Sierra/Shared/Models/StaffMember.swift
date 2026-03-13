@@ -1,8 +1,15 @@
 import Foundation
 
+// MARK: - StaffRole
+// Spec defines StaffRole separately from UserRole for the staff_members table.
+
+enum StaffRole: String, Codable, CaseIterable {
+    case driver      = "driver"
+    case maintenance = "maintenance"
+}
+
 // MARK: - Staff Status
 // Maps to PostgreSQL enum: staff_status
-// Values: Active | Pending Approval | Suspended
 
 enum StaffStatus: String, Codable, CaseIterable {
     case active          = "Active"
@@ -12,7 +19,6 @@ enum StaffStatus: String, Codable, CaseIterable {
 
 // MARK: - Staff Availability
 // Maps to PostgreSQL enum: staff_availability
-// Values: Available | Unavailable | On Trip | On Task
 
 enum StaffAvailability: String, Codable, CaseIterable {
     case available   = "Available"
@@ -25,52 +31,45 @@ enum StaffAvailability: String, Codable, CaseIterable {
 // Maps to table: staff_members
 
 struct StaffMember: Identifiable, Codable {
-    // MARK: Primary key
-    let id: UUID                         // auth.users.id
+    // MARK: Primary key (same UUID as auth.users.id)
+    let id: UUID
 
     // MARK: Core fields
-    var name: String?                    // name (nullable in DB)
-    var role: UserRole                   // role (user_role enum)
-    var status: StaffStatus              // status
-    var email: String                    // email
-    var phone: String?                   // phone
-    var availability: StaffAvailability  // availability
+    var name: String?                    // nullable in DB — optional for decode safety
+    var role: UserRole                   // user_role enum
+    var status: StaffStatus
+    var email: String
+    var phone: String?                   // nullable in DB
+    var availability: StaffAvailability
 
-    // MARK: Personal information
-    var dateOfBirth: Date?               // date_of_birth (date)
-    var gender: String?                  // gender
-    var address: String?                 // address
-    var emergencyContactName: String?    // emergency_contact_name
-    var emergencyContactPhone: String?   // emergency_contact_phone
-    var aadhaarNumber: String?           // aadhaar_number
+    // MARK: Personal information (nullable — populated after onboarding)
+    var dateOfBirth: Date?
+    var gender: String?
+    var address: String?
+    var emergencyContactName: String?
+    var emergencyContactPhone: String?
+    var aadhaarNumber: String?
 
     // MARK: Profile
-    var profilePhotoUrl: String?         // profile_photo_url
+    var profilePhotoUrl: String?
 
     // MARK: Flags
-    var isFirstLogin: Bool               // is_first_login
-    var isProfileComplete: Bool          // is_profile_complete
-    var isApproved: Bool                 // is_approved
-    var rejectionReason: String?         // rejection_reason
+    var isFirstLogin: Bool
+    var isProfileComplete: Bool
+    var isApproved: Bool
+    var rejectionReason: String?
 
     // MARK: Timestamps
-    var joinedDate: Date?                // joined_date (timestamptz)
-    var createdAt: Date                  // created_at
-    var updatedAt: Date                  // updated_at
+    var joinedDate: Date?
+    var createdAt: Date
+    var updatedAt: Date
 
     // MARK: - CodingKeys
 
     enum CodingKeys: String, CodingKey {
-        case id
-        case name
-        case role
-        case status
-        case email
-        case phone
-        case availability
+        case id, name, role, status, email, phone, availability
         case dateOfBirth              = "date_of_birth"
-        case gender
-        case address
+        case gender, address
         case emergencyContactName     = "emergency_contact_name"
         case emergencyContactPhone    = "emergency_contact_phone"
         case aadhaarNumber            = "aadhaar_number"
@@ -89,14 +88,13 @@ struct StaffMember: Identifiable, Codable {
     var displayName: String { name ?? email }
 
     var initials: String {
-        guard let n = name else {
-            return String(email.prefix(2)).uppercased()
-        }
-        let parts = n.split(separator: " ")
+        let parts = displayName.split(separator: " ")
         let first = parts.first?.prefix(1) ?? ""
-        let last = parts.count > 1 ? parts.last!.prefix(1) : ""
+        let last  = parts.dropFirst().first?.prefix(1) ?? ""
         return "\(first)\(last)".uppercased()
     }
+
+    var displayRole: String { role.rawValue }
 
     // MARK: - Mock Data
 

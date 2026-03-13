@@ -1,17 +1,25 @@
 import Foundation
 import Supabase
 
-private let supabase = SupabaseManager.shared.client
+// Uses global `supabase` constant from SupabaseManager.swift
 
-// MARK: - VehicleInspectionPayload
+private let iso: ISO8601DateFormatter = {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return f
+}()
 
-struct VehicleInspectionPayload: Encodable {
+// MARK: - VehicleInspectionInsertPayload
+// items is encoded as a JSON string for the JSONB column.
+// Excludes: id, created_at
+
+struct VehicleInspectionInsertPayload: Encodable {
     let tripId: String
     let vehicleId: String
     let driverId: String
     let type: String
     let overallResult: String
-    let items: [InspectionItem]
+    let items: String          // JSON-encoded [InspectionItem]
     let defectsReported: String?
     let additionalNotes: String?
     let driverSignatureUrl: String?
@@ -30,19 +38,19 @@ struct VehicleInspectionPayload: Encodable {
         case inspectedAt        = "inspected_at"
     }
 
-    init(from inspection: VehicleInspection) {
-        let fmt = ISO8601DateFormatter()
-        fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        self.tripId             = inspection.tripId.uuidString
-        self.vehicleId          = inspection.vehicleId.uuidString
-        self.driverId           = inspection.driverId.uuidString
-        self.type               = inspection.type.rawValue
-        self.overallResult      = inspection.overallResult.rawValue
-        self.items              = inspection.items
-        self.defectsReported    = inspection.defectsReported
-        self.additionalNotes    = inspection.additionalNotes
-        self.driverSignatureUrl = inspection.driverSignatureUrl
-        self.inspectedAt        = fmt.string(from: inspection.inspectedAt)
+    init(from i: VehicleInspection) throws {
+        let itemsData = try JSONEncoder().encode(i.items)
+        let itemsString = String(data: itemsData, encoding: .utf8) ?? "[]"
+        tripId             = i.tripId.uuidString
+        vehicleId          = i.vehicleId.uuidString
+        driverId           = i.driverId.uuidString
+        type               = i.type.rawValue
+        overallResult      = i.overallResult.rawValue
+        items              = itemsString
+        defectsReported    = i.defectsReported
+        additionalNotes    = i.additionalNotes
+        driverSignatureUrl = i.driverSignatureUrl
+        inspectedAt        = iso.string(from: i.inspectedAt)
     }
 }
 
@@ -51,7 +59,7 @@ struct VehicleInspectionPayload: Encodable {
 struct VehicleInspectionService {
 
     static func fetchAllInspections() async throws -> [VehicleInspection] {
-        return try await supabase
+        try await supabase
             .from("vehicle_inspections")
             .select()
             .order("inspected_at", ascending: false)
@@ -60,7 +68,7 @@ struct VehicleInspectionService {
     }
 
     static func fetchInspections(tripId: UUID) async throws -> [VehicleInspection] {
-        return try await supabase
+        try await supabase
             .from("vehicle_inspections")
             .select()
             .eq("trip_id", value: tripId.uuidString)
@@ -70,7 +78,7 @@ struct VehicleInspectionService {
     }
 
     static func fetchInspections(vehicleId: UUID) async throws -> [VehicleInspection] {
-        return try await supabase
+        try await supabase
             .from("vehicle_inspections")
             .select()
             .eq("vehicle_id", value: vehicleId.uuidString)
@@ -79,8 +87,18 @@ struct VehicleInspectionService {
             .value
     }
 
+    static func fetchInspection(id: UUID) async throws -> VehicleInspection? {
+        let rows: [VehicleInspection] = try await supabase
+            .from("vehicle_inspections")
+            .select()
+            .eq("id", value: id.uuidString)
+            .execute()
+            .value
+        return rows.first
+    }
+
     static func addInspection(_ inspection: VehicleInspection) async throws {
-        let payload = VehicleInspectionPayload(from: inspection)
+        let payload = try VehicleInspectionInsertPayload(from: inspection)
         try await supabase
             .from("vehicle_inspections")
             .insert(payload)
@@ -88,7 +106,7 @@ struct VehicleInspectionService {
     }
 
     static func updateInspection(_ inspection: VehicleInspection) async throws {
-        let payload = VehicleInspectionPayload(from: inspection)
+        let payload = try VehicleInspectionInsertPayload(from: inspection)
         try await supabase
             .from("vehicle_inspections")
             .update(payload)

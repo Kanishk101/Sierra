@@ -16,11 +16,11 @@ final class SupabaseOTPVerificationService: OTPVerificationServiceProtocol {
 
     func sendOTP(context: TwoFactorContext) async throws -> OTPSendResult {
         guard !context.userID.isEmpty else {
-            throw AuthError.staffRecordNotFound
+            throw AuthError.userNotFound
         }
         // Retrieve email from AuthManager (currentUser was populated at signIn)
         guard let email = AuthManager.shared.currentUser?.email else {
-            throw AuthError.staffRecordNotFound
+            throw AuthError.userNotFound
         }
         try await SupabaseAuthService.sendOTP(email: email)
         return OTPSendResult(
@@ -35,7 +35,7 @@ final class SupabaseOTPVerificationService: OTPVerificationServiceProtocol {
 
     func verifyOTP(code: String, context: TwoFactorContext) async throws -> OTPVerifyResult {
         guard let email = AuthManager.shared.currentUser?.email else {
-            throw AuthError.staffRecordNotFound
+            throw AuthError.userNotFound
         }
         do {
             try await SupabaseAuthService.verifyOTP(email: email, token: code)

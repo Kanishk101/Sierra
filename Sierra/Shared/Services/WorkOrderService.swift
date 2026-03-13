@@ -1,12 +1,57 @@
 import Foundation
 import Supabase
 
-private let supabase = SupabaseManager.shared.client
+// Uses global `supabase` constant from SupabaseManager.swift
 
-// MARK: - WorkOrderPayload
-// NOTE: total_cost is GENERATED (labour_cost_total + parts_cost_total) — never included in payload.
+private let iso: ISO8601DateFormatter = {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return f
+}()
 
-struct WorkOrderPayload: Encodable {
+// MARK: - WorkOrderInsertPayload
+// Excludes: id, total_cost (GENERATED), created_at, updated_at, started_at, completed_at
+
+struct WorkOrderInsertPayload: Encodable {
+    let maintenanceTaskId: String
+    let vehicleId: String
+    let assignedToId: String
+    let status: String
+    let repairDescription: String
+    let labourCostTotal: Double
+    let partsCostTotal: Double
+    let technicianNotes: String?
+    let vinScanned: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case maintenanceTaskId = "maintenance_task_id"
+        case vehicleId         = "vehicle_id"
+        case assignedToId      = "assigned_to_id"
+        case status
+        case repairDescription = "repair_description"
+        case labourCostTotal   = "labour_cost_total"
+        case partsCostTotal    = "parts_cost_total"
+        case technicianNotes   = "technician_notes"
+        case vinScanned        = "vin_scanned"
+    }
+
+    init(from o: WorkOrder) {
+        maintenanceTaskId = o.maintenanceTaskId.uuidString
+        vehicleId         = o.vehicleId.uuidString
+        assignedToId      = o.assignedToId.uuidString
+        status            = o.status.rawValue
+        repairDescription = o.repairDescription
+        labourCostTotal   = o.labourCostTotal
+        partsCostTotal    = o.partsCostTotal
+        technicianNotes   = o.technicianNotes
+        vinScanned        = o.vinScanned
+    }
+}
+
+// MARK: - WorkOrderUpdatePayload
+// Same as insert + started_at, completed_at. Never includes total_cost.
+
+struct WorkOrderUpdatePayload: Encodable {
     let maintenanceTaskId: String
     let vehicleId: String
     let assignedToId: String
@@ -33,20 +78,18 @@ struct WorkOrderPayload: Encodable {
         case vinScanned        = "vin_scanned"
     }
 
-    init(from order: WorkOrder) {
-        let fmt = ISO8601DateFormatter()
-        fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        self.maintenanceTaskId = order.maintenanceTaskId.uuidString
-        self.vehicleId         = order.vehicleId.uuidString
-        self.assignedToId      = order.assignedToId.uuidString
-        self.status            = order.status.rawValue
-        self.repairDescription = order.repairDescription
-        self.labourCostTotal   = order.labourCostTotal
-        self.partsCostTotal    = order.partsCostTotal
-        self.startedAt         = order.startedAt.map { fmt.string(from: $0) }
-        self.completedAt       = order.completedAt.map { fmt.string(from: $0) }
-        self.technicianNotes   = order.technicianNotes
-        self.vinScanned        = order.vinScanned
+    init(from o: WorkOrder) {
+        maintenanceTaskId = o.maintenanceTaskId.uuidString
+        vehicleId         = o.vehicleId.uuidString
+        assignedToId      = o.assignedToId.uuidString
+        status            = o.status.rawValue
+        repairDescription = o.repairDescription
+        labourCostTotal   = o.labourCostTotal
+        partsCostTotal    = o.partsCostTotal
+        startedAt         = o.startedAt.map  { iso.string(from: $0) }
+        completedAt       = o.completedAt.map { iso.string(from: $0) }
+        technicianNotes   = o.technicianNotes
+        vinScanned        = o.vinScanned
     }
 }
 
@@ -55,7 +98,7 @@ struct WorkOrderPayload: Encodable {
 struct WorkOrderService {
 
     static func fetchAllWorkOrders() async throws -> [WorkOrder] {
-        return try await supabase
+        try await supabase
             .from("work_orders")
             .select()
             .order("created_at", ascending: false)
@@ -63,18 +106,8 @@ struct WorkOrderService {
             .value
     }
 
-    static func fetchWorkOrder(maintenanceTaskId: UUID) async throws -> WorkOrder {
-        return try await supabase
-            .from("work_orders")
-            .select()
-            .eq("maintenance_task_id", value: maintenanceTaskId.uuidString)
-            .single()
-            .execute()
-            .value
-    }
-
     static func fetchWorkOrders(assignedToId: UUID) async throws -> [WorkOrder] {
-        return try await supabase
+        try await supabase
             .from("work_orders")
             .select()
             .eq("assigned_to_id", value: assignedToId.uuidString)
@@ -83,19 +116,37 @@ struct WorkOrderService {
             .value
     }
 
-    static func addWorkOrder(_ order: WorkOrder) async throws {
-        let payload = WorkOrderPayload(from: order)
+    static func fetchWorkOrder(maintenanceTaskId: UUID) async throws -> WorkOrder? {
+        let rows: [WorkOrder] = try await supabase
+            .from("work_orders")
+            .select()
+            .eq("maintenance_task_id", value: maintenanceTaskId.uuidString)
+            .execute()
+            .value
+        return rows.first
+    }
+
+    static func fetchWorkOrders(vehicleId: UUID) async throws -> [WorkOrder] {
         try await supabase
             .from("work_orders")
-            .insert(payload)
+            .select()
+            .eq("vehicle_id", value: vehicleId.uuidString)
+            .order("created_at", ascending: false)
+            .execute()
+            .value
+    }
+
+    static func addWorkOrder(_ order: WorkOrder) async throws {
+        try await supabase
+            .from("work_orders")
+            .insert(WorkOrderInsertPayload(from: order))
             .execute()
     }
 
     static func updateWorkOrder(_ order: WorkOrder) async throws {
-        let payload = WorkOrderPayload(from: order)
         try await supabase
             .from("work_orders")
-            .update(payload)
+            .update(WorkOrderUpdatePayload(from: order))
             .eq("id", value: order.id.uuidString)
             .execute()
     }

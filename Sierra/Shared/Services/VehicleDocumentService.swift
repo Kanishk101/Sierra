@@ -1,11 +1,18 @@
 import Foundation
 import Supabase
 
-private let supabase = SupabaseManager.shared.client
+// Uses global `supabase` constant from SupabaseManager.swift
 
-// MARK: - VehicleDocumentPayload
+private let iso: ISO8601DateFormatter = {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return f
+}()
 
-struct VehicleDocumentPayload: Encodable {
+// MARK: - VehicleDocumentInsertPayload
+// Excludes: id, created_at, updated_at
+
+struct VehicleDocumentInsertPayload: Encodable {
     let vehicleId: String
     let documentType: String
     let documentNumber: String
@@ -26,17 +33,15 @@ struct VehicleDocumentPayload: Encodable {
         case notes
     }
 
-    init(from doc: VehicleDocument) {
-        let fmt = ISO8601DateFormatter()
-        fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        self.vehicleId        = doc.vehicleId.uuidString
-        self.documentType     = doc.documentType.rawValue
-        self.documentNumber   = doc.documentNumber
-        self.issuedDate       = fmt.string(from: doc.issuedDate)
-        self.expiryDate       = fmt.string(from: doc.expiryDate)
-        self.issuingAuthority = doc.issuingAuthority
-        self.documentUrl      = doc.documentUrl
-        self.notes            = doc.notes
+    init(from d: VehicleDocument) {
+        vehicleId        = d.vehicleId.uuidString
+        documentType     = d.documentType.rawValue
+        documentNumber   = d.documentNumber
+        issuedDate       = iso.string(from: d.issuedDate)
+        expiryDate       = iso.string(from: d.expiryDate)
+        issuingAuthority = d.issuingAuthority
+        documentUrl      = d.documentUrl
+        notes            = d.notes
     }
 }
 
@@ -44,8 +49,8 @@ struct VehicleDocumentPayload: Encodable {
 
 struct VehicleDocumentService {
 
-    static func fetchAllDocuments() async throws -> [VehicleDocument] {
-        return try await supabase
+    static func fetchAllVehicleDocuments() async throws -> [VehicleDocument] {
+        try await supabase
             .from("vehicle_documents")
             .select()
             .order("expiry_date", ascending: true)
@@ -53,8 +58,8 @@ struct VehicleDocumentService {
             .value
     }
 
-    static func fetchDocuments(vehicleId: UUID) async throws -> [VehicleDocument] {
-        return try await supabase
+    static func fetchVehicleDocuments(vehicleId: UUID) async throws -> [VehicleDocument] {
+        try await supabase
             .from("vehicle_documents")
             .select()
             .eq("vehicle_id", value: vehicleId.uuidString)
@@ -63,40 +68,34 @@ struct VehicleDocumentService {
             .value
     }
 
-    /// Fetch all documents expiring within the next `withinDays` days (server-side filter).
-    static func fetchExpiringSoon(withinDays: Int) async throws -> [VehicleDocument] {
-        let fmt = ISO8601DateFormatter()
-        fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let cutoff = Date().addingTimeInterval(Double(withinDays) * 86400)
-        let cutoffString = fmt.string(from: cutoff)
+    static func fetchExpiringDocuments(withinDays days: Int) async throws -> [VehicleDocument] {
+        let cutoff = Date().addingTimeInterval(Double(days) * 86400)
         return try await supabase
             .from("vehicle_documents")
             .select()
-            .lte("expiry_date", value: cutoffString)
-            .gte("expiry_date", value: fmt.string(from: Date()))
+            .lte("expiry_date", value: iso.string(from: cutoff))
+            .gte("expiry_date", value: iso.string(from: Date()))
             .order("expiry_date", ascending: true)
             .execute()
             .value
     }
 
-    static func addDocument(_ doc: VehicleDocument) async throws {
-        let payload = VehicleDocumentPayload(from: doc)
+    static func addVehicleDocument(_ doc: VehicleDocument) async throws {
         try await supabase
             .from("vehicle_documents")
-            .insert(payload)
+            .insert(VehicleDocumentInsertPayload(from: doc))
             .execute()
     }
 
-    static func updateDocument(_ doc: VehicleDocument) async throws {
-        let payload = VehicleDocumentPayload(from: doc)
+    static func updateVehicleDocument(_ doc: VehicleDocument) async throws {
         try await supabase
             .from("vehicle_documents")
-            .update(payload)
+            .update(VehicleDocumentInsertPayload(from: doc))
             .eq("id", value: doc.id.uuidString)
             .execute()
     }
 
-    static func deleteDocument(id: UUID) async throws {
+    static func deleteVehicleDocument(id: UUID) async throws {
         try await supabase
             .from("vehicle_documents")
             .delete()

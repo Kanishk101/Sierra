@@ -56,11 +56,21 @@ final class CreateStaffViewModel {
         errorMessage = nil
 
         let tempPassword = generateTemporaryPassword()
-        let trimmedName = fullName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedName  = fullName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
 
         do {
+            // 1. Create staff account via Edge Function (AuthManager handles service_role logic)
+            try await AuthManager.shared.createStaffAccount(
+                email: trimmedEmail,
+                name: trimmedName,
+                role: role,
+                tempPassword: tempPassword
+            )
+
+            // 2. Send credentials email
             try await EmailService.sendCredentials(
-                to: email.trimmingCharacters(in: .whitespacesAndNewlines),
+                to: trimmedEmail,
                 name: trimmedName,
                 password: tempPassword,
                 role: role
@@ -71,19 +81,22 @@ final class CreateStaffViewModel {
             showSuccess = true
             successMessage = "Account created for \(trimmedName)"
 
-            // Post notification so lists can refresh
             NotificationCenter.default.post(
                 name: .staffCreated,
                 object: nil,
                 userInfo: [
-                    "name": trimmedName,
-                    "email": email,
-                    "role": role.rawValue
+                    "name":  trimmedName,
+                    "email": trimmedEmail,
+                    "role":  role.rawValue
                 ]
             )
         } catch {
             isLoading = false
-            errorMessage = "Failed to send credentials. Please try again."
+            if let authErr = error as? AuthError, authErr == .createStaffFailed {
+                errorMessage = authErr.errorDescription
+            } else {
+                errorMessage = "Failed to create staff account. Please try again."
+            }
         }
     }
 
@@ -103,21 +116,14 @@ final class CreateStaffViewModel {
     private func generateTemporaryPassword() -> String {
         let uppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         let lowercase = "abcdefghijklmnopqrstuvwxyz"
-        let digits = "0123456789"
-        let all = uppercase + lowercase + digits
+        let digits    = "0123456789"
+        let all       = uppercase + lowercase + digits
 
-        // Guarantee at least one of each category
         var password = ""
         password += String(uppercase.randomElement()!)
         password += String(lowercase.randomElement()!)
         password += String(digits.randomElement()!)
-
-        // Fill remaining 7 characters
-        for _ in 0..<7 {
-            password += String(all.randomElement()!)
-        }
-
-        // Shuffle to avoid predictable positions
+        for _ in 0..<7 { password += String(all.randomElement()!) }
         return String(password.shuffled())
     }
 

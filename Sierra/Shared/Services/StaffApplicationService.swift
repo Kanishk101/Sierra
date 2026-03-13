@@ -1,16 +1,26 @@
 import Foundation
 import Supabase
 
-private let supabase = SupabaseManager.shared.client
+// Uses global `supabase` constant from SupabaseManager.swift
 
-// MARK: - StaffApplicationPayload
+// MARK: - ISO Formatter
 
-struct StaffApplicationPayload: Encodable {
+private let iso: ISO8601DateFormatter = {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return f
+}()
+
+// MARK: - StaffApplicationInsertPayload
+// Excludes: id, created_at
+
+struct StaffApplicationInsertPayload: Encodable {
     let staffMemberId: String
-    let reviewedBy: String?
     let role: String
+    let submittedDate: String
     let status: String
     let rejectionReason: String?
+    let reviewedBy: String?
     let reviewedAt: String?
     let phone: String
     let dateOfBirth: String
@@ -36,15 +46,14 @@ struct StaffApplicationPayload: Encodable {
 
     enum CodingKeys: String, CodingKey {
         case staffMemberId                 = "staff_member_id"
-        case reviewedBy                    = "reviewed_by"
-        case role
-        case status
+        case role, status
+        case submittedDate                 = "submitted_date"
         case rejectionReason               = "rejection_reason"
+        case reviewedBy                    = "reviewed_by"
         case reviewedAt                    = "reviewed_at"
         case phone
         case dateOfBirth                   = "date_of_birth"
-        case gender
-        case address
+        case gender, address
         case emergencyContactName          = "emergency_contact_name"
         case emergencyContactPhone         = "emergency_contact_phone"
         case aadhaarNumber                 = "aadhaar_number"
@@ -64,36 +73,59 @@ struct StaffApplicationPayload: Encodable {
         case maintSpecializations          = "maint_specializations"
     }
 
-    init(from app: StaffApplication) {
-        let fmt = ISO8601DateFormatter()
-        fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        self.staffMemberId                 = app.staffMemberId.uuidString
-        self.reviewedBy                    = app.reviewedBy?.uuidString
-        self.role                          = app.role.rawValue
-        self.status                        = app.status.rawValue
-        self.rejectionReason               = app.rejectionReason
-        self.reviewedAt                    = app.reviewedAt.map { fmt.string(from: $0) }
-        self.phone                         = app.phone
-        self.dateOfBirth                   = fmt.string(from: app.dateOfBirth)
-        self.gender                        = app.gender
-        self.address                       = app.address
-        self.emergencyContactName          = app.emergencyContactName
-        self.emergencyContactPhone         = app.emergencyContactPhone
-        self.aadhaarNumber                 = app.aadhaarNumber
-        self.aadhaarDocumentUrl            = app.aadhaarDocumentUrl
-        self.profilePhotoUrl               = app.profilePhotoUrl
-        self.driverLicenseNumber           = app.driverLicenseNumber
-        self.driverLicenseExpiry           = app.driverLicenseExpiry.map { fmt.string(from: $0) }
-        self.driverLicenseClass            = app.driverLicenseClass
-        self.driverLicenseIssuingState     = app.driverLicenseIssuingState
-        self.driverLicenseDocumentUrl      = app.driverLicenseDocumentUrl
-        self.maintCertificationType        = app.maintCertificationType
-        self.maintCertificationNumber      = app.maintCertificationNumber
-        self.maintIssuingAuthority         = app.maintIssuingAuthority
-        self.maintCertificationExpiry      = app.maintCertificationExpiry.map { fmt.string(from: $0) }
-        self.maintCertificationDocumentUrl = app.maintCertificationDocumentUrl
-        self.maintYearsOfExperience        = app.maintYearsOfExperience
-        self.maintSpecializations          = app.maintSpecializations
+    init(from a: StaffApplication) {
+        staffMemberId                 = a.staffMemberId.uuidString
+        role                          = a.role.rawValue
+        submittedDate                 = iso.string(from: a.submittedDate)
+        status                        = a.status.rawValue
+        rejectionReason               = a.rejectionReason
+        reviewedBy                    = a.reviewedBy?.uuidString
+        reviewedAt                    = a.reviewedAt.map { iso.string(from: $0) }
+        phone                         = a.phone
+        dateOfBirth                   = iso.string(from: a.dateOfBirth)
+        gender                        = a.gender
+        address                       = a.address
+        emergencyContactName          = a.emergencyContactName
+        emergencyContactPhone         = a.emergencyContactPhone
+        aadhaarNumber                 = a.aadhaarNumber
+        aadhaarDocumentUrl            = a.aadhaarDocumentUrl
+        profilePhotoUrl               = a.profilePhotoUrl
+        driverLicenseNumber           = a.driverLicenseNumber
+        driverLicenseExpiry           = a.driverLicenseExpiry.map { iso.string(from: $0) }
+        driverLicenseClass            = a.driverLicenseClass
+        driverLicenseIssuingState     = a.driverLicenseIssuingState
+        driverLicenseDocumentUrl      = a.driverLicenseDocumentUrl
+        maintCertificationType        = a.maintCertificationType
+        maintCertificationNumber      = a.maintCertificationNumber
+        maintIssuingAuthority         = a.maintIssuingAuthority
+        maintCertificationExpiry      = a.maintCertificationExpiry.map { iso.string(from: $0) }
+        maintCertificationDocumentUrl = a.maintCertificationDocumentUrl
+        maintYearsOfExperience        = a.maintYearsOfExperience
+        maintSpecializations          = a.maintSpecializations
+    }
+}
+
+// MARK: - StaffApplicationUpdatePayload
+// Only mutable admin-facing fields
+
+struct StaffApplicationUpdatePayload: Encodable {
+    let status: String
+    let rejectionReason: String?
+    let reviewedBy: String?
+    let reviewedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case status
+        case rejectionReason = "rejection_reason"
+        case reviewedBy      = "reviewed_by"
+        case reviewedAt      = "reviewed_at"
+    }
+
+    init(from a: StaffApplication) {
+        status          = a.status.rawValue
+        rejectionReason = a.rejectionReason
+        reviewedBy      = a.reviewedBy?.uuidString
+        reviewedAt      = a.reviewedAt.map { iso.string(from: $0) }
     }
 }
 
@@ -101,8 +133,10 @@ struct StaffApplicationPayload: Encodable {
 
 struct StaffApplicationService {
 
-    static func fetchAllApplications() async throws -> [StaffApplication] {
-        return try await supabase
+    // MARK: Fetch
+
+    static func fetchAllStaffApplications() async throws -> [StaffApplication] {
+        try await supabase
             .from("staff_applications")
             .select()
             .order("submitted_date", ascending: false)
@@ -110,44 +144,48 @@ struct StaffApplicationService {
             .value
     }
 
-    static func fetchApplications(status: ApprovalStatus) async throws -> [StaffApplication] {
-        return try await supabase
-            .from("staff_applications")
-            .select()
-            .eq("status", value: status.rawValue)
-            .order("submitted_date", ascending: false)
-            .execute()
-            .value
-    }
-
-    static func fetchApplication(staffMemberId: UUID) async throws -> StaffApplication {
-        return try await supabase
+    static func fetchStaffApplications(staffMemberId: UUID) async throws -> [StaffApplication] {
+        try await supabase
             .from("staff_applications")
             .select()
             .eq("staff_member_id", value: staffMemberId.uuidString)
-            .single()
+            .order("submitted_date", ascending: false)
             .execute()
             .value
     }
 
-    static func addApplication(_ application: StaffApplication) async throws {
-        let payload = StaffApplicationPayload(from: application)
+    static func fetchPendingApplications() async throws -> [StaffApplication] {
         try await supabase
             .from("staff_applications")
-            .insert(payload)
+            .select()
+            .eq("status", value: ApprovalStatus.pending.rawValue)
+            .order("submitted_date", ascending: false)
+            .execute()
+            .value
+    }
+
+    // MARK: Insert
+
+    static func addStaffApplication(_ app: StaffApplication) async throws {
+        try await supabase
+            .from("staff_applications")
+            .insert(StaffApplicationInsertPayload(from: app))
             .execute()
     }
 
-    static func updateApplication(_ application: StaffApplication) async throws {
-        let payload = StaffApplicationPayload(from: application)
+    // MARK: Update (admin-facing fields only)
+
+    static func updateStaffApplication(_ app: StaffApplication) async throws {
         try await supabase
             .from("staff_applications")
-            .update(payload)
-            .eq("id", value: application.id.uuidString)
+            .update(StaffApplicationUpdatePayload(from: app))
+            .eq("id", value: app.id.uuidString)
             .execute()
     }
 
-    static func deleteApplication(id: UUID) async throws {
+    // MARK: Delete
+
+    static func deleteStaffApplication(id: UUID) async throws {
         try await supabase
             .from("staff_applications")
             .delete()

@@ -177,7 +177,11 @@ struct CreateTripView: View {
 
     private var step2View: some View {
         VStack(spacing: 0) {
-            let drivers = store.availableDrivers()
+            let drivers = store.staff.filter {
+                $0.role == .driver &&
+                $0.status == .active &&
+                $0.availability == .available
+            }
 
             if drivers.isEmpty {
                 VStack(spacing: 10) {
@@ -272,7 +276,9 @@ struct CreateTripView: View {
 
     private var step3View: some View {
         VStack(spacing: 0) {
-            let vehicles = store.availableVehicles()
+            let vehicles = store.vehicles.filter {
+                $0.status == .idle || $0.status == .active
+            }
 
             if vehicles.isEmpty {
                 VStack(spacing: 10) {
@@ -402,10 +408,10 @@ struct CreateTripView: View {
         let now = Date()
         let trip = Trip(
             id: UUID(),
-            taskId: Trip.generateTaskId(),
-            driverId: driverId,
-            vehicleId: vehicleId,
-            createdByAdminId: adminId,
+            taskId: TripService.newTaskId(),
+            driverId: driverId.uuidString,
+            vehicleId: vehicleId.uuidString,
+            createdByAdminId: adminId.uuidString,
             origin: origin.trimmingCharacters(in: .whitespaces),
             destination: destination.trimmingCharacters(in: .whitespaces),
             deliveryInstructions: "",
@@ -429,9 +435,9 @@ struct CreateTripView: View {
         do {
             try await store.addTrip(trip)
 
-            // Update vehicle assignment
+            // Update vehicle assignment (assignedDriverId is String?)
             if var v = store.vehicle(for: vehicleId) {
-                v.assignedDriverId = driverId
+                v.assignedDriverId = driverId.uuidString
                 try await store.updateVehicle(v)
             }
 
@@ -460,14 +466,16 @@ struct CreateTripView: View {
             if let trip = createdTrip {
                 VStack(spacing: 10) {
                     infoPill("Task ID", value: trip.taskId)
-                    infoPill("Route", value: "\(trip.origin) → \(trip.destination)")
+                    infoPill("Route", value: "\(trip.origin) \u{2192} \(trip.destination)")
 
                     if let dId = trip.driverId,
-                       let driver = store.staffMember(for: dId) {
+                       let dUUID = UUID(uuidString: dId),
+                       let driver = store.staffMember(for: dUUID) {
                         infoPill("Driver", value: driver.displayName)
                     }
                     if let vId = trip.vehicleId,
-                       let vehicle = store.vehicle(for: vId) {
+                       let vUUID = UUID(uuidString: vId),
+                       let vehicle = store.vehicle(for: vUUID) {
                         infoPill("Vehicle", value: "\(vehicle.name) \(vehicle.model)")
                     }
                 }

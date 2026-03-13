@@ -1,11 +1,18 @@
 import Foundation
 import Supabase
 
-private let supabase = SupabaseManager.shared.client
+// Uses global `supabase` constant from SupabaseManager.swift
 
-// MARK: - EmergencyAlertPayload
+private let iso: ISO8601DateFormatter = {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return f
+}()
 
-struct EmergencyAlertPayload: Encodable {
+// MARK: - EmergencyAlertInsertPayload
+// Excludes: id, created_at, acknowledged_by, acknowledged_at, resolved_at
+
+struct EmergencyAlertInsertPayload: Encodable {
     let driverId: String
     let tripId: String?
     let vehicleId: String?
@@ -14,41 +21,28 @@ struct EmergencyAlertPayload: Encodable {
     let alertType: String
     let status: String
     let description: String?
-    let acknowledgedBy: String?
-    let acknowledgedAt: String?
-    let resolvedAt: String?
     let triggeredAt: String
 
     enum CodingKeys: String, CodingKey {
-        case driverId        = "driver_id"
-        case tripId          = "trip_id"
-        case vehicleId       = "vehicle_id"
-        case latitude
-        case longitude
-        case alertType       = "alert_type"
-        case status
-        case description
-        case acknowledgedBy  = "acknowledged_by"
-        case acknowledgedAt  = "acknowledged_at"
-        case resolvedAt      = "resolved_at"
-        case triggeredAt     = "triggered_at"
+        case driverId    = "driver_id"
+        case tripId      = "trip_id"
+        case vehicleId   = "vehicle_id"
+        case latitude, longitude
+        case alertType   = "alert_type"
+        case status, description
+        case triggeredAt = "triggered_at"
     }
 
-    init(from alert: EmergencyAlert) {
-        let fmt = ISO8601DateFormatter()
-        fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        self.driverId        = alert.driverId.uuidString
-        self.tripId          = alert.tripId?.uuidString
-        self.vehicleId       = alert.vehicleId?.uuidString
-        self.latitude        = alert.latitude
-        self.longitude       = alert.longitude
-        self.alertType       = alert.alertType.rawValue
-        self.status          = alert.status.rawValue
-        self.description     = alert.description
-        self.acknowledgedBy  = alert.acknowledgedBy?.uuidString
-        self.acknowledgedAt  = alert.acknowledgedAt.map { fmt.string(from: $0) }
-        self.resolvedAt      = alert.resolvedAt.map { fmt.string(from: $0) }
-        self.triggeredAt     = fmt.string(from: alert.triggeredAt)
+    init(from a: EmergencyAlert) {
+        driverId    = a.driverId.uuidString
+        tripId      = a.tripId?.uuidString
+        vehicleId   = a.vehicleId?.uuidString
+        latitude    = a.latitude
+        longitude   = a.longitude
+        alertType   = a.alertType.rawValue
+        status      = a.status.rawValue
+        description = a.description
+        triggeredAt = iso.string(from: a.triggeredAt)
     }
 }
 
@@ -56,8 +50,8 @@ struct EmergencyAlertPayload: Encodable {
 
 struct EmergencyAlertService {
 
-    static func fetchAllAlerts() async throws -> [EmergencyAlert] {
-        return try await supabase
+    static func fetchAllEmergencyAlerts() async throws -> [EmergencyAlert] {
+        try await supabase
             .from("emergency_alerts")
             .select()
             .order("triggered_at", ascending: false)
@@ -66,7 +60,7 @@ struct EmergencyAlertService {
     }
 
     static func fetchActiveAlerts() async throws -> [EmergencyAlert] {
-        return try await supabase
+        try await supabase
             .from("emergency_alerts")
             .select()
             .eq("status", value: EmergencyAlertStatus.active.rawValue)
@@ -75,8 +69,8 @@ struct EmergencyAlertService {
             .value
     }
 
-    static func fetchAlerts(driverId: UUID) async throws -> [EmergencyAlert] {
-        return try await supabase
+    static func fetchEmergencyAlerts(driverId: UUID) async throws -> [EmergencyAlert] {
+        try await supabase
             .from("emergency_alerts")
             .select()
             .eq("driver_id", value: driverId.uuidString)
@@ -85,24 +79,46 @@ struct EmergencyAlertService {
             .value
     }
 
-    static func addAlert(_ alert: EmergencyAlert) async throws {
-        let payload = EmergencyAlertPayload(from: alert)
+    static func addEmergencyAlert(_ alert: EmergencyAlert) async throws {
         try await supabase
             .from("emergency_alerts")
-            .insert(payload)
+            .insert(EmergencyAlertInsertPayload(from: alert))
             .execute()
     }
 
-    static func updateAlert(_ alert: EmergencyAlert) async throws {
-        let payload = EmergencyAlertPayload(from: alert)
+    static func acknowledgeAlert(id: UUID, acknowledgedBy: UUID) async throws {
+        struct Payload: Encodable {
+            let acknowledged_by: String
+            let acknowledged_at: String
+            let status: String
+        }
         try await supabase
             .from("emergency_alerts")
-            .update(payload)
-            .eq("id", value: alert.id.uuidString)
+            .update(Payload(
+                acknowledged_by: acknowledgedBy.uuidString,
+                acknowledged_at: iso.string(from: Date()),
+                status: EmergencyAlertStatus.acknowledged.rawValue
+            ))
+            .eq("id", value: id.uuidString)
             .execute()
     }
 
-    static func deleteAlert(id: UUID) async throws {
+    static func resolveAlert(id: UUID) async throws {
+        struct Payload: Encodable {
+            let resolved_at: String
+            let status: String
+        }
+        try await supabase
+            .from("emergency_alerts")
+            .update(Payload(
+                resolved_at: iso.string(from: Date()),
+                status: EmergencyAlertStatus.resolved.rawValue
+            ))
+            .eq("id", value: id.uuidString)
+            .execute()
+    }
+
+    static func deleteEmergencyAlert(id: UUID) async throws {
         try await supabase
             .from("emergency_alerts")
             .delete()

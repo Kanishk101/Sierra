@@ -7,7 +7,7 @@ enum ActivityType: String, Codable, CaseIterable {
     case tripStarted           = "Trip Started"
     case tripCompleted         = "Trip Completed"
     case tripCancelled         = "Trip Cancelled"
-    case inspectionFailed      = "Inspection Failed"
+    case vehicleInspectionFailed = "Inspection Failed"
     case vehicleAssigned       = "Vehicle Assigned"
     case maintenanceRequested  = "Maintenance Requested"
     case maintenanceCompleted  = "Maintenance Completed"

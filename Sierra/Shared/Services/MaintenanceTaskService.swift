@@ -1,11 +1,62 @@
 import Foundation
 import Supabase
 
-private let supabase = SupabaseManager.shared.client
+// Uses global `supabase` constant from SupabaseManager.swift
 
-// MARK: - MaintenanceTaskPayload
+private let iso: ISO8601DateFormatter = {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return f
+}()
 
-struct MaintenanceTaskPayload: Encodable {
+// MARK: - MaintenanceTaskInsertPayload
+// Excludes: id, created_at, updated_at, completed_at
+
+struct MaintenanceTaskInsertPayload: Encodable {
+    let vehicleId: String
+    let createdByAdminId: String
+    let assignedToId: String?
+    let title: String
+    let taskDescription: String
+    let priority: String
+    let status: String
+    let taskType: String
+    let sourceAlertId: String?
+    let sourceInspectionId: String?
+    let dueDate: String
+
+    enum CodingKeys: String, CodingKey {
+        case vehicleId          = "vehicle_id"
+        case createdByAdminId   = "created_by_admin_id"
+        case assignedToId       = "assigned_to_id"
+        case title
+        case taskDescription    = "task_description"
+        case priority, status
+        case taskType           = "task_type"
+        case sourceAlertId      = "source_alert_id"
+        case sourceInspectionId = "source_inspection_id"
+        case dueDate            = "due_date"
+    }
+
+    init(from t: MaintenanceTask) {
+        vehicleId          = t.vehicleId.uuidString
+        createdByAdminId   = t.createdByAdminId.uuidString
+        assignedToId       = t.assignedToId?.uuidString
+        title              = t.title
+        taskDescription    = t.taskDescription
+        priority           = t.priority.rawValue
+        status             = t.status.rawValue
+        taskType           = t.taskType.rawValue
+        sourceAlertId      = t.sourceAlertId?.uuidString
+        sourceInspectionId = t.sourceInspectionId?.uuidString
+        dueDate            = iso.string(from: t.dueDate)
+    }
+}
+
+// MARK: - MaintenanceTaskUpdatePayload
+// Same as insert + completedAt
+
+struct MaintenanceTaskUpdatePayload: Encodable {
     let vehicleId: String
     let createdByAdminId: String
     let assignedToId: String?
@@ -25,8 +76,7 @@ struct MaintenanceTaskPayload: Encodable {
         case assignedToId       = "assigned_to_id"
         case title
         case taskDescription    = "task_description"
-        case priority
-        case status
+        case priority, status
         case taskType           = "task_type"
         case sourceAlertId      = "source_alert_id"
         case sourceInspectionId = "source_inspection_id"
@@ -34,21 +84,19 @@ struct MaintenanceTaskPayload: Encodable {
         case completedAt        = "completed_at"
     }
 
-    init(from task: MaintenanceTask) {
-        let fmt = ISO8601DateFormatter()
-        fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        self.vehicleId          = task.vehicleId.uuidString
-        self.createdByAdminId   = task.createdByAdminId.uuidString
-        self.assignedToId       = task.assignedToId?.uuidString
-        self.title              = task.title
-        self.taskDescription    = task.taskDescription
-        self.priority           = task.priority.rawValue
-        self.status             = task.status.rawValue
-        self.taskType           = task.taskType.rawValue
-        self.sourceAlertId      = task.sourceAlertId?.uuidString
-        self.sourceInspectionId = task.sourceInspectionId?.uuidString
-        self.dueDate            = fmt.string(from: task.dueDate)
-        self.completedAt        = task.completedAt.map { fmt.string(from: $0) }
+    init(from t: MaintenanceTask) {
+        vehicleId          = t.vehicleId.uuidString
+        createdByAdminId   = t.createdByAdminId.uuidString
+        assignedToId       = t.assignedToId?.uuidString
+        title              = t.title
+        taskDescription    = t.taskDescription
+        priority           = t.priority.rawValue
+        status             = t.status.rawValue
+        taskType           = t.taskType.rawValue
+        sourceAlertId      = t.sourceAlertId?.uuidString
+        sourceInspectionId = t.sourceInspectionId?.uuidString
+        dueDate            = iso.string(from: t.dueDate)
+        completedAt        = t.completedAt.map { iso.string(from: $0) }
     }
 }
 
@@ -56,8 +104,10 @@ struct MaintenanceTaskPayload: Encodable {
 
 struct MaintenanceTaskService {
 
-    static func fetchAllTasks() async throws -> [MaintenanceTask] {
-        return try await supabase
+    // MARK: Fetch
+
+    static func fetchAllMaintenanceTasks() async throws -> [MaintenanceTask] {
+        try await supabase
             .from("maintenance_tasks")
             .select()
             .order("due_date", ascending: true)
@@ -65,8 +115,8 @@ struct MaintenanceTaskService {
             .value
     }
 
-    static func fetchTasks(vehicleId: UUID) async throws -> [MaintenanceTask] {
-        return try await supabase
+    static func fetchMaintenanceTasks(vehicleId: UUID) async throws -> [MaintenanceTask] {
+        try await supabase
             .from("maintenance_tasks")
             .select()
             .eq("vehicle_id", value: vehicleId.uuidString)
@@ -75,8 +125,8 @@ struct MaintenanceTaskService {
             .value
     }
 
-    static func fetchTasks(assignedToId: UUID) async throws -> [MaintenanceTask] {
-        return try await supabase
+    static func fetchMaintenanceTasks(assignedToId: UUID) async throws -> [MaintenanceTask] {
+        try await supabase
             .from("maintenance_tasks")
             .select()
             .eq("assigned_to_id", value: assignedToId.uuidString)
@@ -85,8 +135,8 @@ struct MaintenanceTaskService {
             .value
     }
 
-    static func fetchTasks(status: MaintenanceTaskStatus) async throws -> [MaintenanceTask] {
-        return try await supabase
+    static func fetchMaintenanceTasks(status: MaintenanceTaskStatus) async throws -> [MaintenanceTask] {
+        try await supabase
             .from("maintenance_tasks")
             .select()
             .eq("status", value: status.rawValue)
@@ -95,24 +145,37 @@ struct MaintenanceTaskService {
             .value
     }
 
-    static func addTask(_ task: MaintenanceTask) async throws {
-        let payload = MaintenanceTaskPayload(from: task)
+    // MARK: Insert
+
+    static func addMaintenanceTask(_ task: MaintenanceTask) async throws {
         try await supabase
             .from("maintenance_tasks")
-            .insert(payload)
+            .insert(MaintenanceTaskInsertPayload(from: task))
             .execute()
     }
 
-    static func updateTask(_ task: MaintenanceTask) async throws {
-        let payload = MaintenanceTaskPayload(from: task)
+    // MARK: Update
+
+    static func updateMaintenanceTask(_ task: MaintenanceTask) async throws {
         try await supabase
             .from("maintenance_tasks")
-            .update(payload)
+            .update(MaintenanceTaskUpdatePayload(from: task))
             .eq("id", value: task.id.uuidString)
             .execute()
     }
 
-    static func deleteTask(id: UUID) async throws {
+    static func updateMaintenanceTaskStatus(id: UUID, status: MaintenanceTaskStatus) async throws {
+        struct Payload: Encodable { let status: String }
+        try await supabase
+            .from("maintenance_tasks")
+            .update(Payload(status: status.rawValue))
+            .eq("id", value: id.uuidString)
+            .execute()
+    }
+
+    // MARK: Delete
+
+    static func deleteMaintenanceTask(id: UUID) async throws {
         try await supabase
             .from("maintenance_tasks")
             .delete()

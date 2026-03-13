@@ -1,241 +1,169 @@
 import Foundation
+import Supabase
 
 // MARK: - AppDataStore
 // Central @Observable data store — single source of truth for the entire app.
 // All service calls flow through here. Views and ViewModels never call services directly.
 
-@MainActor @Observable
+
+@MainActor
+@Observable
 final class AppDataStore {
 
     static let shared = AppDataStore()
+
+    private init() {
+        subscribeToEmergencyAlerts()
+    }
+
+
+    // MARK: - Realtime
+
+    private var emergencyAlertsChannel: RealtimeChannelV2?
 
     // ─────────────────────────────────────────────────────────────
     // MARK: - 17 Data Arrays
     // ─────────────────────────────────────────────────────────────
 
-    // Staff
+    // MARK: Staff
     var staff: [StaffMember] = []
     var driverProfiles: [DriverProfile] = []
     var maintenanceProfiles: [MaintenanceProfile] = []
     var staffApplications: [StaffApplication] = []
 
-    // Vehicles
+    // MARK: Vehicles
     var vehicles: [Vehicle] = []
     var vehicleDocuments: [VehicleDocument] = []
 
-    // Operations
+    // MARK: Operations
     var trips: [Trip] = []
     var fuelLogs: [FuelLog] = []
     var vehicleInspections: [VehicleInspection] = []
     var proofOfDeliveries: [ProofOfDelivery] = []
     var emergencyAlerts: [EmergencyAlert] = []
 
-    // Maintenance
+    // MARK: Maintenance
     var maintenanceTasks: [MaintenanceTask] = []
     var workOrders: [WorkOrder] = []
     var maintenanceRecords: [MaintenanceRecord] = []
     var partsUsed: [PartUsed] = []
 
-    // Geofencing
+    // MARK: Geofencing
     var geofences: [Geofence] = []
     var geofenceEvents: [GeofenceEvent] = []
 
-    // Audit
+    // MARK: Audit
     var activityLogs: [ActivityLog] = []
 
-    // ─────────────────────────────────────────────────────────────
-    // MARK: - Loading State
-    // ─────────────────────────────────────────────────────────────
-
+    // MARK: UI State
     var isLoading: Bool = false
-    var loadError: String? = nil
-
-    private init() {}
+    var loadError: String?
 
     // ─────────────────────────────────────────────────────────────
-    // MARK: - Initial Load
+    // MARK: - Load Methods
     // ─────────────────────────────────────────────────────────────
 
-    /// Fetches core data needed for any role on first launch.
-    /// Call from SierraApp or ContentView via `.task { await AppDataStore.shared.loadAll() }`.
+    /// Full admin load — all 18 tables in parallel.
     func loadAll() async {
         isLoading = true
         loadError = nil
-        defer { isLoading = false }
         do {
-            async let fetchedVehicles      = VehicleService.fetchAllVehicles()
-            async let fetchedStaff         = StaffMemberService.fetchAllStaff()
-            async let fetchedTrips         = TripService.fetchAllTrips()
-            async let fetchedTasks         = MaintenanceTaskService.fetchAllTasks()
-            async let fetchedGeofences     = GeofenceService.fetchAllGeofences()
-            async let fetchedLogs          = ActivityLogService.fetchRecent(limit: 50)
-            async let fetchedApplications  = StaffApplicationService.fetchAllApplications()
-            async let fetchedDocuments     = VehicleDocumentService.fetchAllDocuments()
-            async let fetchedWorkOrders    = WorkOrderService.fetchAllWorkOrders()
-            async let fetchedAlerts        = EmergencyAlertService.fetchAllAlerts()
+            async let staffTask        = StaffMemberService.fetchAllStaffMembers()
+            async let driverProfsTask  = DriverProfileService.fetchAllDriverProfiles()
+            async let maintProfsTask   = MaintenanceProfileService.fetchAllMaintenanceProfiles()
+            async let appsTask         = StaffApplicationService.fetchAllStaffApplications()
+            async let vehiclesTask     = VehicleService.fetchAllVehicles()
+            async let vehicleDocsTask  = VehicleDocumentService.fetchAllVehicleDocuments()
+            async let tripsTask        = TripService.fetchAllTrips()
+            async let fuelLogsTask     = FuelLogService.fetchAllFuelLogs()
+            async let inspectionsTask  = VehicleInspectionService.fetchAllInspections()
+            async let podsTask         = ProofOfDeliveryService.fetchAllProofsOfDelivery()
+            async let alertsTask       = EmergencyAlertService.fetchAllEmergencyAlerts()
+            async let maintTasksTask   = MaintenanceTaskService.fetchAllMaintenanceTasks()
+            async let workOrdersTask   = WorkOrderService.fetchAllWorkOrders()
+            async let maintRecsTask    = MaintenanceRecordService.fetchAllMaintenanceRecords()
+            async let partsTask        = PartUsedService.fetchAllPartsUsed()
+            async let geofencesTask    = GeofenceService.fetchAllGeofences()
+            async let geoEventsTask    = GeofenceEventService.fetchAllGeofenceEvents()
+            async let activityTask     = ActivityLogService.fetchRecentLogs(limit: 100)
 
-            (vehicles,
-             staff,
-             trips,
-             maintenanceTasks,
-             geofences,
-             activityLogs,
-             staffApplications,
-             vehicleDocuments,
-             workOrders,
-             emergencyAlerts) = try await (
-                fetchedVehicles,
-                fetchedStaff,
-                fetchedTrips,
-                fetchedTasks,
-                fetchedGeofences,
-                fetchedLogs,
-                fetchedApplications,
-                fetchedDocuments,
-                fetchedWorkOrders,
-                fetchedAlerts
-            )
+            staff               = try await staffTask
+            driverProfiles      = try await driverProfsTask
+            maintenanceProfiles = try await maintProfsTask
+            staffApplications   = try await appsTask
+            vehicles            = try await vehiclesTask
+            vehicleDocuments    = try await vehicleDocsTask
+            trips               = try await tripsTask
+            fuelLogs            = try await fuelLogsTask
+            vehicleInspections  = try await inspectionsTask
+            proofOfDeliveries   = try await podsTask
+            emergencyAlerts     = try await alertsTask
+            maintenanceTasks    = try await maintTasksTask
+            workOrders          = try await workOrdersTask
+            maintenanceRecords  = try await maintRecsTask
+            partsUsed           = try await partsTask
+            geofences           = try await geofencesTask
+            geofenceEvents      = try await geoEventsTask
+            activityLogs        = try await activityTask
         } catch {
             loadError = error.localizedDescription
+            print("[AppDataStore.loadAll] Error: \(error)")
         }
+        isLoading = false
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // MARK: - Role-Specific Load Methods
-    // ─────────────────────────────────────────────────────────────
-
-    /// Loads data specific to a logged-in driver. Call after login when role == .driver.
+    /// Driver-specific load — only data relevant to a single driver.
     func loadDriverData(driverId: UUID) async {
+        isLoading = true
         do {
-            async let fetchedTrips       = TripService.fetchTrips(driverId: driverId)
-            async let fetchedFuelLogs    = FuelLogService.fetchFuelLogs(driverId: driverId)
-            async let fetchedAlerts      = EmergencyAlertService.fetchAlerts(driverId: driverId)
-            async let fetchedProfile     = DriverProfileService.fetchDriverProfile(staffMemberId: driverId)
+            async let vehiclesTask     = VehicleService.fetchAllVehicles()
+            async let tripsTask        = TripService.fetchTrips(driverId: driverId)
+            async let fuelLogsTask     = FuelLogService.fetchFuelLogs(driverId: driverId)
+            async let inspectionsTask  = VehicleInspectionService.fetchAllInspections()
+            async let driverProfTask   = DriverProfileService.fetchDriverProfile(staffMemberId: driverId)
 
-            let (t, fl, ea, dp) = try await (fetchedTrips, fetchedFuelLogs, fetchedAlerts, fetchedProfile)
-            trips         = t
-            fuelLogs      = fl
-            emergencyAlerts = ea
-            driverProfiles  = [dp]
+            vehicles           = try await vehiclesTask
+            trips              = try await tripsTask
+            fuelLogs           = try await fuelLogsTask
+            vehicleInspections = try await inspectionsTask
+            if let prof = try await driverProfTask {
+                driverProfiles = [prof]
+            }
         } catch {
             loadError = error.localizedDescription
+            print("[AppDataStore.loadDriverData] Error: \(error)")
         }
+        isLoading = false
     }
 
-    /// Loads data specific to a maintenance technician. Call after login when role == .maintenancePersonnel.
+    /// Maintenance-personnel-specific load.
     func loadMaintenanceData(staffId: UUID) async {
+        isLoading = true
         do {
-            async let fetchedTasks      = MaintenanceTaskService.fetchTasks(assignedToId: staffId)
-            async let fetchedWorkOrders = WorkOrderService.fetchWorkOrders(assignedToId: staffId)
-            async let fetchedProfile    = MaintenanceProfileService.fetchMaintenanceProfile(staffMemberId: staffId)
-            async let fetchedRecords    = MaintenanceRecordService.fetchAllRecords()
+            async let vehiclesTask   = VehicleService.fetchAllVehicles()
+            async let workOrdersTask = WorkOrderService.fetchWorkOrders(assignedToId: staffId)
+            async let maintTasksTask = MaintenanceTaskService.fetchMaintenanceTasks(assignedToId: staffId)
+            async let maintRecsTask  = MaintenanceRecordService.fetchMaintenanceRecords(performedById: staffId)
+            async let partsTask      = PartUsedService.fetchAllPartsUsed()
+            async let maintProfTask  = MaintenanceProfileService.fetchMaintenanceProfile(staffMemberId: staffId)
 
-            let (tasks, orders, profile, records) = try await (fetchedTasks, fetchedWorkOrders, fetchedProfile, fetchedRecords)
-            maintenanceTasks     = tasks
-            workOrders           = orders
-            maintenanceProfiles  = [profile]
-            maintenanceRecords   = records
+            vehicles           = try await vehiclesTask
+            workOrders         = try await workOrdersTask
+            maintenanceTasks   = try await maintTasksTask
+            maintenanceRecords = try await maintRecsTask
+            partsUsed          = try await partsTask
+            if let prof = try await maintProfTask {
+                maintenanceProfiles = [prof]
+            }
         } catch {
             loadError = error.localizedDescription
+            print("[AppDataStore.loadMaintenanceData] Error: \(error)")
         }
-    }
-
-    /// Loads everything. Call after login when role == .fleetManager.
-    func loadAdminData() async {
-        await loadAll()
-        do {
-            async let fetchedDriverProfiles = DriverProfileService.fetchAllDriverProfiles()
-            async let fetchedMaintProfiles  = MaintenanceProfileService.fetchAllMaintenanceProfiles()
-            async let fetchedRecords        = MaintenanceRecordService.fetchAllRecords()
-
-            let (dp, mp, mr) = try await (fetchedDriverProfiles, fetchedMaintProfiles, fetchedRecords)
-            driverProfiles      = dp
-            maintenanceProfiles = mp
-            maintenanceRecords  = mr
-            // Note: fuelLogs, vehicleInspections, geofenceEvents, partsUsed are loaded on-demand
-        } catch {
-            loadError = error.localizedDescription
-        }
+        isLoading = false
     }
 
     // ─────────────────────────────────────────────────────────────
-    // MARK: - On-Demand Load Helpers
-    // ─────────────────────────────────────────────────────────────
-
-    /// Loads all fuel logs for a vehicle (lazy, call from fuel log view).
-    func loadFuelLogs(for vehicleId: UUID) async throws {
-        fuelLogs = try await FuelLogService.fetchFuelLogs(vehicleId: vehicleId)
-    }
-
-    /// Loads all inspections for a trip (lazy, call when a trip is selected).
-    func loadInspections(for tripId: UUID) async throws {
-        vehicleInspections = try await VehicleInspectionService.fetchInspections(tripId: tripId)
-    }
-
-    /// Loads geofence events for a vehicle (lazy, call from geofence history view).
-    func loadGeofenceEvents(for vehicleId: UUID) async throws {
-        geofenceEvents = try await GeofenceEventService.fetchEvents(vehicleId: vehicleId)
-    }
-
-    /// Loads parts used for a work order (lazy, call when work order detail is opened).
-    func loadPartsUsed(for workOrderId: UUID) async throws {
-        partsUsed = try await PartUsedService.fetchParts(workOrderId: workOrderId)
-    }
-
-    /// Loads all driver profiles (lazy, call from admin staff review screen).
-    func loadDriverProfiles() async throws {
-        driverProfiles = try await DriverProfileService.fetchAllDriverProfiles()
-    }
-
-    /// Loads all maintenance profiles (lazy, call from admin staff review screen).
-    func loadMaintenanceProfiles() async throws {
-        maintenanceProfiles = try await MaintenanceProfileService.fetchAllMaintenanceProfiles()
-    }
-
-    // ─────────────────────────────────────────────────────────────
-    // MARK: - Vehicles
-    // ─────────────────────────────────────────────────────────────
-
-    func addVehicle(_ vehicle: Vehicle) async throws {
-        try await VehicleService.addVehicle(vehicle)
-        vehicles.append(vehicle)
-    }
-
-    func updateVehicle(_ vehicle: Vehicle) async throws {
-        try await VehicleService.updateVehicle(vehicle)
-        if let idx = vehicles.firstIndex(where: { $0.id == vehicle.id }) {
-            vehicles[idx] = vehicle
-        }
-    }
-
-    func deleteVehicle(id: UUID) async throws {
-        try await VehicleService.deleteVehicle(id: id)
-        vehicles.removeAll { $0.id == id }
-    }
-
-    // ─────────────────────────────────────────────────────────────
-    // MARK: - Vehicle Documents
-    // ─────────────────────────────────────────────────────────────
-
-    func addVehicleDocument(_ doc: VehicleDocument) async throws {
-        try await VehicleDocumentService.addDocument(doc)
-        vehicleDocuments.append(doc)
-    }
-
-    func updateVehicleDocument(_ doc: VehicleDocument) async throws {
-        try await VehicleDocumentService.updateDocument(doc)
-        if let idx = vehicleDocuments.firstIndex(where: { $0.id == doc.id }) {
-            vehicleDocuments[idx] = doc
-        }
-    }
-
-    func deleteVehicleDocument(id: UUID) async throws {
-        try await VehicleDocumentService.deleteDocument(id: id)
-        vehicleDocuments.removeAll { $0.id == id }
-    }
-
-    // ─────────────────────────────────────────────────────────────
-    // MARK: - Staff Members
+    // MARK: - Staff CRUD
     // ─────────────────────────────────────────────────────────────
 
     func addStaffMember(_ member: StaffMember) async throws {
@@ -252,41 +180,13 @@ final class AppDataStore {
 
     func deleteStaffMember(id: UUID) async throws {
         try await StaffMemberService.deleteStaffMember(id: id)
-        staff.removeAll { $0.id == id }
+        staff.removeAll                { $0.id == id }
+        driverProfiles.removeAll       { $0.staffMemberId == id }
+        maintenanceProfiles.removeAll  { $0.staffMemberId == id }
+        staffApplications.removeAll    { $0.staffMemberId == id }
     }
 
-    func approveStaff(id: UUID) async throws {
-        guard var member = staff.first(where: { $0.id == id }) else { return }
-        member.status     = .active
-        member.isApproved = true
-        try await StaffMemberService.updateStaffMember(member)
-        if let idx = staff.firstIndex(where: { $0.id == id }) {
-            staff[idx] = member
-        }
-    }
-
-    func rejectStaff(id: UUID, reason: String) async throws {
-        guard var member = staff.first(where: { $0.id == id }) else { return }
-        member.status          = .suspended
-        member.rejectionReason = reason
-        try await StaffMemberService.updateStaffMember(member)
-        if let idx = staff.firstIndex(where: { $0.id == id }) {
-            staff[idx] = member
-        }
-    }
-
-    func suspendStaff(id: UUID) async throws {
-        guard var member = staff.first(where: { $0.id == id }) else { return }
-        member.status = .suspended
-        try await StaffMemberService.updateStaffMember(member)
-        if let idx = staff.firstIndex(where: { $0.id == id }) {
-            staff[idx] = member
-        }
-    }
-
-    // ─────────────────────────────────────────────────────────────
-    // MARK: - Driver Profiles
-    // ─────────────────────────────────────────────────────────────
+    // MARK: Driver Profile
 
     func addDriverProfile(_ profile: DriverProfile) async throws {
         try await DriverProfileService.addDriverProfile(profile)
@@ -300,9 +200,7 @@ final class AppDataStore {
         }
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // MARK: - Maintenance Profiles
-    // ─────────────────────────────────────────────────────────────
+    // MARK: Maintenance Profile
 
     func addMaintenanceProfile(_ profile: MaintenanceProfile) async throws {
         try await MaintenanceProfileService.addMaintenanceProfile(profile)
@@ -317,42 +215,121 @@ final class AppDataStore {
     }
 
     // ─────────────────────────────────────────────────────────────
-    // MARK: - Staff Applications
+    // MARK: - Staff Applications CRUD
     // ─────────────────────────────────────────────────────────────
 
-    func addStaffApplication(_ application: StaffApplication) async throws {
-        try await StaffApplicationService.addApplication(application)
-        staffApplications.insert(application, at: 0)
+    func addStaffApplication(_ app: StaffApplication) async throws {
+        try await StaffApplicationService.addStaffApplication(app)
+        staffApplications.insert(app, at: 0)
     }
 
-    func approveApplication(id: UUID) async throws {
-        guard var app = staffApplications.first(where: { $0.id == id }) else { return }
-        app.status     = .approved
-        app.reviewedAt = Date()
-        try await StaffApplicationService.updateApplication(app)
-        if let idx = staffApplications.firstIndex(where: { $0.id == id }) {
+    func updateStaffApplication(_ app: StaffApplication) async throws {
+        try await StaffApplicationService.updateStaffApplication(app)
+        if let idx = staffApplications.firstIndex(where: { $0.id == app.id }) {
             staffApplications[idx] = app
         }
     }
 
-    func rejectApplication(id: UUID, reason: String) async throws {
-        guard var app = staffApplications.first(where: { $0.id == id }) else { return }
+    func approveStaffApplication(id: UUID, reviewedBy adminId: UUID) async throws {
+        guard let idx = staffApplications.firstIndex(where: { $0.id == id }) else { return }
+        var app = staffApplications[idx]
+        app.status          = .approved
+        app.rejectionReason = nil
+        app.reviewedBy      = adminId
+        app.reviewedAt      = Date()
+        try await StaffApplicationService.updateStaffApplication(app)
+        staffApplications[idx] = app
+
+        try await AuthUserService.setApprovalStatus(
+            id: app.staffMemberId,
+            approved: true,
+            rejectionReason: nil
+        )
+        if let staffIdx = staff.firstIndex(where: { $0.id == app.staffMemberId }) {
+            staff[staffIdx].isApproved = true
+        }
+    }
+
+    func rejectStaffApplication(id: UUID, reason: String, reviewedBy adminId: UUID) async throws {
+        guard let idx = staffApplications.firstIndex(where: { $0.id == id }) else { return }
+        var app = staffApplications[idx]
         app.status          = .rejected
         app.rejectionReason = reason
+        app.reviewedBy      = adminId
         app.reviewedAt      = Date()
-        try await StaffApplicationService.updateApplication(app)
-        if let idx = staffApplications.firstIndex(where: { $0.id == id }) {
-            staffApplications[idx] = app
+        try await StaffApplicationService.updateStaffApplication(app)
+        staffApplications[idx] = app
+
+        try await AuthUserService.setApprovalStatus(
+            id: app.staffMemberId,
+            approved: false,
+            rejectionReason: reason
+        )
+        if let staffIdx = staff.firstIndex(where: { $0.id == app.staffMemberId }) {
+            staff[staffIdx].isApproved      = false
+            staff[staffIdx].rejectionReason = reason
         }
     }
 
+    var pendingApplicationsCount: Int {
+        staffApplications.filter { $0.status == .pending }.count
+    }
+
     // ─────────────────────────────────────────────────────────────
-    // MARK: - Trips
+    // MARK: - Vehicle CRUD
+    // ─────────────────────────────────────────────────────────────
+
+    func addVehicle(_ vehicle: Vehicle) async throws {
+        try await VehicleService.addVehicle(vehicle)
+        vehicles.append(vehicle)
+    }
+
+    func updateVehicle(_ vehicle: Vehicle) async throws {
+        try await VehicleService.updateVehicle(vehicle)
+        if let idx = vehicles.firstIndex(where: { $0.id == vehicle.id }) {
+            vehicles[idx] = vehicle
+        }
+    }
+
+    func deleteVehicle(id: UUID) async throws {
+        try await VehicleService.deleteVehicle(id: id)
+        vehicles.removeAll        { $0.id == id }
+        vehicleDocuments.removeAll { $0.vehicleId == id }
+    }
+
+    func assignVehicleToDriver(vehicleId: UUID, driverId: UUID?) async throws {
+        try await VehicleService.assignDriver(vehicleId: vehicleId, driverId: driverId)
+        if let idx = vehicles.firstIndex(where: { $0.id == vehicleId }) {
+            vehicles[idx].assignedDriverId = driverId?.uuidString
+        }
+    }
+
+    // MARK: Vehicle Documents
+
+    func addVehicleDocument(_ doc: VehicleDocument) async throws {
+        try await VehicleDocumentService.addVehicleDocument(doc)
+        vehicleDocuments.append(doc)
+    }
+
+    func updateVehicleDocument(_ doc: VehicleDocument) async throws {
+        try await VehicleDocumentService.updateVehicleDocument(doc)
+        if let idx = vehicleDocuments.firstIndex(where: { $0.id == doc.id }) {
+            vehicleDocuments[idx] = doc
+        }
+    }
+
+    func deleteVehicleDocument(id: UUID) async throws {
+        try await VehicleDocumentService.deleteVehicleDocument(id: id)
+        vehicleDocuments.removeAll { $0.id == id }
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // MARK: - Trip CRUD
     // ─────────────────────────────────────────────────────────────
 
     func addTrip(_ trip: Trip) async throws {
         try await TripService.addTrip(trip)
-        trips.append(trip)
+        trips.insert(trip, at: 0)
     }
 
     func updateTrip(_ trip: Trip) async throws {
@@ -362,12 +339,38 @@ final class AppDataStore {
         }
     }
 
-    func cancelTrip(id: UUID) async throws {
-        guard var trip = trips.first(where: { $0.id == id }) else { return }
-        trip.status = .cancelled
-        try await TripService.updateTrip(trip)
+    func updateTripStatus(id: UUID, status: TripStatus) async throws {
+        try await TripService.updateTripStatus(id: id, status: status)
         if let idx = trips.firstIndex(where: { $0.id == id }) {
-            trips[idx] = trip
+            trips[idx].status = status
+            if status == .active {
+                trips[idx].actualStartDate = Date()
+            } else if status == .completed {
+                trips[idx].actualEndDate = Date()
+            }
+        }
+    }
+
+    func deleteTrip(id: UUID) async throws {
+        try await TripService.deleteTrip(id: id)
+        trips.removeAll { $0.id == id }
+    }
+
+    func completeTrip(id: UUID, endMileage: Double) async throws {
+        guard let idx = trips.firstIndex(where: { $0.id == id }) else { return }
+        var trip = trips[idx]
+        trip.status       = .completed
+        trip.actualEndDate = Date()
+        trip.endMileage   = endMileage
+        try await TripService.updateTrip(trip)
+        trips[idx] = trip
+
+        // Update vehicle odometer and trip count
+        if let vehicleIdStr = trip.vehicleId,
+           let vehicleId    = UUID(uuidString: vehicleIdStr),
+           let vIdx         = vehicles.firstIndex(where: { $0.id == vehicleId }) {
+            vehicles[vIdx].odometer   = endMileage
+            vehicles[vIdx].totalTrips += 1
         }
     }
 
@@ -377,7 +380,12 @@ final class AppDataStore {
 
     func addFuelLog(_ log: FuelLog) async throws {
         try await FuelLogService.addFuelLog(log)
-        fuelLogs.append(log)
+        fuelLogs.insert(log, at: 0)
+    }
+
+    func deleteFuelLog(id: UUID) async throws {
+        try await FuelLogService.deleteFuelLog(id: id)
+        fuelLogs.removeAll { $0.id == id }
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -387,6 +395,25 @@ final class AppDataStore {
     func addVehicleInspection(_ inspection: VehicleInspection) async throws {
         try await VehicleInspectionService.addInspection(inspection)
         vehicleInspections.append(inspection)
+
+        // Link inspection to trip
+        let tripId = inspection.tripId
+        if let tripIdx = trips.firstIndex(where: { $0.id == tripId }) {
+            if inspection.type == .preTripInspection {
+                trips[tripIdx].preInspectionId  = inspection.id
+            } else {
+                trips[tripIdx].postInspectionId = inspection.id
+            }
+            try await TripService.updateTrip(trips[tripIdx])
+        }
+
+        // If failed, put vehicle in maintenance
+        if inspection.overallResult == .failed {
+            if let vIdx = vehicles.firstIndex(where: { $0.id == inspection.vehicleId }) {
+                vehicles[vIdx].status = .inMaintenance
+                try? await VehicleService.updateVehicle(vehicles[vIdx])
+            }
+        }
     }
 
     func updateVehicleInspection(_ inspection: VehicleInspection) async throws {
@@ -403,6 +430,11 @@ final class AppDataStore {
     func addProofOfDelivery(_ pod: ProofOfDelivery) async throws {
         try await ProofOfDeliveryService.addProofOfDelivery(pod)
         proofOfDeliveries.append(pod)
+        // Link POD to the trip
+        if let tripIdx = trips.firstIndex(where: { $0.id == pod.tripId }) {
+            trips[tripIdx].proofOfDeliveryId = pod.id
+            try await TripService.updateTrip(trips[tripIdx])
+        }
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -410,28 +442,24 @@ final class AppDataStore {
     // ─────────────────────────────────────────────────────────────
 
     func addEmergencyAlert(_ alert: EmergencyAlert) async throws {
-        try await EmergencyAlertService.addAlert(alert)
-        emergencyAlerts.append(alert)
+        try await EmergencyAlertService.addEmergencyAlert(alert)
+        emergencyAlerts.insert(alert, at: 0)
     }
 
-    func acknowledgeAlert(id: UUID, byAdminId adminId: UUID) async throws {
-        guard var alert = emergencyAlerts.first(where: { $0.id == id }) else { return }
-        alert.status          = .acknowledged
-        alert.acknowledgedBy  = adminId
-        alert.acknowledgedAt  = Date()
-        try await EmergencyAlertService.updateAlert(alert)
+    func acknowledgeAlert(id: UUID, acknowledgedBy adminId: UUID) async throws {
+        try await EmergencyAlertService.acknowledgeAlert(id: id, acknowledgedBy: adminId)
         if let idx = emergencyAlerts.firstIndex(where: { $0.id == id }) {
-            emergencyAlerts[idx] = alert
+            emergencyAlerts[idx].status         = .acknowledged
+            emergencyAlerts[idx].acknowledgedBy = adminId
+            emergencyAlerts[idx].acknowledgedAt = Date()
         }
     }
 
     func resolveAlert(id: UUID) async throws {
-        guard var alert = emergencyAlerts.first(where: { $0.id == id }) else { return }
-        alert.status     = .resolved
-        alert.resolvedAt = Date()
-        try await EmergencyAlertService.updateAlert(alert)
+        try await EmergencyAlertService.resolveAlert(id: id)
         if let idx = emergencyAlerts.firstIndex(where: { $0.id == id }) {
-            emergencyAlerts[idx] = alert
+            emergencyAlerts[idx].status     = .resolved
+            emergencyAlerts[idx].resolvedAt = Date()
         }
     }
 
@@ -440,24 +468,41 @@ final class AppDataStore {
     // ─────────────────────────────────────────────────────────────
 
     func addMaintenanceTask(_ task: MaintenanceTask) async throws {
-        try await MaintenanceTaskService.addTask(task)
-        maintenanceTasks.append(task)
+        try await MaintenanceTaskService.addMaintenanceTask(task)
+        maintenanceTasks.insert(task, at: 0)
+
+        // Put vehicle in maintenance
+        if let idx = vehicles.firstIndex(where: { $0.id == task.vehicleId }) {
+            vehicles[idx].status = .inMaintenance
+            try? await VehicleService.updateVehicle(vehicles[idx])
+        }
     }
 
     func updateMaintenanceTask(_ task: MaintenanceTask) async throws {
-        try await MaintenanceTaskService.updateTask(task)
+        try await MaintenanceTaskService.updateMaintenanceTask(task)
         if let idx = maintenanceTasks.firstIndex(where: { $0.id == task.id }) {
             maintenanceTasks[idx] = task
         }
     }
 
-    func cancelMaintenanceTask(id: UUID) async throws {
-        guard var task = maintenanceTasks.first(where: { $0.id == id }) else { return }
-        task.status = .cancelled
-        try await MaintenanceTaskService.updateTask(task)
+    func completeMaintenanceTask(id: UUID) async throws {
+        try await MaintenanceTaskService.updateMaintenanceTaskStatus(id: id, status: .completed)
         if let idx = maintenanceTasks.firstIndex(where: { $0.id == id }) {
-            maintenanceTasks[idx] = task
+            maintenanceTasks[idx].status      = .completed
+            maintenanceTasks[idx].completedAt = Date()
+
+            // Revert vehicle to idle
+            let vehicleId = maintenanceTasks[idx].vehicleId
+            if let vIdx = vehicles.firstIndex(where: { $0.id == vehicleId }) {
+                vehicles[vIdx].status = .idle
+                try? await VehicleService.updateVehicle(vehicles[vIdx])
+            }
         }
+    }
+
+    func deleteMaintenanceTask(id: UUID) async throws {
+        try await MaintenanceTaskService.deleteMaintenanceTask(id: id)
+        maintenanceTasks.removeAll { $0.id == id }
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -477,12 +522,27 @@ final class AppDataStore {
     }
 
     func closeWorkOrder(id: UUID) async throws {
-        guard var order = workOrders.first(where: { $0.id == id }) else { return }
+        guard let idx = workOrders.firstIndex(where: { $0.id == id }) else { return }
+        var order = workOrders[idx]
         order.status      = .closed
         order.completedAt = Date()
         try await WorkOrderService.updateWorkOrder(order)
-        if let idx = workOrders.firstIndex(where: { $0.id == id }) {
-            workOrders[idx] = order
+        workOrders[idx] = order
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // MARK: - Maintenance Records
+    // ─────────────────────────────────────────────────────────────
+
+    func addMaintenanceRecord(_ record: MaintenanceRecord) async throws {
+        try await MaintenanceRecordService.addMaintenanceRecord(record)
+        maintenanceRecords.insert(record, at: 0)
+    }
+
+    func updateMaintenanceRecord(_ record: MaintenanceRecord) async throws {
+        try await MaintenanceRecordService.updateMaintenanceRecord(record)
+        if let idx = maintenanceRecords.firstIndex(where: { $0.id == record.id }) {
+            maintenanceRecords[idx] = record
         }
     }
 
@@ -491,22 +551,31 @@ final class AppDataStore {
     // ─────────────────────────────────────────────────────────────
 
     func addPartUsed(_ part: PartUsed) async throws {
-        try await PartUsedService.addPart(part)
+        try await PartUsedService.addPartUsed(part)
         partsUsed.append(part)
+        // Recalculate work order parts cost
+        let total = partsUsed
+            .filter   { $0.workOrderId == part.workOrderId }
+            .reduce(0) { $0 + $1.totalCost }
+        if let idx = workOrders.firstIndex(where: { $0.id == part.workOrderId }) {
+            workOrders[idx].partsCostTotal = total
+            try? await WorkOrderService.updateWorkOrder(workOrders[idx])
+        }
     }
 
     func deletePartUsed(id: UUID) async throws {
-        try await PartUsedService.deletePart(id: id)
+        guard let part = partsUsed.first(where: { $0.id == id }) else { return }
+        let workOrderId = part.workOrderId
+        try await PartUsedService.deletePartUsed(id: id)
         partsUsed.removeAll { $0.id == id }
-    }
-
-    // ─────────────────────────────────────────────────────────────
-    // MARK: - Maintenance Records
-    // ─────────────────────────────────────────────────────────────
-
-    func addMaintenanceRecord(_ record: MaintenanceRecord) async throws {
-        try await MaintenanceRecordService.addRecord(record)
-        maintenanceRecords.append(record)
+        // Recalculate after removal
+        let total = partsUsed
+            .filter   { $0.workOrderId == workOrderId }
+            .reduce(0) { $0 + $1.totalCost }
+        if let idx = workOrders.firstIndex(where: { $0.id == workOrderId }) {
+            workOrders[idx].partsCostTotal = total
+            try? await WorkOrderService.updateWorkOrder(workOrders[idx])
+        }
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -530,12 +599,17 @@ final class AppDataStore {
         geofences.removeAll { $0.id == id }
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // MARK: - Geofence Events
-    // ─────────────────────────────────────────────────────────────
+    func toggleGeofence(id: UUID) async throws {
+        guard let idx = geofences.firstIndex(where: { $0.id == id }) else { return }
+        let newState = !geofences[idx].isActive
+        try await GeofenceService.toggleGeofence(id: id, isActive: newState)
+        geofences[idx].isActive = newState
+    }
+
+    // Geofence Events
 
     func addGeofenceEvent(_ event: GeofenceEvent) async throws {
-        try await GeofenceEventService.addEvent(event)
+        try await GeofenceEventService.addGeofenceEvent(event)
         geofenceEvents.append(event)
     }
 
@@ -543,38 +617,37 @@ final class AppDataStore {
     // MARK: - Activity Logs
     // ─────────────────────────────────────────────────────────────
 
-    func addActivityLog(_ log: ActivityLog) async throws {
-        try await ActivityLogService.addLog(log)
-        activityLogs.insert(log, at: 0)
+    func refreshActivityLogs() async {
+        do {
+            activityLogs = try await ActivityLogService.fetchRecentLogs(limit: 100)
+        } catch {
+            print("[AppDataStore] Activity log refresh failed: \(error)")
+        }
     }
 
-    func markActivityAsRead(id: UUID) async throws {
+    func markActivityLogRead(id: UUID) async throws {
         try await ActivityLogService.markAsRead(id: id)
         if let idx = activityLogs.firstIndex(where: { $0.id == id }) {
             activityLogs[idx].isRead = true
         }
     }
 
+    func markAllActivityLogsRead() async throws {
+        try await ActivityLogService.markAllAsRead()
+        for idx in activityLogs.indices {
+            activityLogs[idx].isRead = true
+        }
+    }
+
+    var unreadActivityCount: Int {
+        activityLogs.filter { !$0.isRead }.count
+    }
+
     // ─────────────────────────────────────────────────────────────
-    // MARK: - Lookup Helpers (Pure Swift, synchronous)
+    // MARK: - Lookup Helpers
+    // NOTE: All methods use explicit named parameters to avoid collision
+    // with stored array property names.
     // ─────────────────────────────────────────────────────────────
-
-    // MARK: Staff
-
-    func staffMember(for id: UUID) -> StaffMember? {
-        staff.first { $0.id == id }
-    }
-
-    /// Legacy string-based overload for backward compatibility with existing views.
-    func staffMember(forId id: String) -> StaffMember? {
-        guard let uuid = UUID(uuidString: id) else { return nil }
-        return staffMember(for: uuid)
-    }
-
-    /// Legacy overload preserved to avoid breaking call sites.
-    func staffMember(forIdString id: String) -> StaffMember? {
-        staffMember(forId: id)
-    }
 
     func driverProfile(for staffId: UUID) -> DriverProfile? {
         driverProfiles.first { $0.staffMemberId == staffId }
@@ -584,329 +657,129 @@ final class AppDataStore {
         maintenanceProfiles.first { $0.staffMemberId == staffId }
     }
 
-    /// Returns all active, available drivers not currently on an active or scheduled trip.
-    func availableDrivers() -> [StaffMember] {
-        let busyIds = Set(
-            trips
-                .filter { $0.status == .active || $0.status == .scheduled }
-                .compactMap { $0.driverId }
-        )
-        return staff.filter { m in
-            m.role         == .driver
-            && m.status    == .active
-            && m.availability == .available
-            && !busyIds.contains(m.id)
-        }
-    }
-
-    // MARK: Vehicles
-
-    func vehicle(for id: UUID) -> Vehicle? {
-        vehicles.first { $0.id == id }
-    }
-
-    /// Legacy string-based overload.
-    func vehicle(forId id: String) -> Vehicle? {
-        guard let uuid = UUID(uuidString: id) else { return nil }
-        return vehicle(for: uuid)
-    }
-
-    /// Legacy overload.
-    func vehicle(forIdString id: String) -> Vehicle? {
-        vehicle(forId: id)
-    }
-
-    /// Returns vehicles that are active or idle and not currently assigned to a driver.
-    func availableVehicles() -> [Vehicle] {
-        vehicles.filter { v in
-            (v.status == .active || v.status == .idle) && v.assignedDriverId == nil
-        }
-    }
-
-    func vehicleDocuments(for vehicleId: UUID) -> [VehicleDocument] {
+    func vehicleDocuments(forVehicle vehicleId: UUID) -> [VehicleDocument] {
         vehicleDocuments.filter { $0.vehicleId == vehicleId }
     }
 
-    func documentsExpiringSoon(withinDays days: Int = 30) -> [VehicleDocument] {
-        let cutoff = Date().addingTimeInterval(Double(days) * 86400)
-        return vehicleDocuments.filter { $0.expiryDate <= cutoff && $0.expiryDate >= Date() }
+    func trips(forDriver driverId: UUID) -> [Trip] {
+        trips.filter { $0.driverId == driverId.uuidString }
     }
 
-    // MARK: Trips
-
-    func trips(for driverId: UUID) -> [Trip] {
-        trips.filter { $0.driverId == driverId }
-    }
-
-    func trips(forVehicle vehicleId: UUID) -> [Trip] {
-        trips.filter { $0.vehicleId == vehicleId }
-    }
-
-    func activeTrip(for driverId: UUID) -> Trip? {
-        trips.first { $0.driverId == driverId && ($0.status == .active || $0.status == .scheduled) }
-    }
-
-    /// Legacy overload for views using String driver IDs.
-    func activeTrip(forDriverId id: UUID) -> Trip? {
-        activeTrip(for: id)
-    }
-
-    /// Legacy string-based overload.
-    func activeTrip(forDriverId id: String) -> Trip? {
-        guard let uuid = UUID(uuidString: id) else { return nil }
-        return activeTrip(for: uuid)
-    }
-
-    func trip(forTaskId taskId: String) -> Trip? {
-        trips.first { $0.taskId == taskId }
-    }
-
-    // MARK: Fuel Logs
-
-    func fuelLogs(for driverId: UUID) -> [FuelLog] {
+    func fuelLogs(forDriver driverId: UUID) -> [FuelLog] {
         fuelLogs.filter { $0.driverId == driverId }
     }
 
-    func fuelLogs(forVehicleId vehicleId: UUID) -> [FuelLog] {
+    func fuelLogs(forVehicle vehicleId: UUID) -> [FuelLog] {
         fuelLogs.filter { $0.vehicleId == vehicleId }
     }
 
-    // MARK: Inspections
-
-    func inspections(for tripId: UUID) -> [VehicleInspection] {
-        vehicleInspections.filter { $0.tripId == tripId }
-    }
-
-    func preInspection(for tripId: UUID) -> VehicleInspection? {
-        vehicleInspections.first { $0.tripId == tripId && $0.type == .preTrip }
-    }
-
-    func postInspection(for tripId: UUID) -> VehicleInspection? {
-        vehicleInspections.first { $0.tripId == tripId && $0.type == .postTrip }
-    }
-
-    // MARK: Proof of Delivery
-
-    func proofOfDelivery(for tripId: UUID) -> ProofOfDelivery? {
-        proofOfDeliveries.first { $0.tripId == tripId }
-    }
-
-    // MARK: Emergency Alerts
-
-    func activeAlerts() -> [EmergencyAlert] {
-        emergencyAlerts.filter { $0.status == .active }
-    }
-
-    func alerts(for driverId: UUID) -> [EmergencyAlert] {
-        emergencyAlerts.filter { $0.driverId == driverId }
-    }
-
-    // MARK: Maintenance
-
-    func maintenanceTasks(for vehicleId: UUID) -> [MaintenanceTask] {
-        maintenanceTasks.filter { $0.vehicleId == vehicleId }
-    }
-
-    func maintenanceTasks(forAssignedId staffId: UUID) -> [MaintenanceTask] {
-        maintenanceTasks.filter { $0.assignedToId == staffId }
-    }
-
-    func workOrder(for maintenanceTaskId: UUID) -> WorkOrder? {
-        workOrders.first { $0.maintenanceTaskId == maintenanceTaskId }
-    }
-
-    func workOrders(for staffId: UUID) -> [WorkOrder] {
+    func workOrders(forStaff staffId: UUID) -> [WorkOrder] {
         workOrders.filter { $0.assignedToId == staffId }
     }
 
-    func maintenanceRecords(for vehicleId: UUID) -> [MaintenanceRecord] {
+    func maintenanceTasks(forVehicle vehicleId: UUID) -> [MaintenanceTask] {
+        maintenanceTasks.filter { $0.vehicleId == vehicleId }
+    }
+
+    func maintenanceRecords(forVehicle vehicleId: UUID) -> [MaintenanceRecord] {
         maintenanceRecords.filter { $0.vehicleId == vehicleId }
     }
 
-    func partsUsed(for workOrderId: UUID) -> [PartUsed] {
+    func partsUsed(forWorkOrder workOrderId: UUID) -> [PartUsed] {
         partsUsed.filter { $0.workOrderId == workOrderId }
     }
 
-    // MARK: Geofencing
+    func inspections(forTrip tripId: UUID) -> [VehicleInspection] {
+        vehicleInspections.filter { $0.tripId == tripId }
+    }
 
-    func geofenceEvents(for vehicleId: UUID) -> [GeofenceEvent] {
+    func preInspection(forTrip tripId: UUID) -> VehicleInspection? {
+        vehicleInspections.first { $0.tripId == tripId && $0.type == .preTripInspection }
+    }
+
+    func postInspection(forTrip tripId: UUID) -> VehicleInspection? {
+        vehicleInspections.first { $0.tripId == tripId && $0.type == .postTripInspection }
+    }
+
+    func activeEmergencyAlerts() -> [EmergencyAlert] {
+        emergencyAlerts.filter { $0.status == .active }
+    }
+
+    func geofenceEvents(forVehicle vehicleId: UUID) -> [GeofenceEvent] {
         geofenceEvents.filter { $0.vehicleId == vehicleId }
     }
-
-    func geofenceEvents(forGeofenceId geofenceId: UUID) -> [GeofenceEvent] {
-        geofenceEvents.filter { $0.geofenceId == geofenceId }
-    }
-
-    func activeGeofences() -> [Geofence] {
-        geofences.filter { $0.isActive }
-    }
-
-    // MARK: Activity Logs
 
     func recentActivityLogs(limit: Int = 20) -> [ActivityLog] {
         Array(activityLogs.prefix(limit))
     }
 
-    func unreadActivityLogs() -> [ActivityLog] {
-        activityLogs.filter { !$0.isRead }
+    func documentsExpiringSoon() -> [VehicleDocument] {
+        vehicleDocuments.filter { $0.isExpiringSoon || $0.isExpired }
     }
 
-    // MARK: Applications
+    func vehicle(for id: UUID) -> Vehicle? {
+        vehicles.first { $0.id == id }
+    }
 
-    func pendingApplications() -> [StaffApplication] {
-        staffApplications.filter { $0.status == .pending }
+    func staffMember(for id: UUID) -> StaffMember? {
+        staff.first { $0.id == id }
+    }
+
+    func trip(for id: UUID) -> Trip? {
+        trips.first { $0.id == id }
     }
 
     func application(for staffMemberId: UUID) -> StaffApplication? {
-        staffApplications.first { $0.staffMemberId == staffMemberId }
+        staffApplications
+            .filter { $0.staffMemberId == staffMemberId }
+            .sorted { $0.createdAt > $1.createdAt }
+            .first
+    }
+
+    func activeTrip(forDriverId driverId: String) -> Trip? {
+        trips.first { $0.driverId == driverId && ($0.status == .active || $0.status == .scheduled) }
+    }
+
+    func workOrder(forMaintenanceTask taskId: UUID) -> WorkOrder? {
+        workOrders.first { $0.maintenanceTaskId == taskId }
     }
 
     // ─────────────────────────────────────────────────────────────
-    // MARK: - Business Logic Methods
+    // MARK: - Computed Aggregates
     // ─────────────────────────────────────────────────────────────
 
-    /// Assigns a vehicle and driver to a trip, updating all three entities atomically.
-    /// - Sets trip.driverId and trip.vehicleId
-    /// - Sets vehicle.assignedDriverId and vehicle.status → .active
-    /// - Sets driver.availability → .onTrip
-    /// - Appends an ActivityLog entry
-    func assignVehicleToTrip(tripId: UUID, vehicleId: UUID, driverId: UUID) async throws {
-        guard var trip    = trips.first(where: { $0.id == tripId }),
-              var vehicle = vehicles.first(where: { $0.id == vehicleId }),
-              var driver  = staff.first(where: { $0.id == driverId })
-        else { return }
+    var pendingCount: Int { pendingApplicationsCount }
 
-        trip.driverId            = driverId
-        trip.vehicleId           = vehicleId
-        vehicle.assignedDriverId = driverId
-        vehicle.status           = .active
-        driver.availability      = .onTrip
-
-        try await TripService.updateTrip(trip)
-        try await VehicleService.updateVehicle(vehicle)
-        try await StaffMemberService.updateStaffMember(driver)
-
-        if let idx = trips.firstIndex(where: { $0.id == tripId })       { trips[idx]    = trip }
-        if let idx = vehicles.firstIndex(where: { $0.id == vehicleId }) { vehicles[idx] = vehicle }
-        if let idx = staff.firstIndex(where: { $0.id == driverId })     { staff[idx]    = driver }
-
-        let log = ActivityLog(
-            id: UUID(),
-            type: .tripStarted,
-            title: "Vehicle Assigned",
-            description: "Vehicle \(vehicle.name) assigned to driver \(driver.name ?? "Unknown") for trip.",
-            actorId: nil,
-            entityType: "trip",
-            entityId: tripId,
-            severity: .info,
-            isRead: false,
-            timestamp: Date(),
-            createdAt: Date()
-        )
-        try await addActivityLog(log)
+    var activeTripsCount: Int {
+        trips.filter { $0.status == .active }.count
     }
 
-    /// Marks a trip as completed, releases the vehicle and driver, and increments driver stats.
-    /// - Sets trip.status → .completed, trip.actualEndDate → now
-    /// - Sets vehicle.status → .idle, vehicle.assignedDriverId → nil
-    /// - Sets driver.availability → .available
-    /// - Increments driverProfile.totalTripsCompleted
-    /// - Appends an ActivityLog entry
-    func completeTrip(tripId: UUID) async throws {
-        guard var trip = trips.first(where: { $0.id == tripId }) else { return }
+    var vehiclesInMaintenance: [Vehicle] {
+        vehicles.filter { $0.status == .inMaintenance }
+    }
 
-        let vehicleId = trip.vehicleId
-        let driverId  = trip.driverId
+    var overdueTrips: [Trip] {
+        trips.filter { $0.isOverdue }
+    }
 
-        trip.status        = .completed
-        trip.actualEndDate = Date()
-        try await TripService.updateTrip(trip)
-        if let idx = trips.firstIndex(where: { $0.id == tripId }) { trips[idx] = trip }
+    // ─────────────────────────────────────────────────────────────
+    // MARK: - Realtime — Emergency Alerts
+    // ─────────────────────────────────────────────────────────────
 
-        if let vid = vehicleId, var vehicle = vehicles.first(where: { $0.id == vid }) {
-            vehicle.status           = .idle
-            vehicle.assignedDriverId = nil
-            try await VehicleService.updateVehicle(vehicle)
-            if let idx = vehicles.firstIndex(where: { $0.id == vid }) { vehicles[idx] = vehicle }
-        }
-
-        if let did = driverId, var driver = staff.first(where: { $0.id == did }) {
-            driver.availability = .available
-            try await StaffMemberService.updateStaffMember(driver)
-            if let idx = staff.firstIndex(where: { $0.id == did }) { staff[idx] = driver }
-
-            // Increment driver profile trip count
-            if var profile = driverProfiles.first(where: { $0.staffMemberId == did }) {
-                profile.totalTripsCompleted += 1
-                try await DriverProfileService.updateDriverProfile(profile)
-                if let idx = driverProfiles.firstIndex(where: { $0.staffMemberId == did }) {
-                    driverProfiles[idx] = profile
+    private func subscribeToEmergencyAlerts() {
+        let channel = supabase.channel("emergency_alerts_channel")
+        channel.onPostgresChange(InsertAction.self, schema: "public", table: "emergency_alerts") { [weak self] action in
+            guard let self else { return }
+            Task { @MainActor in
+                if let data = try? JSONEncoder().encode(action.record),
+                   let newAlert = try? JSONDecoder().decode(EmergencyAlert.self, from: data) {
+                    self.emergencyAlerts.insert(newAlert, at: 0)
                 }
             }
         }
-
-        let driverName = driverId.flatMap { staffMember(for: $0)?.name } ?? "Unknown"
-        let log = ActivityLog(
-            id: UUID(),
-            type: .tripCompleted,
-            title: "Trip Completed",
-            description: "Trip completed by \(driverName).",
-            actorId: driverId,
-            entityType: "trip",
-            entityId: tripId,
-            severity: .info,
-            isRead: false,
-            timestamp: Date(),
-            createdAt: Date()
-        )
-        try await addActivityLog(log)
-    }
-
-    /// Approves a staff application, activates the staff member, and logs the action.
-    func approveStaffApplication(applicationId: UUID) async throws {
-        guard let app = staffApplications.first(where: { $0.id == applicationId }) else { return }
-
-        try await approveApplication(id: applicationId)
-        try await approveStaff(id: app.staffMemberId)
-
-        let memberName = staffMember(for: app.staffMemberId)?.name ?? app.staffMemberId.uuidString
-        let log = ActivityLog(
-            id: UUID(),
-            type: .staffApproved,
-            title: "Application Approved",
-            description: "\(memberName)'s application has been approved.",
-            actorId: nil,
-            entityType: "staff_application",
-            entityId: applicationId,
-            severity: .info,
-            isRead: false,
-            timestamp: Date(),
-            createdAt: Date()
-        )
-        try await addActivityLog(log)
-    }
-
-    /// Rejects a staff application with a reason, updates the staff member record, and logs the action.
-    func rejectStaffApplication(applicationId: UUID, reason: String) async throws {
-        guard let app = staffApplications.first(where: { $0.id == applicationId }) else { return }
-
-        try await rejectApplication(id: applicationId, reason: reason)
-        try await rejectStaff(id: app.staffMemberId, reason: reason)
-
-        let memberName = staffMember(for: app.staffMemberId)?.name ?? app.staffMemberId.uuidString
-        let log = ActivityLog(
-            id: UUID(),
-            type: .staffRejected,
-            title: "Application Rejected",
-            description: "\(memberName)'s application was rejected. Reason: \(reason)",
-            actorId: nil,
-            entityType: "staff_application",
-            entityId: applicationId,
-            severity: .warning,
-            isRead: false,
-            timestamp: Date(),
-            createdAt: Date()
-        )
-        try await addActivityLog(log)
+        Task {
+            await channel.subscribe()
+            await MainActor.run { self.emergencyAlertsChannel = channel }
+        }
     }
 }

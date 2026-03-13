@@ -160,7 +160,8 @@ struct DriverHomeView: View {
 
             // Vehicle info
             if let vId = trip.vehicleId,
-               let vehicle = store.vehicle(for: vId) {
+               let vUUID = UUID(uuidString: vId),
+               let vehicle = store.vehicle(for: vUUID) {
                 HStack(spacing: 8) {
                     Image(systemName: "car.fill")
                         .font(SierraFont.caption2)

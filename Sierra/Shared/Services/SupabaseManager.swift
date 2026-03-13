@@ -1,44 +1,32 @@
-import Foundation
 import Supabase
+import Foundation
 
-// MARK: - SupabaseManager
+// MARK: - Supabase Global Client
+// Used by all service files as `supabase`
 
-/// Singleton wrapper around the Supabase Swift SDK client.
-/// All services and view models access Supabase through this shared instance.
+let supabase = SupabaseClient(
+    supabaseURL: URL(string: "https://tufmgxaycmeohczdvjsr.supabase.co")!,
+    supabaseKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR1Zm1neGF5Y21lb2hjemR2anNyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzMjM3MTksImV4cCI6MjA4ODg5OTcxOX0.Fy5DbP0VyfxrLgaQDtgDep9-E7ZcdrM92LFOcupW168"
+)
+
+// MARK: - SupabaseManager (Wrapper for legacy code compatibility)
+
 final class SupabaseManager {
 
-    // MARK: - Singleton
-
     static let shared = SupabaseManager()
+    private init() {}
 
-    // MARK: - Client
+    /// The underlying SupabaseClient.
+    var client: SupabaseClient { supabase }
 
-    let client: SupabaseClient
+    /// Convenience Auth accessor.
+    var auth: AuthClient { supabase.auth }
 
-    // MARK: - Init
-
-    private init() {
-        client = SupabaseClient(
-            supabaseURL: URL(string: "https://ldqcdngdlbbiojlnbnjg.supabase.co")!,
-            supabaseKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxkcWNkbmdkbGJiaW9qbG5ibmpnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzODUzMjMsImV4cCI6MjA4ODk2MTMyM30.gQm6e-Uafm5bXfpbNEDCbl6bFgi1Cweg-tHE58nNdRE"
-        )
-    }
-
-    // MARK: - Convenience Accessors
-
-    /// Supabase Auth client.
-    var auth: AuthClient { client.auth }
-
-    /// Supabase Realtime client.
-    var realtime: some AnyObject { client.realtime as AnyObject }
-
-    /// Supabase Storage client.
-    var storage: SupabaseStorageClient { client.storage }
-
-    // MARK: - Database Helper
+    /// Convenience Storage accessor.
+    var storage: SupabaseStorageClient { supabase.storage }
 
     /// Returns a query builder for the given table name.
     func from(_ table: String) -> PostgrestQueryBuilder {
-        client.from(table)
+        supabase.from(table)
     }
 }

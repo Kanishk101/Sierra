@@ -1,7 +1,3 @@
-// StaffApplicationStore.swift
-// DEPRECATED: All staff application logic has been merged into AppDataStore.
-// This file exists only to prevent compiler errors during migration.
-// Delete after removing all references in views and view models.
-
-@available(*, deprecated, renamed: "AppDataStore")
-typealias StaffApplicationStore = AppDataStore
+// DEPRECATED — StaffApplicationStore has been merged into AppDataStore (Phase 3).
+// This file is kept as an empty stub to prevent compilation errors during migration.
+// It will be deleted after all call sites are updated to use AppDataStore.shared.

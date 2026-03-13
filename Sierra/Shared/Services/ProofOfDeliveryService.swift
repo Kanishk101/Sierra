@@ -1,7 +1,7 @@
 import Foundation
 import Supabase
 
-private let supabase = SupabaseManager.shared.client
+// Uses global `supabase` constant from SupabaseManager.swift
 
 // MARK: - ProofOfDeliveryPayload
 
@@ -59,14 +59,14 @@ struct ProofOfDeliveryService {
             .value
     }
 
-    static func fetchProofOfDelivery(tripId: UUID) async throws -> ProofOfDelivery {
-        return try await supabase
+    static func fetchProofOfDelivery(tripId: UUID) async throws -> ProofOfDelivery? {
+        let rows: [ProofOfDelivery] = try await supabase
             .from("proof_of_deliveries")
             .select()
             .eq("trip_id", value: tripId.uuidString)
-            .single()
             .execute()
             .value
+        return rows.first
     }
 
     static func addProofOfDelivery(_ pod: ProofOfDelivery) async throws {

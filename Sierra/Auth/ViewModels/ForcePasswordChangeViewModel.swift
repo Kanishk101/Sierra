@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import Supabase
 
 enum PasswordStrength: Int, Comparable {
     case weak = 0
@@ -26,7 +27,6 @@ enum PasswordStrength: Int, Comparable {
         }
     }
 
-    /// Evaluate password strength from a plain-text password string.
     static func evaluate(_ password: String) -> PasswordStrength {
         guard password.count >= 8 else { return .weak }
         let hasUpper   = password.range(of: "[A-Z]",       options: .regularExpression) != nil
@@ -59,6 +59,7 @@ final class ForcePasswordChangeViewModel {
     var nextDestination: AuthDestination?
     var completed: Bool = false       // true once biometric sheet is dismissed
     var readyToNavigate: Bool = false // true right after password change — triggers biometric prompt
+    var awaitingOTP: Bool = false
 
     // MARK: - Strength
 
@@ -113,14 +114,15 @@ final class ForcePasswordChangeViewModel {
         errorMessage = nil
         isLoading = true
 
-        // 1. Verify current password against Keychain-stored hash (persisted at signIn time).
-        guard verifyCurrentPassword() else {
+        // 1. Verify current password via Supabase Auth (no local hash needed)
+        let isValidCurrent = await verifyCurrentPassword()
+        guard isValidCurrent else {
             isLoading = false
             currentPasswordError = "Current password is incorrect"
             return
         }
 
-        // 2. New password must differ from current.
+        // 2. New password must differ
         guard newPassword != currentPassword else {
             isLoading = false
             errorMessage = "New password must be different from your current password"
@@ -128,14 +130,10 @@ final class ForcePasswordChangeViewModel {
         }
 
         do {
-            // 3. Update via Supabase Auth + mark isFirstLogin = false in staff_members.
-            try await AuthManager.shared.updatePassword(newPassword)
+            // 3. Update via Supabase Auth + mark isFirstLogin = false in staff_members
+            try await AuthManager.shared.updatePasswordAndFirstLogin(newPassword: newPassword)
 
-            // 4. Update stored hashed credential so biometric re-verify still works.
-            let hashed = CryptoService.hash(password: newPassword)
-            _ = KeychainService.save(hashed, forKey: "com.fleetOS.hashedCredential")
-
-            // 5. Determine next destination.
+            // 4. Determine next destination
             if let user = AuthManager.shared.currentUser {
                 switch user.role {
                 case .driver:               nextDestination = .driverOnboarding
@@ -144,8 +142,7 @@ final class ForcePasswordChangeViewModel {
                 }
             }
 
-            // 6. Complete auth. Fleet manager gets a session token now;
-            //    drivers/maintenance only after onboarding fully completes.
+            // 5. Complete authentication (fleet manager gets token now; others after onboarding)
             let saveToken = AuthManager.shared.currentUser?.role == .fleetManager
             AuthManager.shared.completeAuthentication(saveToken: saveToken)
 
@@ -160,12 +157,14 @@ final class ForcePasswordChangeViewModel {
 
     // MARK: - Private
 
-    /// Re-verifies the current password against the locally stored CryptoService hash.
-    private func verifyCurrentPassword() -> Bool {
-        guard let credential = KeychainService.load(
-            key: "com.fleetOS.hashedCredential",
-            as: CryptoService.HashedCredential.self
-        ) else { return false }
-        return CryptoService.verify(password: currentPassword, credential: credential)
+    /// Re-verifies the current password by attempting a Supabase Auth sign-in.
+    private func verifyCurrentPassword() async -> Bool {
+        guard let email = AuthManager.shared.currentUser?.email else { return false }
+        do {
+            _ = try await supabase.auth.signIn(email: email, password: currentPassword)
+            return true
+        } catch {
+            return false
+        }
     }
 }

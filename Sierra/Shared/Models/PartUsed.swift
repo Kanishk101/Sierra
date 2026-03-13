@@ -15,8 +15,7 @@ struct PartUsed: Identifiable, Codable {
     var partNumber: String?             // part_number
     var quantity: Int                   // quantity (default 1)
     var unitCost: Double                // unit_cost
-    /// Read-only GENERATED column: quantity * unit_cost
-    let totalCost: Double?              // total_cost (GENERATED)
+    let totalCost: Double               // total_cost (GENERATED)
     var supplier: String?               // supplier
 
     // MARK: Timestamps

@@ -3,29 +3,47 @@ import Foundation
 // MARK: - Inspection Type
 // Maps to PostgreSQL enum: inspection_type
 
-enum InspectionType: String, Codable, CaseIterable {
-    case preTrip  = "Pre-Trip"
-    case postTrip = "Post-Trip"
+enum InspectionType: String, Codable {
+    case preTripInspection  = "Pre-Trip"
+    case postTripInspection = "Post-Trip"
 }
 
 // MARK: - Inspection Result
 // Maps to PostgreSQL enum: inspection_result
 
-enum InspectionResult: String, Codable, CaseIterable {
+enum InspectionResult: String, Codable {
     case passed             = "Passed"
     case failed             = "Failed"
     case passedWithWarnings = "Passed with Warnings"
     case notChecked         = "Not Checked"
 }
 
+// MARK: - Inspection Category
+
+enum InspectionCategory: String, Codable, CaseIterable {
+    case tyres  = "Tyres"
+    case engine = "Engine"
+    case lights = "Lights"
+    case body   = "Body"
+    case safety = "Safety"
+    case fluids = "Fluids"
+}
+
 // MARK: - Inspection Item
-// Represents a single checklist item stored in the jsonb `items` column.
+// Single checklist entry stored as a JSONB element in the `items` column.
 
 struct InspectionItem: Codable, Identifiable {
-    var id: String                    // generated locally, not a DB column
-    var name: String
+    let id: UUID
+    var checkName: String         // check_name
+    var category: InspectionCategory
     var result: InspectionResult
     var notes: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case checkName = "check_name"
+        case category, result, notes
+    }
 }
 
 // MARK: - VehicleInspection
@@ -41,16 +59,16 @@ struct VehicleInspection: Identifiable, Codable {
     var driverId: UUID                   // driver_id (FK → staff_members.id)
 
     // MARK: Inspection
-    var type: InspectionType             // type
-    var overallResult: InspectionResult  // overall_result (default 'Passed')
-    var items: [InspectionItem]          // items (jsonb, default '[]')
-    var defectsReported: String?         // defects_reported
-    var additionalNotes: String?         // additional_notes
-    var driverSignatureUrl: String?      // driver_signature_url
+    var type: InspectionType
+    var overallResult: InspectionResult  // overall_result
+    var items: [InspectionItem]          // items (stored as JSONB)
+    var defectsReported: String?
+    var additionalNotes: String?
+    var driverSignatureUrl: String?
 
     // MARK: Timestamps
-    var inspectedAt: Date                // inspected_at
-    var createdAt: Date                  // created_at
+    var inspectedAt: Date
+    var createdAt: Date
 
     // MARK: - CodingKeys
 

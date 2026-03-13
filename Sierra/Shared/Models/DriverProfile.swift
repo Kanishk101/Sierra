@@ -26,7 +26,7 @@ struct DriverProfile: Identifiable, Codable {
     var averageRating: Double?           // average_rating
 
     // MARK: Assignment
-    var currentVehicleId: UUID?          // current_vehicle_id (FK → vehicles.id)
+    var currentVehicleId: String?          // current_vehicle_id (FK as TEXT)
     var notes: String?                   // notes
 
     // MARK: Timestamps

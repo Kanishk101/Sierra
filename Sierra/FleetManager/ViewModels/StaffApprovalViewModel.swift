@@ -23,9 +23,10 @@ final class StaffApprovalViewModel {
 
     @MainActor
     func approve(staffId: UUID) async {
+        let adminId = AuthManager.shared.currentUser?.id ?? UUID()
         isProcessing = true
         do {
-            try await store.approveStaffApplication(applicationId: staffId)
+            try await store.approveStaffApplication(id: staffId, reviewedBy: adminId)
         } catch {
             // surface error if needed — caller can observe isProcessing returning false
         }
@@ -36,9 +37,10 @@ final class StaffApprovalViewModel {
 
     @MainActor
     func reject(staffId: UUID, reason: String) async {
+        let adminId = AuthManager.shared.currentUser?.id ?? UUID()
         isProcessing = true
         do {
-            try await store.rejectStaffApplication(applicationId: staffId, reason: reason)
+            try await store.rejectStaffApplication(id: staffId, reason: reason, reviewedBy: adminId)
         } catch {
             // surface error if needed
         }

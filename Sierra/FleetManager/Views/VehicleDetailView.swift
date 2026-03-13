@@ -1,268 +1,354 @@
 import SwiftUI
 
-// CHANGES IN THIS FILE (Phase 5):
-// - Replaced v.registrationExpiry / v.insuranceExpiry (removed from Vehicle model) with
-//   store.vehicleDocuments(for: vehicleId) rendering each VehicleDocument
-// - saveChanges() now calls async throws store.updateVehicle() in a Task
-// - Delete confirmation now calls async throws store.deleteVehicle(id:) in a Task
-// - Fixed store.staffMember(forId:) call to correct store.staffMember(for: UUID)
-// - Added @State errorMessage + showError for async error surfacing
+// MARK: - VehicleDetailView
+// Shows full vehicle info, assigned driver, documents, and trip history.
 
 struct VehicleDetailView: View {
 
     @Environment(AppDataStore.self) private var store
-    @Environment(\.dismiss) private var dismiss
-
     let vehicleId: UUID
 
-    @State private var isEditing = false
-    @State private var showDeleteConfirm = false
-    @State private var editName = ""
-    @State private var editModel = ""
-    @State private var editColor = ""
-    @State private var editPlate = ""
-    @State private var isSaving = false
-    @State private var errorMessage: String?
-    @State private var showError = false
-
-    private var vehicle: Vehicle? {
-        store.vehicle(for: vehicleId)
-    }
-
-    private var documents: [VehicleDocument] {
-        store.vehicleDocuments(for: vehicleId)
-    }
+    private var vehicle: Vehicle? { store.vehicle(for: vehicleId) }
 
     var body: some View {
         Group {
-            if let v = vehicle {
-                vehicleContent(v)
+            if let vehicle {
+                content(vehicle)
             } else {
-                ContentUnavailableView("Vehicle Not Found",
-                                        systemImage: "car.fill",
-                                        description: Text("This vehicle may have been deleted."))
+                notFoundView
             }
         }
-        .navigationTitle(vehicle?.name ?? "Vehicle")
+        .navigationTitle("Vehicle Detail")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                if isSaving {
-                    ProgressView().scaleEffect(0.8)
-                } else {
-                    Button(isEditing ? "Save" : "Edit") {
-                        if isEditing { saveChanges() }
-                        else { startEditing() }
-                    }
-                    .fontWeight(.semibold)
-                }
-            }
-        }
-        .confirmationDialog("Delete Vehicle", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
-            Button("Delete", role: .destructive) {
-                Task {
-                    do {
-                        try await store.deleteVehicle(id: vehicleId)
-                        dismiss()
-                    } catch {
-                        errorMessage = error.localizedDescription
-                        showError = true
-                    }
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This action cannot be undone. All associated data will be removed.")
-        }
-        .alert("Error", isPresented: $showError) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(errorMessage ?? "An unknown error occurred.")
+        .background(SierraTheme.Colors.appBackground.ignoresSafeArea())
+        .onAppear {
+            print("[VehicleDetailView] vehicleId=\(vehicleId) — found: \(vehicle != nil)")
         }
     }
 
-    // MARK: - Content
+    // ─────────────────────────────────────────────────────────────
+    // MARK: - Not Found
+    // ─────────────────────────────────────────────────────────────
 
-    private func vehicleContent(_ v: Vehicle) -> some View {
-        List {
-            // Section 1 — Vehicle Info
-            Section("Vehicle Information") {
-                if isEditing {
-                    TextField("Name", text: $editName)
-                    TextField("Model", text: $editModel)
-                    TextField("Color", text: $editColor)
-                    TextField("License Plate", text: $editPlate)
-                } else {
-                    infoRow("Name", value: v.name)
-                    infoRow("Model", value: v.model)
-                    infoRow("Manufacturer", value: v.manufacturer)
-                    infoRow("Year", value: "\(v.year)")
-                    infoRow("VIN", value: v.vin)
-                    infoRow("License Plate", value: v.licensePlate)
-                    infoRow("Color", value: v.color)
-                    infoRow("Fuel Type", value: v.fuelType.description)
-                    infoRow("Seating", value: "\(v.seatingCapacity)")
-                    infoRow("Odometer", value: String(format: "%.0f km", v.odometer))
-                    infoRow("Status", value: v.status.rawValue)
-                }
-            }
-
-            // Section 2 — Document Status (VehicleDocument-based)
-            Section("Document Status") {
-                if documents.isEmpty {
-                    Text("No documents on file")
-                        .foregroundStyle(.secondary)
-                        .italic()
-                } else {
-                    ForEach(documents) { doc in
-                        documentRow(doc)
-                    }
-                }
-            }
-
-            // Section 3 — Assignment
-            Section("Assignment") {
-                if let driverId = v.assignedDriverId {
-                    if let driver = store.staffMember(for: driverId) {
-                        HStack(spacing: 12) {
-                            Circle()
-                                .fill(SierraTheme.Colors.ember.opacity(0.15))
-                                .frame(width: 36, height: 36)
-                                .overlay(
-                                    Text(driver.initials)
-                                        .font(.system(size: 13, weight: .bold))
-                                        .foregroundStyle(SierraTheme.Colors.ember)
-                                )
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(driver.displayName)
-                                    .font(SierraFont.subheadline)
-                                Text(driver.phone ?? "No phone")
-                                    .font(SierraFont.caption1)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(SierraFont.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                    } else {
-                        Text("Driver ID: \(driverId)")
-                            .foregroundStyle(.secondary)
-                    }
-                } else {
-                    Text("Unassigned")
-                        .foregroundStyle(.secondary)
-                        .italic()
-                }
-            }
-
-            // Section 4 — Stats
-            Section("Metrics") {
-                infoRow("Total Trips", value: "\(v.totalTrips)")
-                infoRow("Total Distance", value: String(format: "%.0f km", v.totalDistanceKm))
-            }
-
-            // Delete
-            Section {
-                Button(role: .destructive) {
-                    showDeleteConfirm = true
-                } label: {
-                    HStack {
-                        Spacer()
-                        Label("Delete Vehicle", systemImage: "trash.fill")
-                            .font(SierraFont.body(16, weight: .semibold))
-                        Spacer()
-                    }
-                }
-            }
-        }
-    }
-
-    // MARK: - Info Row
-
-    private func infoRow(_ label: String, value: String) -> some View {
-        HStack {
-            Text(label)
+    private var notFoundView: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "questionmark.circle")
+                .font(.system(size: 52, weight: .light))
                 .foregroundStyle(.secondary)
-            Spacer()
-            Text(value)
-                .fontWeight(.medium)
+            Text("Vehicle Not Found")
+                .font(SierraFont.title3)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // MARK: - Main Content
+    // ─────────────────────────────────────────────────────────────
+
+    private func content(_ vehicle: Vehicle) -> some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                headerCard(vehicle)
+                specsCard(vehicle)
+                metricsCard(vehicle)
+                if let driver = assignedDriver(for: vehicle) {
+                    driverCard(driver)
+                }
+                documentsSection(vehicle)
+                tripsSection(vehicle)
+            }
+            .padding(16)
         }
     }
 
-    // MARK: - Document Row (VehicleDocument-based)
+    // ─────────────────────────────────────────────────────────────
+    // MARK: - Header Card
+    // ─────────────────────────────────────────────────────────────
 
-    private func documentRow(_ doc: VehicleDocument) -> some View {
-        let now = Date()
-        let daysLeft = Calendar.current.dateComponents([.day], from: now, to: doc.expiryDate).day ?? 0
-        let (statusText, statusColor, showWarning): (String, Color, Bool) = {
-            if daysLeft < 0  { return ("Expired",      .red,                       true) }
-            if daysLeft < 8  { return ("Critical",     .red,                       true) }
-            if daysLeft <= 30 { return ("Expiring Soon", SierraTheme.Colors.warning, true) }
-            return ("Valid", .green, false)
-        }()
+    private func headerCard(_ v: Vehicle) -> some View {
+        HStack(spacing: 14) {
+            // Icon
+            Image(systemName: "car.fill")
+                .font(.system(size: 28))
+                .foregroundStyle(SierraTheme.Colors.sierraBlue)
+                .frame(width: 60, height: 60)
+                .background(SierraTheme.Colors.sierraBlue.opacity(0.1), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
 
-        return HStack {
-            if showWarning {
-                Image(systemName: "exclamationmark.triangle.fill")
+            VStack(alignment: .leading, spacing: 4) {
+                Text(v.name)
+                    .font(SierraFont.title3)
+                    .foregroundStyle(SierraTheme.Colors.primaryText)
+
+                Text("\(v.manufacturer) \(v.model) · \(v.year)")
                     .font(SierraFont.caption1)
-                    .foregroundStyle(statusColor)
+                    .foregroundStyle(SierraTheme.Colors.secondaryText)
+
+                Text(v.licensePlate)
+                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.gray.opacity(0.1), in: Capsule())
             }
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(doc.documentType.rawValue)
-                    .font(SierraFont.subheadline)
-                Text(doc.expiryDate.formatted(date: .abbreviated, time: .omitted))
-                    .font(SierraFont.caption1)
-                    .foregroundStyle(.secondary)
-                if !doc.issuingAuthority.isEmpty {
-                    Text(doc.issuingAuthority)
+            Spacer()
+
+            SierraBadge(v.status, size: .compact)
+        }
+        .padding(16)
+        .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .sierraShadow(SierraTheme.Shadow.card)
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // MARK: - Specs Card
+    // ─────────────────────────────────────────────────────────────
+
+    private func specsCard(_ v: Vehicle) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            sectionLabel("Specifications")
+
+            detailRow(icon: "fuelpump.fill",      label: "Fuel Type",        value: v.fuelType.rawValue)
+            detailRow(icon: "person.2.fill",      label: "Seating",          value: "\(v.seatingCapacity) seats")
+            detailRow(icon: "paintbrush.fill",    label: "Color",            value: v.color)
+            detailRow(icon: "barcode.viewfinder", label: "VIN",              value: v.vin)
+        }
+        .padding(16)
+        .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .sierraShadow(SierraTheme.Shadow.card)
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // MARK: - Metrics Card
+    // ─────────────────────────────────────────────────────────────
+
+    private func metricsCard(_ v: Vehicle) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            sectionLabel("Metrics")
+
+            HStack(spacing: 0) {
+                metricCell(label: "Odometer", value: String(format: "%.0f km", v.odometer))
+                Divider().frame(height: 36)
+                metricCell(label: "Total Trips", value: "\(v.totalTrips)")
+                Divider().frame(height: 36)
+                metricCell(label: "Total Dist.", value: String(format: "%.0f km", v.totalDistanceKm))
+            }
+        }
+        .padding(16)
+        .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .sierraShadow(SierraTheme.Shadow.card)
+    }
+
+    private func metricCell(label: String, value: String) -> some View {
+        VStack(spacing: 4) {
+            Text(value)
+                .font(SierraFont.body(17, weight: .bold))
+                .foregroundStyle(SierraTheme.Colors.primaryText)
+            Text(label)
+                .font(SierraFont.caption2)
+                .foregroundStyle(SierraTheme.Colors.secondaryText)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // MARK: - Assigned Driver Card
+    // ─────────────────────────────────────────────────────────────
+
+    private func assignedDriver(for v: Vehicle) -> StaffMember? {
+        guard let did = v.assignedDriverUUID else { return nil }
+        return store.staffMember(for: did)
+    }
+
+    private func driverCard(_ driver: StaffMember) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionLabel("Assigned Driver")
+
+            HStack(spacing: 12) {
+                SierraAvatarView(
+                    initials: driver.initials,
+                    size: 44,
+                    gradient: SierraAvatarView.driver()
+                )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(driver.displayName)
+                        .font(SierraFont.body(15, weight: .semibold))
+                        .foregroundStyle(SierraTheme.Colors.primaryText)
+                    Text(driver.email)
                         .font(SierraFont.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(SierraTheme.Colors.secondaryText)
+                }
+
+                Spacer()
+
+                Image(systemName: "person.fill.checkmark")
+                    .font(.system(size: 18))
+                    .foregroundStyle(SierraTheme.Colors.alpineMint)
+            }
+        }
+        .padding(16)
+        .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .sierraShadow(SierraTheme.Shadow.card)
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // MARK: - Documents Section
+    // ─────────────────────────────────────────────────────────────
+
+    private func documentsSection(_ v: Vehicle) -> some View {
+        let docs = store.vehicleDocuments(forVehicle: v.id)
+        return VStack(alignment: .leading, spacing: 12) {
+            sectionLabel("Documents (\(docs.count))")
+
+            if docs.isEmpty {
+                Text("No documents on file.")
+                    .font(SierraFont.caption1)
+                    .foregroundStyle(SierraTheme.Colors.secondaryText)
+            } else {
+                ForEach(docs) { doc in
+                    docRow(doc)
                 }
             }
+        }
+        .padding(16)
+        .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .sierraShadow(SierraTheme.Shadow.card)
+    }
+
+    private func docRow(_ doc: VehicleDocument) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: doc.isExpired ? "exclamationmark.triangle.fill" : "doc.fill")
+                .font(SierraFont.caption1)
+                .foregroundStyle(doc.isExpired ? SierraTheme.Colors.danger : doc.isExpiringSoon ? SierraTheme.Colors.warning : SierraTheme.Colors.sierraBlue)
+                .frame(width: 28)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(doc.documentType.rawValue)
+                    .font(SierraFont.body(13, weight: .semibold))
+                    .foregroundStyle(SierraTheme.Colors.primaryText)
+                Text("Expires \(doc.expiryDate.formatted(.dateTime.day().month(.abbreviated).year()))")
+                    .font(SierraFont.caption2)
+                    .foregroundStyle(doc.isExpired ? SierraTheme.Colors.danger : SierraTheme.Colors.secondaryText)
+            }
 
             Spacer()
 
-            Text(statusText)
-                .font(SierraFont.caption2)
-                .foregroundStyle(statusColor)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(statusColor.opacity(0.12), in: Capsule())
+            if doc.isExpired {
+                Text("Expired")
+                    .font(SierraFont.body(10, weight: .bold))
+                    .foregroundStyle(SierraTheme.Colors.danger)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(SierraTheme.Colors.danger.opacity(0.1), in: Capsule())
+            } else if doc.isExpiringSoon {
+                Text("\(doc.daysUntilExpiry)d left")
+                    .font(SierraFont.body(10, weight: .bold))
+                    .foregroundStyle(SierraTheme.Colors.warning)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(SierraTheme.Colors.warning.opacity(0.1), in: Capsule())
+            }
         }
     }
 
-    // MARK: - Edit Actions
+    // ─────────────────────────────────────────────────────────────
+    // MARK: - Trips Section
+    // ─────────────────────────────────────────────────────────────
 
-    private func startEditing() {
-        guard let v = vehicle else { return }
-        editName  = v.name
-        editModel = v.model
-        editColor = v.color
-        editPlate = v.licensePlate
-        isEditing = true
+    private func tripsSection(_ v: Vehicle) -> some View {
+        let vehicleTrips = store.trips.filter { $0.vehicleId == v.id.uuidString }
+            .sorted { $0.scheduledDate > $1.scheduledDate }
+            .prefix(5)
+
+        return VStack(alignment: .leading, spacing: 12) {
+            sectionLabel("Recent Trips (\(store.trips.filter { $0.vehicleId == v.id.uuidString }.count))")
+
+            if vehicleTrips.isEmpty {
+                Text("No trips assigned to this vehicle.")
+                    .font(SierraFont.caption1)
+                    .foregroundStyle(SierraTheme.Colors.secondaryText)
+            } else {
+                ForEach(vehicleTrips) { trip in
+                    NavigationLink(value: trip.id) {
+                        tripRow(trip)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(16)
+        .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .sierraShadow(SierraTheme.Shadow.card)
     }
 
-    private func saveChanges() {
-        guard var v = vehicle else { return }
-        v.name         = editName
-        v.model        = editModel
-        v.color        = editColor
-        v.licensePlate = editPlate
-        isSaving = true
-        isEditing = false
-        Task {
-            do {
-                try await store.updateVehicle(v)
-            } catch {
-                errorMessage = error.localizedDescription
-                showError = true
+    private func tripRow(_ trip: Trip) -> some View {
+        HStack(spacing: 10) {
+            Circle()
+                .fill(tripStatusColor(trip.status))
+                .frame(width: 8, height: 8)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("\(trip.origin) → \(trip.destination)")
+                    .font(SierraFont.body(13, weight: .semibold))
+                    .foregroundStyle(SierraTheme.Colors.primaryText)
+                    .lineLimit(1)
+                Text(trip.scheduledDate.formatted(.dateTime.month(.abbreviated).day().year()))
+                    .font(SierraFont.caption2)
+                    .foregroundStyle(SierraTheme.Colors.secondaryText)
             }
-            isSaving = false
+
+            Spacer()
+
+            Text(trip.status.rawValue)
+                .font(SierraFont.body(10, weight: .bold))
+                .foregroundStyle(tripStatusColor(trip.status))
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(tripStatusColor(trip.status).opacity(0.1), in: Capsule())
+        }
+    }
+
+    private func tripStatusColor(_ status: TripStatus) -> Color {
+        switch status {
+        case .active:    return .green
+        case .scheduled: return SierraTheme.Colors.sierraBlue
+        case .completed: return .gray
+        case .cancelled: return .red
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // MARK: - Helpers
+    // ─────────────────────────────────────────────────────────────
+
+    private func sectionLabel(_ title: String) -> some View {
+        Text(title.uppercased())
+            .font(SierraFont.body(11, weight: .bold))
+            .foregroundStyle(.secondary)
+            .kerning(1.1)
+    }
+
+    private func detailRow(icon: String, label: String, value: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .font(SierraFont.caption1)
+                .foregroundStyle(.secondary)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(label)
+                    .font(SierraFont.caption2)
+                    .foregroundStyle(.secondary)
+                Text(value)
+                    .font(SierraFont.body(14, weight: .medium))
+                    .foregroundStyle(SierraTheme.Colors.primaryText)
+            }
         }
     }
 }
+
+// MARK: - Preview
 
 #Preview {
     NavigationStack {

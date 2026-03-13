@@ -1,22 +1,20 @@
 import Foundation
 import Supabase
 
-// MARK: - Shared Supabase Client
+// Uses global `supabase` constant from SupabaseManager.swift
 
-private let supabase = SupabaseManager.shared.client
+// MARK: - ISO Formatter
 
-// MARK: - ISO8601 Date Formatter (for payload encoding)
-
-private let iso8601: ISO8601DateFormatter = {
+private let iso: ISO8601DateFormatter = {
     let f = ISO8601DateFormatter()
     f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     return f
 }()
 
 // MARK: - VehicleInsertPayload
+// Excludes: id, created_at, updated_at
 
 struct VehicleInsertPayload: Encodable {
-    let id: String
     let name: String
     let manufacturer: String
     let model: String
@@ -35,14 +33,8 @@ struct VehicleInsertPayload: Encodable {
     let totalDistanceKm: Double
 
     enum CodingKeys: String, CodingKey {
-        case id
-        case name
-        case manufacturer
-        case model
-        case year
-        case vin
+        case name, manufacturer, model, year, vin, color
         case licensePlate     = "license_plate"
-        case color
         case fuelType         = "fuel_type"
         case seatingCapacity  = "seating_capacity"
         case status
@@ -54,94 +46,38 @@ struct VehicleInsertPayload: Encodable {
         case totalDistanceKm  = "total_distance_km"
     }
 
-    init(from vehicle: Vehicle) {
-        self.id               = vehicle.id.uuidString
-        self.name             = vehicle.name
-        self.manufacturer     = vehicle.manufacturer
-        self.model            = vehicle.model
-        self.year             = vehicle.year
-        self.vin              = vehicle.vin
-        self.licensePlate     = vehicle.licensePlate
-        self.color            = vehicle.color
-        self.fuelType         = vehicle.fuelType.rawValue
-        self.seatingCapacity  = vehicle.seatingCapacity
-        self.status           = vehicle.status.rawValue
-        self.assignedDriverId = vehicle.assignedDriverId?.uuidString
-        self.currentLatitude  = vehicle.currentLatitude
-        self.currentLongitude = vehicle.currentLongitude
-        self.odometer         = vehicle.odometer
-        self.totalTrips       = vehicle.totalTrips
-        self.totalDistanceKm  = vehicle.totalDistanceKm
+    init(from v: Vehicle) {
+        name             = v.name
+        manufacturer     = v.manufacturer
+        model            = v.model
+        year             = v.year
+        vin              = v.vin
+        licensePlate     = v.licensePlate
+        color            = v.color
+        fuelType         = v.fuelType.rawValue
+        seatingCapacity  = v.seatingCapacity
+        status           = v.status.rawValue
+        assignedDriverId = v.assignedDriverId   // already String?
+        currentLatitude  = v.currentLatitude
+        currentLongitude = v.currentLongitude
+        odometer         = v.odometer
+        totalTrips       = v.totalTrips
+        totalDistanceKm  = v.totalDistanceKm
     }
 }
 
-// MARK: - VehicleUpdatePayload
+// MARK: - VehicleUpdatePayload (same fields as insert)
 
-struct VehicleUpdatePayload: Encodable {
-    let name: String
-    let manufacturer: String
-    let model: String
-    let year: Int
-    let vin: String
-    let licensePlate: String
-    let color: String
-    let fuelType: String
-    let seatingCapacity: Int
-    let status: String
-    let assignedDriverId: String?
-    let currentLatitude: Double?
-    let currentLongitude: Double?
-    let odometer: Double
-    let totalTrips: Int
-    let totalDistanceKm: Double
-
-    enum CodingKeys: String, CodingKey {
-        case name
-        case manufacturer
-        case model
-        case year
-        case vin
-        case licensePlate     = "license_plate"
-        case color
-        case fuelType         = "fuel_type"
-        case seatingCapacity  = "seating_capacity"
-        case status
-        case assignedDriverId = "assigned_driver_id"
-        case currentLatitude  = "current_latitude"
-        case currentLongitude = "current_longitude"
-        case odometer
-        case totalTrips       = "total_trips"
-        case totalDistanceKm  = "total_distance_km"
-    }
-
-    init(from vehicle: Vehicle) {
-        self.name             = vehicle.name
-        self.manufacturer     = vehicle.manufacturer
-        self.model            = vehicle.model
-        self.year             = vehicle.year
-        self.vin              = vehicle.vin
-        self.licensePlate     = vehicle.licensePlate
-        self.color            = vehicle.color
-        self.fuelType         = vehicle.fuelType.rawValue
-        self.seatingCapacity  = vehicle.seatingCapacity
-        self.status           = vehicle.status.rawValue
-        self.assignedDriverId = vehicle.assignedDriverId?.uuidString
-        self.currentLatitude  = vehicle.currentLatitude
-        self.currentLongitude = vehicle.currentLongitude
-        self.odometer         = vehicle.odometer
-        self.totalTrips       = vehicle.totalTrips
-        self.totalDistanceKm  = vehicle.totalDistanceKm
-    }
-}
+typealias VehicleUpdatePayload = VehicleInsertPayload
 
 // MARK: - VehicleService
 
 struct VehicleService {
 
-    // MARK: - Fetch All
+    // MARK: Fetch
 
     static func fetchAllVehicles() async throws -> [Vehicle] {
-        return try await supabase
+        try await supabase
             .from("vehicles")
             .select()
             .order("created_at", ascending: false)
@@ -149,22 +85,18 @@ struct VehicleService {
             .value
     }
 
-    // MARK: - Fetch by ID
-
-    static func fetchVehicle(id: UUID) async throws -> Vehicle {
-        return try await supabase
+    static func fetchVehicle(id: UUID) async throws -> Vehicle? {
+        let rows: [Vehicle] = try await supabase
             .from("vehicles")
             .select()
             .eq("id", value: id.uuidString)
-            .single()
             .execute()
             .value
+        return rows.first
     }
 
-    // MARK: - Fetch by Status
-
     static func fetchVehicles(status: VehicleStatus) async throws -> [Vehicle] {
-        return try await supabase
+        try await supabase
             .from("vehicles")
             .select()
             .eq("status", value: status.rawValue)
@@ -173,34 +105,59 @@ struct VehicleService {
             .value
     }
 
-    // MARK: - Insert
+    // MARK: Insert
 
     static func addVehicle(_ vehicle: Vehicle) async throws {
-        let payload = VehicleInsertPayload(from: vehicle)
         try await supabase
             .from("vehicles")
-            .insert(payload)
+            .insert(VehicleInsertPayload(from: vehicle))
             .execute()
     }
 
-    // MARK: - Update
+    // MARK: Update
 
     static func updateVehicle(_ vehicle: Vehicle) async throws {
-        let payload = VehicleUpdatePayload(from: vehicle)
         try await supabase
             .from("vehicles")
-            .update(payload)
+            .update(VehicleUpdatePayload(from: vehicle))
             .eq("id", value: vehicle.id.uuidString)
             .execute()
     }
 
-    // MARK: - Delete
+    // MARK: Delete
 
     static func deleteVehicle(id: UUID) async throws {
         try await supabase
             .from("vehicles")
             .delete()
             .eq("id", value: id.uuidString)
+            .execute()
+    }
+
+    // MARK: Assign Driver
+
+    static func assignDriver(vehicleId: UUID, driverId: UUID?) async throws {
+        struct Payload: Encodable {
+            let assigned_driver_id: String?
+        }
+        try await supabase
+            .from("vehicles")
+            .update(Payload(assigned_driver_id: driverId?.uuidString))
+            .eq("id", value: vehicleId.uuidString)
+            .execute()
+    }
+
+    // MARK: Update Location
+
+    static func updateLocation(vehicleId: UUID, latitude: Double, longitude: Double) async throws {
+        struct Payload: Encodable {
+            let current_latitude: Double
+            let current_longitude: Double
+        }
+        try await supabase
+            .from("vehicles")
+            .update(Payload(current_latitude: latitude, current_longitude: longitude))
+            .eq("id", value: vehicleId.uuidString)
             .execute()
     }
 }

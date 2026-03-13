@@ -1,9 +1,8 @@
 import Foundation
-import Auth
+import Supabase
 
 // MARK: - AuthDestination
 
-/// Determines which screen to show after authentication.
 enum AuthDestination: Equatable {
     case fleetManagerDashboard
     case changePassword
@@ -16,9 +15,7 @@ enum AuthDestination: Equatable {
 
 // MARK: - AuthManager
 
-/// Centralized authentication manager.
-/// Handles sign-in, sign-out, session persistence, and role-based routing.
-/// Delegates all supabase.auth.* calls to SupabaseAuthService.
+@MainActor
 @Observable
 final class AuthManager {
 
@@ -27,10 +24,12 @@ final class AuthManager {
     // MARK: - Keychain Keys
 
     private enum Keys {
-        static let currentUser       = "com.fleetOS.currentUser"
-        static let hashedCredential  = "com.fleetOS.hashedCredential"
-        static let sessionToken      = "com.fleetOS.sessionToken"
-        static let backgroundTS      = "com.fleetOS.backgroundTimestamp"
+        static let currentUser   = "com.fleetOS.currentUser"
+        static let backgroundTS  = "com.fleetOS.backgroundTimestamp"
+        static let sessionToken  = "com.fleetOS.sessionToken"
+        static let hashedCred    = "com.fleetOS.hashedCredential"
+        static let biometricOn   = "com.fleetOS.biometricEnabled"
+        static let biometricPrompted = "com.fleetOS.hasPromptedBiometric"
     }
 
     // MARK: - State
@@ -39,11 +38,14 @@ final class AuthManager {
     var isAuthenticated: Bool = false
     var needsReauth: Bool = false
 
-    /// Email address awaiting OTP verification (used for masked display in TwoFactorView).
+    /// App-side 2FA OTP (6-digit, stored in memory only)
+    private var currentOTP: String = ""
     var pendingOTPEmail: String?
 
-    /// 5-minute auto-lock threshold.
-    private let autoLockSeconds: TimeInterval = 300
+    /// Password reset OTP (separate flow)
+    private var resetOTP: String = ""
+
+    private let autoLockSeconds: TimeInterval = 300  // 5 minutes
 
     // MARK: - Init
 
@@ -53,58 +55,71 @@ final class AuthManager {
 
     // MARK: - Sign In
 
-    /// Authenticates with Supabase Auth, then fetches the staff_members row to build AuthUser.
-    /// Does NOT set isAuthenticated — that happens only after 2FA via completeAuthentication().
-    /// - Returns: The authenticated user's `UserRole` for routing decisions.
+    /// Authenticates with Supabase Auth, fetches from `staff_members`, builds `AuthUser`.
+    /// Does NOT set `isAuthenticated` — that requires 2FA completion via `completeAuthentication()`.
     func signIn(email: String, password: String) async throws -> UserRole {
-        // 1. Authenticate with Supabase
-        let session = try await SupabaseAuthService.signIn(email: email, password: password)
+        // 1. Supabase Auth sign-in
+        let session = try await supabase.auth.signIn(email: email, password: password)
         let authUserId = session.user.id
 
-        // 2. Fetch staff_members row to get role + profile state
-        let staffRow: StaffMember
-        do {
-            staffRow = try await StaffMemberService.fetchStaffMember(id: authUserId)
-        } catch {
-            // Auth succeeded but no staff_members row — account not provisioned yet
-            try? await SupabaseAuthService.signOut()
-            throw AuthError.staffRecordNotFound
+        // 2. Fetch staff_members row — decode role as raw String to avoid StaffRole/UserRole mismatch
+        struct RoleRow: Decodable {
+            let role: String
+            let name: String?
+            let isFirstLogin: Bool
+            let isProfileComplete: Bool
+            let isApproved: Bool
+            let rejectionReason: String?
+            let phone: String?
+            let createdAt: Date?
+
+            enum CodingKeys: String, CodingKey {
+                case role
+                case name
+                case isFirstLogin      = "is_first_login"
+                case isProfileComplete = "is_profile_complete"
+                case isApproved        = "is_approved"
+                case rejectionReason   = "rejection_reason"
+                case phone
+                case createdAt         = "created_at"
+            }
         }
 
-        // 3. Check account standing
-        if staffRow.status == .suspended {
-            try? await SupabaseAuthService.signOut()
-            throw AuthError.accountSuspended
+        let rows: [RoleRow] = try await supabase
+            .from("staff_members")
+            .select("role, name, is_first_login, is_profile_complete, is_approved, rejection_reason, phone, created_at")
+            .eq("id", value: authUserId.uuidString)
+            .limit(1)
+            .execute()
+            .value
+
+        guard let row = rows.first else {
+            try? await supabase.auth.signOut()
+            throw AuthError.userNotFound
         }
 
-        // 4. Build AuthUser from session + staff row
+        // 3. Build AuthUser
         let user = AuthUser(
             id: authUserId,
             email: session.user.email ?? email,
-            role: staffRow.role,
-            isFirstLogin: staffRow.isFirstLogin,
-            isProfileComplete: staffRow.isProfileComplete,
-            isApproved: staffRow.isApproved,
-            name: staffRow.name,
-            rejectionReason: staffRow.rejectionReason,
-            phone: staffRow.phone,
-            profilePhotoUrl: staffRow.profilePhotoUrl,
-            status: staffRow.status.rawValue,
-            availability: staffRow.availability.rawValue,
-            createdAt: staffRow.createdAt
+            role: UserRole(rawValue: row.role) ?? .driver,
+            isFirstLogin: row.isFirstLogin,
+            isProfileComplete: row.isProfileComplete,
+            isApproved: row.isApproved,
+            name: row.name,
+            rejectionReason: row.rejectionReason,
+            phone: row.phone,
+            createdAt: row.createdAt
         )
 
-        // 5. Persist hashed local credential for biometric re-verification
-        let hashed = CryptoService.hash(password: password)
-        _ = KeychainService.save(hashed, forKey: Keys.hashedCredential)
-        _ = KeychainService.save(user, forKey: Keys.currentUser)
-
+        // 4. Persist locally
         currentUser = user
         pendingOTPEmail = user.email
+        _ = KeychainService.save(user, forKey: Keys.currentUser)
 
-        // NOTE: isAuthenticated NOT set here — 2FA must complete first via completeAuthentication().
+        // NOTE: isAuthenticated NOT set here — 2FA must complete first.
         #if DEBUG
-        print("🔑 [AuthManager.signIn] Supabase session established. role=\(user.role.rawValue) firstLogin=\(user.isFirstLogin)")
+        print("🔑 [AuthManager.signIn] Signed in: \(user.email) role=\(user.role.rawValue)")
         #endif
 
         return user.role
@@ -112,18 +127,27 @@ final class AuthManager {
 
     // MARK: - Complete Authentication (post-2FA / biometric)
 
-    /// Called after successful 2FA verification or biometric login.
-    /// - Parameter saveToken: Pass true (default) to persist session token for Face ID on next launch.
-    ///   Pass false for first-login users — token saved only after onboarding fully completes.
+    /// Called exclusively after successful 2FA OTP verification.
+    /// Saves session token and triggers the appropriate AppDataStore load.
     func completeAuthentication(saveToken: Bool = true) {
         if saveToken { saveSessionToken() }
         isAuthenticated = true
-        #if DEBUG
-        print("[AuthManager] completeAuthentication — isAuthenticated=true, saveToken=\(saveToken)")
-        #endif
+
+        // Trigger role-specific data load
+        if let user = currentUser {
+            Task {
+                switch user.role {
+                case .fleetManager:
+                    await AppDataStore.shared.loadAll()
+                case .driver:
+                    await AppDataStore.shared.loadDriverData(driverId: user.id)
+                case .maintenancePersonnel:
+                    await AppDataStore.shared.loadMaintenanceData(staffId: user.id)
+                }
+            }
+        }
     }
 
-    /// Saves a session token to Keychain, enabling Face ID on next launch.
     func saveSessionToken() {
         let token = UUID().uuidString
         if let data = token.data(using: .utf8) {
@@ -134,24 +158,22 @@ final class AuthManager {
     // MARK: - Sign Out
 
     func signOut() {
+        Task { try? await supabase.auth.signOut() }
         currentUser = nil
         isAuthenticated = false
         needsReauth = false
         pendingOTPEmail = nil
         KeychainService.delete(key: Keys.currentUser)
-        KeychainService.delete(key: Keys.hashedCredential)
+        KeychainService.delete(key: Keys.hashedCred)
         KeychainService.delete(key: Keys.sessionToken)
         KeychainService.delete(key: Keys.backgroundTS)
-        KeychainService.delete(key: "com.fleetOS.hasPromptedBiometric")
-        KeychainService.delete(key: "com.fleetOS.biometricEnabled")
-        // Best-effort Supabase signout — fire and forget
-        Task { try? await SupabaseAuthService.signOut() }
+        KeychainService.delete(key: Keys.biometricOn)
+        KeychainService.delete(key: Keys.biometricPrompted)
     }
 
     // MARK: - Session Restore
 
     /// Synchronous check for biometric gate — restores currentUser from Keychain.
-    /// Does NOT set isAuthenticated (biometric step handles that).
     @discardableResult
     func restoreSession() -> UserRole? {
         guard hasSessionToken(),
@@ -160,62 +182,27 @@ final class AuthManager {
         }
         currentUser = user
         isAuthenticated = true
-        #if DEBUG
-        print("🔑 [AuthManager.restoreSession] Restored via Keychain (biometric path)")
-        #endif
         return user.role
     }
 
-    /// Async launch-time check — uses Supabase's in-memory session to silently restore currentUser.
-    /// Does NOT set isAuthenticated (biometric / password step still required).
-    private func restoreSessionSilently() {
-        // First restore from Keychain for immediate UI (fast path)
-        if let user = KeychainService.load(key: Keys.currentUser, as: AuthUser.self) {
-            currentUser = user
-        }
-        // Then refresh from Supabase in background to pick up any server-side changes
-        Task { await refreshSessionFromSupabase() }
-    }
-
-    private func refreshSessionFromSupabase() async {
-        guard let session = await SupabaseAuthService.currentSession() else { return }
-        let staffRow = try? await StaffMemberService.fetchStaffMember(id: session.user.id)
-        guard let staffRow else { return }
-
-        let user = AuthUser(
-            id: session.user.id,
-            email: session.user.email ?? "",
-            role: staffRow.role,
-            isFirstLogin: staffRow.isFirstLogin,
-            isProfileComplete: staffRow.isProfileComplete,
-            isApproved: staffRow.isApproved,
-            name: staffRow.name,
-            rejectionReason: staffRow.rejectionReason,
-            phone: staffRow.phone,
-            profilePhotoUrl: staffRow.profilePhotoUrl,
-            status: staffRow.status.rawValue,
-            availability: staffRow.availability.rawValue,
-            createdAt: staffRow.createdAt
-        )
-        await MainActor.run {
-            self.currentUser = user
-            _ = KeychainService.save(user, forKey: Keys.currentUser)
-        }
-    }
-
-    /// Returns true if a session token exists in Keychain (used for biometric gate).
     func hasSessionToken() -> Bool {
         KeychainService.load(key: Keys.sessionToken) != nil
     }
 
+    private func restoreSessionSilently() {
+        // Fast path: restore from Keychain for immediate UI
+        if let user = KeychainService.load(key: Keys.currentUser, as: AuthUser.self) {
+            currentUser = user
+        }
+        // Do NOT set isAuthenticated — require biometric / password re-entry
+    }
+
     // MARK: - Routing
 
-    /// Returns the correct post-authentication destination based on the user's profile state.
-    /// This logic is the single source of truth for all role-based routing — do NOT duplicate in views.
     func destination(for user: AuthUser) -> AuthDestination {
         switch user.role {
         case .fleetManager:
-            return user.isApproved ? .fleetManagerDashboard : .pendingApproval
+            return .fleetManagerDashboard
 
         case .driver:
             if user.isFirstLogin      { return .changePassword }
@@ -231,97 +218,192 @@ final class AuthManager {
         }
     }
 
-    // MARK: - OTP / 2FA
+    // MARK: - OTP (App-Side 2FA)
 
-    /// Masked display of the email address the OTP was sent to.
+    @discardableResult
+    func generateOTP() -> String {
+        let otp = String(format: "%06d", Int.random(in: 100000...999999))
+        currentOTP = otp
+        pendingOTPEmail = currentUser?.email
+        // In production, deliver via SMTP through your backend.
+        // For test/debug, OTP is printed below.
+        #if DEBUG
+        print("📧 OTP for \(pendingOTPEmail ?? "?"): \(otp)")
+        #endif
+        return otp
+    }
+
+    func verifyOTP(_ code: String) -> Bool {
+        let match = code == currentOTP
+        if match { currentOTP = "" }
+        return match
+    }
+
     var maskedEmail: String {
         guard let email = pendingOTPEmail ?? currentUser?.email,
-              let atIndex = email.firstIndex(of: "@") else {
-            return "***@***.com"
-        }
-        let first = email.prefix(1)
-        let domain = email[atIndex...]
-        return "\(first)***\(domain)"
+              let atIndex = email.firstIndex(of: "@") else { return "***@***.com" }
+        return "\(email.prefix(1))***\(email[atIndex...])"
     }
 
     // MARK: - Password Management
 
-    /// Updates the authenticated user's password via Supabase Auth and marks isFirstLogin = false.
-    func updatePassword(_ newPassword: String) async throws {
-        try await SupabaseAuthService.updatePassword(newPassword)
-        try await markPasswordChanged()
-    }
+    /// Updates password via Supabase Auth and marks `is_first_login = false`.
+    func updatePasswordAndFirstLogin(newPassword: String) async throws {
+        guard let user = currentUser else { throw AuthError.invalidCredentials }
 
-    /// Sets staff_members.is_first_login = false after a forced password change.
-    func markPasswordChanged() async throws {
-        guard let userId = currentUser?.id,
-              var staffRow = try? await StaffMemberService.fetchStaffMember(id: userId) else { return }
-        staffRow.isFirstLogin = false
-        try await StaffMemberService.updateStaffMember(staffRow)
-        currentUser?.isFirstLogin = false
-        _ = KeychainService.save(currentUser, forKey: Keys.currentUser)
-    }
+        // 1. Supabase Auth password update
+        try await supabase.auth.update(user: UserAttributes(password: newPassword))
 
-    /// Marks staff_members.is_profile_complete = true after onboarding form submission.
-    func markProfileComplete() async throws {
-        guard let userId = currentUser?.id,
-              var staffRow = try? await StaffMemberService.fetchStaffMember(id: userId) else { return }
-        staffRow.isProfileComplete = true
-        try await StaffMemberService.updateStaffMember(staffRow)
-        currentUser?.isProfileComplete = true
-        _ = KeychainService.save(currentUser, forKey: Keys.currentUser)
-    }
+        // 2. Mark first login complete in staff_members
+        try await AuthUserService.markFirstLoginComplete(id: user.id)
 
-    /// Sends a password reset email. The user follows the link in the email.
-    func requestPasswordReset(email: String) async throws {
-        try await SupabaseAuthService.requestPasswordReset(email: email)
-        pendingOTPEmail = email
-    }
-
-    // MARK: - User Refresh
-
-    /// Re-fetches the staff_members row for the current user and updates currentUser.
-    /// Called from PendingApprovalView when polling for status changes.
-    func refreshCurrentUser() async throws {
-        guard let userId = currentUser?.id else { return }
-        let staffRow = try await StaffMemberService.fetchStaffMember(id: userId)
-        let updated = AuthUser(
-            id: userId,
-            email: currentUser?.email ?? "",
-            role: staffRow.role,
-            isFirstLogin: staffRow.isFirstLogin,
-            isProfileComplete: staffRow.isProfileComplete,
-            isApproved: staffRow.isApproved,
-            name: staffRow.name,
-            rejectionReason: staffRow.rejectionReason,
-            phone: staffRow.phone,
-            profilePhotoUrl: staffRow.profilePhotoUrl,
-            status: staffRow.status.rawValue,
-            availability: staffRow.availability.rawValue,
-            createdAt: staffRow.createdAt
-        )
+        // 3. Update local state
+        var updated = user
+        updated.isFirstLogin = false
         currentUser = updated
         _ = KeychainService.save(updated, forKey: Keys.currentUser)
     }
 
-    // MARK: - Staff Account Provisioning
-
-    /// Creates a new staff account. Requires a Supabase Edge Function — NOT implementable client-side.
-    /// - Note: Admin must use the Supabase Dashboard or a secure backend endpoint to create auth.users entries.
-    ///   When the Edge Function is ready, replace this method with the actual call.
-    func createStaffAccount(email: String, role: UserRole) async throws -> UUID {
-        throw AuthError.notImplemented(
-            "createStaffAccount requires a Supabase Edge Function. " +
-            "Use the Supabase Dashboard to provision staff accounts manually " +
-            "until the Edge Function is deployed."
-        )
+    /// Legacy alias used by ForcePasswordChangeViewModel.
+    func updatePassword(_ newPassword: String) async throws {
+        try await updatePasswordAndFirstLogin(newPassword: newPassword)
     }
 
-    // MARK: - Auto-Lock (5-minute background threshold)
+    /// Marks `is_profile_complete = true` in staff_members via AuthUserService.
+    func markProfileComplete() async throws {
+        guard let user = currentUser else { return }
+        try await AuthUserService.markProfileComplete(id: user.id)
+        var updated = user
+        updated.isProfileComplete = true
+        currentUser = updated
+        _ = KeychainService.save(updated, forKey: Keys.currentUser)
+    }
+
+    /// Marks `is_first_login = false` in staff_members (standalone, useful post-reset).
+    func markPasswordChanged() async throws {
+        guard let user = currentUser else { return }
+        try await AuthUserService.markFirstLoginComplete(id: user.id)
+        var updated = user
+        updated.isFirstLogin = false
+        currentUser = updated
+        _ = KeychainService.save(updated, forKey: Keys.currentUser)
+    }
+
+    /// Refreshes current user from staff_members (for pending-approval polling).
+    func refreshCurrentUser() async throws {
+        guard let userId = currentUser?.id else { return }
+        struct RoleRow: Decodable {
+            let role: String
+            let name: String?
+            let isFirstLogin: Bool
+            let isProfileComplete: Bool
+            let isApproved: Bool
+            let rejectionReason: String?
+            let phone: String?
+            let createdAt: Date?
+            enum CodingKeys: String, CodingKey {
+                case role, name, phone
+                case isFirstLogin      = "is_first_login"
+                case isProfileComplete = "is_profile_complete"
+                case isApproved        = "is_approved"
+                case rejectionReason   = "rejection_reason"
+                case createdAt         = "created_at"
+            }
+        }
+        let rows: [RoleRow] = try await supabase
+            .from("staff_members")
+            .select("role, name, is_first_login, is_profile_complete, is_approved, rejection_reason, phone, created_at")
+            .eq("id", value: userId.uuidString)
+            .limit(1)
+            .execute()
+            .value
+        guard let row = rows.first, let current = currentUser else { return }
+        var updated = current
+        updated.isApproved        = row.isApproved
+        updated.isProfileComplete = row.isProfileComplete
+        updated.isFirstLogin      = row.isFirstLogin
+        updated.rejectionReason   = row.rejectionReason
+        currentUser = updated
+        _ = KeychainService.save(updated, forKey: Keys.currentUser)
+    }
+
+    // MARK: - Password Reset (Forgot Password Flow)
+
+    func requestPasswordReset(email: String) async -> Bool {
+        do {
+            struct RoleRow: Decodable {
+                let role: String
+            }
+            let rows: [RoleRow] = try await supabase
+                .from("staff_members")
+                .select("role")
+                .eq("email", value: email)
+                .limit(1)
+                .execute()
+                .value
+            guard !rows.isEmpty else { return false }
+
+            pendingOTPEmail = email
+            let otp = String(format: "%06d", Int.random(in: 100000...999999))
+            resetOTP = otp
+            // In production, deliver via SMTP through your backend.
+            #if DEBUG
+            print("🔑 Reset OTP for \(email): \(otp)")
+            #endif
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    func verifyResetOTP(_ code: String) -> Bool {
+        code == resetOTP
+    }
+
+    func resetPassword(code: String, newPassword: String) async throws {
+        guard code == resetOTP, let email = pendingOTPEmail else {
+            throw AuthError.invalidCredentials
+        }
+        // Use Supabase password reset email flow for production.
+        // The user must be signed in — for cases where they're not, fall back to email link.
+        try await supabase.auth.resetPasswordForEmail(email)
+        resetOTP = ""
+        pendingOTPEmail = nil
+    }
+
+    // MARK: - Create Staff Account (Admin only — requires Edge Function)
+
+    /// Creates a new staff account via the `create-staff-account` Edge Function.
+    /// The service_role key is never embedded in the iOS app.
+    func createStaffAccount(
+        email: String,
+        name: String,
+        role: UserRole,
+        tempPassword: String
+    ) async throws {
+        let payload: [String: String] = [
+            "email":    email,
+            "password": tempPassword,
+            "name":     name,
+            "role":     role.rawValue
+        ]
+        let data: Data = try await supabase.functions.invoke(
+            "create-staff-account",
+            options: FunctionInvokeOptions(body: try JSONEncoder().encode(payload))
+        )
+        guard let json = try? JSONDecoder().decode([String: String].self, from: data),
+              json["id"] != nil else {
+            throw AuthError.createStaffFailed
+        }
+    }
+
+    // MARK: - Auto-Lock
 
     func appDidEnterBackground() {
-        let ts = "\(Date().timeIntervalSince1970)".data(using: .utf8) ?? Data()
-        _ = KeychainService.save(ts, forKey: Keys.backgroundTS)
+        let ts = "\(Date().timeIntervalSince1970)"
+        if let data = ts.data(using: .utf8) {
+            _ = KeychainService.save(data, forKey: Keys.backgroundTS)
+        }
     }
 
     func appWillEnterForeground() {
@@ -329,7 +411,6 @@ final class AuthManager {
         guard let data = KeychainService.load(key: Keys.backgroundTS),
               let str = String(data: data, encoding: .utf8),
               let ts = TimeInterval(str) else { return }
-
         if Date().timeIntervalSince1970 - ts > autoLockSeconds {
             needsReauth = true
         }
@@ -342,37 +423,28 @@ final class AuthManager {
 
 // MARK: - AuthError
 
-enum AuthError: LocalizedError {
+enum AuthError: LocalizedError, Equatable {
     case invalidCredentials
+    case userNotFound
     case biometricFailed
     case sessionExpired
-    case staffRecordNotFound
+    case createStaffFailed
     case accountSuspended
     case otpExpired
     case otpInvalid
     case networkError(String)
-    case notImplemented(String)
 
     var errorDescription: String? {
         switch self {
-        case .invalidCredentials:
-            return "Invalid email or password. Please check your credentials and try again."
-        case .biometricFailed:
-            return "Biometric authentication failed. Please sign in with your password."
-        case .sessionExpired:
-            return "Your session has expired. Please sign in again."
-        case .staffRecordNotFound:
-            return "Your account profile could not be found. Contact your fleet manager."
-        case .accountSuspended:
-            return "Your account has been suspended. Contact your fleet manager."
-        case .otpExpired:
-            return "The verification code has expired. Please request a new one."
-        case .otpInvalid:
-            return "Incorrect verification code. Please check the code and try again."
-        case .networkError(let detail):
-            return "Connection error: \(detail). Check your internet connection and try again."
-        case .notImplemented(let detail):
-            return "Feature not available: \(detail)"
+        case .invalidCredentials: return "Invalid email or password."
+        case .userNotFound:       return "Account not found. Contact your fleet administrator."
+        case .biometricFailed:    return "Biometric authentication failed."
+        case .sessionExpired:     return "Your session has expired. Please sign in again."
+        case .createStaffFailed:  return "Staff creation requires the backend service. Please deploy the Edge Function."
+        case .accountSuspended:   return "Your account has been suspended. Contact your fleet manager."
+        case .otpExpired:         return "The verification code has expired. Please request a new one."
+        case .otpInvalid:         return "Incorrect verification code. Please check the code and try again."
+        case .networkError(let d): return "Connection error: \(d). Check your internet connection."
         }
     }
 }

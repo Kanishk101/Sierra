@@ -31,8 +31,7 @@ struct MaintenanceRecord: Identifiable, Codable {
     // MARK: Costs
     var labourCost: Double               // labour_cost (default 0)
     var partsCost: Double                // parts_cost (default 0)
-    /// Read-only GENERATED column: labour_cost + parts_cost
-    let totalCost: Double?               // total_cost (GENERATED)
+    let totalCost: Double                // total_cost (GENERATED)
 
     // MARK: Status & scheduling
     var status: MaintenanceRecordStatus  // status
@@ -83,7 +82,7 @@ struct MaintenanceRecord: Identifiable, Codable {
                 odometerAtService: 118400.0,
                 labourCost: 2500.0,
                 partsCost: 3200.0,
-                totalCost: nil,
+                totalCost: 0.0,
                 status: .inProgress,
                 serviceDate: cal.date(byAdding: .day, value: -2, to: now) ?? now,
                 nextServiceDue: cal.date(byAdding: .month, value: 6, to: now),
@@ -100,7 +99,7 @@ struct MaintenanceRecord: Identifiable, Codable {
                 odometerAtService: 87500.0,
                 labourCost: 1800.0,
                 partsCost: 2400.0,
-                totalCost: nil,
+                totalCost: 0.0,
                 status: .completed,
                 serviceDate: cal.date(byAdding: .day, value: -6, to: now) ?? now,
                 nextServiceDue: cal.date(byAdding: .month, value: 3, to: now),

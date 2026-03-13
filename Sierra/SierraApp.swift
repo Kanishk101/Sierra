@@ -43,6 +43,7 @@ struct SierraApp: App {
                 }
             }
             .environment(AppDataStore.shared)
+            .environment(AuthManager.shared)
             .animation(.easeInOut(duration: 0.25), value: lifecycle.showBiometricLock)
         }
         .onChange(of: scenePhase) { _, newPhase in

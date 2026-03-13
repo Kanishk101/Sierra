@@ -1,12 +1,12 @@
 import Foundation
 import Supabase
 
-private let supabase = SupabaseManager.shared.client
+// Uses global `supabase` constant from SupabaseManager.swift
 
-// MARK: - PartUsedPayload
-// NOTE: total_cost is GENERATED (quantity * unit_cost) — never included in payload.
+// MARK: - PartUsedInsertPayload
+// Excludes: id, total_cost (GENERATED = quantity * unit_cost), created_at
 
-struct PartUsedPayload: Encodable {
+struct PartUsedInsertPayload: Encodable {
     let workOrderId: String
     let partName: String
     let partNumber: String?
@@ -23,13 +23,13 @@ struct PartUsedPayload: Encodable {
         case supplier
     }
 
-    init(from part: PartUsed) {
-        self.workOrderId = part.workOrderId.uuidString
-        self.partName    = part.partName
-        self.partNumber  = part.partNumber
-        self.quantity    = part.quantity
-        self.unitCost    = part.unitCost
-        self.supplier    = part.supplier
+    init(from p: PartUsed) {
+        workOrderId = p.workOrderId.uuidString
+        partName    = p.partName
+        partNumber  = p.partNumber
+        quantity    = p.quantity
+        unitCost    = p.unitCost
+        supplier    = p.supplier
     }
 }
 
@@ -37,8 +37,17 @@ struct PartUsedPayload: Encodable {
 
 struct PartUsedService {
 
-    static func fetchParts(workOrderId: UUID) async throws -> [PartUsed] {
-        return try await supabase
+    static func fetchAllPartsUsed() async throws -> [PartUsed] {
+        try await supabase
+            .from("parts_used")
+            .select()
+            .order("created_at", ascending: true)
+            .execute()
+            .value
+    }
+
+    static func fetchPartsUsed(workOrderId: UUID) async throws -> [PartUsed] {
+        try await supabase
             .from("parts_used")
             .select()
             .eq("work_order_id", value: workOrderId.uuidString)
@@ -47,24 +56,14 @@ struct PartUsedService {
             .value
     }
 
-    static func addPart(_ part: PartUsed) async throws {
-        let payload = PartUsedPayload(from: part)
+    static func addPartUsed(_ part: PartUsed) async throws {
         try await supabase
             .from("parts_used")
-            .insert(payload)
+            .insert(PartUsedInsertPayload(from: part))
             .execute()
     }
 
-    static func updatePart(_ part: PartUsed) async throws {
-        let payload = PartUsedPayload(from: part)
-        try await supabase
-            .from("parts_used")
-            .update(payload)
-            .eq("id", value: part.id.uuidString)
-            .execute()
-    }
-
-    static func deletePart(id: UUID) async throws {
+    static func deletePartUsed(id: UUID) async throws {
         try await supabase
             .from("parts_used")
             .delete()

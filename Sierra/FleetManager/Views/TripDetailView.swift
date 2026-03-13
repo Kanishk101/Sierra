@@ -1,291 +1,259 @@
 import SwiftUI
 
+// MARK: - TripDetailView
+// Shared detail view used by both Fleet Manager and Driver tabs.
+// Accepts a tripId (UUID) and resolves the Trip from AppDataStore.
 
 struct TripDetailView: View {
 
     @Environment(AppDataStore.self) private var store
-    @Environment(\.dismiss) private var dismiss
-
     let tripId: UUID
 
-    @State private var showCancelConfirm = false
-    @State private var isCancelling = false
-    @State private var errorMessage: String?
-    @State private var showError = false
-
-    private var trip: Trip? {
-        store.trips.first { $0.id == tripId }
-    }
+    private var trip: Trip? { store.trip(for: tripId) }
 
     var body: some View {
         Group {
-            if let t = trip {
-                tripContent(t)
+            if let trip {
+                content(trip)
             } else {
-                ContentUnavailableView("Trip Not Found",
-                                        systemImage: "arrow.triangle.swap",
-                                        description: Text("This trip may have been deleted."))
+                notFoundView
             }
         }
-        .navigationTitle(trip?.taskId ?? "Trip")
+        .navigationTitle("Trip Detail")
         .navigationBarTitleDisplayMode(.inline)
-        .confirmationDialog("Cancel Trip?", isPresented: $showCancelConfirm, titleVisibility: .visible) {
-            Button("Cancel Trip", role: .destructive) {
-                Task { await cancelTrip() }
-            }
-            Button("Keep Trip", role: .cancel) {}
-        } message: {
-            Text("This will cancel the trip and free the assigned driver and vehicle.")
+        .background(SierraTheme.Colors.appBackground.ignoresSafeArea())
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // MARK: - Not Found
+    // ─────────────────────────────────────────────────────────────
+
+    private var notFoundView: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "questionmark.circle")
+                .font(.system(size: 52, weight: .light))
+                .foregroundStyle(.secondary)
+            Text("Trip Not Found")
+                .font(SierraFont.title3)
+                .foregroundStyle(.secondary)
         }
-        .alert("Error", isPresented: $showError) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(errorMessage ?? "An unknown error occurred.")
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // MARK: - Main Content
+    // ─────────────────────────────────────────────────────────────
+
+    private func content(_ trip: Trip) -> some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                // Header card — route + status
+                headerCard(trip)
+
+                // Details card
+                detailsCard(trip)
+
+                // Delivery instructions (if any)
+                if !trip.deliveryInstructions.isEmpty {
+                    instructionsCard(trip)
+                }
+
+                // Notes (if any)
+                if !trip.notes.isEmpty {
+                    notesCard(trip)
+                }
+            }
+            .padding(16)
         }
     }
 
-    // MARK: - Content
+    // ─────────────────────────────────────────────────────────────
+    // MARK: - Header Card
+    // ─────────────────────────────────────────────────────────────
 
-    private func tripContent(_ t: Trip) -> some View {
-        List {
-            // Header
-            Section {
-                VStack(alignment: .center, spacing: 8) {
-                    Text(t.taskId)
-                        .font(.system(size: 20, weight: .bold, design: .monospaced))
-                        .foregroundStyle(SierraTheme.Colors.primaryText)
+    private func headerCard(_ trip: Trip) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Task ID + status badge
+            HStack {
+                Text(trip.taskId)
+                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.gray.opacity(0.12), in: Capsule())
 
-                    statusBadge(t.status)
-                }
-                .frame(maxWidth: .infinity)
-                .listRowBackground(Color.clear)
+                Spacer()
+
+                statusBadge(trip.status)
             }
 
             // Route
-            Section("Route") {
-                HStack(spacing: 12) {
-                    VStack(spacing: 4) {
-                        Circle().fill(.green).frame(width: 8, height: 8)
-                        Rectangle().fill(.gray.opacity(0.3)).frame(width: 1, height: 20)
-                        Circle().fill(.red).frame(width: 8, height: 8)
-                    }
-
-                    VStack(alignment: .leading, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("From")
-                                .font(SierraFont.caption2)
-                                .foregroundStyle(.secondary)
-                            Text(t.origin)
-                                .font(SierraFont.subheadline)
-                        }
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("To")
-                                .font(SierraFont.caption2)
-                                .foregroundStyle(.secondary)
-                            Text(t.destination)
-                                .font(SierraFont.subheadline)
-                        }
-                    }
-                }
-
-                HStack {
-                    Image(systemName: "calendar")
-                        .foregroundStyle(.secondary)
-                    Text(t.scheduledDate.formatted(.dateTime.month(.abbreviated).day().year().hour().minute()))
-                        .font(SierraFont.caption1)
-                }
+            VStack(alignment: .leading, spacing: 6) {
+                routeRow(icon: "location.fill", color: SierraTheme.Colors.ember, label: trip.origin)
+                Image(systemName: "arrow.down")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 2)
+                routeRow(icon: "flag.fill", color: SierraTheme.Colors.alpineMint, label: trip.destination)
             }
 
-            // Assignment
-            Section("Assignment") {
-                // Driver card
-                if let dId = t.driverId,
-                   let driver = store.staffMember(for: dId) {
-                    HStack(spacing: 12) {
-                        Circle()
-                            .fill(Color.blue.opacity(0.12))
-                            .frame(width: 40, height: 40)
-                            .overlay(
-                                Text(driver.initials)
-                                    .font(SierraFont.body(14, weight: .bold))
-                                    .foregroundStyle(.blue)
-                            )
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(driver.displayName)
-                                .font(SierraFont.subheadline)
-                            Text(driver.phone ?? "No phone")
-                                .font(SierraFont.caption1)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                    }
-                } else {
-                    Text("No driver assigned")
-                        .foregroundStyle(.secondary)
-                        .italic()
-                }
-
-                // Vehicle card
-                if let vId = t.vehicleId,
-                   let vehicle = store.vehicle(for: vId) {
-                    HStack(spacing: 12) {
-                        Image(systemName: "car.fill")
-                            .font(.system(size: 18))
-                            .foregroundStyle(SierraTheme.Colors.granite)
-                            .frame(width: 40, height: 40)
-                            .background(SierraTheme.Colors.sierraBlue.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("\(vehicle.name) \(vehicle.model)")
-                                .font(SierraFont.subheadline)
-                            HStack(spacing: 6) {
-                                Text(vehicle.licensePlate)
-                                    .font(.system(size: 12, design: .monospaced))
-                                    .foregroundStyle(.secondary)
-                                Text("· \(vehicle.fuelType.description)")
-                                    .font(SierraFont.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        Spacer()
-                    }
-                } else {
-                    Text("No vehicle assigned")
-                        .foregroundStyle(.secondary)
-                        .italic()
-                }
+            // Priority
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.circle")
+                    .font(SierraFont.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Priority: \(trip.priority.rawValue)")
+                    .font(SierraFont.caption1)
+                    .foregroundStyle(.secondary)
             }
+        }
+        .padding(16)
+        .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
+    }
 
-            // Details
-            Section("Details") {
-                HStack {
-                    Text("Priority")
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    priorityBadge(t.priority)
-                }
-
-                if !t.notes.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Notes")
-                            .font(SierraFont.caption1)
-                            .foregroundStyle(.secondary)
-                        Text(t.notes)
-                            .font(SierraFont.caption1)
-                    }
-                }
-
-            }
-
-            // Timeline
-            if t.actualStartDate != nil || t.actualEndDate != nil {
-                Section("Timeline") {
-                    if let start = t.actualStartDate {
-                        HStack {
-                            Image(systemName: "play.circle.fill")
-                                .foregroundStyle(SierraTheme.Colors.alpineMint)
-                            Text("Started")
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                            Text(start.formatted(.dateTime.month(.abbreviated).day().hour().minute()))
-                                .font(SierraFont.caption1)
-                        }
-                    }
-                    if let end = t.actualEndDate {
-                        HStack {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(.blue)
-                            Text("Completed")
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                            Text(end.formatted(.dateTime.month(.abbreviated).day().hour().minute()))
-                                .font(SierraFont.caption1)
-                        }
-                    }
-                }
-            }
-
-            // Cancel
-            if t.status == .scheduled {
-                Section {
-                    Button(role: .destructive) {
-                        showCancelConfirm = true
-                    } label: {
-                        HStack {
-                            Spacer()
-                            Label("Cancel Trip", systemImage: "xmark.circle.fill")
-                                .font(SierraFont.body(16, weight: .semibold))
-                            Spacer()
-                        }
-                    }
-                }
-            }
+    private func routeRow(icon: String, color: Color, label: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(SierraFont.caption1)
+                .foregroundStyle(color)
+                .frame(width: 20)
+            Text(label)
+                .font(SierraFont.body(15, weight: .semibold))
+                .foregroundStyle(SierraTheme.Colors.primaryText)
         }
     }
 
-    // MARK: - Helpers
+    // ─────────────────────────────────────────────────────────────
+    // MARK: - Details Card
+    // ─────────────────────────────────────────────────────────────
+
+    private func detailsCard(_ trip: Trip) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            sectionHeader("Details")
+
+            // Vehicle
+            if let vId = trip.vehicleId,
+               let vUUID = UUID(uuidString: vId),
+               let vehicle = store.vehicle(for: vUUID) {
+                detailRow(icon: "car.fill", label: "Vehicle", value: "\(vehicle.name) \(vehicle.model) · \(vehicle.licensePlate)")
+            }
+
+            // Scheduled
+            detailRow(
+                icon: "calendar",
+                label: "Scheduled",
+                value: trip.scheduledDate.formatted(.dateTime.day().month(.abbreviated).year().hour().minute())
+            )
+
+            // Actual start
+            if let start = trip.actualStartDate {
+                detailRow(
+                    icon: "play.fill",
+                    label: "Started",
+                    value: start.formatted(.dateTime.day().month(.abbreviated).hour().minute())
+                )
+            }
+
+            // Actual end / duration
+            if let end = trip.actualEndDate {
+                detailRow(
+                    icon: "checkmark.circle.fill",
+                    label: "Completed",
+                    value: end.formatted(.dateTime.day().month(.abbreviated).hour().minute())
+                )
+                if let dur = trip.durationString {
+                    detailRow(icon: "timer", label: "Duration", value: dur)
+                }
+            }
+
+            // Distance
+            if let km = trip.distanceKm {
+                detailRow(icon: "road.lanes", label: "Distance", value: String(format: "%.1f km", km))
+            }
+        }
+        .padding(16)
+        .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // MARK: - Instructions / Notes Cards
+    // ─────────────────────────────────────────────────────────────
+
+    private func instructionsCard(_ trip: Trip) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeader("Delivery Instructions")
+            Text(trip.deliveryInstructions)
+                .font(SierraFont.body(14, weight: .regular))
+                .foregroundStyle(SierraTheme.Colors.primaryText)
+                .lineSpacing(4)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
+    }
+
+    private func notesCard(_ trip: Trip) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeader("Notes")
+            Text(trip.notes)
+                .font(SierraFont.body(14, weight: .regular))
+                .foregroundStyle(.secondary)
+                .lineSpacing(4)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // MARK: - Reusable Sub-Views
+    // ─────────────────────────────────────────────────────────────
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title.uppercased())
+            .font(SierraFont.body(11, weight: .bold))
+            .foregroundStyle(.secondary)
+            .kerning(1.1)
+    }
+
+    private func detailRow(icon: String, label: String, value: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .font(SierraFont.caption1)
+                .foregroundStyle(.secondary)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(label)
+                    .font(SierraFont.caption2)
+                    .foregroundStyle(.secondary)
+                Text(value)
+                    .font(SierraFont.body(14, weight: .medium))
+                    .foregroundStyle(SierraTheme.Colors.primaryText)
+            }
+        }
+    }
 
     private func statusBadge(_ status: TripStatus) -> some View {
-        let (text, color): (String, Color) = switch status {
-        case .scheduled: ("Scheduled", .blue)
-        case .active:    ("Active", .green)
-        case .completed: ("Completed", .gray)
-        case .cancelled: ("Cancelled", .red)
+        let color: Color = switch status {
+        case .active:    .green
+        case .scheduled: SierraTheme.Colors.sierraBlue
+        case .completed: .gray
+        case .cancelled: .red
         }
-        return Text(text)
-            .font(SierraFont.caption1)
+        return Text(status.rawValue)
+            .font(SierraFont.body(12, weight: .bold))
             .foregroundStyle(color)
             .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+            .padding(.vertical, 5)
             .background(color.opacity(0.12), in: Capsule())
-    }
-
-    private func priorityBadge(_ priority: TripPriority) -> some View {
-        let color: Color = switch priority {
-        case .low:    .gray
-        case .normal: .blue
-        case .high:   SierraTheme.Colors.warning
-        case .urgent: .red
-        }
-        return Text(priority.rawValue)
-            .font(SierraFont.caption2)
-            .foregroundStyle(color)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(color.opacity(0.12), in: Capsule())
-    }
-
-    // MARK: - Cancel Trip
-
-    @MainActor
-    private func cancelTrip() async {
-        guard var t = trip else { return }
-        isCancelling = true
-        defer { isCancelling = false }
-        do {
-            // Free driver's availability
-            if let dId = t.driverId,
-               var driver = store.staff.first(where: { $0.id == dId }) {
-                driver.availability = .available
-                try await store.updateStaffMember(driver)
-            }
-
-            // Free vehicle assignment
-            if let vId = t.vehicleId,
-               var vehicle = store.vehicle(for: vId) {
-                vehicle.assignedDriverId = nil
-                vehicle.status = .idle
-                try await store.updateVehicle(vehicle)
-            }
-
-            // Cancel trip
-            t.status = .cancelled
-            try await store.updateTrip(t)
-        } catch {
-            errorMessage = error.localizedDescription
-            showError = true
-        }
     }
 }
+
+// MARK: - Preview
 
 #Preview {
     NavigationStack {

@@ -1,7 +1,7 @@
 import Foundation
 import Supabase
 
-private let supabase = SupabaseManager.shared.client
+// Uses global `supabase` constant from SupabaseManager.swift
 
 // MARK: - FuelLogPayload
 

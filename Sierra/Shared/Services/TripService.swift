@@ -1,11 +1,21 @@
 import Foundation
 import Supabase
 
-private let supabase = SupabaseManager.shared.client
+// Uses global `supabase` constant from SupabaseManager.swift
 
-// MARK: - TripPayload
+// MARK: - ISO Formatter
 
-struct TripPayload: Encodable {
+private let iso: ISO8601DateFormatter = {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return f
+}()
+
+// MARK: - TripInsertPayload
+// Excludes: id, created_at, updated_at, proof_of_delivery_id,
+//           pre_inspection_id, post_inspection_id (set after related records)
+
+struct TripInsertPayload: Encodable {
     let taskId: String
     let driverId: String?
     let vehicleId: String?
@@ -22,17 +32,13 @@ struct TripPayload: Encodable {
     let notes: String
     let status: String
     let priority: String
-    let proofOfDeliveryId: String?
-    let preInspectionId: String?
-    let postInspectionId: String?
 
     enum CodingKeys: String, CodingKey {
         case taskId               = "task_id"
         case driverId             = "driver_id"
         case vehicleId            = "vehicle_id"
         case createdByAdminId     = "created_by_admin_id"
-        case origin
-        case destination
+        case origin, destination
         case deliveryInstructions = "delivery_instructions"
         case scheduledDate        = "scheduled_date"
         case scheduledEndDate     = "scheduled_end_date"
@@ -40,45 +46,41 @@ struct TripPayload: Encodable {
         case actualEndDate        = "actual_end_date"
         case startMileage         = "start_mileage"
         case endMileage           = "end_mileage"
-        case notes
-        case status
-        case priority
-        case proofOfDeliveryId    = "proof_of_delivery_id"
-        case preInspectionId      = "pre_inspection_id"
-        case postInspectionId     = "post_inspection_id"
+        case notes, status, priority
     }
 
-    init(from trip: Trip) {
-        let fmt = ISO8601DateFormatter()
-        fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        self.taskId               = trip.taskId
-        self.driverId             = trip.driverId?.uuidString
-        self.vehicleId            = trip.vehicleId?.uuidString
-        self.createdByAdminId     = trip.createdByAdminId.uuidString
-        self.origin               = trip.origin
-        self.destination          = trip.destination
-        self.deliveryInstructions = trip.deliveryInstructions
-        self.scheduledDate        = fmt.string(from: trip.scheduledDate)
-        self.scheduledEndDate     = trip.scheduledEndDate.map { fmt.string(from: $0) }
-        self.actualStartDate      = trip.actualStartDate.map { fmt.string(from: $0) }
-        self.actualEndDate        = trip.actualEndDate.map { fmt.string(from: $0) }
-        self.startMileage         = trip.startMileage
-        self.endMileage           = trip.endMileage
-        self.notes                = trip.notes
-        self.status               = trip.status.rawValue
-        self.priority             = trip.priority.rawValue
-        self.proofOfDeliveryId    = trip.proofOfDeliveryId?.uuidString
-        self.preInspectionId      = trip.preInspectionId?.uuidString
-        self.postInspectionId     = trip.postInspectionId?.uuidString
+    init(from t: Trip) {
+        taskId               = t.taskId
+        driverId             = t.driverId             // already String?
+        vehicleId            = t.vehicleId            // already String?
+        createdByAdminId     = t.createdByAdminId     // already String
+        origin               = t.origin
+        destination          = t.destination
+        deliveryInstructions = t.deliveryInstructions
+        scheduledDate        = iso.string(from: t.scheduledDate)
+        scheduledEndDate     = t.scheduledEndDate.map { iso.string(from: $0) }
+        actualStartDate      = t.actualStartDate.map  { iso.string(from: $0) }
+        actualEndDate        = t.actualEndDate.map    { iso.string(from: $0) }
+        startMileage         = t.startMileage
+        endMileage           = t.endMileage
+        notes                = t.notes
+        status               = t.status.rawValue
+        priority             = t.priority.rawValue
     }
 }
+
+// MARK: - TripUpdatePayload (same fields as insert)
+
+typealias TripUpdatePayload = TripInsertPayload
 
 // MARK: - TripService
 
 struct TripService {
 
+    // MARK: Fetch
+
     static func fetchAllTrips() async throws -> [Trip] {
-        return try await supabase
+        try await supabase
             .from("trips")
             .select()
             .order("scheduled_date", ascending: false)
@@ -86,8 +88,18 @@ struct TripService {
             .value
     }
 
+    static func fetchTrip(id: UUID) async throws -> Trip? {
+        let rows: [Trip] = try await supabase
+            .from("trips")
+            .select()
+            .eq("id", value: id.uuidString)
+            .execute()
+            .value
+        return rows.first
+    }
+
     static func fetchTrips(driverId: UUID) async throws -> [Trip] {
-        return try await supabase
+        try await supabase
             .from("trips")
             .select()
             .eq("driver_id", value: driverId.uuidString)
@@ -97,7 +109,7 @@ struct TripService {
     }
 
     static func fetchTrips(vehicleId: UUID) async throws -> [Trip] {
-        return try await supabase
+        try await supabase
             .from("trips")
             .select()
             .eq("vehicle_id", value: vehicleId.uuidString)
@@ -107,7 +119,7 @@ struct TripService {
     }
 
     static func fetchActiveTrips() async throws -> [Trip] {
-        return try await supabase
+        try await supabase
             .from("trips")
             .select()
             .eq("status", value: TripStatus.active.rawValue)
@@ -116,32 +128,35 @@ struct TripService {
             .value
     }
 
-    static func fetchTrip(taskId: String) async throws -> Trip {
-        return try await supabase
-            .from("trips")
-            .select()
-            .eq("task_id", value: taskId)
-            .single()
-            .execute()
-            .value
-    }
+    // MARK: Insert
 
     static func addTrip(_ trip: Trip) async throws {
-        let payload = TripPayload(from: trip)
         try await supabase
             .from("trips")
-            .insert(payload)
+            .insert(TripInsertPayload(from: trip))
             .execute()
     }
 
+    // MARK: Update
+
     static func updateTrip(_ trip: Trip) async throws {
-        let payload = TripPayload(from: trip)
         try await supabase
             .from("trips")
-            .update(payload)
+            .update(TripUpdatePayload(from: trip))
             .eq("id", value: trip.id.uuidString)
             .execute()
     }
+
+    static func updateTripStatus(id: UUID, status: TripStatus) async throws {
+        struct Payload: Encodable { let status: String }
+        try await supabase
+            .from("trips")
+            .update(Payload(status: status.rawValue))
+            .eq("id", value: id.uuidString)
+            .execute()
+    }
+
+    // MARK: Delete
 
     static func deleteTrip(id: UUID) async throws {
         try await supabase
@@ -149,5 +164,17 @@ struct TripService {
             .delete()
             .eq("id", value: id.uuidString)
             .execute()
+    }
+
+    // MARK: Task ID Helper
+
+    static func newTaskId() -> String { generateTaskId() }
+
+    private static func generateTaskId() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd"
+        let datePart = formatter.string(from: Date())
+        let suffix = String(format: "%04d", Int.random(in: 1...9999))
+        return "TRP-\(datePart)-\(suffix)"
     }
 }

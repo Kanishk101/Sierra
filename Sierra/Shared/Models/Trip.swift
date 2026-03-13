@@ -31,6 +31,8 @@ enum TripPriority: String, Codable, CaseIterable {
 
 // MARK: - Trip
 // Maps to table: trips
+// FK columns (driver_id, vehicle_id, created_by_admin_id) are stored as TEXT in Supabase
+// and decoded as String/String? per schema v2 rules.
 
 struct Trip: Identifiable, Codable {
     // MARK: Primary key
@@ -38,109 +40,113 @@ struct Trip: Identifiable, Codable {
 
     // MARK: Core fields
     var taskId: String                    // task_id (UNIQUE)
-    var driverId: UUID?                   // driver_id (FK → staff_members.id)
-    var vehicleId: UUID?                  // vehicle_id (FK → vehicles.id)
-    var createdByAdminId: UUID            // created_by_admin_id (FK → staff_members.id)
+    var driverId: String?                 // driver_id (FK → staff_members.id, TEXT)
+    var vehicleId: String?                // vehicle_id (FK → vehicles.id, TEXT)
+    var createdByAdminId: String          // created_by_admin_id (FK → staff_members.id, TEXT)
 
     // MARK: Route
-    var origin: String                    // origin
-    var destination: String               // destination
+    var origin: String
+    var destination: String
     var deliveryInstructions: String      // delivery_instructions (default '')
 
     // MARK: Scheduling
-    var scheduledDate: Date               // scheduled_date
-    var scheduledEndDate: Date?           // scheduled_end_date
-    var actualStartDate: Date?            // actual_start_date
-    var actualEndDate: Date?              // actual_end_date
+    var scheduledDate: Date
+    var scheduledEndDate: Date?
+    var actualStartDate: Date?
+    var actualEndDate: Date?
 
     // MARK: Odometry
-    var startMileage: Double?             // start_mileage
-    var endMileage: Double?               // end_mileage
+    var startMileage: Double?
+    var endMileage: Double?
 
     // MARK: Metadata
     var notes: String                     // notes (default '')
-    var status: TripStatus                // status
-    var priority: TripPriority            // priority
+    var status: TripStatus
+    var priority: TripPriority
 
     // MARK: Related records
-    var proofOfDeliveryId: UUID?          // proof_of_delivery_id (FK)
-    var preInspectionId: UUID?            // pre_inspection_id (FK)
-    var postInspectionId: UUID?           // post_inspection_id (FK)
+    var proofOfDeliveryId: UUID?
+    var preInspectionId: UUID?
+    var postInspectionId: UUID?
 
     // MARK: Timestamps
-    var createdAt: Date                   // created_at
-    var updatedAt: Date                   // updated_at
+    var createdAt: Date
+    var updatedAt: Date
 
     // MARK: - CodingKeys
 
     enum CodingKeys: String, CodingKey {
         case id
-        case taskId                = "task_id"
-        case driverId              = "driver_id"
-        case vehicleId             = "vehicle_id"
-        case createdByAdminId      = "created_by_admin_id"
-        case origin
-        case destination
-        case deliveryInstructions  = "delivery_instructions"
-        case scheduledDate         = "scheduled_date"
-        case scheduledEndDate      = "scheduled_end_date"
-        case actualStartDate       = "actual_start_date"
-        case actualEndDate         = "actual_end_date"
-        case startMileage          = "start_mileage"
-        case endMileage            = "end_mileage"
-        case notes
-        case status
-        case priority
-        case proofOfDeliveryId     = "proof_of_delivery_id"
-        case preInspectionId       = "pre_inspection_id"
-        case postInspectionId      = "post_inspection_id"
-        case createdAt             = "created_at"
-        case updatedAt             = "updated_at"
+        case taskId               = "task_id"
+        case driverId             = "driver_id"
+        case vehicleId            = "vehicle_id"
+        case createdByAdminId     = "created_by_admin_id"
+        case origin, destination
+        case deliveryInstructions = "delivery_instructions"
+        case scheduledDate        = "scheduled_date"
+        case scheduledEndDate     = "scheduled_end_date"
+        case actualStartDate      = "actual_start_date"
+        case actualEndDate        = "actual_end_date"
+        case startMileage         = "start_mileage"
+        case endMileage           = "end_mileage"
+        case notes, status, priority
+        case proofOfDeliveryId    = "proof_of_delivery_id"
+        case preInspectionId      = "pre_inspection_id"
+        case postInspectionId     = "post_inspection_id"
+        case createdAt            = "created_at"
+        case updatedAt            = "updated_at"
     }
 
     // MARK: - Computed
-
-    var durationString: String? {
-        guard let start = actualStartDate, let end = actualEndDate else { return nil }
-        let interval = end.timeIntervalSince(start)
-        let hours = Int(interval) / 3600
-        let minutes = (Int(interval) % 3600) / 60
-        if hours > 0 {
-            return "\(hours)h \(minutes)m"
-        }
-        return "\(minutes)m"
-    }
 
     var distanceKm: Double? {
         guard let start = startMileage, let end = endMileage else { return nil }
         return end - start
     }
 
+    var isOverdue: Bool {
+        status == .scheduled && scheduledDate < Date()
+    }
+
+    var durationString: String? {
+        guard let start = actualStartDate, let end = actualEndDate else { return nil }
+        let interval = end.timeIntervalSince(start)
+        let hours   = Int(interval) / 3600
+        let minutes = (Int(interval) % 3600) / 60
+        if hours > 0 { return "\(hours)h \(minutes)m" }
+        return "\(minutes)m"
+    }
+
+    // MARK: - Helpers
+
+    /// Convenience accessors that parse the String FK back to UUID when needed.
+    var driverUUID: UUID?  { driverId.flatMap(UUID.init) }
+    var vehicleUUID: UUID? { vehicleId.flatMap(UUID.init) }
+    var adminUUID: UUID?   { UUID(uuidString: createdByAdminId) }
+
     // MARK: - Task ID Generation
 
-    /// Generates a task ID in format: TRP-yyyyMMdd-XXXX (4 random digits)
     static func generateTaskId() -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd"
         let dateStr = formatter.string(from: Date())
-        let random = String(format: "%04d", Int.random(in: 0...9999))
+        let random  = String(format: "%04d", Int.random(in: 0...9999))
         return "TRP-\(dateStr)-\(random)"
     }
 
     // MARK: - Mock Data
 
     static let mockData: [Trip] = {
-        let cal = Calendar.current
-        let now = Date()
-        let adminId = UUID(uuidString: "F0000000-0000-0000-0000-000000000001")!
+        let cal     = Calendar.current
+        let now     = Date()
+        let adminId = "F0000000-0000-0000-0000-000000000001"
 
         return [
-            // Active trip
             Trip(
                 id: UUID(uuidString: "B0000000-0000-0000-0000-000000000001")!,
                 taskId: "TRP-20260310-0001",
-                driverId: UUID(uuidString: "D0000000-0000-0000-0000-000000000001"),
-                vehicleId: UUID(uuidString: "A0000000-0000-0000-0000-000000000001"),
+                driverId: "D0000000-0000-0000-0000-000000000001",
+                vehicleId: "A0000000-0000-0000-0000-000000000001",
                 createdByAdminId: adminId,
                 origin: "Mumbai Warehouse",
                 destination: "Pune Distribution Center",
@@ -160,7 +166,6 @@ struct Trip: Identifiable, Codable {
                 createdAt: cal.date(byAdding: .hour, value: -3, to: now) ?? now,
                 updatedAt: cal.date(byAdding: .hour, value: -1, to: now) ?? now
             ),
-            // Scheduled trip
             Trip(
                 id: UUID(uuidString: "B0000000-0000-0000-0000-000000000002")!,
                 taskId: "TRP-20260310-0042",
@@ -185,12 +190,11 @@ struct Trip: Identifiable, Codable {
                 createdAt: cal.date(byAdding: .hour, value: -6, to: now) ?? now,
                 updatedAt: cal.date(byAdding: .hour, value: -6, to: now) ?? now
             ),
-            // Completed trip
             Trip(
                 id: UUID(uuidString: "B0000000-0000-0000-0000-000000000003")!,
                 taskId: "TRP-20260309-0017",
-                driverId: UUID(uuidString: "D0000000-0000-0000-0000-000000000001"),
-                vehicleId: UUID(uuidString: "A0000000-0000-0000-0000-000000000001"),
+                driverId: "D0000000-0000-0000-0000-000000000001",
+                vehicleId: "A0000000-0000-0000-0000-000000000001",
                 createdByAdminId: adminId,
                 origin: "Chennai Port",
                 destination: "Bangalore Warehouse",
@@ -210,12 +214,11 @@ struct Trip: Identifiable, Codable {
                 createdAt: cal.date(byAdding: .day, value: -1, to: now) ?? now,
                 updatedAt: cal.date(byAdding: .hour, value: -22, to: now) ?? now
             ),
-            // Cancelled trip
             Trip(
                 id: UUID(uuidString: "B0000000-0000-0000-0000-000000000004")!,
                 taskId: "TRP-20260308-0005",
                 driverId: nil,
-                vehicleId: UUID(uuidString: "A0000000-0000-0000-0000-000000000003"),
+                vehicleId: "A0000000-0000-0000-0000-000000000003",
                 createdByAdminId: adminId,
                 origin: "Hyderabad Yard",
                 destination: "Vizag Terminal",

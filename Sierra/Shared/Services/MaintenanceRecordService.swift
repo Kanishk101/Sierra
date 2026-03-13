@@ -1,12 +1,18 @@
 import Foundation
 import Supabase
 
-private let supabase = SupabaseManager.shared.client
+// Uses global `supabase` constant from SupabaseManager.swift
 
-// MARK: - MaintenanceRecordPayload
-// NOTE: total_cost is GENERATED (labour_cost + parts_cost) — never included in payload.
+private let iso: ISO8601DateFormatter = {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return f
+}()
 
-struct MaintenanceRecordPayload: Encodable {
+// MARK: - MaintenanceRecordInsertPayload
+// Excludes: id, total_cost (GENERATED), created_at
+
+struct MaintenanceRecordInsertPayload: Encodable {
     let vehicleId: String
     let workOrderId: String
     let maintenanceTaskId: String
@@ -35,21 +41,19 @@ struct MaintenanceRecordPayload: Encodable {
         case nextServiceDue    = "next_service_due"
     }
 
-    init(from record: MaintenanceRecord) {
-        let fmt = ISO8601DateFormatter()
-        fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        self.vehicleId         = record.vehicleId.uuidString
-        self.workOrderId       = record.workOrderId.uuidString
-        self.maintenanceTaskId = record.maintenanceTaskId.uuidString
-        self.performedById     = record.performedById.uuidString
-        self.issueReported     = record.issueReported
-        self.repairDetails     = record.repairDetails
-        self.odometerAtService = record.odometerAtService
-        self.labourCost        = record.labourCost
-        self.partsCost         = record.partsCost
-        self.status            = record.status.rawValue
-        self.serviceDate       = fmt.string(from: record.serviceDate)
-        self.nextServiceDue    = record.nextServiceDue.map { fmt.string(from: $0) }
+    init(from r: MaintenanceRecord) {
+        vehicleId         = r.vehicleId.uuidString
+        workOrderId       = r.workOrderId.uuidString
+        maintenanceTaskId = r.maintenanceTaskId.uuidString
+        performedById     = r.performedById.uuidString
+        issueReported     = r.issueReported
+        repairDetails     = r.repairDetails
+        odometerAtService = r.odometerAtService
+        labourCost        = r.labourCost
+        partsCost         = r.partsCost
+        status            = r.status.rawValue
+        serviceDate       = iso.string(from: r.serviceDate)
+        nextServiceDue    = r.nextServiceDue.map { iso.string(from: $0) }
     }
 }
 
@@ -57,8 +61,8 @@ struct MaintenanceRecordPayload: Encodable {
 
 struct MaintenanceRecordService {
 
-    static func fetchAllRecords() async throws -> [MaintenanceRecord] {
-        return try await supabase
+    static func fetchAllMaintenanceRecords() async throws -> [MaintenanceRecord] {
+        try await supabase
             .from("maintenance_records")
             .select()
             .order("service_date", ascending: false)
@@ -66,8 +70,8 @@ struct MaintenanceRecordService {
             .value
     }
 
-    static func fetchRecords(vehicleId: UUID) async throws -> [MaintenanceRecord] {
-        return try await supabase
+    static func fetchMaintenanceRecords(vehicleId: UUID) async throws -> [MaintenanceRecord] {
+        try await supabase
             .from("maintenance_records")
             .select()
             .eq("vehicle_id", value: vehicleId.uuidString)
@@ -76,34 +80,32 @@ struct MaintenanceRecordService {
             .value
     }
 
-    static func fetchRecord(workOrderId: UUID) async throws -> MaintenanceRecord {
-        return try await supabase
+    static func fetchMaintenanceRecords(performedById: UUID) async throws -> [MaintenanceRecord] {
+        try await supabase
             .from("maintenance_records")
             .select()
-            .eq("work_order_id", value: workOrderId.uuidString)
-            .single()
+            .eq("performed_by_id", value: performedById.uuidString)
+            .order("service_date", ascending: false)
             .execute()
             .value
     }
 
-    static func addRecord(_ record: MaintenanceRecord) async throws {
-        let payload = MaintenanceRecordPayload(from: record)
+    static func addMaintenanceRecord(_ record: MaintenanceRecord) async throws {
         try await supabase
             .from("maintenance_records")
-            .insert(payload)
+            .insert(MaintenanceRecordInsertPayload(from: record))
             .execute()
     }
 
-    static func updateRecord(_ record: MaintenanceRecord) async throws {
-        let payload = MaintenanceRecordPayload(from: record)
+    static func updateMaintenanceRecord(_ record: MaintenanceRecord) async throws {
         try await supabase
             .from("maintenance_records")
-            .update(payload)
+            .update(MaintenanceRecordInsertPayload(from: record))
             .eq("id", value: record.id.uuidString)
             .execute()
     }
 
-    static func deleteRecord(id: UUID) async throws {
+    static func deleteMaintenanceRecord(id: UUID) async throws {
         try await supabase
             .from("maintenance_records")
             .delete()

@@ -4,12 +4,12 @@ import Foundation
 // Maps to PostgreSQL enum: vehicle_document_type
 
 enum VehicleDocumentType: String, Codable, CaseIterable {
-    case registration      = "Registration"
-    case insurance         = "Insurance"
+    case registration       = "Registration"
+    case insurance          = "Insurance"
     case fitnessCertificate = "Fitness Certificate"
-    case pucCertificate    = "PUC Certificate"
-    case permit            = "Permit"
-    case other             = "Other"
+    case puc                = "PUC Certificate"
+    case permit             = "Permit"
+    case other              = "Other"
 }
 
 // MARK: - VehicleDocument
@@ -25,41 +25,39 @@ struct VehicleDocument: Identifiable, Codable {
     // MARK: Document details
     var documentType: VehicleDocumentType   // document_type
     var documentNumber: String              // document_number
-    var issuedDate: Date                    // issued_date (date)
-    var expiryDate: Date                    // expiry_date (date)
+    var issuedDate: Date                    // issued_date
+    var expiryDate: Date                    // expiry_date
     var issuingAuthority: String            // issuing_authority
     var documentUrl: String?                // document_url
-    var notes: String?                      // notes
+    var notes: String?
 
     // MARK: Timestamps
-    var createdAt: Date                     // created_at
-    var updatedAt: Date                     // updated_at
+    var createdAt: Date
+    var updatedAt: Date
 
     // MARK: - CodingKeys
 
     enum CodingKeys: String, CodingKey {
         case id
-        case vehicleId          = "vehicle_id"
-        case documentType       = "document_type"
-        case documentNumber     = "document_number"
-        case issuedDate         = "issued_date"
-        case expiryDate         = "expiry_date"
-        case issuingAuthority   = "issuing_authority"
-        case documentUrl        = "document_url"
+        case vehicleId        = "vehicle_id"
+        case documentType     = "document_type"
+        case documentNumber   = "document_number"
+        case issuedDate       = "issued_date"
+        case expiryDate       = "expiry_date"
+        case issuingAuthority = "issuing_authority"
+        case documentUrl      = "document_url"
         case notes
-        case createdAt          = "created_at"
-        case updatedAt          = "updated_at"
+        case createdAt        = "created_at"
+        case updatedAt        = "updated_at"
     }
 
     // MARK: - Computed
 
-    /// True if document expires within 30 days from now.
-    var isExpiringSoon: Bool {
-        expiryDate.timeIntervalSinceNow < 30 * 86400
+    var daysUntilExpiry: Int {
+        Calendar.current.dateComponents([.day], from: Date(), to: expiryDate).day ?? 0
     }
 
-    /// True if document has already expired.
-    var isExpired: Bool {
-        expiryDate < Date()
-    }
+    var isExpired: Bool { expiryDate < Date() }
+
+    var isExpiringSoon: Bool { !isExpired && daysUntilExpiry <= 30 }
 }

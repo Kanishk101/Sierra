@@ -1,9 +1,19 @@
 import Foundation
 import Supabase
 
-private let supabase = SupabaseManager.shared.client
+// Uses global `supabase` constant from SupabaseManager.swift
+
+// MARK: - ISO Formatter
+
+private let iso: ISO8601DateFormatter = {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return f
+}()
 
 // MARK: - StaffMemberInsertPayload
+// Includes id (mirrors auth.users.id — must be set explicitly)
+// Excludes: created_at, updated_at
 
 struct StaffMemberInsertPayload: Encodable {
     let id: String
@@ -27,53 +37,45 @@ struct StaffMemberInsertPayload: Encodable {
     let joinedDate: String?
 
     enum CodingKeys: String, CodingKey {
-        case id
-        case name
-        case role
-        case status
-        case email
-        case phone
-        case availability
-        case dateOfBirth             = "date_of_birth"
-        case gender
-        case address
-        case emergencyContactName    = "emergency_contact_name"
-        case emergencyContactPhone   = "emergency_contact_phone"
-        case aadhaarNumber           = "aadhaar_number"
-        case profilePhotoUrl         = "profile_photo_url"
-        case isFirstLogin            = "is_first_login"
-        case isProfileComplete       = "is_profile_complete"
-        case isApproved              = "is_approved"
-        case rejectionReason         = "rejection_reason"
-        case joinedDate              = "joined_date"
+        case id, name, role, status, email, phone, availability
+        case dateOfBirth          = "date_of_birth"
+        case gender, address
+        case emergencyContactName  = "emergency_contact_name"
+        case emergencyContactPhone = "emergency_contact_phone"
+        case aadhaarNumber        = "aadhaar_number"
+        case profilePhotoUrl      = "profile_photo_url"
+        case isFirstLogin         = "is_first_login"
+        case isProfileComplete    = "is_profile_complete"
+        case isApproved           = "is_approved"
+        case rejectionReason      = "rejection_reason"
+        case joinedDate           = "joined_date"
     }
 
-    init(from member: StaffMember) {
-        let fmt = ISO8601DateFormatter()
-        fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        self.id                   = member.id.uuidString
-        self.name                 = member.name
-        self.role                 = member.role.rawValue
-        self.status               = member.status.rawValue
-        self.email                = member.email
-        self.phone                = member.phone
-        self.availability         = member.availability.rawValue
-        self.dateOfBirth          = member.dateOfBirth.map { fmt.string(from: $0) }
-        self.gender               = member.gender
-        self.address              = member.address
-        self.emergencyContactName  = member.emergencyContactName
-        self.emergencyContactPhone = member.emergencyContactPhone
-        self.aadhaarNumber        = member.aadhaarNumber
-        self.profilePhotoUrl      = member.profilePhotoUrl
-        self.isFirstLogin         = member.isFirstLogin
-        self.isProfileComplete    = member.isProfileComplete
-        self.isApproved           = member.isApproved
-        self.rejectionReason      = member.rejectionReason
-        self.joinedDate           = member.joinedDate.map { fmt.string(from: $0) }
+    init(from m: StaffMember) {
+        id                   = m.id.uuidString
+        name                 = m.name
+        role                 = m.role.rawValue
+        status               = m.status.rawValue
+        email                = m.email
+        phone                = m.phone
+        availability         = m.availability.rawValue
+        dateOfBirth          = m.dateOfBirth.map { iso.string(from: $0) }
+        gender               = m.gender
+        address              = m.address
+        emergencyContactName  = m.emergencyContactName
+        emergencyContactPhone = m.emergencyContactPhone
+        aadhaarNumber        = m.aadhaarNumber
+        profilePhotoUrl      = m.profilePhotoUrl
+        isFirstLogin         = m.isFirstLogin
+        isProfileComplete    = m.isProfileComplete
+        isApproved           = m.isApproved
+        rejectionReason      = m.rejectionReason
+        joinedDate           = m.joinedDate.map { iso.string(from: $0) }
     }
 }
 
 // MARK: - StaffMemberUpdatePayload
+// Excludes: id, created_at, updated_at
 
 struct StaffMemberUpdatePayload: Encodable {
     let name: String?
@@ -95,45 +97,38 @@ struct StaffMemberUpdatePayload: Encodable {
     let joinedDate: String?
 
     enum CodingKeys: String, CodingKey {
-        case name
-        case role
-        case status
-        case phone
-        case availability
-        case dateOfBirth             = "date_of_birth"
-        case gender
-        case address
-        case emergencyContactName    = "emergency_contact_name"
-        case emergencyContactPhone   = "emergency_contact_phone"
-        case aadhaarNumber           = "aadhaar_number"
-        case profilePhotoUrl         = "profile_photo_url"
-        case isFirstLogin            = "is_first_login"
-        case isProfileComplete       = "is_profile_complete"
-        case isApproved              = "is_approved"
-        case rejectionReason         = "rejection_reason"
-        case joinedDate              = "joined_date"
+        case name, role, status, phone, availability
+        case dateOfBirth          = "date_of_birth"
+        case gender, address
+        case emergencyContactName  = "emergency_contact_name"
+        case emergencyContactPhone = "emergency_contact_phone"
+        case aadhaarNumber        = "aadhaar_number"
+        case profilePhotoUrl      = "profile_photo_url"
+        case isFirstLogin         = "is_first_login"
+        case isProfileComplete    = "is_profile_complete"
+        case isApproved           = "is_approved"
+        case rejectionReason      = "rejection_reason"
+        case joinedDate           = "joined_date"
     }
 
-    init(from member: StaffMember) {
-        let fmt = ISO8601DateFormatter()
-        fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        self.name                  = member.name
-        self.role                  = member.role.rawValue
-        self.status                = member.status.rawValue
-        self.phone                 = member.phone
-        self.availability          = member.availability.rawValue
-        self.dateOfBirth           = member.dateOfBirth.map { fmt.string(from: $0) }
-        self.gender                = member.gender
-        self.address               = member.address
-        self.emergencyContactName  = member.emergencyContactName
-        self.emergencyContactPhone = member.emergencyContactPhone
-        self.aadhaarNumber         = member.aadhaarNumber
-        self.profilePhotoUrl       = member.profilePhotoUrl
-        self.isFirstLogin          = member.isFirstLogin
-        self.isProfileComplete     = member.isProfileComplete
-        self.isApproved            = member.isApproved
-        self.rejectionReason       = member.rejectionReason
-        self.joinedDate            = member.joinedDate.map { fmt.string(from: $0) }
+    init(from m: StaffMember) {
+        name                 = m.name
+        role                 = m.role.rawValue
+        status               = m.status.rawValue
+        phone                = m.phone
+        availability         = m.availability.rawValue
+        dateOfBirth          = m.dateOfBirth.map { iso.string(from: $0) }
+        gender               = m.gender
+        address              = m.address
+        emergencyContactName  = m.emergencyContactName
+        emergencyContactPhone = m.emergencyContactPhone
+        aadhaarNumber        = m.aadhaarNumber
+        profilePhotoUrl      = m.profilePhotoUrl
+        isFirstLogin         = m.isFirstLogin
+        isProfileComplete    = m.isProfileComplete
+        isApproved           = m.isApproved
+        rejectionReason      = m.rejectionReason
+        joinedDate           = m.joinedDate.map { iso.string(from: $0) }
     }
 }
 
@@ -141,10 +136,10 @@ struct StaffMemberUpdatePayload: Encodable {
 
 struct StaffMemberService {
 
-    // MARK: - Fetch All
+    // MARK: Fetch
 
-    static func fetchAllStaff() async throws -> [StaffMember] {
-        return try await supabase
+    static func fetchAllStaffMembers() async throws -> [StaffMember] {
+        try await supabase
             .from("staff_members")
             .select()
             .order("created_at", ascending: false)
@@ -152,22 +147,18 @@ struct StaffMemberService {
             .value
     }
 
-    // MARK: - Fetch by ID
-
-    static func fetchStaffMember(id: UUID) async throws -> StaffMember {
-        return try await supabase
+    static func fetchStaffMember(id: UUID) async throws -> StaffMember? {
+        let rows: [StaffMember] = try await supabase
             .from("staff_members")
             .select()
             .eq("id", value: id.uuidString)
-            .single()
             .execute()
             .value
+        return rows.first
     }
 
-    // MARK: - Fetch by Role
-
-    static func fetchStaff(role: UserRole) async throws -> [StaffMember] {
-        return try await supabase
+    static func fetchStaffMembers(role: UserRole) async throws -> [StaffMember] {
+        try await supabase
             .from("staff_members")
             .select()
             .eq("role", value: role.rawValue)
@@ -176,10 +167,8 @@ struct StaffMemberService {
             .value
     }
 
-    // MARK: - Fetch Available Drivers
-
     static func fetchAvailableDrivers() async throws -> [StaffMember] {
-        return try await supabase
+        try await supabase
             .from("staff_members")
             .select()
             .eq("role", value: UserRole.driver.rawValue)
@@ -190,28 +179,26 @@ struct StaffMemberService {
             .value
     }
 
-    // MARK: - Insert
+    // MARK: Insert
 
     static func addStaffMember(_ member: StaffMember) async throws {
-        let payload = StaffMemberInsertPayload(from: member)
         try await supabase
             .from("staff_members")
-            .insert(payload)
+            .insert(StaffMemberInsertPayload(from: member))
             .execute()
     }
 
-    // MARK: - Update
+    // MARK: Update
 
     static func updateStaffMember(_ member: StaffMember) async throws {
-        let payload = StaffMemberUpdatePayload(from: member)
         try await supabase
             .from("staff_members")
-            .update(payload)
+            .update(StaffMemberUpdatePayload(from: member))
             .eq("id", value: member.id.uuidString)
             .execute()
     }
 
-    // MARK: - Delete
+    // MARK: Delete
 
     static func deleteStaffMember(id: UUID) async throws {
         try await supabase

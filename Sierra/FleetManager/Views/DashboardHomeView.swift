@@ -1,215 +1,274 @@
 import SwiftUI
 
+// MARK: - DashboardHomeView
+// Fleet manager overview: KPI cards + recent trips + expiring docs.
+
 struct DashboardHomeView: View {
+
     @Environment(AppDataStore.self) private var store
-    @State private var showProfile = false
-
-    private let activity = ActivityLog.samples
-
-    private var greeting: String {
-        let hour = Calendar.current.component(.hour, from: Date())
-        switch hour {
-        case 5..<12:  return "Good morning"
-        case 12..<17: return "Good afternoon"
-        default:      return "Good evening"
-        }
-    }
-
-    private var dateString: String {
-        let f = DateFormatter()
-        f.dateFormat = "EEEE, MMMM d"
-        return f.string(from: Date())
-    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: Spacing.lg) {
-                    greetingCard
-                    statsGrid
-                    alertsSection
-                    recentActivitySection
+                VStack(spacing: 20) {
+                    // KPI Grid
+                    kpiGrid
+                        .padding(.horizontal, Spacing.lg)
+                        .padding(.top, Spacing.md)
+
+                    // Recent Trips
+                    recentTripsSection
+                        .padding(.horizontal, Spacing.lg)
+
+                    // Expiring Documents
+                    expiringDocsSection
+                        .padding(.horizontal, Spacing.lg)
+
+                    Spacer(minLength: 32)
                 }
-                .padding(.horizontal, Spacing.lg)
-                .padding(.top, Spacing.xs)
-                .padding(.bottom, Spacing.xxl)
             }
             .background(SierraTheme.Colors.appBackground.ignoresSafeArea())
             .navigationTitle("Dashboard")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { showProfile = true } label: {
-                        SierraAvatarView(initials: "FA", size: 34, gradient: SierraAvatarView.admin())
-                    }
-                }
-            }
-            .sheet(isPresented: $showProfile) {
-                AdminProfileView()
-                    .presentationDetents([.medium])
+            .onAppear {
+                print("[DashboardHomeView] Appeared — vehicles: \(store.vehicles.count), trips: \(store.trips.count), staff: \(store.staff.count)")
             }
         }
     }
 
-    // MARK: - Greeting Card
+    // ─────────────────────────────────────────────────────────────
+    // MARK: - KPI Grid
+    // ─────────────────────────────────────────────────────────────
 
-    private var greetingCard: some View {
-        VStack(alignment: .leading, spacing: Spacing.xxs) {
-            Text("\(greeting), Admin")
-                .font(SierraFont.title1)
-                .foregroundStyle(.white)
-            Text(dateString)
-                .font(SierraFont.bodyText)
-                .foregroundStyle(.white.opacity(0.65))
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Spacing.xl)
-        .background(
-            LinearGradient(
-                colors: [SierraTheme.Colors.summitNavy, SierraTheme.Colors.sierraBlue],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
-        )
-    }
-
-    // MARK: - Stats Grid
-
-    private var statsGrid: some View {
-        let vehicles = store.vehicles
-        let staff = store.staff
-        let activeCount = vehicles.filter { $0.status == .active }.count
-        let pending = vehicles.filter { $0.status == .inMaintenance }.count
-
-        return LazyVGrid(columns: [GridItem(.flexible(), spacing: Spacing.md), GridItem(.flexible(), spacing: Spacing.md)], spacing: Spacing.md) {
-            StatCardView.vehicles(count: vehicles.count)
-            StatCardView.active(count: activeCount)
-            StatCardView(
-                label: "Maintenance",
-                value: "\(pending)",
-                accentColor: SierraTheme.Colors.warning,
-                icon: "wrench.fill"
+    private var kpiGrid: some View {
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: Spacing.md) {
+            kpiCard(
+                icon: "car.fill",
+                color: SierraTheme.Colors.sierraBlue,
+                label: "Total Vehicles",
+                value: "\(store.vehicles.count)"
             )
-            StatCardView.pending(count: staff.count)
+            kpiCard(
+                icon: "arrow.triangle.swap",
+                color: SierraTheme.Colors.alpineMint,
+                label: "Active Trips",
+                value: "\(store.activeTripsCount)"
+            )
+            kpiCard(
+                icon: "person.2.fill",
+                color: SierraTheme.Colors.ember,
+                label: "Pending Staff",
+                value: "\(store.pendingApplicationsCount)",
+                badgeCount: store.pendingApplicationsCount
+            )
+            kpiCard(
+                icon: "exclamationmark.triangle.fill",
+                color: SierraTheme.Colors.danger,
+                label: "Active Alerts",
+                value: "\(store.activeEmergencyAlerts().count)",
+                badgeCount: store.activeEmergencyAlerts().count
+            )
         }
     }
 
-    // MARK: - Alerts
+    private func kpiCard(
+        icon: String,
+        color: Color,
+        label: String,
+        value: String,
+        badgeCount: Int = 0
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Image(systemName: icon)
+                    .font(.system(size: 18))
+                    .foregroundStyle(color)
+                    .frame(width: 36, height: 36)
+                    .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
 
-    private var alertsSection: some View {
-        let expiring = store.documentsExpiringSoon(withinDays: 30)
-        // Group by vehicle for display
-        let vehicleIds = Set(expiring.compactMap { $0.vehicleId })
-        let expiringVehicles = vehicleIds.compactMap { store.vehicle(for: $0) }
-        return Group {
-            if !expiringVehicles.isEmpty {
-                VStack(alignment: .leading, spacing: Spacing.sm) {
-                    sectionHeader("Document Alerts", icon: "exclamationmark.triangle.fill", tint: SierraTheme.Colors.warning)
-                    ForEach(expiringVehicles) { v in
-                        HStack(spacing: Spacing.sm) {
-                            Image(systemName: "doc.badge.clock.fill")
-                                .font(.system(size: 18))
-                                .foregroundStyle(SierraTheme.Colors.warning)
+                Spacer()
 
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(v.name)
-                                    .sierraStyle(.cardTitle)
-                                Text("\(v.licensePlate) · Documents expiring soon")
-                                    .sierraStyle(.caption)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(SierraFont.caption2)
-                                .foregroundStyle(SierraTheme.Colors.granite)
-                        }
-                        .padding(Spacing.md)
-                        .background(
-                            SierraTheme.Colors.warning.opacity(0.08),
-                            in: RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                                .strokeBorder(SierraTheme.Colors.warning.opacity(0.2), lineWidth: 1)
-                        )
-                    }
+                if badgeCount > 0 {
+                    Text("\(badgeCount)")
+                        .font(SierraFont.body(10, weight: .bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(SierraTheme.Colors.danger, in: Capsule())
                 }
             }
+
+            Text(value)
+                .font(SierraFont.body(28, weight: .bold))
+                .foregroundStyle(SierraTheme.Colors.primaryText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+
+            Text(label)
+                .font(SierraFont.caption2)
+                .foregroundStyle(SierraTheme.Colors.secondaryText)
         }
+        .padding(Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+        .sierraShadow(SierraTheme.Shadow.card)
     }
 
-    // MARK: - Recent Activity
+    // ─────────────────────────────────────────────────────────────
+    // MARK: - Recent Trips
+    // ─────────────────────────────────────────────────────────────
 
-    private var recentActivitySection: some View {
+    private var recentTrips: [Trip] {
+        Array(store.trips.sorted { $0.createdAt > $1.createdAt }.prefix(5))
+    }
+
+    private var recentTripsSection: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
-            sectionHeader("Recent Activity", icon: "clock.fill", tint: SierraTheme.Colors.sierraBlue)
-            ForEach(activity) { log in
-                HStack(spacing: Spacing.sm) {
-                    typeBadge(log.type)
+            sectionHeader("Recent Trips", icon: "clock")
 
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(log.description)
-                            .font(SierraFont.subheadline)
-                            .foregroundStyle(SierraTheme.Colors.primaryText)
-                            .lineLimit(2)
-                        Text(log.timeAgo)
-                            .font(SierraFont.caption1)
-                            .foregroundStyle(SierraTheme.Colors.granite)
-                    }
-                    Spacer()
+            if recentTrips.isEmpty {
+                emptyPlaceholder("No trips yet", icon: "arrow.triangle.swap")
+            } else {
+                ForEach(recentTrips) { trip in
+                    tripRow(trip)
                 }
-                .padding(Spacing.md)
-                .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
-                .sierraShadow(SierraTheme.Shadow.card)
             }
         }
     }
 
-    // MARK: - Helpers
+    private func tripRow(_ trip: Trip) -> some View {
+        HStack(spacing: Spacing.md) {
+            Circle()
+                .fill(statusColor(trip.status).opacity(0.15))
+                .frame(width: 36, height: 36)
+                .overlay(
+                    Image(systemName: "arrow.triangle.swap")
+                        .font(SierraFont.caption2)
+                        .foregroundStyle(statusColor(trip.status))
+                )
 
-    private func sectionHeader(_ title: String, icon: String, tint: Color) -> some View {
-        HStack(spacing: Spacing.xxs) {
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                Text("\(trip.origin) → \(trip.destination)")
+                    .font(SierraFont.body(14, weight: .semibold))
+                    .foregroundStyle(SierraTheme.Colors.primaryText)
+                    .lineLimit(1)
+                Text(trip.taskId)
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundStyle(SierraTheme.Colors.granite)
+            }
+
+            Spacer()
+
+            Text(trip.status.rawValue)
+                .font(SierraFont.body(11, weight: .bold))
+                .foregroundStyle(statusColor(trip.status))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(statusColor(trip.status).opacity(0.1), in: Capsule())
+        }
+        .padding(Spacing.md)
+        .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+        .sierraShadow(SierraTheme.Shadow.card)
+    }
+
+    private func statusColor(_ status: TripStatus) -> Color {
+        switch status {
+        case .active:    return .green
+        case .scheduled: return SierraTheme.Colors.sierraBlue
+        case .completed: return .gray
+        case .cancelled: return .red
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // MARK: - Expiring Documents
+    // ─────────────────────────────────────────────────────────────
+
+    private var expiringDocsSection: some View {
+        let docs = store.documentsExpiringSoon()
+        return VStack(alignment: .leading, spacing: Spacing.sm) {
+            sectionHeader("Expiring Documents", icon: "doc.badge.clock")
+
+            if docs.isEmpty {
+                emptyPlaceholder("All documents are up to date", icon: "checkmark.shield")
+            } else {
+                ForEach(docs) { doc in
+                    docRow(doc)
+                }
+            }
+        }
+    }
+
+    private func docRow(_ doc: VehicleDocument) -> some View {
+        HStack(spacing: Spacing.md) {
+            Image(systemName: doc.isExpired ? "exclamationmark.triangle.fill" : "clock.badge.exclamationmark")
+                .font(.system(size: 18))
+                .foregroundStyle(doc.isExpired ? SierraTheme.Colors.danger : SierraTheme.Colors.warning)
+                .frame(width: 36, height: 36)
+                .background(
+                    (doc.isExpired ? SierraTheme.Colors.danger : SierraTheme.Colors.warning).opacity(0.1),
+                    in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                )
+
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                Text(doc.documentType.rawValue)
+                    .font(SierraFont.body(14, weight: .semibold))
+                    .foregroundStyle(SierraTheme.Colors.primaryText)
+                Text("Expires \(doc.expiryDate.formatted(.dateTime.day().month(.abbreviated).year()))")
+                    .font(SierraFont.caption2)
+                    .foregroundStyle(doc.isExpired ? SierraTheme.Colors.danger : SierraTheme.Colors.warning)
+            }
+
+            Spacer()
+
+            Text(doc.isExpired ? "Expired" : "Expiring")
+                .font(SierraFont.body(11, weight: .bold))
+                .foregroundStyle(doc.isExpired ? SierraTheme.Colors.danger : SierraTheme.Colors.warning)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    (doc.isExpired ? SierraTheme.Colors.danger : SierraTheme.Colors.warning).opacity(0.1),
+                    in: Capsule()
+                )
+        }
+        .padding(Spacing.md)
+        .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+        .sierraShadow(SierraTheme.Shadow.card)
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // MARK: - Helpers
+    // ─────────────────────────────────────────────────────────────
+
+    private func sectionHeader(_ title: String, icon: String) -> some View {
+        HStack(spacing: 6) {
             Image(systemName: icon)
                 .font(SierraFont.caption1)
-                .foregroundStyle(tint)
+                .foregroundStyle(SierraTheme.Colors.ember)
             Text(title)
                 .font(SierraFont.headline)
                 .foregroundStyle(SierraTheme.Colors.primaryText)
         }
-        .padding(.top, Spacing.xxs)
     }
 
-    private func typeBadge(_ type: ActivityType) -> some View {
-        let (icon, color): (String, Color) = switch type {
-        case .tripStarted, .tripCompleted, .tripCancelled, .vehicleAssigned, .inspectionFailed:
-            ("location.fill", SierraTheme.Colors.info)
-        case .maintenanceRequested, .maintenanceCompleted:
-            ("wrench.fill", SierraTheme.Colors.warning)
-        case .fuelLogged:
-            ("fuelpump.fill", SierraTheme.Colors.alpineMint)
-        case .staffApproved, .staffRejected:
-            ("person.fill", SierraTheme.Colors.sierraBlue)
-        case .emergencyAlert, .geofenceViolation:
-            ("exclamationmark.triangle.fill", SierraTheme.Colors.danger)
-        case .documentExpiringSoon, .documentExpired:
-            ("doc.badge.clock.fill", SierraTheme.Colors.warning)
+    private func emptyPlaceholder(_ message: String, icon: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 22, weight: .light))
+                .foregroundStyle(SierraTheme.Colors.granite)
+            Text(message)
+                .font(SierraFont.body(14, weight: .medium))
+                .foregroundStyle(SierraTheme.Colors.secondaryText)
         }
-        return Image(systemName: icon)
-            .font(SierraFont.caption1)
-            .foregroundStyle(color)
-            .frame(width: 34, height: 34)
-            .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Spacing.md)
+        .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
     }
 }
 
-func initialsCircle(_ text: String, size: CGFloat, bg: Color) -> some View {
-    Text(text)
-        .font(.system(size: size * 0.38, weight: .bold))
-        .foregroundStyle(.white)
-        .frame(width: size, height: size)
-        .background(bg, in: Circle())
-}
+// MARK: - Preview
 
 #Preview {
     DashboardHomeView()
+        .environment(AppDataStore.shared)
 }

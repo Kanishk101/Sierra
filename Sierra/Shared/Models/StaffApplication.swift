@@ -5,9 +5,9 @@ import SwiftUI
 // Maps to PostgreSQL enum: approval_status
 
 enum ApprovalStatus: String, Codable, CaseIterable {
-    case pending  = "Pending"
-    case approved = "Approved"
-    case rejected = "Rejected"
+    case pending  = "pending"
+    case approved = "approved"
+    case rejected = "rejected"
 }
 
 // MARK: - StaffApplication
