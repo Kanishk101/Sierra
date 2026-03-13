@@ -2,26 +2,30 @@ import SwiftUI
 
 struct ContentView: View {
     @State private var hasCompletedOnboarding = OnboardingService.hasCompletedOnboarding
+    @State private var showBiometricEnrollment = false
     private var authManager = AuthManager.shared
 
+    // Dashboard destinations that should trigger the Face ID enrollment prompt
+    private func isDashboard(_ destination: AuthDestination) -> Bool {
+        switch destination {
+        case .driverDashboard, .maintenanceDashboard, .fleetManagerDashboard: return true
+        default: return false
+        }
+    }
+
     var body: some View {
-        let _ = print("🚀 ContentView.body evaluated — isAuthenticated=\(authManager.isAuthenticated)")
         Group {
             if !hasCompletedOnboarding {
                 OnboardingView()
             } else if authManager.isAuthenticated, !authManager.needsReauth {
-                #if DEBUG
-                let _ = print("🏠 [ContentView] isAuthenticated=true → showing DASHBOARD")
-                let _ = print("🏠 [ContentView] This fires BEFORE 2FA if AuthManager sets isAuthenticated early")
-                #endif
-                // Active session — show destination
                 if let user = authManager.currentUser {
                     destinationView(for: authManager.destination(for: user))
+                        .sheet(isPresented: $showBiometricEnrollment) {
+                            BiometricEnrollmentSheet()
+                                .presentationDetents([.medium])
+                        }
                 }
             } else {
-                #if DEBUG
-                let _ = print("🏠 [ContentView] isAuthenticated=false → showing LOGIN")
-                #endif
                 LoginView()
             }
         }
@@ -32,6 +36,22 @@ struct ContentView: View {
             NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
         ) { _ in
             hasCompletedOnboarding = OnboardingService.hasCompletedOnboarding
+        }
+        // Trigger enrollment only once per login session, after landing on a real dashboard.
+        // Uses onChange so it doesn't re-fire when the sheet itself dismisses.
+        .onChange(of: authManager.isAuthenticated) { _, isAuth in
+            if isAuth,
+               let user = authManager.currentUser,
+               isDashboard(authManager.destination(for: user)),
+               BiometricEnrollmentSheet.shouldPrompt() {
+                // Short delay so the dashboard renders visibly first
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    showBiometricEnrollment = true
+                }
+            } else if !isAuth {
+                // Reset flag when logged out so it's ready for next login
+                showBiometricEnrollment = false
+            }
         }
     }
 

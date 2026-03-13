@@ -194,9 +194,35 @@ final class DriverProfileViewModel {
         // Update user record
         if var user = AuthManager.shared.currentUser {
             user.isProfileComplete = true
-            // isApproved stays false → user lands on PendingApprovalView next login
             AuthManager.shared.currentUser = user
             _ = KeychainService.save(user, forKey: "com.fleetOS.currentUser")
+
+            // Add to StaffApplicationStore so admin can see it in pending approvals
+            let app = StaffApplication(
+                id: user.id,
+                name: "\(firstName) \(lastName)",
+                email: user.email,
+                role: .driver,
+                submittedDate: Date(),
+                status: .pending,
+                rejectionReason: nil,
+                phone: phoneNumber,
+                dateOfBirth: dateOfBirth,
+                gender: gender.rawValue,
+                address: address,
+                emergencyName: emergencyContactName,
+                emergencyPhone: emergencyContactPhone,
+                aadhaarNumber: formattedAadhaar,
+                licenseNumber: licenseNumber,
+                licenseExpiry: licenseExpiryDate,
+                certificationType: nil,
+                certificationNumber: nil,
+                issuingAuthority: nil,
+                certExpiry: nil,
+                yearsOfExperience: nil,
+                specializations: nil
+            )
+            StaffApplicationStore.shared.addApplication(app)
         }
 
         // Notify admin of pending approval
@@ -210,6 +236,8 @@ final class DriverProfileViewModel {
         )
 
         isLoading = false
+        // Onboarding complete — now enable Face ID for future logins
+        AuthManager.shared.saveSessionToken()
         profileSubmitted = true
     }
 

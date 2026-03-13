@@ -213,6 +213,33 @@ final class MaintenanceProfileViewModel {
             user.isProfileComplete = true
             AuthManager.shared.currentUser = user
             _ = KeychainService.save(user, forKey: "com.fleetOS.currentUser")
+
+            // Add to StaffApplicationStore so admin can see it in pending approvals
+            let app = StaffApplication(
+                id: user.id,
+                name: "\(firstName) \(lastName)",
+                email: user.email,
+                role: .maintenancePersonnel,
+                submittedDate: Date(),
+                status: .pending,
+                rejectionReason: nil,
+                phone: phoneNumber,
+                dateOfBirth: dateOfBirth,
+                gender: gender.rawValue,
+                address: address,
+                emergencyName: emergencyContactName,
+                emergencyPhone: emergencyContactPhone,
+                aadhaarNumber: formattedAadhaar,
+                licenseNumber: "",
+                licenseExpiry: Date(),
+                certificationType: certificationType.rawValue,
+                certificationNumber: certificationNumber,
+                issuingAuthority: issuingAuthority,
+                certExpiry: certExpiryDate,
+                yearsOfExperience: yearsOfExperience,
+                specializations: selectedSpecializations.map(\.rawValue)
+            )
+            StaffApplicationStore.shared.addApplication(app)
         }
 
         NotificationCenter.default.post(
@@ -225,6 +252,8 @@ final class MaintenanceProfileViewModel {
         )
 
         isLoading = false
+        // Onboarding complete — now enable Face ID for future logins
+        AuthManager.shared.saveSessionToken()
         profileSubmitted = true
     }
 

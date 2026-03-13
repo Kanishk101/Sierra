@@ -93,8 +93,9 @@ struct BiometricEnrollmentSheet: View {
     // MARK: - Keychain Helpers
 
     static func shouldPrompt() -> Bool {
-        // Only prompt if: biometrics available + not already prompted
-        guard BiometricManager.shared.canUseBiometrics() else { return false }
+        // Prompt once per install — don't gate on canUseBiometrics() here
+        // because that can return false at timing-sensitive moments.
+        // The sheet itself always shows; Face ID works on physical devices.
         let prompted = KeychainService.load(key: kHasPrompted) != nil
         return !prompted
     }

@@ -244,6 +244,14 @@ struct ForgotPasswordView: View {
                             if !viewModel.newPassword.isEmpty {
                                 PasswordStrengthView(password: viewModel.newPassword)
                             }
+
+                            if let err = viewModel.newPasswordError {
+                                Text(err)
+                                    .font(SierraFont.caption2)
+                                    .foregroundStyle(SierraTheme.Colors.danger.opacity(0.9))
+                                    .padding(.leading, 4)
+                                    .transition(.opacity)
+                            }
                         }
 
                         // Confirm password

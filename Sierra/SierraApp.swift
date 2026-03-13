@@ -12,6 +12,23 @@ struct SierraApp: App {
     @Environment(\.scenePhase) private var scenePhase
     private var lifecycle = AppLifecycleMonitor.shared
 
+    init() {
+        // Keychain persists across app reinstalls on iOS.
+        // On first launch after a fresh install, clear stale Keychain data
+        // so Face ID / session tokens from a previous install don't carry over.
+        let hasLaunchedKey = "sierra.hasLaunchedBefore"
+        if !UserDefaults.standard.bool(forKey: hasLaunchedKey) {
+            UserDefaults.standard.set(true, forKey: hasLaunchedKey)
+            // Clear all stale Keychain entries
+            KeychainService.delete(key: "com.fleetOS.sessionToken")
+            KeychainService.delete(key: "com.fleetOS.currentUser")
+            KeychainService.delete(key: "com.fleetOS.hashedCredential")
+            KeychainService.delete(key: "com.fleetOS.biometricEnabled")
+            KeychainService.delete(key: "com.fleetOS.hasPromptedBiometric")
+            SecureSessionStore.shared.clearAll()
+        }
+    }
+
     var body: some Scene {
         WindowGroup {
             ZStack {

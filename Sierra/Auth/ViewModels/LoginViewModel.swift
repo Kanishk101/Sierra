@@ -43,8 +43,8 @@ final class LoginViewModel {
 
     var showBiometricButton: Bool {
         BiometricManager.shared.canUseBiometrics()
-            && BiometricEnrollmentSheet.isBiometricEnabled()
             && AuthManager.shared.hasSessionToken()
+            && BiometricEnrollmentSheet.isBiometricEnabled()
     }
 
     var biometricLabel: String {
@@ -99,6 +99,17 @@ final class LoginViewModel {
                 destination = AuthManager.shared.destination(for: user)
             } else {
                 destination = defaultDestination(for: role)
+            }
+
+            // First-login users skip 2FA — complete auth immediately so ContentView
+            // naturally routes to ForcePasswordChangeView via its destination logic.
+            // This avoids the fullScreenCover race condition that caused a white screen.
+            if user?.isFirstLogin == true {
+                #if DEBUG
+                print("📋 [LoginViewModel.signIn] First login — completing auth, ContentView will route to password change")
+                #endif
+                AuthManager.shared.completeAuthentication()
+                return
             }
 
             // Build 2FA context — do NOT navigate to dashboard yet

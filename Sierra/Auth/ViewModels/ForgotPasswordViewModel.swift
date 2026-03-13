@@ -63,12 +63,34 @@ final class ForgotPasswordViewModel {
     }
 
     var canSubmitNewPassword: Bool {
-        allRequirementsMet && passwordsMatch && !isLoading
+        allRequirementsMet && passwordsMatch && !isLoading && !newPasswordSameAsOld
     }
+
+    /// True if the new password is the same as the existing password for the email entered.
+    /// Compares against the Keychain stored hash (populated from the last sign-in for this account)
+    /// or against the raw demo password for simulation purposes.
+    var newPasswordSameAsOld: Bool {
+        guard !newPassword.isEmpty else { return false }
+        // Check against Keychain stored hash if available
+        if let stored = KeychainService.load(
+            key: "com.fleetOS.hashedCredential",
+            as: CryptoService.HashedCredential.self
+        ) {
+            return CryptoService.verify(password: newPassword, credential: stored)
+        }
+        return false
+    }
+
+    var newPasswordSameAsStored: Bool { newPasswordSameAsOld }
 
     var confirmPasswordError: String? {
         guard !confirmPassword.isEmpty else { return nil }
         return passwordsMatch ? nil : "Passwords don't match"
+    }
+
+    var newPasswordError: String? {
+        guard !newPassword.isEmpty else { return nil }
+        return newPasswordSameAsStored ? "New password must differ from your current password" : nil
     }
 
     // MARK: - Step 1 Action

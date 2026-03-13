@@ -57,7 +57,8 @@ final class ForcePasswordChangeViewModel {
     var currentPasswordError: String?
     var passwordChanged: Bool = false
     var nextDestination: AuthDestination?
-    var awaitingOTP: Bool = false
+    var completed: Bool = false       // true once biometric sheet is dismissed
+    var readyToNavigate: Bool = false // true right after password change — triggers biometric prompt
 
     // MARK: - Strength
 
@@ -126,6 +127,13 @@ final class ForcePasswordChangeViewModel {
             return
         }
 
+        // New password must differ from current
+        guard newPassword != currentPassword else {
+            isLoading = false
+            errorMessage = "New password must be different from your current password"
+            return
+        }
+
         // Hash and store the new password
         let hashed = CryptoService.hash(password: newPassword)
         _ = KeychainService.save(hashed, forKey: "com.fleetOS.hashedCredential")
@@ -147,12 +155,16 @@ final class ForcePasswordChangeViewModel {
             }
         }
 
-        // Gap 1: Generate OTP for identity re-verification after password change
-        AuthManager.shared.generateOTP()
+        // First-login users skip 2FA — password change IS the verification
+        // Don't save session token yet for driver/maintenance — Face ID only unlocked
+        // after onboarding is fully complete (submitProfile calls saveSessionToken)
+        let role = AuthManager.shared.currentUser?.role
+        let saveToken = role == .fleetManager  // admin gets token now; staff only after onboarding
+        AuthManager.shared.completeAuthentication(saveToken: saveToken)
 
         isLoading = false
-        // Trigger the TwoFactorView fullScreenCover
-        awaitingOTP = true
+        // Signal the view to show biometric enrollment (if applicable) then navigate
+        readyToNavigate = true
     }
 
     // MARK: - Private

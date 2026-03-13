@@ -5,13 +5,11 @@ import PhotosUI
 struct DriverProfilePage2View: View {
     @Bindable var viewModel: DriverProfileViewModel
 
-    // Photo picker state
-    @State private var activePickerTarget: ImageTarget?
-    @State private var selectedPhotoItem: PhotosPickerItem?
-
-    enum ImageTarget {
-        case aadhaarFront, aadhaarBack, licenseFront, licenseBack
-    }
+    // Per-target photo picker items
+    @State private var aadhaarFrontItem: PhotosPickerItem?
+    @State private var aadhaarBackItem: PhotosPickerItem?
+    @State private var licenseFrontItem: PhotosPickerItem?
+    @State private var licenseBackItem: PhotosPickerItem?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -66,13 +64,14 @@ struct DriverProfilePage2View: View {
                             imageUploadCard(
                                 label: "Front",
                                 image: viewModel.aadhaarFrontImage,
-                                target: .aadhaarFront
-                            )
+                                pickerItem: $aadhaarFrontItem
+                            ) { viewModel.aadhaarFrontImage = $0 }
+
                             imageUploadCard(
                                 label: "Back",
                                 image: viewModel.aadhaarBackImage,
-                                target: .aadhaarBack
-                            )
+                                pickerItem: $aadhaarBackItem
+                            ) { viewModel.aadhaarBackImage = $0 }
                         }
 
                         if let error = viewModel.aadhaarImagesError {
@@ -134,13 +133,14 @@ struct DriverProfilePage2View: View {
                             imageUploadCard(
                                 label: "Front",
                                 image: viewModel.licenseFrontImage,
-                                target: .licenseFront
-                            )
+                                pickerItem: $licenseFrontItem
+                            ) { viewModel.licenseFrontImage = $0 }
+
                             imageUploadCard(
                                 label: "Back",
                                 image: viewModel.licenseBackImage,
-                                target: .licenseBack
-                            )
+                                pickerItem: $licenseBackItem
+                            ) { viewModel.licenseBackImage = $0 }
                         }
 
                         if let error = viewModel.licenseImagesError {
@@ -156,27 +156,6 @@ struct DriverProfilePage2View: View {
             // Bottom buttons
             bottomButtons
         }
-        .photosPicker(
-            isPresented: Binding(
-                get: { activePickerTarget != nil },
-                set: { if !$0 { activePickerTarget = nil } }
-            ),
-            selection: $selectedPhotoItem,
-            matching: .images
-        )
-        .onChange(of: selectedPhotoItem) { _, newItem in
-            guard let item = newItem, let target = activePickerTarget else { return }
-            Task {
-                if let data = try? await item.loadTransferable(type: Data.self),
-                   let uiImage = UIImage(data: data) {
-                    await MainActor.run {
-                        assignImage(uiImage, to: target)
-                    }
-                }
-                selectedPhotoItem = nil
-                activePickerTarget = nil
-            }
-        }
         .overlay {
             if viewModel.isLoading {
                 loadingOverlay
@@ -190,7 +169,12 @@ struct DriverProfilePage2View: View {
     // MARK: - Image Upload Card
     // ─────────────────────────────────
 
-    private func imageUploadCard(label: String, image: UIImage?, target: ImageTarget) -> some View {
+    private func imageUploadCard(
+        label: String,
+        image: UIImage?,
+        pickerItem: Binding<PhotosPickerItem?>,
+        onImageSelected: @escaping (UIImage?) -> Void
+    ) -> some View {
         Group {
             if let image {
                 ZStack(alignment: .topTrailing) {
@@ -201,7 +185,7 @@ struct DriverProfilePage2View: View {
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
                     Button {
-                        removeImage(target)
+                        onImageSelected(nil)
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 22))
@@ -212,7 +196,7 @@ struct DriverProfilePage2View: View {
                 }
                 .frame(maxWidth: .infinity)
             } else {
-                Button { activePickerTarget = target } label: {
+                PhotosPicker(selection: pickerItem, matching: .images) {
                     VStack(spacing: 8) {
                         Image(systemName: "camera.fill")
                             .font(.system(size: 20))
@@ -231,6 +215,20 @@ struct DriverProfilePage2View: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .onChange(of: pickerItem.wrappedValue) { _, newItem in
+                    guard let item = newItem else { return }
+                    Task {
+                        if let data = try? await item.loadTransferable(type: Data.self),
+                           let uiImage = UIImage(data: data) {
+                            await MainActor.run {
+                                onImageSelected(uiImage)
+                            }
+                        }
+                        await MainActor.run {
+                            pickerItem.wrappedValue = nil
+                        }
+                    }
+                }
             }
         }
     }
@@ -319,23 +317,6 @@ struct DriverProfilePage2View: View {
         .transition(.opacity)
     }
 
-    private func assignImage(_ image: UIImage, to target: ImageTarget) {
-        switch target {
-        case .aadhaarFront:  viewModel.aadhaarFrontImage = image
-        case .aadhaarBack:   viewModel.aadhaarBackImage = image
-        case .licenseFront:  viewModel.licenseFrontImage = image
-        case .licenseBack:   viewModel.licenseBackImage = image
-        }
-    }
-
-    private func removeImage(_ target: ImageTarget) {
-        switch target {
-        case .aadhaarFront:  viewModel.aadhaarFrontImage = nil
-        case .aadhaarBack:   viewModel.aadhaarBackImage = nil
-        case .licenseFront:  viewModel.licenseFrontImage = nil
-        case .licenseBack:   viewModel.licenseBackImage = nil
-        }
-    }
 }
 
 #Preview {

@@ -161,14 +161,8 @@ final class AuthManager {
         let hashed = CryptoService.hash(password: password)
         _ = KeychainService.save(hashed, forKey: Keys.hashedCredential)
 
-        // Store session
+        // Store session user (but NOT session token yet — that's saved in completeAuthentication)
         _ = KeychainService.save(user, forKey: Keys.currentUser)
-
-        // Generate a fake session token so biometric can check for existing session
-        let token = UUID().uuidString
-        if let tokenData = token.data(using: .utf8) {
-            _ = KeychainService.save(tokenData, forKey: Keys.sessionToken)
-        }
 
         currentUser = user
         // NOTE: Do NOT set isAuthenticated here.
@@ -185,12 +179,29 @@ final class AuthManager {
 
     // MARK: - Complete Authentication (post-2FA)
 
-    /// Called exclusively after successful 2FA verification.
-    /// Never call this from signIn() — credentials alone do not authenticate.
-    func completeAuthentication() {
+    /// Called after successful 2FA verification or biometric login.
+    /// Called after successful 2FA verification or biometric login.
+    /// - Parameter saveToken: If true (default), saves session token so Face ID can be used on next launch.
+    ///   Pass false for first-login driver/maintenance — token saved only after onboarding completes.
+    func completeAuthentication(saveToken: Bool = true) {
+        if saveToken {
+            saveSessionToken()
+        }
         isAuthenticated = true
         #if DEBUG
-        print("✅ [AuthManager.completeAuthentication] isAuthenticated = true — 2FA complete")
+        print("[AuthManager.completeAuthentication] isAuthenticated = true, saveToken=\(saveToken)")
+        #endif
+    }
+
+    /// Saves a fresh session token to Keychain — enables Face ID on next launch.
+    /// Call this after onboarding is fully complete for driver/maintenance personnel.
+    func saveSessionToken() {
+        let token = UUID().uuidString
+        if let tokenData = token.data(using: .utf8) {
+            _ = KeychainService.save(tokenData, forKey: Keys.sessionToken)
+        }
+        #if DEBUG
+        print("[AuthManager.saveSessionToken] Session token saved - Face ID enabled")
         #endif
     }
 
@@ -207,6 +218,9 @@ final class AuthManager {
         KeychainService.delete(key: Keys.hashedCredential)
         KeychainService.delete(key: Keys.sessionToken)
         KeychainService.delete(key: Keys.backgroundTS)
+        // Reset biometric enrollment so prompt re-appears on next login
+        KeychainService.delete(key: "com.fleetOS.hasPromptedBiometric")
+        KeychainService.delete(key: "com.fleetOS.biometricEnabled")
     }
 
     // MARK: - Session Restore

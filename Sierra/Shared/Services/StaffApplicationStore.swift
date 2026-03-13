@@ -35,6 +35,10 @@ final class StaffApplicationStore {
         applications[idx].status = .approved
         applications[idx].rejectionReason = nil
 
+        // Update the actual AuthUser record so the staff member
+        // transitions from PendingApprovalView → Dashboard on next login
+        updateUserApproval(id: id, approved: true)
+
         // Simulated push notification
         let name = applications[idx].name
         print("\n🔔 PUSH NOTIFICATION ─────────────")
@@ -56,5 +60,18 @@ final class StaffApplicationStore {
         print("Title: Application Requires Attention")
         print("Body: Hi \(name), your FleetOS application needs revision. Reason: \(reason). Please contact your fleet administrator.")
         print("──────────────────────────────────\n")
+    }
+
+    // MARK: - Private
+
+    /// Update the AuthUser record stored in Keychain.
+    /// If the approved user is the currently logged-in user, also update AuthManager.
+    private func updateUserApproval(id: UUID, approved: Bool) {
+        // Check if this is the current logged-in user
+        if var currentUser = AuthManager.shared.currentUser, currentUser.id == id {
+            currentUser.isApproved = approved
+            AuthManager.shared.currentUser = currentUser
+            _ = KeychainService.save(currentUser, forKey: "com.fleetOS.currentUser")
+        }
     }
 }
