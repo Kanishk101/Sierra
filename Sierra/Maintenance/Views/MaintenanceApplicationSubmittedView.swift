@@ -9,7 +9,7 @@ struct MaintenanceApplicationSubmittedView: View {
     @State private var isRejected = false
     @State private var rejectionReason: String?
 
-    private let store = StaffApplicationStore.shared
+    private let store = AppDataStore.shared
 
     var body: some View {
         ZStack {
@@ -281,10 +281,11 @@ struct MaintenanceApplicationSubmittedView: View {
     @MainActor
     private func pollStatus() async {
         isRefreshing = true
-        try? await Task.sleep(for: .milliseconds(1200))
+        // Refresh from Supabase so we get the latest status
+        await store.loadAll()
 
-        if let email = AuthManager.shared.currentUser?.email,
-           let app = store.applications.first(where: { $0.email == email }) {
+        if let userId = AuthManager.shared.currentUser?.id,
+           let app = store.application(for: userId) {
             switch app.status {
             case .approved:
                 isApproved = true

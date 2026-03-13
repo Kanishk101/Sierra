@@ -98,12 +98,15 @@ struct DashboardHomeView: View {
     // MARK: - Alerts
 
     private var alertsSection: some View {
-        let expiring = store.vehicles.filter { $0.documentsExpiringSoon }
+        let expiring = store.documentsExpiringSoon(withinDays: 30)
+        // Group by vehicle for display
+        let vehicleIds = Set(expiring.compactMap { $0.vehicleId })
+        let expiringVehicles = vehicleIds.compactMap { store.vehicle(for: $0) }
         return Group {
-            if !expiring.isEmpty {
+            if !expiringVehicles.isEmpty {
                 VStack(alignment: .leading, spacing: Spacing.sm) {
                     sectionHeader("Document Alerts", icon: "exclamationmark.triangle.fill", tint: SierraTheme.Colors.warning)
-                    ForEach(expiring) { v in
+                    ForEach(expiringVehicles) { v in
                         HStack(spacing: Spacing.sm) {
                             Image(systemName: "doc.badge.clock.fill")
                                 .font(.system(size: 18))
@@ -178,11 +181,18 @@ struct DashboardHomeView: View {
 
     private func typeBadge(_ type: ActivityType) -> some View {
         let (icon, color): (String, Color) = switch type {
-        case .trip:        ("location.fill", SierraTheme.Colors.info)
-        case .maintenance: ("wrench.fill", SierraTheme.Colors.warning)
-        case .fuel:        ("fuelpump.fill", SierraTheme.Colors.alpineMint)
-        case .staff:       ("person.fill", SierraTheme.Colors.sierraBlue)
-        case .alert:       ("exclamationmark.triangle.fill", SierraTheme.Colors.danger)
+        case .tripStarted, .tripCompleted, .tripCancelled, .vehicleAssigned, .inspectionFailed:
+            ("location.fill", SierraTheme.Colors.info)
+        case .maintenanceRequested, .maintenanceCompleted:
+            ("wrench.fill", SierraTheme.Colors.warning)
+        case .fuelLogged:
+            ("fuelpump.fill", SierraTheme.Colors.alpineMint)
+        case .staffApproved, .staffRejected:
+            ("person.fill", SierraTheme.Colors.sierraBlue)
+        case .emergencyAlert, .geofenceViolation:
+            ("exclamationmark.triangle.fill", SierraTheme.Colors.danger)
+        case .documentExpiringSoon, .documentExpired:
+            ("doc.badge.clock.fill", SierraTheme.Colors.warning)
         }
         return Image(systemName: icon)
             .font(SierraFont.caption1)

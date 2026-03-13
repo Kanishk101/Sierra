@@ -60,6 +60,7 @@ struct LoginView: View {
                 // Create the VM once and store it — never recreate inline
                 twoFactorVM = TwoFactorViewModel(
                     context: ctx,
+                    service: viewModel.otpService,   // injects SupabaseOTPVerificationService
                     onVerified: { [self] in
                         #if DEBUG
                         print("🔐 [LoginView.onVerified] 2FA verified — completing auth")

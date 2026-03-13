@@ -1,7 +1,9 @@
 import SwiftUI
 
-
-/// 3-step forgot password flow: Email → Code → New Password → Success
+/// Forgot password flow (Supabase link-based reset):
+/// Step 1 — Enter email → Step 2 — Check your inbox
+/// The actual password reset happens via Supabase's email magic-link,
+/// not via an in-app OTP code.
 struct ForgotPasswordView: View {
 
     @State private var viewModel = ForgotPasswordViewModel()
@@ -21,15 +23,15 @@ struct ForgotPasswordView: View {
                 // Content by step
                 Group {
                     switch viewModel.step {
-                    case .enterEmail:  emailStep
-                    case .enterCode:   codeStep
-                    case .newPassword: passwordStep
-                    case .success:     successStep
+                    case .enterEmail: emailStep
+                    case .emailSent:  emailSentStep
+                    case .success:    successStep
                     }
                 }
+                .animation(.easeInOut(duration: 0.35), value: viewModel.step)
                 .transition(.asymmetric(
                     insertion: .move(edge: .trailing).combined(with: .opacity),
-                    removal: .move(edge: .leading).combined(with: .opacity)
+                    removal:   .move(edge: .leading).combined(with: .opacity)
                 ))
 
                 // Loading overlay
@@ -74,7 +76,6 @@ struct ForgotPasswordView: View {
                 VStack(spacing: 24) {
                     Spacer(minLength: 60)
 
-                    // Icon
                     Image(systemName: "envelope.badge.fill")
                         .font(.system(size: 50, weight: .light))
                         .foregroundStyle(SierraTheme.Colors.ember)
@@ -85,7 +86,7 @@ struct ForgotPasswordView: View {
                             .font(SierraFont.title2)
                             .foregroundStyle(.white)
 
-                        Text("Enter your email address and we'll send\nyou a verification code.")
+                        Text("Enter your email address and we'll send\nyou a password reset link.")
                             .font(SierraFont.subheadline)
                             .foregroundStyle(.white.opacity(0.55))
                             .multilineTextAlignment(.center)
@@ -132,7 +133,7 @@ struct ForgotPasswordView: View {
                     Button {
                         Task { await viewModel.sendResetCode() }
                     } label: {
-                        Text("Send Reset Code")
+                        Text("Send Reset Link")
                             .font(SierraFont.body(17, weight: .semibold))
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
@@ -140,6 +141,7 @@ struct ForgotPasswordView: View {
                             .background(SierraTheme.Colors.ember, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }
                     .padding(.horizontal, 24)
+                    .disabled(viewModel.isLoading)
 
                     Spacer(minLength: 40)
                 }
@@ -150,183 +152,75 @@ struct ForgotPasswordView: View {
     }
 
     // ─────────────────────────────────
-    // MARK: - Step 2: Enter Code
+    // MARK: - Step 2: Check Your Inbox
     // ─────────────────────────────────
 
-    private var codeStep: some View {
+    private var emailSentStep: some View {
         GeometryReader { geo in
             ScrollView {
                 VStack(spacing: 24) {
                     Spacer(minLength: 60)
 
-                    Image(systemName: "lock.shield.fill")
-                        .font(.system(size: 50, weight: .light))
-                        .foregroundStyle(SierraTheme.Colors.ember)
-                        .symbolRenderingMode(.hierarchical)
+                    ZStack {
+                        Circle()
+                            .fill(SierraTheme.Colors.ember.opacity(0.12))
+                            .frame(width: 96, height: 96)
+                        Image(systemName: "paperplane.fill")
+                            .font(.system(size: 40, weight: .light))
+                            .foregroundStyle(SierraTheme.Colors.ember)
+                    }
 
                     VStack(spacing: 8) {
-                        Text("Enter Verification Code")
+                        Text("Check Your Email")
                             .font(SierraFont.title2)
                             .foregroundStyle(.white)
 
-                        Text("Enter the 6-digit code sent to\n\(viewModel.maskedEmail)")
+                        Text("We sent a password reset link to\n\(viewModel.maskedEmail)\n\nFollow the link in the email to set a new password.\nThe link expires in 60 minutes.")
                             .font(SierraFont.subheadline)
                             .foregroundStyle(.white.opacity(0.55))
                             .multilineTextAlignment(.center)
                             .lineSpacing(3)
                     }
+                    .padding(.horizontal, 24)
 
-                    // OTP input
-                    SixDigitInputView(
-                        digits: $viewModel.digits,
-                        focusedIndex: $viewModel.focusedIndex,
-                        shakeCount: viewModel.shakeCount,
-                        onComplete: { viewModel.verifyResetCode() }
-                    )
-
-                    if let error = viewModel.codeError {
-                        Text(error)
+                    // Resend option
+                    VStack(spacing: 12) {
+                        Text("Didn't receive the email?")
                             .font(SierraFont.caption1)
-                            .foregroundStyle(SierraTheme.Colors.danger)
+                            .foregroundStyle(.white.opacity(0.4))
+
+                        Button {
+                            Task { await viewModel.resendResetEmail() }
+                        } label: {
+                            Text("Resend Link")
+                                .font(SierraFont.caption1)
+                                .foregroundStyle(SierraTheme.Colors.ember)
+                        }
+                        .disabled(viewModel.isLoading)
                     }
 
+                    Spacer(minLength: 40)
+
                     Button {
-                        viewModel.verifyResetCode()
+                        dismiss()
                     } label: {
-                        Text("Verify Code")
+                        Text("Back to Login")
                             .font(SierraFont.body(17, weight: .semibold))
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
                             .frame(height: 54)
-                            .background(SierraTheme.Colors.ember, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .strokeBorder(.white.opacity(0.1), lineWidth: 1)
+                            )
                     }
                     .padding(.horizontal, 24)
-
-                    Spacer(minLength: 40)
+                    .padding(.bottom, 32)
                 }
                 .frame(minHeight: geo.size.height)
             }
-            .scrollDismissesKeyboard(.interactively)
         }
-    }
-
-    // ─────────────────────────────────
-    // MARK: - Step 3: New Password
-    // ─────────────────────────────────
-
-    private var passwordStep: some View {
-        GeometryReader { geo in
-            ScrollView {
-                VStack(spacing: 20) {
-                    Spacer(minLength: 60)
-
-                    Image(systemName: "key.fill")
-                        .font(.system(size: 50, weight: .light))
-                        .foregroundStyle(SierraTheme.Colors.ember)
-                        .symbolRenderingMode(.hierarchical)
-
-                    VStack(spacing: 8) {
-                        Text("Set New Password")
-                            .font(SierraFont.title2)
-                            .foregroundStyle(.white)
-
-                        Text("Choose a strong password for your account.")
-                            .font(SierraFont.subheadline)
-                            .foregroundStyle(.white.opacity(0.55))
-                    }
-
-                    // Password fields card
-                    VStack(spacing: 16) {
-                        // New password
-                        VStack(alignment: .leading, spacing: 8) {
-                            passwordField("New Password", text: $viewModel.newPassword)
-
-                            if !viewModel.newPassword.isEmpty {
-                                PasswordStrengthView(password: viewModel.newPassword)
-                            }
-
-                            if let err = viewModel.newPasswordError {
-                                Text(err)
-                                    .font(SierraFont.caption2)
-                                    .foregroundStyle(SierraTheme.Colors.danger.opacity(0.9))
-                                    .padding(.leading, 4)
-                                    .transition(.opacity)
-                            }
-                        }
-
-                        // Confirm password
-                        VStack(alignment: .leading, spacing: 5) {
-                            passwordField("Confirm Password", text: $viewModel.confirmPassword)
-
-                            if let error = viewModel.confirmPasswordError {
-                                Text(error)
-                                    .font(SierraFont.caption2)
-                                    .foregroundStyle(SierraTheme.Colors.danger.opacity(0.9))
-                                    .padding(.leading, 4)
-                            }
-                        }
-
-                        if let error = viewModel.errorMessage {
-                            Text(error)
-                                .font(SierraFont.caption1)
-                                .foregroundStyle(SierraTheme.Colors.danger)
-                        }
-
-                        // Submit
-                        Button {
-                            Task { await viewModel.resetPassword() }
-                        } label: {
-                            Text("Reset Password")
-                                .font(SierraFont.body(17, weight: .semibold))
-                                .foregroundStyle(viewModel.canSubmitNewPassword ? .white : .white.opacity(0.4))
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 54)
-                                .background(
-                                    viewModel.canSubmitNewPassword ? SierraTheme.Colors.ember : Color.gray.opacity(0.25),
-                                    in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                )
-                        }
-                        .disabled(!viewModel.canSubmitNewPassword)
-                    }
-                    .padding(24)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .strokeBorder(.white.opacity(0.08), lineWidth: 1)
-                    )
-                    .padding(.horizontal, 20)
-
-                    Spacer(minLength: 40)
-                }
-                .frame(minHeight: geo.size.height)
-            }
-            .scrollDismissesKeyboard(.interactively)
-        }
-    }
-
-    // MARK: - Password Field
-
-    private func passwordField(_ placeholder: String, text: Binding<String>) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: "lock.fill")
-                .font(SierraFont.caption1)
-                .foregroundStyle(.white.opacity(0.4))
-                .frame(width: 20)
-
-            SecureField(placeholder, text: text)
-                .textFieldStyle(.plain)
-                .font(SierraFont.bodyText)
-                .foregroundStyle(.white)
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.never)
-        }
-        .padding(.horizontal, 16)
-        .frame(height: 52)
-        .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(.white.opacity(0.1), lineWidth: 1)
-        )
     }
 
     // ─────────────────────────────────
@@ -368,7 +262,7 @@ struct ForgotPasswordView: View {
         }
     }
 
-    // MARK: - Loading
+    // MARK: - Loading Overlay
 
     private var loadingOverlay: some View {
         ZStack {
@@ -377,7 +271,7 @@ struct ForgotPasswordView: View {
                 ProgressView()
                     .scaleEffect(1.3)
                     .tint(.white)
-                Text("Processing…")
+                Text("Sending…")
                     .font(SierraFont.caption1)
                     .foregroundStyle(.white.opacity(0.8))
             }

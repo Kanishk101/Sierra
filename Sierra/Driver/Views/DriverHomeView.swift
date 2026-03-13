@@ -79,7 +79,9 @@ struct DriverHomeView: View {
 
     private var greetingText: String {
         let hour = Calendar.current.component(.hour, from: Date())
-        let firstName = driverMember?.name.split(separator: " ").first.map(String.init) ?? user?.name?.split(separator: " ").first.map(String.init) ?? "Driver"
+        let memberFirst: String? = driverMember.flatMap { m in m.displayName.split(separator: " ").first.map(String.init) }
+        let userFirst: String? = user?.name?.split(separator: " ").first.map(String.init)
+        let firstName: String = memberFirst ?? userFirst ?? "Driver"
         let timeOfDay: String
         if hour < 12 { timeOfDay = "morning" }
         else if hour < 17 { timeOfDay = "afternoon" }
@@ -128,7 +130,7 @@ struct DriverHomeView: View {
     private func toggleAvailability(_ available: Bool) {
         guard var member = driverMember else { return }
         member.availability = available ? .available : .unavailable
-        store.updateStaff(member)
+        Task { try? await store.updateStaffMember(member) }
     }
 
     // ─────────────────────────────────
@@ -158,7 +160,7 @@ struct DriverHomeView: View {
 
             // Vehicle info
             if let vId = trip.vehicleId,
-               let vehicle = store.vehicle(forId: vId) {
+               let vehicle = store.vehicle(for: vId) {
                 HStack(spacing: 8) {
                     Image(systemName: "car.fill")
                         .font(SierraFont.caption2)

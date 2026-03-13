@@ -29,8 +29,8 @@ enum PasswordStrength: Int, Comparable {
     /// Evaluate password strength from a plain-text password string.
     static func evaluate(_ password: String) -> PasswordStrength {
         guard password.count >= 8 else { return .weak }
-        let hasUpper = password.range(of: "[A-Z]", options: .regularExpression) != nil
-        let hasDigit = password.range(of: "[0-9]", options: .regularExpression) != nil
+        let hasUpper   = password.range(of: "[A-Z]",       options: .regularExpression) != nil
+        let hasDigit   = password.range(of: "[0-9]",       options: .regularExpression) != nil
         let hasSpecial = password.range(of: "[^A-Za-z0-9]", options: .regularExpression) != nil
         if hasUpper && hasDigit && hasSpecial { return .strong }
         return .fair
@@ -68,9 +68,7 @@ final class ForcePasswordChangeViewModel {
 
     // MARK: - Requirement Checks
 
-    var hasMinLength: Bool {
-        newPassword.count >= 8
-    }
+    var hasMinLength: Bool { newPassword.count >= 8 }
 
     var hasUppercase: Bool {
         newPassword.range(of: "[A-Z]", options: .regularExpression) != nil
@@ -115,60 +113,54 @@ final class ForcePasswordChangeViewModel {
         errorMessage = nil
         isLoading = true
 
-        // Simulate network delay
-        try? await Task.sleep(for: .milliseconds(1000))
-
-        // Verify current password: check against this user's demo credential
-        // or against the stored hashed credential (for production use)
-        let isValidCurrent = AuthManager.shared.verifyDemoPassword(currentPassword) || verifyCurrentPassword()
-        guard isValidCurrent else {
+        // 1. Verify current password against Keychain-stored hash (persisted at signIn time).
+        guard verifyCurrentPassword() else {
             isLoading = false
             currentPasswordError = "Current password is incorrect"
             return
         }
 
-        // New password must differ from current
+        // 2. New password must differ from current.
         guard newPassword != currentPassword else {
             isLoading = false
             errorMessage = "New password must be different from your current password"
             return
         }
 
-        // Hash and store the new password
-        let hashed = CryptoService.hash(password: newPassword)
-        _ = KeychainService.save(hashed, forKey: "com.fleetOS.hashedCredential")
+        do {
+            // 3. Update via Supabase Auth + mark isFirstLogin = false in staff_members.
+            try await AuthManager.shared.updatePassword(newPassword)
 
-        // Update user record
-        if var user = AuthManager.shared.currentUser {
-            user.isFirstLogin = false
-            AuthManager.shared.currentUser = user
-            _ = KeychainService.save(user, forKey: "com.fleetOS.currentUser")
+            // 4. Update stored hashed credential so biometric re-verify still works.
+            let hashed = CryptoService.hash(password: newPassword)
+            _ = KeychainService.save(hashed, forKey: "com.fleetOS.hashedCredential")
 
-            // Determine next destination based on role (used after OTP verification)
-            switch user.role {
-            case .driver:
-                nextDestination = .driverOnboarding
-            case .maintenancePersonnel:
-                nextDestination = .maintenanceOnboarding
-            case .fleetManager:
-                nextDestination = .fleetManagerDashboard
+            // 5. Determine next destination.
+            if let user = AuthManager.shared.currentUser {
+                switch user.role {
+                case .driver:               nextDestination = .driverOnboarding
+                case .maintenancePersonnel: nextDestination = .maintenanceOnboarding
+                case .fleetManager:         nextDestination = .fleetManagerDashboard
+                }
             }
+
+            // 6. Complete auth. Fleet manager gets a session token now;
+            //    drivers/maintenance only after onboarding fully completes.
+            let saveToken = AuthManager.shared.currentUser?.role == .fleetManager
+            AuthManager.shared.completeAuthentication(saveToken: saveToken)
+
+            isLoading = false
+            readyToNavigate = true
+
+        } catch {
+            isLoading = false
+            errorMessage = error.localizedDescription
         }
-
-        // First-login users skip 2FA — password change IS the verification
-        // Don't save session token yet for driver/maintenance — Face ID only unlocked
-        // after onboarding is fully complete (submitProfile calls saveSessionToken)
-        let role = AuthManager.shared.currentUser?.role
-        let saveToken = role == .fleetManager  // admin gets token now; staff only after onboarding
-        AuthManager.shared.completeAuthentication(saveToken: saveToken)
-
-        isLoading = false
-        // Signal the view to show biometric enrollment (if applicable) then navigate
-        readyToNavigate = true
     }
 
     // MARK: - Private
 
+    /// Re-verifies the current password against the locally stored CryptoService hash.
     private func verifyCurrentPassword() -> Bool {
         guard let credential = KeychainService.load(
             key: "com.fleetOS.hashedCredential",

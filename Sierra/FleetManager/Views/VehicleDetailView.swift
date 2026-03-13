@@ -1,5 +1,12 @@
 import SwiftUI
 
+// CHANGES IN THIS FILE (Phase 5):
+// - Replaced v.registrationExpiry / v.insuranceExpiry (removed from Vehicle model) with
+//   store.vehicleDocuments(for: vehicleId) rendering each VehicleDocument
+// - saveChanges() now calls async throws store.updateVehicle() in a Task
+// - Delete confirmation now calls async throws store.deleteVehicle(id:) in a Task
+// - Fixed store.staffMember(forId:) call to correct store.staffMember(for: UUID)
+// - Added @State errorMessage + showError for async error surfacing
 
 struct VehicleDetailView: View {
 
@@ -14,9 +21,16 @@ struct VehicleDetailView: View {
     @State private var editModel = ""
     @State private var editColor = ""
     @State private var editPlate = ""
+    @State private var isSaving = false
+    @State private var errorMessage: String?
+    @State private var showError = false
 
     private var vehicle: Vehicle? {
-        store.vehicles.first { $0.id == vehicleId }
+        store.vehicle(for: vehicleId)
+    }
+
+    private var documents: [VehicleDocument] {
+        store.vehicleDocuments(for: vehicleId)
     }
 
     var body: some View {
@@ -33,21 +47,37 @@ struct VehicleDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button(isEditing ? "Save" : "Edit") {
-                    if isEditing { saveChanges() }
-                    else { startEditing() }
+                if isSaving {
+                    ProgressView().scaleEffect(0.8)
+                } else {
+                    Button(isEditing ? "Save" : "Edit") {
+                        if isEditing { saveChanges() }
+                        else { startEditing() }
+                    }
+                    .fontWeight(.semibold)
                 }
-                .fontWeight(.semibold)
             }
         }
         .confirmationDialog("Delete Vehicle", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
-                store.deleteVehicle(id: vehicleId)
-                dismiss()
+                Task {
+                    do {
+                        try await store.deleteVehicle(id: vehicleId)
+                        dismiss()
+                    } catch {
+                        errorMessage = error.localizedDescription
+                        showError = true
+                    }
+                }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This action cannot be undone. All associated data will be removed.")
+        }
+        .alert("Error", isPresented: $showError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(errorMessage ?? "An unknown error occurred.")
         }
     }
 
@@ -65,26 +95,35 @@ struct VehicleDetailView: View {
                 } else {
                     infoRow("Name", value: v.name)
                     infoRow("Model", value: v.model)
+                    infoRow("Manufacturer", value: v.manufacturer)
                     infoRow("Year", value: "\(v.year)")
                     infoRow("VIN", value: v.vin)
                     infoRow("License Plate", value: v.licensePlate)
                     infoRow("Color", value: v.color)
                     infoRow("Fuel Type", value: v.fuelType.description)
                     infoRow("Seating", value: "\(v.seatingCapacity)")
+                    infoRow("Odometer", value: String(format: "%.0f km", v.odometer))
                     infoRow("Status", value: v.status.rawValue)
                 }
             }
 
-            // Section 2 — Document Status
+            // Section 2 — Document Status (VehicleDocument-based)
             Section("Document Status") {
-                documentRow("Registration", expiry: v.registrationExpiry)
-                documentRow("Insurance", expiry: v.insuranceExpiry)
+                if documents.isEmpty {
+                    Text("No documents on file")
+                        .foregroundStyle(.secondary)
+                        .italic()
+                } else {
+                    ForEach(documents) { doc in
+                        documentRow(doc)
+                    }
+                }
             }
 
             // Section 3 — Assignment
             Section("Assignment") {
                 if let driverId = v.assignedDriverId {
-                    if let driver = store.staffMember(forId: driverId) {
+                    if let driver = store.staffMember(for: driverId) {
                         HStack(spacing: 12) {
                             Circle()
                                 .fill(SierraTheme.Colors.ember.opacity(0.15))
@@ -95,9 +134,9 @@ struct VehicleDetailView: View {
                                         .foregroundStyle(SierraTheme.Colors.ember)
                                 )
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(driver.name)
+                                Text(driver.displayName)
                                     .font(SierraFont.subheadline)
-                                Text(driver.phone)
+                                Text(driver.phone ?? "No phone")
                                     .font(SierraFont.caption1)
                                     .foregroundStyle(.secondary)
                             }
@@ -107,7 +146,7 @@ struct VehicleDetailView: View {
                                 .foregroundStyle(.secondary)
                         }
                     } else {
-                        Text("Driver: \(driverId)")
+                        Text("Driver ID: \(driverId)")
                             .foregroundStyle(.secondary)
                     }
                 } else {
@@ -115,6 +154,12 @@ struct VehicleDetailView: View {
                         .foregroundStyle(.secondary)
                         .italic()
                 }
+            }
+
+            // Section 4 — Stats
+            Section("Metrics") {
+                infoRow("Total Trips", value: "\(v.totalTrips)")
+                infoRow("Total Distance", value: String(format: "%.0f km", v.totalDistanceKm))
             }
 
             // Delete
@@ -133,7 +178,7 @@ struct VehicleDetailView: View {
         }
     }
 
-    // MARK: - Helpers
+    // MARK: - Info Row
 
     private func infoRow(_ label: String, value: String) -> some View {
         HStack {
@@ -145,12 +190,14 @@ struct VehicleDetailView: View {
         }
     }
 
-    private func documentRow(_ label: String, expiry: Date) -> some View {
+    // MARK: - Document Row (VehicleDocument-based)
+
+    private func documentRow(_ doc: VehicleDocument) -> some View {
         let now = Date()
-        let daysLeft = Calendar.current.dateComponents([.day], from: now, to: expiry).day ?? 0
+        let daysLeft = Calendar.current.dateComponents([.day], from: now, to: doc.expiryDate).day ?? 0
         let (statusText, statusColor, showWarning): (String, Color, Bool) = {
-            if daysLeft < 0 { return ("Expired", .red, true) }
-            if daysLeft < 8 { return ("Critical", .red, true) }
+            if daysLeft < 0  { return ("Expired",      .red,                       true) }
+            if daysLeft < 8  { return ("Critical",     .red,                       true) }
             if daysLeft <= 30 { return ("Expiring Soon", SierraTheme.Colors.warning, true) }
             return ("Valid", .green, false)
         }()
@@ -163,11 +210,16 @@ struct VehicleDetailView: View {
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(label)
+                Text(doc.documentType.rawValue)
                     .font(SierraFont.subheadline)
-                Text(expiry.formatted(date: .abbreviated, time: .omitted))
+                Text(doc.expiryDate.formatted(date: .abbreviated, time: .omitted))
                     .font(SierraFont.caption1)
                     .foregroundStyle(.secondary)
+                if !doc.issuingAuthority.isEmpty {
+                    Text(doc.issuingAuthority)
+                        .font(SierraFont.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Spacer()
@@ -185,7 +237,7 @@ struct VehicleDetailView: View {
 
     private func startEditing() {
         guard let v = vehicle else { return }
-        editName = v.name
+        editName  = v.name
         editModel = v.model
         editColor = v.color
         editPlate = v.licensePlate
@@ -194,12 +246,21 @@ struct VehicleDetailView: View {
 
     private func saveChanges() {
         guard var v = vehicle else { return }
-        v.name = editName
-        v.model = editModel
-        v.color = editColor
+        v.name         = editName
+        v.model        = editModel
+        v.color        = editColor
         v.licensePlate = editPlate
-        store.updateVehicle(v)
+        isSaving = true
         isEditing = false
+        Task {
+            do {
+                try await store.updateVehicle(v)
+            } catch {
+                errorMessage = error.localizedDescription
+                showError = true
+            }
+            isSaving = false
+        }
     }
 }
 

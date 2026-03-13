@@ -188,55 +188,87 @@ final class DriverProfileViewModel {
         isLoading = true
         errorMessage = nil
 
-        // Simulate network delay
-        try? await Task.sleep(for: .milliseconds(1500))
-
-        // Update user record
-        if var user = AuthManager.shared.currentUser {
-            user.isProfileComplete = true
-            AuthManager.shared.currentUser = user
-            _ = KeychainService.save(user, forKey: "com.fleetOS.currentUser")
-
-            // Add to StaffApplicationStore so admin can see it in pending approvals
-            let app = StaffApplication(
-                id: user.id,
-                name: "\(firstName) \(lastName)",
-                email: user.email,
-                role: .driver,
-                submittedDate: Date(),
-                status: .pending,
-                rejectionReason: nil,
-                phone: phoneNumber,
-                dateOfBirth: dateOfBirth,
-                gender: gender.rawValue,
-                address: address,
-                emergencyName: emergencyContactName,
-                emergencyPhone: emergencyContactPhone,
-                aadhaarNumber: formattedAadhaar,
-                licenseNumber: licenseNumber,
-                licenseExpiry: licenseExpiryDate,
-                certificationType: nil,
-                certificationNumber: nil,
-                issuingAuthority: nil,
-                certExpiry: nil,
-                yearsOfExperience: nil,
-                specializations: nil
-            )
-            StaffApplicationStore.shared.addApplication(app)
+        guard let user = AuthManager.shared.currentUser else {
+            errorMessage = "No authenticated user found."
+            isLoading = false
+            return
         }
 
-        // Notify admin of pending approval
+        let now = Date()
+        let fullName = "\(firstName.trimmingCharacters(in: .whitespaces)) \(lastName.trimmingCharacters(in: .whitespaces))"
+
+        // Build the StaffApplication using the correct Supabase-mapped model fields
+        let application = StaffApplication(
+            id: UUID(),
+            staffMemberId: user.id,
+            reviewedBy: nil,
+            role: user.role,
+            submittedDate: now,
+            status: .pending,
+            rejectionReason: nil,
+            reviewedAt: nil,
+            phone: phoneNumber,
+            dateOfBirth: dateOfBirth,
+            gender: gender.rawValue,
+            address: address,
+            emergencyContactName: emergencyContactName,
+            emergencyContactPhone: emergencyContactPhone,
+            aadhaarNumber: formattedAadhaar,
+            aadhaarDocumentUrl: nil,
+            profilePhotoUrl: nil,
+            driverLicenseNumber: licenseNumber.trimmingCharacters(in: .whitespaces),
+            driverLicenseExpiry: licenseExpiryDate,
+            driverLicenseClass: nil,
+            driverLicenseIssuingState: nil,
+            driverLicenseDocumentUrl: nil,
+            maintCertificationType: nil,
+            maintCertificationNumber: nil,
+            maintIssuingAuthority: nil,
+            maintCertificationExpiry: nil,
+            maintCertificationDocumentUrl: nil,
+            maintYearsOfExperience: nil,
+            maintSpecializations: nil,
+            createdAt: now
+        )
+
+        do {
+            // Persist application to Supabase via AppDataStore
+            try await AppDataStore.shared.addStaffApplication(application)
+
+            // Also update the StaffMember record with the personal details collected
+            if var member = AppDataStore.shared.staffMember(for: user.id) {
+                member.name = fullName
+                member.phone = phoneNumber
+                member.dateOfBirth = dateOfBirth
+                member.gender = gender.rawValue
+                member.address = address
+                member.emergencyContactName = emergencyContactName
+                member.emergencyContactPhone = emergencyContactPhone
+                member.aadhaarNumber = formattedAadhaar
+                member.isProfileComplete = true
+                try await AppDataStore.shared.updateStaffMember(member)
+            }
+
+            // Mark profile complete in AuthManager / Keychain
+            try await AuthManager.shared.markProfileComplete()
+
+        } catch {
+            errorMessage = error.localizedDescription
+            isLoading = false
+            return
+        }
+
+        // Notify admin tab of the new pending approval
         NotificationCenter.default.post(
             name: .profileSubmitted,
             object: nil,
             userInfo: [
-                "name": "\(firstName) \(lastName)",
-                "role": AuthManager.shared.currentUser?.role.rawValue ?? "driver"
+                "name": fullName,
+                "role": user.role.rawValue
             ]
         )
 
         isLoading = false
-        // Onboarding complete — now enable Face ID for future logins
         AuthManager.shared.saveSessionToken()
         profileSubmitted = true
     }

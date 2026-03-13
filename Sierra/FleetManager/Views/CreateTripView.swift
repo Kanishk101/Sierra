@@ -27,6 +27,9 @@ struct CreateTripView: View {
     // Success state
     @State private var createdTrip: Trip?
     @State private var showSuccess = false
+    @State private var isCreating = false
+    @State private var errorMessage: String?
+    @State private var showError = false
 
     // MARK: - Validation
 
@@ -84,6 +87,11 @@ struct CreateTripView: View {
                     }
                 }
             }
+        }
+        .alert("Error", isPresented: $showError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(errorMessage ?? "An unknown error occurred.")
         }
     }
 
@@ -209,10 +217,10 @@ struct CreateTripView: View {
                                     )
 
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(driver.name)
+                                    Text(driver.displayName)
                                         .font(SierraFont.subheadline)
                                         .foregroundStyle(SierraTheme.Colors.primaryText)
-                                    Text(driver.phone)
+                                    Text(driver.phone ?? "No phone")
                                         .font(SierraFont.caption1)
                                         .foregroundStyle(.secondary)
                                 }
@@ -344,11 +352,15 @@ struct CreateTripView: View {
 
             // Create button
             Button {
-                createTrip()
+                Task { await createTrip() }
             } label: {
                 HStack {
-                    Text("Create Trip")
-                    Image(systemName: "checkmark")
+                    if isCreating {
+                        ProgressView().scaleEffect(0.9).tint(.white)
+                    } else {
+                        Text("Create Trip")
+                        Image(systemName: "checkmark")
+                    }
                 }
                 .font(SierraFont.body(16, weight: .semibold))
                 .foregroundStyle(.white)
@@ -356,8 +368,8 @@ struct CreateTripView: View {
                 .frame(height: 50)
                 .background(.green, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
-            .disabled(!step3Valid)
-            .opacity(step3Valid ? 1 : 0.5)
+            .disabled(!step3Valid || isCreating)
+            .opacity(step3Valid && !isCreating ? 1 : 0.5)
             .padding(.horizontal, 20)
             .padding(.bottom, 12)
         }
@@ -381,37 +393,55 @@ struct CreateTripView: View {
 
     // MARK: - Create Trip
 
-    private func createTrip() {
+    @MainActor
+    private func createTrip() async {
         guard let driverId = selectedDriverId,
               let vehicleId = selectedVehicleId else { return }
 
+        let adminId = AuthManager.shared.currentUser?.id ?? UUID()
+        let now = Date()
         let trip = Trip(
             id: UUID(),
             taskId: Trip.generateTaskId(),
-            driverId: driverId.uuidString,
-            vehicleId: vehicleId.uuidString,
+            driverId: driverId,
+            vehicleId: vehicleId,
+            createdByAdminId: adminId,
             origin: origin.trimmingCharacters(in: .whitespaces),
             destination: destination.trimmingCharacters(in: .whitespaces),
+            deliveryInstructions: "",
             scheduledDate: scheduledDate,
+            scheduledEndDate: nil,
             actualStartDate: nil,
             actualEndDate: nil,
             startMileage: nil,
             endMileage: nil,
             notes: notes,
             status: .scheduled,
-            priority: priority
+            priority: priority,
+            proofOfDeliveryId: nil,
+            preInspectionId: nil,
+            postInspectionId: nil,
+            createdAt: now,
+            updatedAt: now
         )
 
-        store.addTrip(trip)
+        isCreating = true
+        do {
+            try await store.addTrip(trip)
 
-        // Update vehicle assignment
-        if var v = store.vehicle(forId: vehicleId.uuidString) {
-            v.assignedDriverId = driverId.uuidString
-            store.updateVehicle(v)
+            // Update vehicle assignment
+            if var v = store.vehicle(for: vehicleId) {
+                v.assignedDriverId = driverId
+                try await store.updateVehicle(v)
+            }
+
+            createdTrip = trip
+            withAnimation(.spring(duration: 0.4)) { showSuccess = true }
+        } catch {
+            errorMessage = error.localizedDescription
+            showError = true
         }
-
-        createdTrip = trip
-        withAnimation(.spring(duration: 0.4)) { showSuccess = true }
+        isCreating = false
     }
 
     // MARK: - Success Card
@@ -433,11 +463,11 @@ struct CreateTripView: View {
                     infoPill("Route", value: "\(trip.origin) → \(trip.destination)")
 
                     if let dId = trip.driverId,
-                       let driver = store.staffMember(forId: dId) {
-                        infoPill("Driver", value: driver.name)
+                       let driver = store.staffMember(for: dId) {
+                        infoPill("Driver", value: driver.displayName)
                     }
                     if let vId = trip.vehicleId,
-                       let vehicle = store.vehicle(forId: vId) {
+                       let vehicle = store.vehicle(for: vId) {
                         infoPill("Vehicle", value: "\(vehicle.name) \(vehicle.model)")
                     }
                 }

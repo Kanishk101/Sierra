@@ -207,52 +207,82 @@ final class MaintenanceProfileViewModel {
         isLoading = true
         errorMessage = nil
 
-        try? await Task.sleep(for: .milliseconds(1500))
+        guard let user = AuthManager.shared.currentUser else {
+            errorMessage = "No authenticated user found."
+            isLoading = false
+            return
+        }
 
-        if var user = AuthManager.shared.currentUser {
-            user.isProfileComplete = true
-            AuthManager.shared.currentUser = user
-            _ = KeychainService.save(user, forKey: "com.fleetOS.currentUser")
+        let now = Date()
+        let fullName = "\(firstName.trimmingCharacters(in: .whitespaces)) \(lastName.trimmingCharacters(in: .whitespaces))"
 
-            // Add to StaffApplicationStore so admin can see it in pending approvals
-            let app = StaffApplication(
-                id: user.id,
-                name: "\(firstName) \(lastName)",
-                email: user.email,
-                role: .maintenancePersonnel,
-                submittedDate: Date(),
-                status: .pending,
-                rejectionReason: nil,
-                phone: phoneNumber,
-                dateOfBirth: dateOfBirth,
-                gender: gender.rawValue,
-                address: address,
-                emergencyName: emergencyContactName,
-                emergencyPhone: emergencyContactPhone,
-                aadhaarNumber: formattedAadhaar,
-                licenseNumber: "",
-                licenseExpiry: Date(),
-                certificationType: certificationType.rawValue,
-                certificationNumber: certificationNumber,
-                issuingAuthority: issuingAuthority,
-                certExpiry: certExpiryDate,
-                yearsOfExperience: yearsOfExperience,
-                specializations: selectedSpecializations.map(\.rawValue)
-            )
-            StaffApplicationStore.shared.addApplication(app)
+        let application = StaffApplication(
+            id: UUID(),
+            staffMemberId: user.id,
+            reviewedBy: nil,
+            role: .maintenancePersonnel,
+            submittedDate: now,
+            status: .pending,
+            rejectionReason: nil,
+            reviewedAt: nil,
+            phone: phoneNumber,
+            dateOfBirth: dateOfBirth,
+            gender: gender.rawValue,
+            address: address,
+            emergencyContactName: emergencyContactName,
+            emergencyContactPhone: emergencyContactPhone,
+            aadhaarNumber: formattedAadhaar,
+            aadhaarDocumentUrl: nil,
+            profilePhotoUrl: nil,
+            driverLicenseNumber: nil,
+            driverLicenseExpiry: nil,
+            driverLicenseClass: nil,
+            driverLicenseIssuingState: nil,
+            driverLicenseDocumentUrl: nil,
+            maintCertificationType: certificationType.rawValue,
+            maintCertificationNumber: certificationNumber.trimmingCharacters(in: .whitespaces),
+            maintIssuingAuthority: issuingAuthority.trimmingCharacters(in: .whitespaces),
+            maintCertificationExpiry: certExpiryDate,
+            maintCertificationDocumentUrl: nil,
+            maintYearsOfExperience: yearsOfExperience,
+            maintSpecializations: selectedSpecializations.map(\.rawValue),
+            createdAt: now
+        )
+
+        do {
+            try await AppDataStore.shared.addStaffApplication(application)
+
+            if var member = AppDataStore.shared.staffMember(for: user.id) {
+                member.name = fullName
+                member.phone = phoneNumber
+                member.dateOfBirth = dateOfBirth
+                member.gender = gender.rawValue
+                member.address = address
+                member.emergencyContactName = emergencyContactName
+                member.emergencyContactPhone = emergencyContactPhone
+                member.aadhaarNumber = formattedAadhaar
+                member.isProfileComplete = true
+                try await AppDataStore.shared.updateStaffMember(member)
+            }
+
+            try await AuthManager.shared.markProfileComplete()
+
+        } catch {
+            errorMessage = error.localizedDescription
+            isLoading = false
+            return
         }
 
         NotificationCenter.default.post(
             name: .profileSubmitted,
             object: nil,
             userInfo: [
-                "name": "\(firstName) \(lastName)",
+                "name": fullName,
                 "role": "maintenancePersonnel"
             ]
         )
 
         isLoading = false
-        // Onboarding complete — now enable Face ID for future logins
         AuthManager.shared.saveSessionToken()
         profileSubmitted = true
     }

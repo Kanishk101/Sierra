@@ -87,7 +87,7 @@ struct VehicleListView: View {
             ), titleVisibility: .visible) {
                 Button("Delete", role: .destructive) {
                     if let v = deleteTarget {
-                        store.deleteVehicle(id: v.id)
+                        Task { try? await store.deleteVehicle(id: v.id) }
                         deleteTarget = nil
                     }
                 }
@@ -174,12 +174,12 @@ struct VehicleListView: View {
     private var emptySubtitle: String {
         if !searchText.isEmpty { return "Try a different search term." }
         switch selectedFilter {
-        case .active:        return "No active vehicles at the moment."
-        case .inMaintenance: return "No vehicles currently in maintenance."
-        case .idle:          return "No idle vehicles available."
-        case .outOfService:  return "No out-of-service vehicles."
-        case .assigned:      return "No assigned vehicles at the moment."
-        case .none:          return "Add your first vehicle to get started."
+        case .active:         return "No active vehicles at the moment."
+        case .inMaintenance:  return "No vehicles currently in maintenance."
+        case .idle:           return "No idle vehicles available."
+        case .outOfService:   return "No out-of-service vehicles."
+        case .decommissioned: return "No decommissioned vehicles."
+        case .none:           return "Add your first vehicle to get started."
         }
     }
 }

@@ -2,6 +2,7 @@ import SwiftUI
 
 
 struct PendingApprovalsView: View {
+    @Environment(AppDataStore.self) private var store
     @State private var viewModel = StaffApprovalViewModel()
     @State private var selectedApplication: StaffApplication?
 
@@ -54,12 +55,20 @@ struct PendingApprovalsView: View {
 
     // MARK: - Application Card
 
+    private func applicantName(_ app: StaffApplication) -> String {
+        store.staffMember(for: app.staffMemberId)?.displayName ?? app.phone
+    }
+
+    private func applicantInitials(_ app: StaffApplication) -> String {
+        store.staffMember(for: app.staffMemberId)?.initials ?? String(app.phone.suffix(2))
+    }
+
     private func applicationCard(_ app: StaffApplication) -> some View {
         HStack(spacing: 14) {
-            initialsCircle(app.initials, size: 48, bg: avatarColor(for: app.status))
+            initialsCircle(applicantInitials(app), size: 48, bg: avatarColor(for: app.status))
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(app.name)
+                Text(applicantName(app))
                     .font(SierraFont.body(16, weight: .semibold))
                     .foregroundStyle(SierraTheme.Colors.primaryText)
 

@@ -125,13 +125,13 @@ struct TripsListView: View {
                 // Driver + Vehicle
                 HStack(spacing: 6) {
                     if let dId = trip.driverId,
-                       let driver = store.staffMember(forId: dId) {
-                        Text(driver.name)
+                       let driver = store.staffMember(for: dId) {
+                        Text(driver.displayName)
                             .font(SierraFont.caption1)
                             .foregroundStyle(.secondary)
                     }
                     if let vId = trip.vehicleId,
-                       let vehicle = store.vehicle(forId: vId) {
+                       let vehicle = store.vehicle(for: vId) {
                         Text("· \(vehicle.licensePlate)")
                             .font(SierraFont.caption1)
                             .foregroundStyle(.secondary)

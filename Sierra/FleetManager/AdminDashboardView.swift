@@ -3,7 +3,7 @@ import SwiftUI
 struct AdminDashboardView: View {
     @State private var selectedTab: Int = 0
     @State private var showQuickActions = false
-    private var store = StaffApplicationStore.shared
+    @Environment(AppDataStore.self) private var store
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
@@ -30,7 +30,7 @@ struct AdminDashboardView: View {
                         Label("Staff", systemImage: "person.2.fill")
                     }
                     .tag(2)
-                    .badge(store.pendingCount)
+                    .badge(store.staffApplications.filter { $0.status == .pending }.count)
 
                 // Tab 4: Trips
                 NavigationStack {

@@ -1,15 +1,17 @@
 import Foundation
 import SwiftUI
 
-/// Steps in the Forgot Password flow.
+/// Steps in the Forgot Password flow (Supabase link-based reset).
+/// Step 2 (enterCode) is omitted — Supabase sends a magic link, not a 6-digit code.
 enum ForgotPasswordStep {
     case enterEmail
-    case enterCode
-    case newPassword
+    case emailSent    // replace enterCode — user checks email
     case success
 }
 
-/// ViewModel for the 3-step forgot password flow.
+/// ViewModel for the Forgot Password flow.
+/// Supabase Auth uses email magic-links for password reset (not OTP codes).
+/// The new password is set via the deep-link callback — not in this view.
 @MainActor @Observable
 final class ForgotPasswordViewModel {
 
@@ -22,18 +24,6 @@ final class ForgotPasswordViewModel {
     var email: String = ""
     var emailError: String?
 
-    // MARK: - Step 2: OTP
-
-    var digits: [String] = Array(repeating: "", count: 6)
-    var focusedIndex: Int? = 0
-    var codeError: String?
-    var shakeCount: Int = 0
-
-    // MARK: - Step 3: New Password
-
-    var newPassword: String = ""
-    var confirmPassword: String = ""
-
     // MARK: - UI State
 
     var isLoading: Bool = false
@@ -43,54 +33,6 @@ final class ForgotPasswordViewModel {
 
     var maskedEmail: String {
         AuthManager.shared.maskedEmail
-    }
-
-    var strength: PasswordStrength {
-        PasswordStrength.evaluate(newPassword)
-    }
-
-    var hasMinLength: Bool { newPassword.count >= 8 }
-    var hasUppercase: Bool { newPassword.range(of: "[A-Z]", options: .regularExpression) != nil }
-    var hasNumber: Bool    { newPassword.range(of: "[0-9]", options: .regularExpression) != nil }
-    var hasSpecialChar: Bool { newPassword.range(of: "[^A-Za-z0-9]", options: .regularExpression) != nil }
-
-    var allRequirementsMet: Bool {
-        hasMinLength && hasUppercase && hasNumber && hasSpecialChar
-    }
-
-    var passwordsMatch: Bool {
-        !confirmPassword.isEmpty && newPassword == confirmPassword
-    }
-
-    var canSubmitNewPassword: Bool {
-        allRequirementsMet && passwordsMatch && !isLoading && !newPasswordSameAsOld
-    }
-
-    /// True if the new password is the same as the existing password for the email entered.
-    /// Compares against the Keychain stored hash (populated from the last sign-in for this account)
-    /// or against the raw demo password for simulation purposes.
-    var newPasswordSameAsOld: Bool {
-        guard !newPassword.isEmpty else { return false }
-        // Check against Keychain stored hash if available
-        if let stored = KeychainService.load(
-            key: "com.fleetOS.hashedCredential",
-            as: CryptoService.HashedCredential.self
-        ) {
-            return CryptoService.verify(password: newPassword, credential: stored)
-        }
-        return false
-    }
-
-    var newPasswordSameAsStored: Bool { newPasswordSameAsOld }
-
-    var confirmPasswordError: String? {
-        guard !confirmPassword.isEmpty else { return nil }
-        return passwordsMatch ? nil : "Passwords don't match"
-    }
-
-    var newPasswordError: String? {
-        guard !newPassword.isEmpty else { return nil }
-        return newPasswordSameAsStored ? "New password must differ from your current password" : nil
     }
 
     // MARK: - Step 1 Action
@@ -109,60 +51,19 @@ final class ForgotPasswordViewModel {
         }
 
         isLoading = true
-        let found = await AuthManager.shared.requestPasswordReset(email: trimmed)
-        isLoading = false
-
-        if found {
-            withAnimation(.easeInOut(duration: 0.3)) {
-                step = .enterCode
-            }
-        } else {
-            emailError = "No account found with this email"
-        }
-    }
-
-    // MARK: - Step 2 Action
-
-    func verifyResetCode() {
-        let code = digits.joined()
-        guard code.count == 6 else {
-            codeError = "Enter all 6 digits"
-            return
-        }
-
-        // For demo, the reset OTP is also "123456"
-        if code == "123456" {
-            codeError = nil
-            withAnimation(.easeInOut(duration: 0.3)) {
-                step = .newPassword
-            }
-        } else {
-            codeError = "Incorrect code. Please try again."
-            withAnimation(.default) {
-                shakeCount += 1
-            }
-        }
-    }
-
-    // MARK: - Step 3 Action
-
-    func resetPassword() async {
-        guard canSubmitNewPassword else { return }
-        isLoading = true
-        errorMessage = nil
-
         do {
-            try await AuthManager.shared.resetPassword(
-                code: digits.joined(),
-                newPassword: newPassword
-            )
+            try await AuthManager.shared.requestPasswordReset(email: trimmed)
             isLoading = false
             withAnimation(.easeInOut(duration: 0.3)) {
-                step = .success
+                step = .emailSent
             }
         } catch {
             isLoading = false
-            errorMessage = "Failed to reset password. Please try again."
+            // Supabase does not reveal whether the email exists to prevent enumeration.
+            // Always show the sent step — the user sees a neutral message.
+            withAnimation(.easeInOut(duration: 0.3)) {
+                step = .emailSent
+            }
         }
     }
 
@@ -171,13 +72,20 @@ final class ForgotPasswordViewModel {
     func goBack() {
         withAnimation(.easeInOut(duration: 0.3)) {
             switch step {
-            case .enterCode:
+            case .emailSent:
                 step = .enterEmail
-            case .newPassword:
-                step = .enterCode
             default:
                 break
             }
         }
+    }
+
+    /// Allow user to resend the reset email without going back.
+    func resendResetEmail() async {
+        let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        isLoading = true
+        _ = try? await AuthManager.shared.requestPasswordReset(email: trimmed)
+        isLoading = false
     }
 }

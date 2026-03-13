@@ -10,7 +10,7 @@ struct DriverApplicationSubmittedView: View {
     @State private var rejectionReason: String?
 
     // Simulate polling
-    private let store = StaffApplicationStore.shared
+    private let store = AppDataStore.shared
 
     var body: some View {
         ZStack {
@@ -320,11 +320,11 @@ struct DriverApplicationSubmittedView: View {
     @MainActor
     private func pollStatus() async {
         isRefreshing = true
-        try? await Task.sleep(for: .milliseconds(1200))
+        // Refresh from Supabase to get latest status
+        await store.loadAll()
 
-        // Check the store for this user's application status
-        if let email = AuthManager.shared.currentUser?.email,
-           let app = store.applications.first(where: { $0.email == email || $0.status != .pending }) {
+        if let userId = AuthManager.shared.currentUser?.id,
+           let app = store.application(for: userId) {
             switch app.status {
             case .approved:
                 isApproved = true

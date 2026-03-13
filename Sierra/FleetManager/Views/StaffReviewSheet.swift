@@ -4,6 +4,7 @@ import SwiftUI
 struct StaffReviewSheet: View {
     let application: StaffApplication
     @Bindable var viewModel: StaffApprovalViewModel
+    @Environment(AppDataStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var showApproveAlert = false
 
@@ -29,8 +30,8 @@ struct StaffReviewSheet: View {
                             if !application.address.isEmpty {
                                 detailRow("Address", value: application.address)
                             }
-                            detailRow("Emergency Contact", value: application.emergencyName)
-                            detailRow("Emergency Phone", value: application.emergencyPhone)
+                            detailRow("Emergency Contact", value: application.emergencyContactName)
+                            detailRow("Emergency Phone", value: application.emergencyContactPhone)
                         }
 
                         // Documents — role-conditional
@@ -86,7 +87,7 @@ struct StaffReviewSheet: View {
                     }
                 }
             } message: {
-                Text("Are you sure you want to approve \(application.name)? They will be granted access to FleetOS.")
+                Text("Are you sure you want to approve \(store.staffMember(for: application.staffMemberId)?.displayName ?? application.phone)? They will be granted access to FleetOS.")
             }
             .animation(.spring(duration: 0.3), value: viewModel.showRejectField)
             .overlay {
@@ -103,13 +104,13 @@ struct StaffReviewSheet: View {
 
     private var profileHeader: some View {
         VStack(spacing: 14) {
-            initialsCircle(application.initials, size: 64, bg: SierraTheme.Colors.ember)
+            initialsCircle(store.staffMember(for: application.staffMemberId)?.initials ?? String(application.phone.suffix(2)), size: 64, bg: SierraTheme.Colors.ember)
 
             VStack(spacing: 4) {
-                Text(application.name)
+                Text(store.staffMember(for: application.staffMemberId)?.displayName ?? application.phone)
                     .font(SierraFont.title3)
                     .foregroundStyle(SierraTheme.Colors.primaryText)
-                Text(application.email)
+                Text(store.staffMember(for: application.staffMemberId)?.email ?? "")
                     .font(SierraFont.caption1)
                     .foregroundStyle(.secondary)
             }
@@ -211,8 +212,9 @@ struct StaffReviewSheet: View {
     private var driverDocumentsSection: some View {
         detailSection("Documents") {
             documentCard(icon: "creditcard.fill", title: "Aadhaar Card", number: application.aadhaarNumber)
-            documentCard(icon: "car.fill", title: "Driving License", number: application.licenseNumber,
-                         expiry: dateFormatter.string(from: application.licenseExpiry))
+            documentCard(icon: "car.fill", title: "Driving License",
+                         number: application.driverLicenseNumber ?? "—",
+                         expiry: application.driverLicenseExpiry.map { dateFormatter.string(from: $0) })
         }
     }
 
@@ -228,26 +230,26 @@ struct StaffReviewSheet: View {
             }
 
             // Certification
-            if let certType = application.certificationType {
+            if let certType = application.maintCertificationType {
                 detailSection("Technical Certification") {
                     detailRow("Type", value: certType)
-                    if let num = application.certificationNumber {
+                    if let num = application.maintCertificationNumber {
                         detailRow("Number", value: num)
                     }
-                    if let auth = application.issuingAuthority {
+                    if let auth = application.maintIssuingAuthority {
                         detailRow("Issuing Authority", value: auth)
                     }
-                    if let exp = application.certExpiry {
+                    if let exp = application.maintCertificationExpiry {
                         detailRow("Expires", value: dateFormatter.string(from: exp))
                     }
                 }
             }
 
             // Experience
-            if let years = application.yearsOfExperience {
+            if let years = application.maintYearsOfExperience {
                 detailSection("Work Experience") {
                     detailRow("Years of Experience", value: "\(years) years")
-                    if let specs = application.specializations, !specs.isEmpty {
+                    if let specs = application.maintSpecializations, !specs.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Specializations")
                                 .font(SierraFont.caption1)

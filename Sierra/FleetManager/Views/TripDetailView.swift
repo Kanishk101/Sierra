@@ -9,6 +9,9 @@ struct TripDetailView: View {
     let tripId: UUID
 
     @State private var showCancelConfirm = false
+    @State private var isCancelling = false
+    @State private var errorMessage: String?
+    @State private var showError = false
 
     private var trip: Trip? {
         store.trips.first { $0.id == tripId }
@@ -28,11 +31,16 @@ struct TripDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .confirmationDialog("Cancel Trip?", isPresented: $showCancelConfirm, titleVisibility: .visible) {
             Button("Cancel Trip", role: .destructive) {
-                cancelTrip()
+                Task { await cancelTrip() }
             }
             Button("Keep Trip", role: .cancel) {}
         } message: {
             Text("This will cancel the trip and free the assigned driver and vehicle.")
+        }
+        .alert("Error", isPresented: $showError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(errorMessage ?? "An unknown error occurred.")
         }
     }
 
@@ -92,7 +100,7 @@ struct TripDetailView: View {
             Section("Assignment") {
                 // Driver card
                 if let dId = t.driverId,
-                   let driver = store.staffMember(forId: dId) {
+                   let driver = store.staffMember(for: dId) {
                     HStack(spacing: 12) {
                         Circle()
                             .fill(Color.blue.opacity(0.12))
@@ -103,9 +111,9 @@ struct TripDetailView: View {
                                     .foregroundStyle(.blue)
                             )
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(driver.name)
+                            Text(driver.displayName)
                                 .font(SierraFont.subheadline)
-                            Text(driver.phone)
+                            Text(driver.phone ?? "No phone")
                                 .font(SierraFont.caption1)
                                 .foregroundStyle(.secondary)
                         }
@@ -119,7 +127,7 @@ struct TripDetailView: View {
 
                 // Vehicle card
                 if let vId = t.vehicleId,
-                   let vehicle = store.vehicle(forId: vId) {
+                   let vehicle = store.vehicle(for: vId) {
                     HStack(spacing: 12) {
                         Image(systemName: "car.fill")
                             .font(.system(size: 18))
@@ -166,14 +174,6 @@ struct TripDetailView: View {
                     }
                 }
 
-                if let km = t.distanceKm {
-                    HStack {
-                        Text("Distance")
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Text("\(km, specifier: "%.1f") km")
-                    }
-                }
             }
 
             // Timeline
@@ -256,27 +256,34 @@ struct TripDetailView: View {
 
     // MARK: - Cancel Trip
 
-    private func cancelTrip() {
+    @MainActor
+    private func cancelTrip() async {
         guard var t = trip else { return }
+        isCancelling = true
+        defer { isCancelling = false }
+        do {
+            // Free driver's availability
+            if let dId = t.driverId,
+               var driver = store.staff.first(where: { $0.id == dId }) {
+                driver.availability = .available
+                try await store.updateStaffMember(driver)
+            }
 
-        // Free driver
-        if let dId = t.driverId,
-           let driverUUID = UUID(uuidString: dId),
-           var driver = store.staff.first(where: { $0.id == driverUUID }) {
-            driver.status = .active
-            store.updateStaff(driver)
+            // Free vehicle assignment
+            if let vId = t.vehicleId,
+               var vehicle = store.vehicle(for: vId) {
+                vehicle.assignedDriverId = nil
+                vehicle.status = .idle
+                try await store.updateVehicle(vehicle)
+            }
+
+            // Cancel trip
+            t.status = .cancelled
+            try await store.updateTrip(t)
+        } catch {
+            errorMessage = error.localizedDescription
+            showError = true
         }
-
-        // Free vehicle
-        if let vId = t.vehicleId,
-           var vehicle = store.vehicle(forId: vId) {
-            vehicle.assignedDriverId = nil
-            store.updateVehicle(vehicle)
-        }
-
-        // Cancel trip
-        t.status = .cancelled
-        store.updateTrip(t)
     }
 }
 

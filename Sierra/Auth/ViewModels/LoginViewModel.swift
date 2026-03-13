@@ -10,6 +10,12 @@ final class LoginViewModel {
     var password: String = ""
     var isPasswordVisible: Bool = false
 
+    // MARK: - OTP Service
+
+    /// Production OTP service injected into TwoFactorViewModel.
+    /// Override in tests with a MockOTPVerificationService.
+    var otpService: OTPVerificationServiceProtocol = SupabaseOTPVerificationService()
+
     // MARK: - Auth State (single source of truth)
 
     /// Replaces the old `loginSuccess` Bool + `authDestination` + `usedBiometric`.
@@ -112,9 +118,9 @@ final class LoginViewModel {
                 return
             }
 
-            // Build 2FA context — do NOT navigate to dashboard yet
-            AuthManager.shared.generateOTP()
-
+            // Build 2FA context — do NOT navigate to dashboard yet.
+            // SupabaseOTPVerificationService will send the OTP automatically
+            // when TwoFactorViewModel.onAppear() fires.
             let context = TwoFactorContext(
                 userID: user?.id.uuidString ?? UUID().uuidString,
                 role: role,

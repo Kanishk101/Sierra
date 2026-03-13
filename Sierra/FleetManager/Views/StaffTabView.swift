@@ -42,14 +42,14 @@ struct StaffTabView: View {
 // MARK: - Staff Directory (All Staff by Role Section)
 
 private struct StaffDirectoryView: View {
-    @State private var staffMembers = StaffMember.samples
+    @Environment(AppDataStore.self) private var store
 
     private var drivers: [StaffMember] {
-        staffMembers.filter { $0.role == .driver }
+        store.staff.filter { $0.role == .driver && $0.status != .suspended }
     }
 
     private var maintenance: [StaffMember] {
-        staffMembers.filter { $0.role == .maintenance }
+        store.staff.filter { $0.role == .maintenancePersonnel && $0.status != .suspended }
     }
 
     var body: some View {
@@ -102,7 +102,7 @@ private struct StaffDirectoryView: View {
             )
 
             VStack(alignment: .leading, spacing: Spacing.xxs) {
-                Text(member.name)
+                Text(member.displayName)
                     .sierraStyle(.cardTitle)
                 Text(member.email)
                     .sierraStyle(.caption)
@@ -136,6 +136,7 @@ private struct StaffDirectoryView: View {
 // MARK: - Applications List (with filter)
 
 private struct ApplicationsListView: View {
+    @Environment(AppDataStore.self) private var store
     @State private var viewModel = StaffApprovalViewModel()
     @State private var selectedApplication: StaffApplication?
 
@@ -215,10 +216,10 @@ private struct ApplicationsListView: View {
 
     private func applicationCard(_ app: StaffApplication) -> some View {
         HStack(spacing: Spacing.md) {
-            initialsCircle(app.initials, size: 48, bg: avatarColor(for: app.status))
+            initialsCircle(store.staffMember(for: app.staffMemberId)?.initials ?? String(app.phone.suffix(2)), size: 48, bg: avatarColor(for: app.status))
 
             VStack(alignment: .leading, spacing: Spacing.xxs) {
-                Text(app.name)
+                Text(store.staffMember(for: app.staffMemberId)?.displayName ?? app.phone)
                     .font(SierraFont.body(16, weight: .semibold))
                     .foregroundStyle(SierraTheme.Colors.primaryText)
 

@@ -30,7 +30,7 @@ final class SupabaseManager {
     var auth: AuthClient { client.auth }
 
     /// Supabase Realtime client.
-    var realtime: RealtimeClientV2 { client.realtime }
+    var realtime: some AnyObject { client.realtime as AnyObject }
 
     /// Supabase Storage client.
     var storage: SupabaseStorageClient { client.storage }

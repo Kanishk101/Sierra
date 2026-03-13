@@ -1,12 +1,20 @@
 import SwiftUI
 
+// CHANGES IN THIS FILE (Phase 5):
+// - Replaced StaffRole (non-existent enum) with UserRole
+// - Replaced StaffMember.samples with @Environment(AppDataStore.self) store.staff
+// - Fixed member.name (now optional) to member.displayName
+// - Role filter now uses .driver / .maintenancePersonnel
+// - Added .task { await store.loadAll() } for data loading
+// - Added .refreshable for pull-to-refresh
+
 struct StaffListView: View {
-    @State private var selectedSegment: StaffRole = .driver
-    @State private var staffMembers = StaffMember.samples
+    @Environment(AppDataStore.self) private var store
+    @State private var selectedSegment: UserRole = .driver
     @State private var showAddSheet = false
 
     private var filteredStaff: [StaffMember] {
-        staffMembers.filter { $0.role == selectedSegment }
+        store.staff.filter { $0.role == selectedSegment }
     }
 
     var body: some View {
@@ -15,25 +23,38 @@ struct StaffListView: View {
                 VStack(spacing: 0) {
                     // Segmented picker
                     Picker("Role", selection: $selectedSegment) {
-                        Text("Drivers").tag(StaffRole.driver)
-                        Text("Maintenance").tag(StaffRole.maintenance)
+                        Text("Drivers").tag(UserRole.driver)
+                        Text("Maintenance").tag(UserRole.maintenancePersonnel)
                     }
                     .pickerStyle(.segmented)
                     .padding(.horizontal, Spacing.lg)
                     .padding(.vertical, Spacing.sm)
 
-                    List {
-                        ForEach(filteredStaff) { member in
-                            staffRow(member)
-                                .listRowInsets(EdgeInsets(top: 6, leading: Spacing.md, bottom: 6, trailing: Spacing.md))
-                                .listRowSeparator(.hidden)
-                                .listRowBackground(Color.clear)
+                    if filteredStaff.isEmpty {
+                        Spacer()
+                        VStack(spacing: Spacing.md) {
+                            Image(systemName: selectedSegment == .driver ? "person.fill" : "wrench.fill")
+                                .font(.system(size: 40, weight: .light))
+                                .foregroundStyle(SierraTheme.Colors.granite)
+                            Text("No \(selectedSegment == .driver ? "drivers" : "maintenance staff") yet")
+                                .font(SierraFont.bodyText)
+                                .foregroundStyle(SierraTheme.Colors.secondaryText)
                         }
-                    }
-                    .listStyle(.plain)
-                    .scrollContentBackground(.hidden)
-                    .refreshable {
-                        try? await Task.sleep(for: .milliseconds(800))
+                        Spacer()
+                    } else {
+                        List {
+                            ForEach(filteredStaff) { member in
+                                staffRow(member)
+                                    .listRowInsets(EdgeInsets(top: 6, leading: Spacing.md, bottom: 6, trailing: Spacing.md))
+                                    .listRowSeparator(.hidden)
+                                    .listRowBackground(Color.clear)
+                            }
+                        }
+                        .listStyle(.plain)
+                        .scrollContentBackground(.hidden)
+                        .refreshable {
+                            await store.loadAll()
+                        }
                     }
                 }
                 .background(SierraTheme.Colors.appBackground.ignoresSafeArea())
@@ -50,6 +71,11 @@ struct StaffListView: View {
                 CreateStaffView()
                     .presentationDetents([.medium, .large])
             }
+            .task {
+                if store.staff.isEmpty {
+                    await store.loadAll()
+                }
+            }
         }
     }
 
@@ -64,7 +90,7 @@ struct StaffListView: View {
             )
 
             VStack(alignment: .leading, spacing: Spacing.xxs) {
-                Text(member.name)
+                Text(member.displayName)
                     .sierraStyle(.cardTitle)
                 Text(member.email)
                     .sierraStyle(.caption)
@@ -81,9 +107,9 @@ struct StaffListView: View {
 
     private func staffStatusBadge(_ status: StaffStatus) -> some View {
         let (text, dotColor, bgColor, fgColor): (String, Color, Color, Color) = switch status {
-        case .active:          ("Active", SierraTheme.Colors.alpineMint, SierraTheme.Colors.alpineMint.opacity(0.12), SierraTheme.Colors.alpineDark)
-        case .pendingApproval: ("Pending", SierraTheme.Colors.warning, SierraTheme.Colors.warning.opacity(0.12), SierraTheme.Colors.warning)
-        case .suspended:       ("Suspended", SierraTheme.Colors.danger, SierraTheme.Colors.danger.opacity(0.12), SierraTheme.Colors.danger)
+        case .active:          ("Active",    SierraTheme.Colors.alpineMint, SierraTheme.Colors.alpineMint.opacity(0.12), SierraTheme.Colors.alpineDark)
+        case .pendingApproval: ("Pending",   SierraTheme.Colors.warning,    SierraTheme.Colors.warning.opacity(0.12),    SierraTheme.Colors.warning)
+        case .suspended:       ("Suspended", SierraTheme.Colors.danger,     SierraTheme.Colors.danger.opacity(0.12),     SierraTheme.Colors.danger)
         }
         return SierraBadge(
             label: text,
@@ -96,12 +122,14 @@ struct StaffListView: View {
 
     private func avatarGradient(for member: StaffMember) -> [Color] {
         switch member.role {
-        case .driver:      SierraAvatarView.driver()
-        case .maintenance: SierraAvatarView.maintenance()
+        case .driver:               SierraAvatarView.driver()
+        case .maintenancePersonnel: SierraAvatarView.maintenance()
+        case .fleetManager:         SierraAvatarView.driver() // fallback
         }
     }
 }
 
 #Preview {
     StaffListView()
+        .environment(AppDataStore.shared)
 }

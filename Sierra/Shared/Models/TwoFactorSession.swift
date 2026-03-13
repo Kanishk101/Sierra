@@ -1,13 +1,5 @@
 import Foundation
 
-// MARK: - Two Factor Method
-// Maps to PostgreSQL enum: two_factor_method
-
-enum TwoFactorMethod: String, Codable, CaseIterable {
-    case email         = "email"
-    case sms           = "sms"
-    case authenticator = "authenticator"
-}
 
 // MARK: - TwoFactorSession
 // Maps to table: two_factor_sessions

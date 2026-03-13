@@ -4,7 +4,7 @@ import SwiftUI
 @Observable
 final class StaffApprovalViewModel {
 
-    private let store = StaffApplicationStore.shared
+    private let store = AppDataStore.shared
 
     var selectedFilter: ApprovalStatus = .pending
     var isProcessing: Bool = false
@@ -12,11 +12,11 @@ final class StaffApprovalViewModel {
     var rejectionReason: String = ""
 
     var filteredApplications: [StaffApplication] {
-        store.filtered(by: selectedFilter)
+        store.staffApplications.filter { $0.status == selectedFilter }
     }
 
     var pendingCount: Int {
-        store.pendingCount
+        store.staffApplications.filter { $0.status == .pending }.count
     }
 
     // MARK: - Approve
@@ -24,8 +24,11 @@ final class StaffApprovalViewModel {
     @MainActor
     func approve(staffId: UUID) async {
         isProcessing = true
-        try? await Task.sleep(for: .milliseconds(800))
-        store.approve(id: staffId)
+        do {
+            try await store.approveStaffApplication(applicationId: staffId)
+        } catch {
+            // surface error if needed — caller can observe isProcessing returning false
+        }
         isProcessing = false
     }
 
@@ -34,8 +37,11 @@ final class StaffApprovalViewModel {
     @MainActor
     func reject(staffId: UUID, reason: String) async {
         isProcessing = true
-        try? await Task.sleep(for: .milliseconds(800))
-        store.reject(id: staffId, reason: reason)
+        do {
+            try await store.rejectStaffApplication(applicationId: staffId, reason: reason)
+        } catch {
+            // surface error if needed
+        }
         isProcessing = false
         resetRejectState()
     }
