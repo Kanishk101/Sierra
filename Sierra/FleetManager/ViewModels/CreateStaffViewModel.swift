@@ -24,7 +24,7 @@ final class CreateStaffViewModel {
     var showSuccess:      Bool    = false
     var createdStaffName: String  = ""
 
-    // Temp-password alert state
+    // Temp-password alert (shown after account creation so admin can copy it)
     var showTempPasswordAlert: Bool   = false
     var generatedTempPassword: String = ""
 
@@ -63,7 +63,7 @@ final class CreateStaffViewModel {
         let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
 
         do {
-            // 1. Create staff account via Edge Function — returns the new UUID
+            // 1. Create the account via Postgres RPC (no Edge Function needed)
             _ = try await AuthManager.shared.createStaffAccount(
                 email:        trimmedEmail,
                 name:         trimmedName,
@@ -71,11 +71,19 @@ final class CreateStaffViewModel {
                 tempPassword: tempPassword
             )
 
-            // 2. Refresh store so the new staff member appears immediately
+            // 2. Refresh the store so the new staff member appears immediately
             await AppDataStore.shared.loadAll()
 
-            // 3. Optionally send credentials email (fire-and-forget)
-            Task {
+            isLoading             = false
+            createdStaffName      = trimmedName
+            generatedTempPassword = tempPassword
+            showTempPasswordAlert = true
+            showSuccess           = true
+
+            // 3. Open Mail app pre-filled with credentials (fire-and-forget)
+            // If Mail app isn’t configured, the error is swallowed —
+            // admin can still copy the password from the alert.
+            Task { @MainActor in
                 try? await EmailService.sendCredentials(
                     to:       trimmedEmail,
                     name:     trimmedName,
@@ -83,12 +91,6 @@ final class CreateStaffViewModel {
                     role:     role
                 )
             }
-
-            isLoading             = false
-            createdStaffName      = trimmedName
-            generatedTempPassword = tempPassword
-            showTempPasswordAlert = true        // shows copy-password alert
-            showSuccess           = true
 
             NotificationCenter.default.post(
                 name: .staffCreated,
@@ -99,6 +101,7 @@ final class CreateStaffViewModel {
                     "role":  role.rawValue
                 ]
             )
+
         } catch let authErr as AuthError {
             isLoading    = false
             errorMessage = authErr.errorDescription ?? "Failed to create staff account."
@@ -122,7 +125,6 @@ final class CreateStaffViewModel {
 
     // MARK: - Private
 
-    /// Generates a 12-character password with upper, lower, digit, and symbol characters.
     private func generateTempPassword() -> String {
         let chars = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$"
         return String((0..<12).compactMap { _ in chars.randomElement() })
