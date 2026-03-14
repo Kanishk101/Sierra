@@ -325,9 +325,13 @@ final class AuthManager {
     }
 
     // MARK: - Create Staff Account
-    // Calls `create_staff_member` SECURITY DEFINER Postgres RPC — no Edge Function.
-    // The nonisolated static helper escapes @MainActor so the Supabase SDK
-    // async/throws calls resolve correctly without Sendable conflicts.
+    // Calls the `create_staff_member` SECURITY DEFINER Postgres RPC.
+    // The RPC atomically inserts into auth.users + staff_members in a
+    // single database transaction. No Edge Function or service_role key
+    // required — the RPC runs with elevated privileges server-side.
+    //
+    // RPC params: p_email, p_raw_password, p_name, p_role
+    // Returns: UUID of the newly created user
 
     func createStaffAccount(
         email: String,
@@ -335,25 +339,26 @@ final class AuthManager {
         role: UserRole,
         tempPassword: String
     ) async throws -> UUID {
-        // Use Edge Function so service_role key stays server-side.
-        // [String: String] is Sendable — avoids @MainActor Encodable isolation errors.
-        let body = try JSONEncoder().encode([
-            "email": email,
-            "name": name,
-            "role": role.rawValue,
-            "tempPassword": tempPassword
-        ] as [String: String])
-
-        struct CreateResponse: Decodable { let id: String?; let error: String? }
-        let decoded: CreateResponse = try await supabase.functions.invoke(
-            "create-staff-account",
-            options: FunctionInvokeOptions(body: body)
-        )
-        if let errMsg = decoded.error { throw AuthError.networkError(errMsg) }
-        guard let idStr = decoded.id, let uuid = UUID(uuidString: idStr) else {
-            throw AuthError.createStaffFailed
+        struct RPCParams: Encodable {
+            let p_email: String
+            let p_raw_password: String
+            let p_name: String
+            let p_role: String
         }
-        return uuid
+
+        let params = RPCParams(
+            p_email:        email,
+            p_raw_password: tempPassword,
+            p_name:         name,
+            p_role:         role.rawValue
+        )
+
+        let newUserId: UUID = try await supabase
+            .rpc("create_staff_member", params: params)
+            .execute()
+            .value
+
+        return newUserId
     }
 
     // MARK: - Auto-Lock
