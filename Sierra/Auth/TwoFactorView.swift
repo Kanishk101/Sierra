@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// 2FA OTP verification screen.
-/// Supabase sends 8-digit OTP codes — UI uses 8 boxes.
+/// Supabase is configured to send 6-digit tokens (Auth → Settings → OTP length = 6).
 struct TwoFactorView: View {
 
     @Bindable var viewModel: TwoFactorViewModel
@@ -19,9 +19,7 @@ struct TwoFactorView: View {
                 ScrollView {
                     VStack(spacing: 0) {
                         Spacer(minLength: 60)
-
-                        headerSection
-                            .padding(.bottom, 32)
+                        headerSection.padding(.bottom, 32)
 
                         if viewModel.isLockedOut {
                             lockedCard
@@ -29,14 +27,12 @@ struct TwoFactorView: View {
                                 .transition(.opacity.combined(with: .scale(scale: 0.95)))
                         } else {
                             otpCard
-                                .padding(.horizontal, Spacing.lg)
+                                .padding(.horizontal, Spacing.xl)
                                 .transition(.opacity.combined(with: .scale(scale: 0.95)))
                         }
 
                         Spacer(minLength: 40)
-
-                        cancelButton
-                            .padding(.bottom, 32)
+                        cancelButton.padding(.bottom, 32)
                     }
                     .frame(minHeight: geo.size.height)
                 }
@@ -62,8 +58,7 @@ struct TwoFactorView: View {
         .navigationBarBackButtonHidden(true)
         .onAppear {
             #if DEBUG
-            print("\u{1F510} [TwoFactorView] appeared — user is on OTP screen")
-            print("\u{1F510} [TwoFactorView] context: \(viewModel.maskedEmail) role: \(viewModel.context.role)")
+            print("\u{1F510} [TwoFactorView] appeared")
             #endif
             viewModel.onAppear()
         }
@@ -96,12 +91,12 @@ struct TwoFactorView: View {
                     .foregroundStyle(SierraTheme.Colors.ember.opacity(0.8))
             }
 
-            Text("Enter the 8-digit code sent to your email.\nThe code expires in 10 minutes.")
+            Text("Enter the 6-digit code sent to your email address.\nThe code expires in 10 minutes.")
                 .font(SierraFont.subheadline)
                 .foregroundStyle(.white.opacity(0.55))
                 .multilineTextAlignment(.center)
                 .lineSpacing(3)
-                .padding(.horizontal, 24)
+                .padding(.horizontal, 32)
         }
     }
 
@@ -109,12 +104,10 @@ struct TwoFactorView: View {
 
     private var otpCard: some View {
         VStack(spacing: Spacing.lg) {
-            // 8-digit input boxes
-            OTPInputView(
+            SixDigitInputView(
                 digits: $viewModel.digits,
                 focusedIndex: $viewModel.focusedIndex,
                 shakeCount: viewModel.shakeCount,
-                digitCount: 8,
                 onComplete: { viewModel.verifyCode() }
             )
             .padding(.vertical, Spacing.xs)
@@ -181,13 +174,11 @@ struct TwoFactorView: View {
                     Image(systemName: "clock")
                         .font(SierraFont.caption2)
                         .foregroundStyle(viewModel.expiryCountdown < 60
-                                         ? SierraTheme.Colors.danger
-                                         : .white.opacity(0.4))
+                                         ? SierraTheme.Colors.danger : .white.opacity(0.4))
                     Text("Expires in \(viewModel.expiryDisplayText)")
                         .font(SierraFont.caption1)
                         .foregroundStyle(viewModel.expiryCountdown < 60
-                                         ? SierraTheme.Colors.danger
-                                         : .white.opacity(0.4))
+                                         ? SierraTheme.Colors.danger : .white.opacity(0.4))
                 }
             }
         }
@@ -207,8 +198,7 @@ struct TwoFactorView: View {
                         .foregroundStyle(SierraTheme.Colors.danger)
                 }
                 Text("Account Temporarily Locked")
-                    .font(SierraFont.headline)
-                    .foregroundStyle(.white)
+                    .font(SierraFont.headline).foregroundStyle(.white)
                 Text("Too many incorrect attempts.\nPlease wait before trying again.")
                     .font(SierraFont.subheadline)
                     .foregroundStyle(.white.opacity(0.55))
@@ -232,7 +222,6 @@ struct TwoFactorView: View {
             Text("Didn't receive a code?")
                 .font(SierraFont.caption1)
                 .foregroundStyle(.white.opacity(0.4))
-
             if viewModel.canResend {
                 Button("Resend") { viewModel.resendCode() }
                     .font(SierraFont.caption1)

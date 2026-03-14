@@ -13,27 +13,23 @@ struct ShakeEffect: GeometryEffect {
     }
 }
 
-// MARK: - OTP Input View
-// Renamed from SixDigitInputView — now supports any digit count.
-// Supabase sends 8-digit OTP tokens by default.
-// TwoFactorView passes digitCount: 8.
+// MARK: - Six Digit Input
 
-typealias SixDigitInputView = OTPInputView  // backward-compat alias
+/// Reusable 6-digit OTP input used by TwoFactorView.
+/// Supabase is configured to send 6-digit OTP tokens (set in Auth → Settings → OTP length).
+struct SixDigitInputView: View {
 
-struct OTPInputView: View {
-
-    @Binding var digits: [String]
+    @Binding var digits: [String] // must have exactly 6 elements
     @Binding var focusedIndex: Int?
     var shakeCount: Int = 0
-    var digitCount: Int = 8
     var onComplete: () -> Void
 
     var body: some View {
-        HStack(spacing: 8) {
-            ForEach(0..<digitCount, id: \.self) { index in
+        HStack(spacing: 10) {
+            ForEach(0..<6, id: \.self) { index in
                 SingleDigitField(
                     text: Binding(
-                        get: { index < digits.count ? digits[index] : "" },
+                        get: { digits[index] },
                         set: { newValue in handleInput(newValue, at: index) }
                     ),
                     isFocused: focusedIndex == index,
@@ -51,20 +47,18 @@ struct OTPInputView: View {
     private func handleInput(_ value: String, at index: Int) {
         let filtered = value.filter { $0.isNumber }
         guard let lastChar = filtered.last else { return }
-        guard index < digits.count else { return }
         digits[index] = String(lastChar)
 
-        if index < digitCount - 1 {
+        if index < 5 {
             focusedIndex = index + 1
         } else {
             focusedIndex = nil
             let code = digits.joined()
-            if code.count == digitCount { onComplete() }
+            if code.count == 6 { onComplete() }
         }
     }
 
     private func handleBackspace(at index: Int) {
-        guard index < digits.count else { return }
         if digits[index].isEmpty && index > 0 {
             focusedIndex = index - 1
             digits[index - 1] = ""
@@ -74,13 +68,14 @@ struct OTPInputView: View {
     }
 
     private func handlePaste(_ pastedDigits: String, startingAt startIndex: Int) {
-        let chars = Array(pastedDigits.filter { $0.isNumber }.prefix(digitCount))
+        let chars = Array(pastedDigits.filter { $0.isNumber }.prefix(6))
         for (offset, char) in chars.enumerated() {
-            guard offset < digits.count else { break }
-            digits[offset] = String(char)
+            let idx = offset
+            guard idx < 6 else { break }
+            digits[idx] = String(char)
         }
-        let filledCount = min(chars.count, digitCount)
-        if filledCount == digitCount {
+        let filledCount = min(chars.count, 6)
+        if filledCount == 6 {
             focusedIndex = nil
             onComplete()
         } else {
@@ -106,16 +101,16 @@ struct SingleDigitField: View {
             onBackspace: onBackspace,
             onPaste: onPaste
         )
-        .frame(width: 38, height: 50)
+        .frame(width: 45, height: 56)
         .multilineTextAlignment(.center)
-        .font(.system(size: 20, weight: .bold, design: .rounded))
+        .font(.system(size: 22, weight: .bold, design: .rounded))
         .foregroundStyle(SierraTheme.Colors.primaryText)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(.white)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(
                     isFocused ? SierraTheme.Colors.ember : Color.gray.opacity(0.25),
                     lineWidth: isFocused ? 2 : 1
@@ -143,7 +138,7 @@ struct BackspaceDetectingTextField: UIViewRepresentable {
         let tf = BackspaceTextField()
         tf.keyboardType = .numberPad
         tf.textAlignment = .center
-        tf.font = .systemFont(ofSize: 20, weight: .bold)
+        tf.font = .systemFont(ofSize: 22, weight: .bold)
         tf.delegate = context.coordinator
         tf.onBackspace = onBackspace
         tf.textColor = UIColor(SierraTheme.Colors.primaryText)
@@ -193,26 +188,21 @@ class BackspaceTextField: UITextField {
 
 #Preview {
     struct DemoView: View {
-        @State private var digits = Array(repeating: "", count: 8)
+        @State private var digits = Array(repeating: "", count: 6)
         @State private var focused: Int? = 0
         @State private var shakes = 0
 
         var body: some View {
-            ZStack {
-                Color.black.ignoresSafeArea()
-                VStack(spacing: 24) {
-                    OTPInputView(
-                        digits: $digits,
-                        focusedIndex: $focused,
-                        shakeCount: shakes,
-                        digitCount: 8,
-                        onComplete: { shakes += 1 }
-                    )
-                    Button("Shake") { withAnimation(.default) { shakes += 1 } }
-                        .foregroundStyle(.white)
-                }
-                .padding()
+            VStack(spacing: 24) {
+                SixDigitInputView(
+                    digits: $digits,
+                    focusedIndex: $focused,
+                    shakeCount: shakes,
+                    onComplete: { shakes += 1 }
+                )
+                Button("Shake") { withAnimation(.default) { shakes += 1 } }
             }
+            .padding()
         }
     }
     return DemoView()

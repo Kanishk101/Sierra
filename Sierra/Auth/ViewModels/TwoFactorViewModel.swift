@@ -2,14 +2,13 @@ import Foundation
 import SwiftUI
 
 /// ViewModel for the 2FA OTP verification screen.
-/// Supabase sends 8-digit OTP tokens via signInWithOTP.
+/// Supabase is configured to send 6-digit OTP tokens (Auth → Settings → OTP length = 6).
 @MainActor @Observable
 final class TwoFactorViewModel {
 
     // MARK: - Input
-    // 8 digits to match Supabase's default OTP length
 
-    var digits: [String] = Array(repeating: "", count: 8)
+    var digits: [String] = Array(repeating: "", count: 6)
     var focusedIndex: Int? = 0
 
     // MARK: - State
@@ -67,7 +66,7 @@ final class TwoFactorViewModel {
     // MARK: - Computed
 
     var enteredCode: String { digits.joined() }
-    var isCodeComplete: Bool { digits.allSatisfy { $0.count == 1 } }  // 8 digits, all filled
+    var isCodeComplete: Bool { digits.allSatisfy { $0.count == 1 } }
     var canResend: Bool { resendCooldown == 0 && state != .sending && state != .verifying }
     var maskedEmail: String { context.maskedDestination }
     var methodIcon: String { context.method.icon }
@@ -222,7 +221,7 @@ final class TwoFactorViewModel {
     }
 
     func clearDigits() {
-        digits = Array(repeating: "", count: 8)
+        digits = Array(repeating: "", count: 6)
         focusedIndex = 0
     }
 
