@@ -13,6 +13,16 @@ enum AuthDestination: Equatable {
     case maintenanceDashboard
 }
 
+// MARK: - RPC Params (top-level so it is Sendable)
+// Used by createStaffAccount — must live outside @MainActor class.
+
+private struct CreateStaffRPCParams: Encodable, Sendable {
+    let p_email:        String
+    let p_raw_password: String
+    let p_name:         String
+    let p_role:         String
+}
+
 // MARK: - AuthManager
 
 @MainActor
@@ -279,9 +289,9 @@ final class AuthManager {
     }
 
     // MARK: - Create Staff Account
-    // Calls the `create_staff_member` SECURITY DEFINER Postgres function via RPC.
-    // No Edge Function needed — pure Swift + Postgres.
-    // The function: checks caller is fleetManager, creates auth.users + staff_members atomically.
+    // Calls `create_staff_member` SECURITY DEFINER Postgres RPC — no Edge Function.
+    // The nonisolated static helper escapes @MainActor so the Supabase SDK
+    // async/throws calls resolve correctly without Sendable conflicts.
 
     func createStaffAccount(
         email: String,
@@ -289,26 +299,30 @@ final class AuthManager {
         role: UserRole,
         tempPassword: String
     ) async throws -> UUID {
+        try await AuthManager.invokeCreateStaffRPC(
+            email: email,
+            name: name,
+            roleRawValue: role.rawValue,
+            tempPassword: tempPassword
+        )
+    }
 
-        struct RPCParams: Encodable {
-            let p_email:        String
-            let p_raw_password: String
-            let p_name:         String
-            let p_role:         String
-        }
-
-        let params = RPCParams(
+    private static func invokeCreateStaffRPC(
+        email: String,
+        name: String,
+        roleRawValue: String,
+        tempPassword: String
+    ) async throws -> UUID {
+        let params = CreateStaffRPCParams(
             p_email:        email,
             p_raw_password: tempPassword,
             p_name:         name,
-            p_role:         role.rawValue
+            p_role:         roleRawValue
         )
-
         let uuidString: String = try await supabase
             .rpc("create_staff_member", params: params)
             .execute()
             .value
-
         guard let uuid = UUID(uuidString: uuidString) else {
             throw AuthError.createStaffFailed
         }
