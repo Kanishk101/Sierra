@@ -14,8 +14,7 @@ enum AuthDestination: Equatable {
 }
 
 // MARK: - CreateStaffRPCParams
-// Defined at file level (outside @MainActor class) so it is Sendable.
-// RPCParams defined inside a @MainActor class inherits actor isolation and
+// File-level + Sendable: structs inside @MainActor inherit actor isolation and
 // cannot satisfy the Sendable constraint on supabase.rpc()'s type parameter.
 
 private struct CreateStaffRPCParams: Encodable, Sendable {
@@ -23,6 +22,18 @@ private struct CreateStaffRPCParams: Encodable, Sendable {
     let p_raw_password: String
     let p_name: String
     let p_role: String
+}
+
+// MARK: - RPC helper (nonisolated — escapes @MainActor so async/throws resolves)
+// The Supabase SDK rpc().execute().value chain is not recognised as async/throws
+// when called directly inside a @MainActor func. A nonisolated static func has
+// no actor binding so the compiler resolves the call correctly.
+
+private func invokeCreateStaffRPC(_ params: CreateStaffRPCParams) async throws -> UUID {
+    try await supabase
+        .rpc("create_staff_member", params: params)
+        .execute()
+        .value
 }
 
 // MARK: - AuthManager
@@ -222,10 +233,8 @@ final class AuthManager {
     func updatePasswordAndFirstLogin(newPassword: String) async throws {
         guard let user = currentUser else { throw AuthError.invalidCredentials }
 
-        // 1. Update password in Supabase Auth
         try await supabase.auth.update(user: UserAttributes(password: newPassword))
 
-        // 2. Update is_first_login in staff_members
         struct FirstLoginPayload: Encodable { let is_first_login: Bool }
         try await supabase
             .from("staff_members")
@@ -233,7 +242,6 @@ final class AuthManager {
             .eq("id", value: user.id.uuidString)
             .execute()
 
-        // 3. Update local state
         var updated = user
         updated.isFirstLogin = false
         currentUser = updated
@@ -351,10 +359,10 @@ final class AuthManager {
     }
 
     // MARK: - Create Staff Account
-    // Uses the `create_staff_member` SECURITY DEFINER Postgres RPC.
-    // Params struct is defined at file level as CreateStaffRPCParams to satisfy
-    // Sendable — structs inside @MainActor classes are actor-isolated and cannot
-    // be used as Sendable type parameters to supabase.rpc().
+    // Delegates to the file-level invokeCreateStaffRPC() helper which is
+    // nonisolated — required so the compiler sees rpc().execute().value as
+    // async throws. Calling it directly from a @MainActor func causes the
+    // "No try/await" false-positive errors.
 
     func createStaffAccount(
         email: String,
@@ -368,13 +376,7 @@ final class AuthManager {
             p_name:         name,
             p_role:         role.rawValue
         )
-
-        let newUserId: UUID = try await supabase
-            .rpc("create_staff_member", params: params)
-            .execute()
-            .value
-
-        return newUserId
+        return try await invokeCreateStaffRPC(params)
     }
 
     // MARK: - Auto-Lock
