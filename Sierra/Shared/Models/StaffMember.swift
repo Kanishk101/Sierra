@@ -44,6 +44,7 @@ struct StaffMember: Identifiable, Codable {
 
     // MARK: Personal information (nullable — populated after onboarding)
     var dateOfBirth: String?
+    var gender: String?          
     var address: String?
     var emergencyContactName: String?
     var emergencyContactPhone: String?

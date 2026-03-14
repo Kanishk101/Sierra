@@ -2,6 +2,14 @@ import Foundation
 import SwiftUI
 import PhotosUI
 
+// MARK: - Date formatter for Postgres DATE columns (yyyy-MM-dd)
+private let pgDateFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "yyyy-MM-dd"
+    f.locale = Locale(identifier: "en_US_POSIX")
+    return f
+}()
+
 enum Gender: String, CaseIterable {
     case male = "Male"
     case female = "Female"
@@ -208,7 +216,7 @@ final class DriverProfileViewModel {
             rejectionReason: nil,
             reviewedAt: nil,
             phone: phoneNumber,
-            dateOfBirth: dateOfBirth,
+            dateOfBirth: pgDateFormatter.string(from: dateOfBirth),
             gender: gender.rawValue,
             address: address,
             emergencyContactName: emergencyContactName,
@@ -217,7 +225,7 @@ final class DriverProfileViewModel {
             aadhaarDocumentUrl: nil,
             profilePhotoUrl: nil,
             driverLicenseNumber: licenseNumber.trimmingCharacters(in: .whitespaces),
-            driverLicenseExpiry: licenseExpiryDate,
+            driverLicenseExpiry: pgDateFormatter.string(from: licenseExpiryDate),
             driverLicenseClass: nil,
             driverLicenseIssuingState: nil,
             driverLicenseDocumentUrl: nil,
@@ -239,7 +247,7 @@ final class DriverProfileViewModel {
             if var member = AppDataStore.shared.staffMember(for: user.id) {
                 member.name = fullName
                 member.phone = phoneNumber
-                member.dateOfBirth = dateOfBirth
+                member.dateOfBirth = pgDateFormatter.string(from: dateOfBirth)
                 member.gender = gender.rawValue
                 member.address = address
                 member.emergencyContactName = emergencyContactName

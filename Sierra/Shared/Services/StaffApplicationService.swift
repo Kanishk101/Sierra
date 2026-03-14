@@ -82,7 +82,7 @@ struct StaffApplicationInsertPayload: Encodable {
         reviewedBy                    = a.reviewedBy?.uuidString
         reviewedAt                    = a.reviewedAt.map { iso.string(from: $0) }
         phone                         = a.phone
-        dateOfBirth                   = iso.string(from: a.dateOfBirth)
+        dateOfBirth                   = a.dateOfBirth
         gender                        = a.gender
         address                       = a.address
         emergencyContactName          = a.emergencyContactName
@@ -91,14 +91,14 @@ struct StaffApplicationInsertPayload: Encodable {
         aadhaarDocumentUrl            = a.aadhaarDocumentUrl
         profilePhotoUrl               = a.profilePhotoUrl
         driverLicenseNumber           = a.driverLicenseNumber
-        driverLicenseExpiry           = a.driverLicenseExpiry.map { iso.string(from: $0) }
+        driverLicenseExpiry           = a.driverLicenseExpiry
         driverLicenseClass            = a.driverLicenseClass
         driverLicenseIssuingState     = a.driverLicenseIssuingState
         driverLicenseDocumentUrl      = a.driverLicenseDocumentUrl
         maintCertificationType        = a.maintCertificationType
         maintCertificationNumber      = a.maintCertificationNumber
         maintIssuingAuthority         = a.maintIssuingAuthority
-        maintCertificationExpiry      = a.maintCertificationExpiry.map { iso.string(from: $0) }
+        maintCertificationExpiry      = a.maintCertificationExpiry
         maintCertificationDocumentUrl = a.maintCertificationDocumentUrl
         maintYearsOfExperience        = a.maintYearsOfExperience
         maintSpecializations          = a.maintSpecializations

@@ -59,7 +59,7 @@ struct StaffMemberInsertPayload: Encodable {
         email                = m.email
         phone                = m.phone
         availability         = m.availability.rawValue
-        dateOfBirth          = m.dateOfBirth.map { iso.string(from: $0) }
+        dateOfBirth          = m.dateOfBirth
         gender               = m.gender
         address              = m.address
         emergencyContactName  = m.emergencyContactName
@@ -117,7 +117,7 @@ struct StaffMemberUpdatePayload: Encodable {
         status               = m.status.rawValue
         phone                = m.phone
         availability         = m.availability.rawValue
-        dateOfBirth          = m.dateOfBirth.map { iso.string(from: $0) }
+        dateOfBirth          = m.dateOfBirth
         gender               = m.gender
         address              = m.address
         emergencyContactName  = m.emergencyContactName

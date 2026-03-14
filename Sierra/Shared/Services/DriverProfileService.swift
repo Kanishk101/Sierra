@@ -3,12 +3,6 @@ import Supabase
 
 // Uses global `supabase` constant from SupabaseManager.swift
 
-private let iso: ISO8601DateFormatter = {
-    let f = ISO8601DateFormatter()
-    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return f
-}()
-
 // MARK: - DriverProfileInsertPayload
 // Excludes: id, created_at, updated_at
 
@@ -44,7 +38,7 @@ struct DriverProfileInsertPayload: Encodable {
     init(from p: DriverProfile) {
         staffMemberId       = p.staffMemberId.uuidString
         licenseNumber       = p.licenseNumber
-        licenseExpiry       = iso.string(from: p.licenseExpiry)
+        licenseExpiry = p.licenseExpiry
         licenseClass        = p.licenseClass
         licenseIssuingState = p.licenseIssuingState
         licenseDocumentUrl  = p.licenseDocumentUrl
@@ -89,7 +83,7 @@ struct DriverProfileUpdatePayload: Encodable {
 
     init(from p: DriverProfile) {
         licenseNumber       = p.licenseNumber
-        licenseExpiry       = iso.string(from: p.licenseExpiry)
+        licenseExpiry = p.licenseExpiry
         licenseClass        = p.licenseClass
         licenseIssuingState = p.licenseIssuingState
         licenseDocumentUrl  = p.licenseDocumentUrl

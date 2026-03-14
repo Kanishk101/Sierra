@@ -3,12 +3,6 @@ import Supabase
 
 // Uses global `supabase` constant from SupabaseManager.swift
 
-private let iso: ISO8601DateFormatter = {
-    let f = ISO8601DateFormatter()
-    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return f
-}()
-
 // MARK: - MaintenanceProfileInsertPayload
 // Excludes: id, created_at, updated_at
 
@@ -46,7 +40,7 @@ struct MaintenanceProfileInsertPayload: Encodable {
         certificationType        = p.certificationType
         certificationNumber      = p.certificationNumber
         issuingAuthority         = p.issuingAuthority
-        certificationExpiry      = iso.string(from: p.certificationExpiry)
+        certificationExpiry = p.certificationExpiry
         certificationDocumentUrl = p.certificationDocumentUrl
         yearsOfExperience        = p.yearsOfExperience
         specializations          = p.specializations
@@ -91,7 +85,7 @@ struct MaintenanceProfileUpdatePayload: Encodable {
         certificationType        = p.certificationType
         certificationNumber      = p.certificationNumber
         issuingAuthority         = p.issuingAuthority
-        certificationExpiry      = iso.string(from: p.certificationExpiry)
+        certificationExpiry = p.certificationExpiry
         certificationDocumentUrl = p.certificationDocumentUrl
         yearsOfExperience        = p.yearsOfExperience
         specializations          = p.specializations

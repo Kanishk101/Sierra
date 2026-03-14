@@ -25,7 +25,7 @@ struct StaffReviewSheet: View {
                         // Personal details
                         detailSection("Personal Details") {
                             detailRow("Phone", value: application.phone)
-                            detailRow("Date of Birth", value: dateFormatter.string(from: application.dateOfBirth))
+                            detailRow("Date of Birth", value: application.dateOfBirth)
                             detailRow("Gender", value: application.gender)
                             if !application.address.isEmpty {
                                 detailRow("Address", value: application.address)
@@ -214,7 +214,7 @@ struct StaffReviewSheet: View {
             documentCard(icon: "creditcard.fill", title: "Aadhaar Card", number: application.aadhaarNumber)
             documentCard(icon: "car.fill", title: "Driving License",
                          number: application.driverLicenseNumber ?? "—",
-                         expiry: application.driverLicenseExpiry.map { dateFormatter.string(from: $0) })
+                         expiry: application.driverLicenseExpiry)
         }
     }
 
@@ -240,7 +240,7 @@ struct StaffReviewSheet: View {
                         detailRow("Issuing Authority", value: auth)
                     }
                     if let exp = application.maintCertificationExpiry {
-                        detailRow("Expires", value: dateFormatter.string(from: exp))
+                        detailRow("Expires", value: exp)
                     }
                 }
             }

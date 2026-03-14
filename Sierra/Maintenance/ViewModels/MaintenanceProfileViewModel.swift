@@ -93,6 +93,12 @@ final class MaintenanceProfileViewModel {
         aadhaarNumber = String(raw.filter(\.isNumber).prefix(12))
     }
 
+    private let dateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+    
     func toggleSpecialization(_ spec: Specialization) {
         if selectedSpecializations.contains(spec) {
             selectedSpecializations.remove(spec)
@@ -226,7 +232,7 @@ final class MaintenanceProfileViewModel {
             rejectionReason: nil,
             reviewedAt: nil,
             phone: phoneNumber,
-            dateOfBirth: dateOfBirth,
+            dateOfBirth: dateFormatter.string(from: dateOfBirth),
             gender: gender.rawValue,
             address: address,
             emergencyContactName: emergencyContactName,
@@ -242,7 +248,7 @@ final class MaintenanceProfileViewModel {
             maintCertificationType: certificationType.rawValue,
             maintCertificationNumber: certificationNumber.trimmingCharacters(in: .whitespaces),
             maintIssuingAuthority: issuingAuthority.trimmingCharacters(in: .whitespaces),
-            maintCertificationExpiry: certExpiryDate,
+            maintCertificationExpiry: dateFormatter.string(from: certExpiryDate),
             maintCertificationDocumentUrl: nil,
             maintYearsOfExperience: yearsOfExperience,
             maintSpecializations: selectedSpecializations.map(\.rawValue),
@@ -255,7 +261,7 @@ final class MaintenanceProfileViewModel {
             if var member = AppDataStore.shared.staffMember(for: user.id) {
                 member.name = fullName
                 member.phone = phoneNumber
-                member.dateOfBirth = dateOfBirth
+                member.dateOfBirth = dateFormatter.string(from: dateOfBirth)
                 member.gender = gender.rawValue
                 member.address = address
                 member.emergencyContactName = emergencyContactName
