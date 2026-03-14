@@ -2,8 +2,6 @@ import SwiftUI
 
 // MARK: - Shake Effect
 
-/// A GeometryEffect that produces a horizontal shake using a sine wave.
-/// Increment `shakeCount` to trigger the animation.
 struct ShakeEffect: GeometryEffect {
     var amount: CGFloat = 8
     var shakesPerUnit: CGFloat = 3
@@ -15,26 +13,28 @@ struct ShakeEffect: GeometryEffect {
     }
 }
 
-// MARK: - Six Digit Input
+// MARK: - OTP Input View
+// Renamed from SixDigitInputView — now supports any digit count.
+// Supabase sends 8-digit OTP tokens by default.
+// TwoFactorView passes digitCount: 8.
 
-/// Reusable 6-digit OTP input used by TwoFactorView and ForgotPasswordView.
-struct SixDigitInputView: View {
+typealias SixDigitInputView = OTPInputView  // backward-compat alias
 
-    @Binding var digits: [String] // must have exactly 6 elements
+struct OTPInputView: View {
+
+    @Binding var digits: [String]
     @Binding var focusedIndex: Int?
     var shakeCount: Int = 0
+    var digitCount: Int = 8
     var onComplete: () -> Void
 
-
     var body: some View {
-        HStack(spacing: 10) {
-            ForEach(0..<6, id: \.self) { index in
+        HStack(spacing: 8) {
+            ForEach(0..<digitCount, id: \.self) { index in
                 SingleDigitField(
                     text: Binding(
-                        get: { digits[index] },
-                        set: { newValue in
-                            handleInput(newValue, at: index)
-                        }
+                        get: { index < digits.count ? digits[index] : "" },
+                        set: { newValue in handleInput(newValue, at: index) }
                     ),
                     isFocused: focusedIndex == index,
                     onTap: { focusedIndex = index },
@@ -49,25 +49,22 @@ struct SixDigitInputView: View {
     // MARK: - Input Handling
 
     private func handleInput(_ value: String, at index: Int) {
-        // Only keep the last digit entered
         let filtered = value.filter { $0.isNumber }
         guard let lastChar = filtered.last else { return }
+        guard index < digits.count else { return }
         digits[index] = String(lastChar)
 
-        // Auto-advance focus
-        if index < 5 {
+        if index < digitCount - 1 {
             focusedIndex = index + 1
         } else {
             focusedIndex = nil
-            // All 6 filled
             let code = digits.joined()
-            if code.count == 6 {
-                onComplete()
-            }
+            if code.count == digitCount { onComplete() }
         }
     }
 
     private func handleBackspace(at index: Int) {
+        guard index < digits.count else { return }
         if digits[index].isEmpty && index > 0 {
             focusedIndex = index - 1
             digits[index - 1] = ""
@@ -77,14 +74,13 @@ struct SixDigitInputView: View {
     }
 
     private func handlePaste(_ pastedDigits: String, startingAt startIndex: Int) {
-        let chars = Array(pastedDigits.prefix(6))
+        let chars = Array(pastedDigits.filter { $0.isNumber }.prefix(digitCount))
         for (offset, char) in chars.enumerated() {
-            let idx = offset // always fill from box 0
-            guard idx < 6 else { break }
-            digits[idx] = String(char)
+            guard offset < digits.count else { break }
+            digits[offset] = String(char)
         }
-        let filledCount = min(chars.count, 6)
-        if filledCount == 6 {
+        let filledCount = min(chars.count, digitCount)
+        if filledCount == digitCount {
             focusedIndex = nil
             onComplete()
         } else {
@@ -95,7 +91,6 @@ struct SixDigitInputView: View {
 
 // MARK: - Single Digit Field
 
-/// Individual digit box that detects backspace via a custom UITextField wrapper.
 struct SingleDigitField: View {
 
     @Binding var text: String
@@ -104,7 +99,6 @@ struct SingleDigitField: View {
     let onBackspace: () -> Void
     var onPaste: ((String) -> Void)? = nil
 
-
     var body: some View {
         BackspaceDetectingTextField(
             text: $text,
@@ -112,16 +106,16 @@ struct SingleDigitField: View {
             onBackspace: onBackspace,
             onPaste: onPaste
         )
-        .frame(width: 45, height: 56)
+        .frame(width: 38, height: 50)
         .multilineTextAlignment(.center)
-        .font(.system(size: 22, weight: .bold, design: .rounded))
+        .font(.system(size: 20, weight: .bold, design: .rounded))
         .foregroundStyle(SierraTheme.Colors.primaryText)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(.white)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .strokeBorder(
                     isFocused ? SierraTheme.Colors.ember : Color.gray.opacity(0.25),
                     lineWidth: isFocused ? 2 : 1
@@ -138,8 +132,6 @@ struct SingleDigitField: View {
 
 // MARK: - Backspace-Detecting TextField (UIKit wrapper)
 
-/// A UITextField wrapped in UIViewRepresentable that notifies on backspace even
-/// when the field is empty (which SwiftUI's TextField does not do).
 struct BackspaceDetectingTextField: UIViewRepresentable {
 
     @Binding var text: String
@@ -151,7 +143,7 @@ struct BackspaceDetectingTextField: UIViewRepresentable {
         let tf = BackspaceTextField()
         tf.keyboardType = .numberPad
         tf.textAlignment = .center
-        tf.font = .systemFont(ofSize: 22, weight: .bold)
+        tf.font = .systemFont(ofSize: 20, weight: .bold)
         tf.delegate = context.coordinator
         tf.onBackspace = onBackspace
         tf.textColor = UIColor(SierraTheme.Colors.primaryText)
@@ -160,9 +152,7 @@ struct BackspaceDetectingTextField: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: BackspaceTextField, context: Context) {
-        if uiView.text != text {
-            uiView.text = text
-        }
+        if uiView.text != text { uiView.text = text }
         if isFocused && !uiView.isFirstResponder {
             DispatchQueue.main.async { uiView.becomeFirstResponder() }
         } else if !isFocused && uiView.isFirstResponder {
@@ -179,52 +169,50 @@ struct BackspaceDetectingTextField: UIViewRepresentable {
 
         func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange,
                         replacementString string: String) -> Bool {
-            // Backspace
             if string.isEmpty { return true }
-            // Paste — multi-digit string
             let digits = string.filter { $0.isNumber }
             if digits.count > 1 {
                 parent.onPaste?(digits)
                 return false
             }
-            // Single digit
             guard digits.count == 1 else { return false }
             parent.text = digits
-            return false // we set it manually
+            return false
         }
     }
 }
 
-/// Custom UITextField subclass that detects backspace presses.
 class BackspaceTextField: UITextField {
     var onBackspace: (() -> Void)?
 
     override func deleteBackward() {
-        if text?.isEmpty == true {
-            onBackspace?()
-        }
+        if text?.isEmpty == true { onBackspace?() }
         super.deleteBackward()
     }
 }
 
 #Preview {
     struct DemoView: View {
-        @State private var digits = Array(repeating: "", count: 6)
+        @State private var digits = Array(repeating: "", count: 8)
         @State private var focused: Int? = 0
         @State private var shakes = 0
 
         var body: some View {
-            VStack(spacing: 24) {
-                SixDigitInputView(
-                    digits: $digits,
-                    focusedIndex: $focused,
-                    shakeCount: shakes,
-                    onComplete: { shakes += 1 }
-                )
-
-                Button("Shake") { withAnimation(.default) { shakes += 1 } }
+            ZStack {
+                Color.black.ignoresSafeArea()
+                VStack(spacing: 24) {
+                    OTPInputView(
+                        digits: $digits,
+                        focusedIndex: $focused,
+                        shakeCount: shakes,
+                        digitCount: 8,
+                        onComplete: { shakes += 1 }
+                    )
+                    Button("Shake") { withAnimation(.default) { shakes += 1 } }
+                        .foregroundStyle(.white)
+                }
+                .padding()
             }
-            .padding()
         }
     }
     return DemoView()

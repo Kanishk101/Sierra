@@ -2,14 +2,14 @@ import Foundation
 import SwiftUI
 
 /// ViewModel for the 2FA OTP verification screen.
-/// Uses `OTPVerificationServiceProtocol` so the UI works identically
-/// with email, SMS, or authenticator backends.
+/// Supabase sends 8-digit OTP tokens via signInWithOTP.
 @MainActor @Observable
 final class TwoFactorViewModel {
 
     // MARK: - Input
+    // 8 digits to match Supabase's default OTP length
 
-    var digits: [String] = Array(repeating: "", count: 6)
+    var digits: [String] = Array(repeating: "", count: 8)
     var focusedIndex: Int? = 0
 
     // MARK: - State
@@ -42,13 +42,11 @@ final class TwoFactorViewModel {
         onCancelled: (() -> Void)? = nil
     ) {
         self.context = context
-        // Default to the real Supabase service — never fall back to mock in production
         self.service = service ?? SupabaseOTPVerificationService()
         self.onVerified = onVerified
         self.onCancelled = onCancelled
     }
 
-    // Backward-compat init for existing callers
     convenience init(
         subtitle: String,
         maskedEmail: String,
@@ -63,14 +61,13 @@ final class TwoFactorViewModel {
             sessionToken: "",
             authDestination: AuthManager.shared.currentUser.map { AuthManager.shared.destination(for: $0) } ?? .fleetManagerDashboard
         )
-        // Explicitly pass SupabaseOTPVerificationService so convenience init never uses mock
         self.init(context: ctx, service: SupabaseOTPVerificationService(), onVerified: onVerified, onCancelled: onCancelled)
     }
 
     // MARK: - Computed
 
     var enteredCode: String { digits.joined() }
-    var isCodeComplete: Bool { digits.allSatisfy { $0.count == 1 } }
+    var isCodeComplete: Bool { digits.allSatisfy { $0.count == 1 } }  // 8 digits, all filled
     var canResend: Bool { resendCooldown == 0 && state != .sending && state != .verifying }
     var maskedEmail: String { context.maskedDestination }
     var methodIcon: String { context.method.icon }
@@ -82,14 +79,10 @@ final class TwoFactorViewModel {
         return false
     }
 
-    var isVerified: Bool {
-        state == .success
-    }
+    var isVerified: Bool { state == .success }
 
     var failCount: Int {
-        if case .failed(let remaining) = state {
-            return 3 - remaining
-        }
+        if case .failed(let remaining) = state { return 3 - remaining }
         return 0
     }
 
@@ -124,19 +117,16 @@ final class TwoFactorViewModel {
             startExpiryCountdown(until: result.expiresAt)
             startResendCooldown(until: result.cooldownUntil)
         } catch let authErr as AuthError {
-            // Map each AuthError to a precise, actionable message
             state = .idle
             isLoading = false
             switch authErr {
             case .networkError(let msg) where msg.lowercased().contains("invalid"):
-                // Supabase rejected the email address (fake domain, typo, etc.)
-                banner = .error("Could not send code \u{2014} email address is not valid. Contact your fleet manager.")
+                banner = .error("Could not send code — email address is not valid. Contact your fleet manager.")
             case .networkError(let msg):
                 banner = .error("Could not send code: \(msg)")
             case .userNotFound:
                 banner = .error("Account not found. Please sign in again.")
             case .otpExpired:
-                // Should not happen on send, but handle defensively
                 banner = .warning("Previous code expired. Tap Resend for a fresh code.")
                 state = .awaitingEntry
             default:
@@ -177,37 +167,29 @@ final class TwoFactorViewModel {
                     banner = .warning("Incorrect code. \(remaining) attempt\(remaining == 1 ? "" : "s") remaining.")
                 }
             } catch let authErr as AuthError {
-                // Map each typed error to the right UX response
                 isLoading = false
                 switch authErr {
                 case .otpExpired:
-                    // Code timed out — don't say "connection error"
                     state = .expired
                     expiryTimer?.cancel()
                     clearDigits()
                     banner = .warning("Code has expired. Tap Resend to get a new one.")
-
                 case .otpInvalid:
-                    // Wrong code — treat same as a failed result
                     state = .failed(attemptsRemaining: 0)
                     withAnimation(.default) { shakeCount += 1 }
                     clearDigits()
                     banner = .warning("Incorrect code. Please check and try again.")
-
                 case .networkError(let msg):
                     state = .awaitingEntry
                     banner = .error("Network error: \(msg)")
-
                 case .userNotFound:
                     state = .awaitingEntry
                     banner = .error("Session expired. Please sign in again.")
-
                 default:
                     state = .awaitingEntry
-                    banner = .error("Verification failed \u{2014} \(authErr.localizedDescription)")
+                    banner = .error("Verification failed — \(authErr.localizedDescription)")
                 }
             } catch {
-                // Non-AuthError catch-all — truly unexpected
                 state = .awaitingEntry
                 isLoading = false
                 banner = .error("Verification failed: \(error.localizedDescription)")
@@ -240,7 +222,7 @@ final class TwoFactorViewModel {
     }
 
     func clearDigits() {
-        digits = Array(repeating: "", count: 6)
+        digits = Array(repeating: "", count: 8)
         focusedIndex = 0
     }
 

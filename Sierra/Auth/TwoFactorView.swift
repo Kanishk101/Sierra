@@ -1,14 +1,13 @@
 import SwiftUI
 
 /// 2FA OTP verification screen.
-/// Visual layout matches ForgotPasswordView — dark gradient, centered card, same components.
+/// Supabase sends 8-digit OTP codes — UI uses 8 boxes.
 struct TwoFactorView: View {
 
     @Bindable var viewModel: TwoFactorViewModel
 
     var body: some View {
         ZStack {
-            // Background — identical to LoginView / ForgotPasswordView
             LinearGradient(
                 colors: [SierraTheme.Colors.summitNavy, SierraTheme.Colors.sierraBlue],
                 startPoint: .topLeading,
@@ -21,24 +20,21 @@ struct TwoFactorView: View {
                     VStack(spacing: 0) {
                         Spacer(minLength: 60)
 
-                        // Logo + Title
                         headerSection
                             .padding(.bottom, 32)
 
-                        // OTP Card or Locked State
                         if viewModel.isLockedOut {
                             lockedCard
                                 .padding(.horizontal, Spacing.xl)
                                 .transition(.opacity.combined(with: .scale(scale: 0.95)))
                         } else {
                             otpCard
-                                .padding(.horizontal, Spacing.xl)
+                                .padding(.horizontal, Spacing.lg)
                                 .transition(.opacity.combined(with: .scale(scale: 0.95)))
                         }
 
                         Spacer(minLength: 40)
 
-                        // Cancel link at bottom
                         cancelButton
                             .padding(.bottom, 32)
                     }
@@ -47,12 +43,8 @@ struct TwoFactorView: View {
                 .scrollDismissesKeyboard(.interactively)
             }
 
-            // Loading overlay
-            if viewModel.isLoading {
-                loadingOverlay
-            }
+            if viewModel.isLoading { loadingOverlay }
 
-            // Alert banner
             VStack {
                 if let banner = viewModel.banner {
                     SierraAlertBanner(alertType: banner)
@@ -70,15 +62,10 @@ struct TwoFactorView: View {
         .navigationBarBackButtonHidden(true)
         .onAppear {
             #if DEBUG
-            print("🔐 [TwoFactorView] appeared — user is on OTP screen")
-            print("🔐 [TwoFactorView] context: \(viewModel.maskedEmail) role: \(viewModel.context.role)")
+            print("\u{1F510} [TwoFactorView] appeared — user is on OTP screen")
+            print("\u{1F510} [TwoFactorView] context: \(viewModel.maskedEmail) role: \(viewModel.context.role)")
             #endif
             viewModel.onAppear()
-        }
-        .onDisappear {
-            #if DEBUG
-            print("🔐 [TwoFactorView] disappeared. state: \(viewModel.state)")
-            #endif
         }
     }
 
@@ -86,13 +73,11 @@ struct TwoFactorView: View {
 
     private var headerSection: some View {
         VStack(spacing: Spacing.md) {
-            // Icon
             Image(systemName: "envelope.badge.shield.half.filled")
                 .font(.system(size: 50, weight: .light))
                 .foregroundStyle(SierraTheme.Colors.ember)
                 .symbolRenderingMode(.hierarchical)
 
-            // Eyebrow
             Text("VERIFICATION")
                 .font(SierraFont.caption2)
                 .foregroundStyle(.white.opacity(0.5))
@@ -102,7 +87,6 @@ struct TwoFactorView: View {
                 .font(SierraFont.title2)
                 .foregroundStyle(.white)
 
-            // Method indicator
             HStack(spacing: Spacing.xs) {
                 Image(systemName: viewModel.methodIcon)
                     .font(SierraFont.caption1)
@@ -112,12 +96,12 @@ struct TwoFactorView: View {
                     .foregroundStyle(SierraTheme.Colors.ember.opacity(0.8))
             }
 
-            Text(viewModel.instructionText)
+            Text("Enter the 8-digit code sent to your email.\nThe code expires in 10 minutes.")
                 .font(SierraFont.subheadline)
                 .foregroundStyle(.white.opacity(0.55))
                 .multilineTextAlignment(.center)
                 .lineSpacing(3)
-                .padding(.horizontal, 32)
+                .padding(.horizontal, 24)
         }
     }
 
@@ -125,19 +109,18 @@ struct TwoFactorView: View {
 
     private var otpCard: some View {
         VStack(spacing: Spacing.lg) {
-            // Digit input
-            SixDigitInputView(
+            // 8-digit input boxes
+            OTPInputView(
                 digits: $viewModel.digits,
                 focusedIndex: $viewModel.focusedIndex,
                 shakeCount: viewModel.shakeCount,
+                digitCount: 8,
                 onComplete: { viewModel.verifyCode() }
             )
             .padding(.vertical, Spacing.xs)
 
-            // Expiry timer
             expiryRow
 
-            // Error message
             if case .failed(let remaining) = viewModel.state {
                 Text("Incorrect code. \(remaining) attempt\(remaining == 1 ? "" : "s") remaining.")
                     .font(SierraFont.caption1)
@@ -146,15 +129,12 @@ struct TwoFactorView: View {
                     .transition(.opacity)
             }
 
-            // Verify button
             Button {
                 viewModel.verifyCode()
             } label: {
                 HStack(spacing: Spacing.sm) {
                     if viewModel.state == .verifying {
-                        ProgressView()
-                            .tint(.white)
-                            .scaleEffect(0.9)
+                        ProgressView().tint(.white).scaleEffect(0.9)
                     }
                     Text("Verify Code")
                         .font(SierraFont.body(17, weight: .semibold))
@@ -169,7 +149,6 @@ struct TwoFactorView: View {
             }
             .disabled(!verifyButtonEnabled)
 
-            // Resend section
             resendSection
         }
         .padding(Spacing.xl)
@@ -227,11 +206,9 @@ struct TwoFactorView: View {
                         .font(.system(size: 28, weight: .semibold))
                         .foregroundStyle(SierraTheme.Colors.danger)
                 }
-
                 Text("Account Temporarily Locked")
                     .font(SierraFont.headline)
                     .foregroundStyle(.white)
-
                 Text("Too many incorrect attempts.\nPlease wait before trying again.")
                     .font(SierraFont.subheadline)
                     .foregroundStyle(.white.opacity(0.55))
@@ -257,11 +234,9 @@ struct TwoFactorView: View {
                 .foregroundStyle(.white.opacity(0.4))
 
             if viewModel.canResend {
-                Button("Resend") {
-                    viewModel.resendCode()
-                }
-                .font(SierraFont.caption1)
-                .foregroundStyle(SierraTheme.Colors.ember)
+                Button("Resend") { viewModel.resendCode() }
+                    .font(SierraFont.caption1)
+                    .foregroundStyle(SierraTheme.Colors.ember)
             } else {
                 Text("Resend in \(viewModel.resendSecondsRemaining)s")
                     .font(SierraFont.caption1)
@@ -273,14 +248,10 @@ struct TwoFactorView: View {
     // MARK: - Cancel
 
     private var cancelButton: some View {
-        Button {
-            viewModel.cancelAndGoBack()
-        } label: {
+        Button { viewModel.cancelAndGoBack() } label: {
             HStack(spacing: Spacing.xxs) {
-                Image(systemName: "arrow.left")
-                    .font(SierraFont.caption1)
-                Text("Back to Sign In")
-                    .font(SierraFont.subheadline)
+                Image(systemName: "arrow.left").font(SierraFont.caption1)
+                Text("Back to Sign In").font(SierraFont.subheadline)
             }
             .foregroundStyle(.white.opacity(0.5))
         }
@@ -292,9 +263,7 @@ struct TwoFactorView: View {
         ZStack {
             Color.black.opacity(0.35).ignoresSafeArea()
             VStack(spacing: Spacing.md) {
-                ProgressView()
-                    .scaleEffect(1.3)
-                    .tint(.white)
+                ProgressView().scaleEffect(1.3).tint(.white)
                 Text("Verifying…")
                     .font(SierraFont.caption1)
                     .foregroundStyle(.white.opacity(0.8))
@@ -309,7 +278,7 @@ struct TwoFactorView: View {
 #Preview {
     TwoFactorView(viewModel: TwoFactorViewModel(
         subtitle: "Enter the code sent to verify your identity.",
-        maskedEmail: "a***@fleeeos.com",
+        maskedEmail: "f***@gmail.com",
         onVerified: {},
         onCancelled: {}
     ))
