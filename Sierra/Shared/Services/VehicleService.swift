@@ -12,9 +12,69 @@ private let iso: ISO8601DateFormatter = {
 }()
 
 // MARK: - VehicleInsertPayload
-// Excludes: id, created_at, updated_at
+// Includes id so the client-generated UUID is used by the DB.
+// If id is omitted the DB auto-generates a different UUID and any
+// subsequent trip/assignment using store.vehicle(for:) will get a
+// trips_vehicle_id_fkey violation.
+// Excludes: created_at, updated_at (auto-managed by DB)
 
 struct VehicleInsertPayload: Encodable {
+    let id: String               // must be included — see note above
+    let name: String
+    let manufacturer: String
+    let model: String
+    let year: Int
+    let vin: String
+    let licensePlate: String
+    let color: String
+    let fuelType: String
+    let seatingCapacity: Int
+    let status: String
+    let assignedDriverId: String?
+    let currentLatitude: Double?
+    let currentLongitude: Double?
+    let odometer: Double
+    let totalTrips: Int
+    let totalDistanceKm: Double
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, manufacturer, model, year, vin, color
+        case licensePlate     = "license_plate"
+        case fuelType         = "fuel_type"
+        case seatingCapacity  = "seating_capacity"
+        case status
+        case assignedDriverId = "assigned_driver_id"
+        case currentLatitude  = "current_latitude"
+        case currentLongitude = "current_longitude"
+        case odometer
+        case totalTrips       = "total_trips"
+        case totalDistanceKm  = "total_distance_km"
+    }
+
+    init(from v: Vehicle) {
+        id               = v.id.uuidString
+        name             = v.name
+        manufacturer     = v.manufacturer
+        model            = v.model
+        year             = v.year
+        vin              = v.vin
+        licensePlate     = v.licensePlate
+        color            = v.color
+        fuelType         = v.fuelType.rawValue
+        seatingCapacity  = v.seatingCapacity
+        status           = v.status.rawValue
+        assignedDriverId = v.assignedDriverId
+        currentLatitude  = v.currentLatitude
+        currentLongitude = v.currentLongitude
+        odometer         = v.odometer
+        totalTrips       = v.totalTrips
+        totalDistanceKm  = v.totalDistanceKm
+    }
+}
+
+// MARK: - VehicleUpdatePayload (same fields as insert, id excluded from update body)
+
+struct VehicleUpdatePayload: Encodable {
     let name: String
     let manufacturer: String
     let model: String
@@ -57,7 +117,7 @@ struct VehicleInsertPayload: Encodable {
         fuelType         = v.fuelType.rawValue
         seatingCapacity  = v.seatingCapacity
         status           = v.status.rawValue
-        assignedDriverId = v.assignedDriverId   // already String?
+        assignedDriverId = v.assignedDriverId
         currentLatitude  = v.currentLatitude
         currentLongitude = v.currentLongitude
         odometer         = v.odometer
@@ -65,10 +125,6 @@ struct VehicleInsertPayload: Encodable {
         totalDistanceKm  = v.totalDistanceKm
     }
 }
-
-// MARK: - VehicleUpdatePayload (same fields as insert)
-
-typealias VehicleUpdatePayload = VehicleInsertPayload
 
 // MARK: - VehicleService
 
