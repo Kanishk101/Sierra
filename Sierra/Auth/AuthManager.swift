@@ -51,8 +51,6 @@ final class AuthManager {
 
     // MARK: - Sign In
 
-    /// Authenticates with Supabase Auth, fetches from `staff_members`, builds `AuthUser`.
-    /// Does NOT set `isAuthenticated` — 2FA must complete first via `completeAuthentication()`.
     func signIn(email: String, password: String) async throws -> UserRole {
         let session = try await supabase.auth.signIn(email: email, password: password)
         let authUserId = session.user.id
@@ -113,21 +111,17 @@ final class AuthManager {
         return user.role
     }
 
-    // MARK: - Complete Authentication (post-2FA / biometric)
+    // MARK: - Complete Authentication
 
     func completeAuthentication(saveToken: Bool = true) {
         if saveToken { saveSessionToken() }
         isAuthenticated = true
-
         if let user = currentUser {
             Task {
                 switch user.role {
-                case .fleetManager:
-                    await AppDataStore.shared.loadAll()
-                case .driver:
-                    await AppDataStore.shared.loadDriverData(driverId: user.id)
-                case .maintenancePersonnel:
-                    await AppDataStore.shared.loadMaintenanceData(staffId: user.id)
+                case .fleetManager:         await AppDataStore.shared.loadAll()
+                case .driver:               await AppDataStore.shared.loadDriverData(driverId: user.id)
+                case .maintenancePersonnel: await AppDataStore.shared.loadMaintenanceData(staffId: user.id)
                 }
             }
         }
@@ -161,9 +155,7 @@ final class AuthManager {
     @discardableResult
     func restoreSession() -> UserRole? {
         guard hasSessionToken(),
-              let user = KeychainService.load(key: Keys.currentUser, as: AuthUser.self) else {
-            return nil
-        }
+              let user = KeychainService.load(key: Keys.currentUser, as: AuthUser.self) else { return nil }
         currentUser = user
         isAuthenticated = true
         return user.role
@@ -198,11 +190,7 @@ final class AuthManager {
         }
     }
 
-    // MARK: - Masked Email (shown in TwoFactorView)
-    //
-    // Correctly masks addresses with dots in the local part.
-    // fleet.manager.system.infosys@gmail.com  →  f***@gmail.com
-    // john.doe@company.com                     →  j***@company.com
+    // MARK: - Masked Email
 
     var maskedEmail: String {
         let email = pendingOTPEmail ?? currentUser?.email ?? ""
@@ -210,11 +198,10 @@ final class AuthManager {
               let atRange = email.range(of: "@") else { return "***@***.com" }
         let localPart  = String(email[email.startIndex ..< atRange.lowerBound])
         let domainPart = String(email[atRange.lowerBound...])
-        let prefix     = localPart.prefix(1)
-        return "\(prefix)***\(domainPart)"
+        return "\(localPart.prefix(1))***\(domainPart)"
     }
 
-    // MARK: - Legacy OTP helpers (kept for backward-compat; real flow uses SupabaseOTPVerificationService)
+    // MARK: - Legacy OTP helpers (kept for backward-compat)
 
     @discardableResult
     func generateOTP() -> String {
@@ -304,16 +291,10 @@ final class AuthManager {
         _ = KeychainService.save(updated, forKey: Keys.currentUser)
     }
 
-    // MARK: - Password Reset (Forgot Password — link-based, not OTP)
-    //
-    // Supabase sends a password reset LINK to the email address.
-    // The user taps the link in Gmail, resets in browser, then returns to app.
-    // This is NOT a 6-digit code flow.
+    // MARK: - Password Reset (link-based)
 
     func requestPasswordReset(email: String) async -> Bool {
         do {
-            // Verify the email exists in staff_members first (prevents email enumeration only if we
-            // explicitly check — Supabase itself always returns 200 regardless).
             struct EmailRow: Decodable { let id: String }
             let rows: [EmailRow] = try await supabase
                 .from("staff_members")
@@ -322,23 +303,17 @@ final class AuthManager {
                 .limit(1)
                 .execute()
                 .value
-            guard !rows.isEmpty else {
-                // Return true anyway to prevent email enumeration on the UI
-                return true
-            }
-            // Send the reset link via Supabase (uses configured SMTP / Gmail in production)
+            guard !rows.isEmpty else { return true }
             try await supabase.auth.resetPasswordForEmail(email)
             return true
         } catch {
-            #if DEBUG
-            print("[AuthManager.requestPasswordReset] Error: \(error)")
-            #endif
-            // Return true to prevent email enumeration
             return true
         }
     }
 
-    // MARK: - Create Staff Account (Admin only — requires Edge Function)
+    // MARK: - Create Staff Account
+    // Uses a SECURITY DEFINER Postgres RPC function — no Edge Function needed.
+    // The RPC handles: fleetManager role check, auth.users insert, staff_members insert, rollback on failure.
 
     func createStaffAccount(
         email: String,
@@ -346,32 +321,31 @@ final class AuthManager {
         role: UserRole,
         tempPassword: String
     ) async throws -> UUID {
-        let payload: [String: String] = [
-            "email":    email,
-            "password": tempPassword,
-            "name":     name,
-            "role":     role.rawValue
-        ]
-        let data: Data = try await supabase.functions.invoke(
-            "create-staff-account",
-            options: FunctionInvokeOptions(body: try JSONEncoder().encode(payload))
+
+        struct RPCParams: Encodable {
+            let p_email:        String
+            let p_raw_password: String
+            let p_name:         String
+            let p_role:         String
+        }
+
+        let params = RPCParams(
+            p_email:        email,
+            p_raw_password: tempPassword,
+            p_name:         name,
+            p_role:         role.rawValue
         )
 
-        struct CreateResponse: Decodable {
-            let id:    String?
-            let email: String?
-            let error: String?
+        // The RPC returns the new user UUID as a plain string
+        let uuidString: String = try await supabase
+            .rpc("create_staff_member", params: params)
+            .execute()
+            .value
+
+        guard let uuid = UUID(uuidString: uuidString) else {
+            throw AuthError.createStaffFailed
         }
 
-        guard let response = try? JSONDecoder().decode(CreateResponse.self, from: data) else {
-            throw AuthError.createStaffFailed
-        }
-        if let errorMsg = response.error {
-            throw AuthError.networkError(errorMsg)
-        }
-        guard let idString = response.id, let uuid = UUID(uuidString: idString) else {
-            throw AuthError.createStaffFailed
-        }
         return uuid
     }
 
@@ -418,7 +392,7 @@ enum AuthError: LocalizedError, Equatable {
         case .userNotFound:        return "Account not found. Contact your fleet administrator."
         case .biometricFailed:     return "Biometric authentication failed."
         case .sessionExpired:      return "Your session has expired. Please sign in again."
-        case .createStaffFailed:   return "Staff creation requires the backend Edge Function. Please deploy it."
+        case .createStaffFailed:   return "Failed to create staff account. Please try again."
         case .accountSuspended:    return "Your account has been suspended. Contact your fleet manager."
         case .otpExpired:          return "The verification code has expired. Please request a new one."
         case .otpInvalid:          return "Incorrect verification code. Please check and try again."
