@@ -12,7 +12,7 @@ struct DriverProfile: Identifiable, Codable {
 
     // MARK: License details
     var licenseNumber: String            // license_number
-    var licenseExpiry: Date              // license_expiry (date)
+    var licenseExpiry: String
     var licenseClass: String             // license_class
     var licenseIssuingState: String      // license_issuing_state
     var licenseDocumentUrl: String?      // license_document_url

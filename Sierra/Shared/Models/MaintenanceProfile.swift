@@ -14,7 +14,7 @@ struct MaintenanceProfile: Identifiable, Codable {
     var certificationType: String              // certification_type
     var certificationNumber: String            // certification_number
     var issuingAuthority: String               // issuing_authority
-    var certificationExpiry: Date              // certification_expiry (date)
+    var certificationExpiry: String  // Postgres DATE → "yyyy-MM-dd"
     var certificationDocumentUrl: String?      // certification_document_url
 
     // MARK: Experience

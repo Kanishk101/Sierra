@@ -5,9 +5,9 @@ import SwiftUI
 // Maps to PostgreSQL enum: approval_status
 
 enum ApprovalStatus: String, Codable, CaseIterable {
-    case pending  = "pending"
-    case approved = "approved"
-    case rejected = "rejected"
+    case pending  = "Pending"   // was "pending"
+    case approved = "Approved"  // was "approved"
+    case rejected = "Rejected"  // was "rejected"
 }
 
 // MARK: - StaffApplication
@@ -30,7 +30,7 @@ struct StaffApplication: Identifiable, Codable {
 
     // MARK: Personal details
     var phone: String                    // phone
-    var dateOfBirth: Date               // date_of_birth (date)
+    var dateOfBirth: String               // date_of_birth (date)
     var gender: String                   // gender
     var address: String                  // address
     var emergencyContactName: String     // emergency_contact_name
@@ -41,7 +41,7 @@ struct StaffApplication: Identifiable, Codable {
 
     // MARK: Driver-specific fields
     var driverLicenseNumber: String?         // driver_license_number
-    var driverLicenseExpiry: Date?           // driver_license_expiry (date)
+    var driverLicenseExpiry: String?           // driver_license_expiry (date)
     var driverLicenseClass: String?          // driver_license_class
     var driverLicenseIssuingState: String?   // driver_license_issuing_state
     var driverLicenseDocumentUrl: String?    // driver_license_document_url
@@ -50,7 +50,7 @@ struct StaffApplication: Identifiable, Codable {
     var maintCertificationType: String?       // maint_certification_type
     var maintCertificationNumber: String?     // maint_certification_number
     var maintIssuingAuthority: String?        // maint_issuing_authority
-    var maintCertificationExpiry: Date?       // maint_certification_expiry (date)
+    var maintCertificationExpiry: String?       // maint_certification_expiry (date)
     var maintCertificationDocumentUrl: String? // maint_certification_document_url
     var maintYearsOfExperience: Int?          // maint_years_of_experience
     var maintSpecializations: [String]?       // maint_specializations (text[])
@@ -121,7 +121,7 @@ struct StaffApplication: Identifiable, Codable {
             rejectionReason: nil,
             reviewedAt: nil,
             phone: "+91 9876543210",
-            dateOfBirth: Date().addingTimeInterval(-86400 * 365 * 28),
+            dateOfBirth: "1996-05-14",
             gender: "Male",
             address: "42 Fleet Street, Mumbai 400001",
             emergencyContactName: "Jin Park",
@@ -130,7 +130,7 @@ struct StaffApplication: Identifiable, Codable {
             aadhaarDocumentUrl: nil,
             profilePhotoUrl: nil,
             driverLicenseNumber: "MH-0120230045678",
-            driverLicenseExpiry: Date().addingTimeInterval(86400 * 365 * 2),
+            driverLicenseExpiry: "2027-03-20",
             driverLicenseClass: "LMV",
             driverLicenseIssuingState: "Maharashtra",
             driverLicenseDocumentUrl: nil,
@@ -154,7 +154,7 @@ struct StaffApplication: Identifiable, Codable {
             rejectionReason: nil,
             reviewedAt: nil,
             phone: "+91 8765432109",
-            dateOfBirth: Date().addingTimeInterval(-86400 * 365 * 32),
+            dateOfBirth: "1992-11-08",
             gender: "Male",
             address: "15 Workshop Lane, Pune 411001",
             emergencyContactName: "Sarah Bradley",
@@ -170,7 +170,7 @@ struct StaffApplication: Identifiable, Codable {
             maintCertificationType: "Diesel Mechanic",
             maintCertificationNumber: "DM-2024-78901",
             maintIssuingAuthority: "NSDC India",
-            maintCertificationExpiry: Date().addingTimeInterval(86400 * 365),
+            maintCertificationExpiry: "2026-12-31",
             maintCertificationDocumentUrl: nil,
             maintYearsOfExperience: 8,
             maintSpecializations: ["Engine Repair", "Transmission", "Tyres"],
@@ -187,7 +187,7 @@ struct StaffApplication: Identifiable, Codable {
             rejectionReason: nil,
             reviewedAt: Date().addingTimeInterval(-86400 * 9),
             phone: "+91 7654321098",
-            dateOfBirth: Date().addingTimeInterval(-86400 * 365 * 25),
+            dateOfBirth: "1999-08-22",
             gender: "Female",
             address: "8 Ring Road, Delhi 110001",
             emergencyContactName: "Raj Sharma",
@@ -196,7 +196,7 @@ struct StaffApplication: Identifiable, Codable {
             aadhaarDocumentUrl: nil,
             profilePhotoUrl: nil,
             driverLicenseNumber: "DL-0120210012345",
-            driverLicenseExpiry: Date().addingTimeInterval(86400 * 365 * 3),
+            driverLicenseExpiry: "2028-06-15",
             driverLicenseClass: "LMV-TR",
             driverLicenseIssuingState: "Delhi",
             driverLicenseDocumentUrl: nil,
