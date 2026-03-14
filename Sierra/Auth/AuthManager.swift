@@ -21,8 +21,6 @@ final class AuthManager {
 
     static let shared = AuthManager()
 
-    // MARK: - Keychain Keys
-
     private enum Keys {
         static let currentUser       = "com.fleetOS.currentUser"
         static let backgroundTS      = "com.fleetOS.backgroundTimestamp"
@@ -37,17 +35,11 @@ final class AuthManager {
     var currentUser: AuthUser?
     var isAuthenticated: Bool = false
     var needsReauth: Bool = false
-
     private var currentOTP: String = ""
     var pendingOTPEmail: String?
+    private let autoLockSeconds: TimeInterval = 300
 
-    private let autoLockSeconds: TimeInterval = 300  // 5 minutes
-
-    // MARK: - Init
-
-    private init() {
-        restoreSessionSilently()
-    }
+    private init() { restoreSessionSilently() }
 
     // MARK: - Sign In
 
@@ -99,15 +91,9 @@ final class AuthManager {
             phone: row.phone,
             createdAt: row.createdAt
         )
-
         currentUser = user
         pendingOTPEmail = user.email
         _ = KeychainService.save(user, forKey: Keys.currentUser)
-
-        #if DEBUG
-        print("\u{1F511} [AuthManager.signIn] Signed in: \(user.email) role=\(user.role.rawValue)")
-        #endif
-
         return user.role
     }
 
@@ -194,23 +180,17 @@ final class AuthManager {
 
     var maskedEmail: String {
         let email = pendingOTPEmail ?? currentUser?.email ?? ""
-        guard !email.isEmpty,
-              let atRange = email.range(of: "@") else { return "***@***.com" }
-        let localPart  = String(email[email.startIndex ..< atRange.lowerBound])
-        let domainPart = String(email[atRange.lowerBound...])
-        return "\(localPart.prefix(1))***\(domainPart)"
+        guard !email.isEmpty, let atRange = email.range(of: "@") else { return "***@***.com" }
+        return "\(email.prefix(1))***\(email[atRange.lowerBound...])"
     }
 
-    // MARK: - Legacy OTP helpers (kept for backward-compat)
+    // MARK: - Legacy OTP helpers
 
     @discardableResult
     func generateOTP() -> String {
         let otp = String(format: "%06d", Int.random(in: 100000...999999))
         currentOTP = otp
         pendingOTPEmail = currentUser?.email
-        #if DEBUG
-        print("\u{1F4E7} Legacy OTP for \(pendingOTPEmail ?? "?"): \(otp)")
-        #endif
         return otp
     }
 
@@ -257,14 +237,9 @@ final class AuthManager {
     func refreshCurrentUser() async throws {
         guard let userId = currentUser?.id else { return }
         struct RoleRow: Decodable {
-            let role: String
-            let name: String?
-            let isFirstLogin: Bool
-            let isProfileComplete: Bool
-            let isApproved: Bool
-            let rejectionReason: String?
-            let phone: String?
-            let createdAt: Date?
+            let role: String; let name: String?; let isFirstLogin: Bool
+            let isProfileComplete: Bool; let isApproved: Bool
+            let rejectionReason: String?; let phone: String?; let createdAt: Date?
             enum CodingKeys: String, CodingKey {
                 case role, name, phone
                 case isFirstLogin      = "is_first_login"
@@ -278,9 +253,7 @@ final class AuthManager {
             .from("staff_members")
             .select("role, name, is_first_login, is_profile_complete, is_approved, rejection_reason, phone, created_at")
             .eq("id", value: userId.uuidString)
-            .limit(1)
-            .execute()
-            .value
+            .limit(1).execute().value
         guard let row = rows.first, let current = currentUser else { return }
         var updated = current
         updated.isApproved        = row.isApproved
@@ -291,29 +264,24 @@ final class AuthManager {
         _ = KeychainService.save(updated, forKey: Keys.currentUser)
     }
 
-    // MARK: - Password Reset (link-based)
+    // MARK: - Password Reset
 
     func requestPasswordReset(email: String) async -> Bool {
         do {
             struct EmailRow: Decodable { let id: String }
             let rows: [EmailRow] = try await supabase
-                .from("staff_members")
-                .select("id")
-                .eq("email", value: email)
-                .limit(1)
-                .execute()
-                .value
+                .from("staff_members").select("id")
+                .eq("email", value: email).limit(1).execute().value
             guard !rows.isEmpty else { return true }
             try await supabase.auth.resetPasswordForEmail(email)
             return true
-        } catch {
-            return true
-        }
+        } catch { return true }
     }
 
     // MARK: - Create Staff Account
-    // Uses a SECURITY DEFINER Postgres RPC function — no Edge Function needed.
-    // The RPC handles: fleetManager role check, auth.users insert, staff_members insert, rollback on failure.
+    // Calls the `create_staff_member` SECURITY DEFINER Postgres function via RPC.
+    // No Edge Function needed — pure Swift + Postgres.
+    // The function: checks caller is fleetManager, creates auth.users + staff_members atomically.
 
     func createStaffAccount(
         email: String,
@@ -322,27 +290,26 @@ final class AuthManager {
         tempPassword: String
     ) async throws -> UUID {
 
-        // All admin user-creation goes through the Edge Function (service_role key stays server-side)
-        let payload: [String: String] = [
-            "email":        email,
-            "name":         name,
-            "role":         role.rawValue,
-            "tempPassword": tempPassword
-        ]
-        let bodyData = try JSONEncoder().encode(payload)
+        struct RPCParams: Encodable {
+            let p_email:        String
+            let p_raw_password: String
+            let p_name:         String
+            let p_role:         String
+        }
 
-        // Edge Function returns { id: "uuid-string" } or { error: "msg" }
-        struct CreateResponse: Decodable { let id: String?; let error: String? }
-
-        let decoded: CreateResponse = try await supabase.functions.invoke(
-            "create-staff-account",
-            options: FunctionInvokeOptions(body: bodyData)
+        let params = RPCParams(
+            p_email:        email,
+            p_raw_password: tempPassword,
+            p_name:         name,
+            p_role:         role.rawValue
         )
 
-        if let errMsg = decoded.error {
-            throw AuthError.networkError(errMsg)
-        }
-        guard let idStr = decoded.id, let uuid = UUID(uuidString: idStr) else {
+        let uuidString: String = try await supabase
+            .rpc("create_staff_member", params: params)
+            .execute()
+            .value
+
+        guard let uuid = UUID(uuidString: uuidString) else {
             throw AuthError.createStaffFailed
         }
         return uuid
@@ -362,14 +329,10 @@ final class AuthManager {
         guard let data = KeychainService.load(key: Keys.backgroundTS),
               let str  = String(data: data, encoding: .utf8),
               let ts   = TimeInterval(str) else { return }
-        if Date().timeIntervalSince1970 - ts > autoLockSeconds {
-            needsReauth = true
-        }
+        if Date().timeIntervalSince1970 - ts > autoLockSeconds { needsReauth = true }
     }
 
-    func reauthCompleted() {
-        needsReauth = false
-    }
+    func reauthCompleted() { needsReauth = false }
 }
 
 // MARK: - AuthError
