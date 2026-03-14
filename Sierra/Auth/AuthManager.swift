@@ -325,13 +325,10 @@ final class AuthManager {
     }
 
     // MARK: - Create Staff Account
-    // Calls the `create_staff_member` SECURITY DEFINER Postgres RPC.
-    // The RPC atomically inserts into auth.users + staff_members in a
-    // single database transaction. No Edge Function or service_role key
-    // required — the RPC runs with elevated privileges server-side.
-    //
-    // RPC params: p_email, p_raw_password, p_name, p_role
-    // Returns: UUID of the newly created user
+    // Pure Swift-side — mirrors the original two-step architecture, adapted for Schema v2:
+    // Step 1: supabase.auth.signUp() → creates auth.users record, returns authoritative UUID
+    // Step 2: StaffMemberService.addStaffMember() → inserts staff_members with that same UUID
+    // No RPC, no Edge Function, no service_role key needed.
 
     func createStaffAccount(
         email: String,
@@ -339,24 +336,38 @@ final class AuthManager {
         role: UserRole,
         tempPassword: String
     ) async throws -> UUID {
-        struct RPCParams: Encodable {
-            let p_email: String
-            let p_raw_password: String
-            let p_name: String
-            let p_role: String
-        }
-
-        let params = RPCParams(
-            p_email:        email,
-            p_raw_password: tempPassword,
-            p_name:         name,
-            p_role:         role.rawValue
+        // 1. Create the auth.users record — Supabase returns the authoritative UUID
+        let signUpResponse = try await supabase.auth.signUp(
+            email: email,
+            password: tempPassword
         )
+        let newUserId = signUpResponse.user.id
 
-        let newUserId: UUID = try await supabase
-            .rpc("create_staff_member", params: params)
-            .execute()
-            .value
+        // 2. Insert the staff_members row using the same UUID
+        let newMember = StaffMember(
+            id:                newUserId,
+            name:              name,
+            role:              role,
+            status:            .pendingApproval,
+            email:             email,
+            phone:             nil,
+            availability:      .unavailable,
+            dateOfBirth:       nil,
+            gender:            nil,
+            address:           nil,
+            emergencyContactName:  nil,
+            emergencyContactPhone: nil,
+            aadhaarNumber:     nil,
+            profilePhotoUrl:   nil,
+            isFirstLogin:      true,
+            isProfileComplete: false,
+            isApproved:        false,
+            rejectionReason:   nil,
+            joinedDate:        Date(),
+            createdAt:         Date(),
+            updatedAt:         Date()
+        )
+        try await StaffMemberService.addStaffMember(newMember)
 
         return newUserId
     }
