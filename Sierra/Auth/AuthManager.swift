@@ -13,6 +13,17 @@ enum AuthDestination: Equatable {
     case maintenanceDashboard
 }
 
+// MARK: - CreateStaffRPCParams
+// Defined at file level (outside @MainActor class) so it is Sendable.
+// RPCParams defined inside a @MainActor class inherits actor isolation and
+// cannot satisfy the Sendable constraint on supabase.rpc()'s type parameter.
+
+private struct CreateStaffRPCParams: Encodable, Sendable {
+    let p_email: String
+    let p_raw_password: String
+    let p_name: String
+    let p_role: String
+}
 
 // MARK: - AuthManager
 
@@ -202,7 +213,6 @@ final class AuthManager {
         return match
     }
 
-    /// Verify a password-reset OTP (separate from 2FA login OTP).
     func verifyResetOTP(_ code: String) -> Bool {
         return code == resetOTP
     }
@@ -298,7 +308,6 @@ final class AuthManager {
 
     func requestPasswordReset(email: String) async -> Bool {
         do {
-            // Check existence against staff_members
             struct EmailRow: Decodable { let id: String }
             let rows: [EmailRow] = try await supabase
                 .from("staff_members").select("id")
@@ -306,7 +315,6 @@ final class AuthManager {
 
             guard !rows.isEmpty else { return false }
 
-            // Generate + send OTP via email
             pendingOTPEmail = email
             let randomOTP = String(format: "%06d", Int.random(in: 100000...999999))
             resetOTP = randomOTP
@@ -320,16 +328,10 @@ final class AuthManager {
 
     func resetPassword(code: String, newPassword: String) async throws {
         try await Task.sleep(for: .milliseconds(600))
-
         guard code == resetOTP else { throw AuthError.invalidCredentials }
-
-        // Update password via Supabase Auth
         try await supabase.auth.update(user: UserAttributes(password: newPassword))
-
-        // Hash and store the new password locally
         let hashed = CryptoService.hash(password: newPassword)
         _ = KeychainService.save(hashed, forKey: Keys.hashedCred)
-
         resetOTP = ""
         pendingOTPEmail = nil
     }
@@ -350,19 +352,9 @@ final class AuthManager {
 
     // MARK: - Create Staff Account
     // Uses the `create_staff_member` SECURITY DEFINER Postgres RPC.
-    //
-    // Why RPC and not supabase.auth.signUp() + direct insert:
-    // supabase.auth.signUp() switches the active SDK session to the newly created user.
-    // Any subsequent insert into staff_members runs under the new user's session, which
-    // has no staff_members row yet — get_my_role() returns null and the fm_all_staff
-    // INSERT policy blocks it with a 403.
-    //
-    // The RPC runs under the admin's existing session as SECURITY DEFINER, atomically
-    // inserts into auth.users + staff_members in one transaction, and never changes the
-    // caller's active session. This is the only approach compatible with the current RLS.
-    //
-    // RPC params: p_email, p_raw_password, p_name, p_role
-    // Returns: UUID of the newly created user
+    // Params struct is defined at file level as CreateStaffRPCParams to satisfy
+    // Sendable — structs inside @MainActor classes are actor-isolated and cannot
+    // be used as Sendable type parameters to supabase.rpc().
 
     func createStaffAccount(
         email: String,
@@ -370,14 +362,7 @@ final class AuthManager {
         role: UserRole,
         tempPassword: String
     ) async throws -> UUID {
-        struct RPCParams: Encodable {
-            let p_email: String
-            let p_raw_password: String
-            let p_name: String
-            let p_role: String
-        }
-
-        let params = RPCParams(
+        let params = CreateStaffRPCParams(
             p_email:        email,
             p_raw_password: tempPassword,
             p_name:         name,
