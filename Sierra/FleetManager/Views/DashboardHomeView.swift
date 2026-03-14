@@ -6,15 +6,20 @@ import SwiftUI
 struct DashboardHomeView: View {
 
     @Environment(AppDataStore.self) private var store
+    @State private var showProfile = false
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
+                    // Greeting hero card
+                    greetingCard
+                        .padding(.horizontal, Spacing.lg)
+                        .padding(.top, Spacing.md)
+
                     // KPI Grid
                     kpiGrid
                         .padding(.horizontal, Spacing.lg)
-                        .padding(.top, Spacing.md)
 
                     // Recent Trips
                     recentTripsSection
@@ -30,10 +35,61 @@ struct DashboardHomeView: View {
             .background(SierraTheme.Colors.appBackground.ignoresSafeArea())
             .navigationTitle("Dashboard")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showProfile = true } label: {
+                        SierraAvatarView(initials: "FA", size: 34, gradient: SierraAvatarView.admin())
+                    }
+                }
+            }
+            .sheet(isPresented: $showProfile) {
+                AdminProfileView()
+                    .presentationDetents([.medium])
+            }
             .onAppear {
                 print("[DashboardHomeView] Appeared — vehicles: \(store.vehicles.count), trips: \(store.trips.count), staff: \(store.staff.count)")
             }
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // MARK: - Greeting
+    // ─────────────────────────────────────────────────────────────
+
+    private var greeting: String {
+        let hour = Calendar.current.component(.hour, from: Date())
+        switch hour {
+        case 5..<12:  return "Good morning"
+        case 12..<17: return "Good afternoon"
+        default:      return "Good evening"
+        }
+    }
+
+    private var dateString: String {
+        let f = DateFormatter()
+        f.dateFormat = "EEEE, MMMM d"
+        return f.string(from: Date())
+    }
+
+    private var greetingCard: some View {
+        VStack(alignment: .leading, spacing: Spacing.xxs) {
+            Text("\(greeting), Admin")
+                .font(SierraFont.title1)
+                .foregroundStyle(.white)
+            Text(dateString)
+                .font(SierraFont.bodyText)
+                .foregroundStyle(.white.opacity(0.65))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Spacing.xl)
+        .background(
+            LinearGradient(
+                colors: [SierraTheme.Colors.summitNavy, SierraTheme.Colors.sierraBlue],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
+        )
     }
 
     // ─────────────────────────────────────────────────────────────

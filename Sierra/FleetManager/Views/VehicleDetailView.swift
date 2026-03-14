@@ -7,6 +7,7 @@ struct VehicleDetailView: View {
 
     @Environment(AppDataStore.self) private var store
     let vehicleId: UUID
+    @State private var showEditSheet = false
 
     private var vehicle: Vehicle? { store.vehicle(for: vehicleId) }
 
@@ -21,6 +22,19 @@ struct VehicleDetailView: View {
         .navigationTitle("Vehicle Detail")
         .navigationBarTitleDisplayMode(.inline)
         .background(SierraTheme.Colors.appBackground.ignoresSafeArea())
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                if vehicle != nil {
+                    Button("Edit") { showEditSheet = true }
+                        .fontWeight(.semibold)
+                }
+            }
+        }
+        .sheet(isPresented: $showEditSheet) {
+            if let v = vehicle {
+                AddVehicleView(editingVehicle: v)
+            }
+        }
         .onAppear {
             print("[VehicleDetailView] vehicleId=\(vehicleId) — found: \(vehicle != nil)")
         }

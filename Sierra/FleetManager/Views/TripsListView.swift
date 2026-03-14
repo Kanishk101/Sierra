@@ -133,6 +133,8 @@ struct TripsListView: View {
                         .font(SierraFont.caption2)
                         .foregroundStyle(SierraTheme.Colors.secondaryText)
                 }
+
+                driverVehicleLine(trip)
             }
 
             Spacer()
@@ -153,6 +155,44 @@ struct TripsListView: View {
         .padding(Spacing.md)
         .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
         .sierraShadow(SierraTheme.Shadow.card)
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // MARK: - Driver / Vehicle inline line
+    // ─────────────────────────────────────────────────────────────
+
+    @ViewBuilder
+    private func driverVehicleLine(_ trip: Trip) -> some View {
+        let driverName: String? = {
+            guard let idStr = trip.driverId,
+                  let uuid  = UUID(uuidString: idStr),
+                  let m     = store.staffMember(for: uuid) else { return nil }
+            return m.displayName
+        }()
+        let plate: String? = {
+            guard let idStr = trip.vehicleId,
+                  let uuid  = UUID(uuidString: idStr),
+                  let v     = store.vehicle(for: uuid) else { return nil }
+            return v.licensePlate
+        }()
+
+        if driverName != nil || plate != nil {
+            HStack(spacing: 4) {
+                Image(systemName: "person.fill")
+                    .font(.system(size: 9))
+                    .foregroundStyle(SierraTheme.Colors.granite)
+                if let name = driverName {
+                    Text(name)
+                        .font(SierraFont.caption2)
+                        .foregroundStyle(SierraTheme.Colors.secondaryText)
+                }
+                if let p = plate {
+                    Text("· \(p)")
+                        .font(SierraFont.caption2)
+                        .foregroundStyle(SierraTheme.Colors.secondaryText)
+                }
+            }
+        }
     }
 
     // ─────────────────────────────────────────────────────────────
