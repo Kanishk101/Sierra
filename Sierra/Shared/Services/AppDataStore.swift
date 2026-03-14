@@ -240,8 +240,8 @@ final class AppDataStore {
         try await StaffApplicationService.updateStaffApplication(app)
         staffApplications[idx] = app
 
-        try await AuthUserService.setApprovalStatus(
-            id: app.staffMemberId,
+        try await StaffMemberService.setApprovalStatus(
+            staffId: app.staffMemberId,
             approved: true,
             rejectionReason: nil
         )
@@ -260,8 +260,8 @@ final class AppDataStore {
         try await StaffApplicationService.updateStaffApplication(app)
         staffApplications[idx] = app
 
-        try await AuthUserService.setApprovalStatus(
-            id: app.staffMemberId,
+        try await StaffMemberService.setApprovalStatus(
+            staffId: app.staffMemberId,
             approved: false,
             rejectionReason: reason
         )

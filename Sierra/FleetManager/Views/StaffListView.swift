@@ -18,7 +18,8 @@ struct StaffListView: View {
     @State private var searchText = ""
 
     private var filteredStaff: [StaffMember] {
-        let byRole = store.staff.filter { $0.role == selectedSegment }
+        // Exclude fleet managers — this list is driver/maintenance only
+        let byRole = store.staff.filter { $0.role != .fleetManager && $0.role == selectedSegment }
         guard !searchText.isEmpty else { return byRole }
         let q = searchText.lowercased()
         return byRole.filter {

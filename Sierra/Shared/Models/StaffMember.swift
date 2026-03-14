@@ -1,11 +1,27 @@
 import Foundation
 
 // MARK: - StaffRole
-// Spec defines StaffRole separately from UserRole for the staff_members table.
+// UI-only enum — used exclusively for the segmented picker in StaffListView.
+// Never stored to Supabase. Use `asUserRole` to bridge to the authoritative UserRole.
 
-enum StaffRole: String, Codable, CaseIterable {
-    case driver      = "driver"
-    case maintenance = "maintenance"
+enum StaffRole: CaseIterable {
+    case driver
+    case maintenance
+
+    var displayLabel: String {
+        switch self {
+        case .driver:      "Drivers"
+        case .maintenance: "Maintenance"
+        }
+    }
+
+    /// Maps to the corresponding UserRole for filtering staff_members by role
+    var asUserRole: UserRole {
+        switch self {
+        case .driver:      .driver
+        case .maintenance: .maintenancePersonnel
+        }
+    }
 }
 
 // MARK: - Staff Status
@@ -94,7 +110,13 @@ struct StaffMember: Identifiable, Codable {
         return "\(first)\(last)".uppercased()
     }
 
-    var displayRole: String { role.rawValue }
+    var displayRole: String {
+        switch role {
+        case .fleetManager:         "Fleet Manager"
+        case .driver:               "Driver"
+        case .maintenancePersonnel: "Maintenance"
+        }
+    }
 
     // MARK: - Mock Data
 

@@ -13,15 +13,6 @@ enum AuthDestination: Equatable {
     case maintenanceDashboard
 }
 
-// MARK: - RPC Params (top-level so it is Sendable)
-// Used by createStaffAccount — must live outside @MainActor class.
-
-private struct CreateStaffRPCParams: Encodable, Sendable {
-    let p_email:        String
-    let p_raw_password: String
-    let p_name:         String
-    let p_role:         String
-}
 
 // MARK: - AuthManager
 
@@ -214,12 +205,25 @@ final class AuthManager {
 
     func updatePasswordAndFirstLogin(newPassword: String) async throws {
         guard let user = currentUser else { throw AuthError.invalidCredentials }
+
+        // 1. Update password in Supabase Auth
         try await supabase.auth.update(user: UserAttributes(password: newPassword))
-        try await AuthUserService.markFirstLoginComplete(id: user.id)
+
+        // 2. Update is_first_login in staff_members
+        struct FirstLoginPayload: Encodable { let is_first_login: Bool }
+        try await supabase
+            .from("staff_members")
+            .update(FirstLoginPayload(is_first_login: false))
+            .eq("id", value: user.id.uuidString)
+            .execute()
+
+        // 3. Update local state
         var updated = user
         updated.isFirstLogin = false
         currentUser = updated
         _ = KeychainService.save(updated, forKey: Keys.currentUser)
+        let hashed = CryptoService.hash(password: newPassword)
+        _ = KeychainService.save(hashed, forKey: Keys.hashedCred)
     }
 
     func updatePassword(_ newPassword: String) async throws {
@@ -228,7 +232,12 @@ final class AuthManager {
 
     func markProfileComplete() async throws {
         guard let user = currentUser else { return }
-        try await AuthUserService.markProfileComplete(id: user.id)
+        struct ProfilePayload: Encodable { let is_profile_complete: Bool }
+        try await supabase
+            .from("staff_members")
+            .update(ProfilePayload(is_profile_complete: true))
+            .eq("id", value: user.id.uuidString)
+            .execute()
         var updated = user
         updated.isProfileComplete = true
         currentUser = updated
@@ -237,7 +246,12 @@ final class AuthManager {
 
     func markPasswordChanged() async throws {
         guard let user = currentUser else { return }
-        try await AuthUserService.markFirstLoginComplete(id: user.id)
+        struct FirstLoginPayload: Encodable { let is_first_login: Bool }
+        try await supabase
+            .from("staff_members")
+            .update(FirstLoginPayload(is_first_login: false))
+            .eq("id", value: user.id.uuidString)
+            .execute()
         var updated = user
         updated.isFirstLogin = false
         currentUser = updated
@@ -288,6 +302,28 @@ final class AuthManager {
         } catch { return true }
     }
 
+    func resetPassword(code: String, newPassword: String) async throws {
+        try await Task.sleep(for: .milliseconds(600))
+        guard code == currentOTP else { throw AuthError.invalidCredentials }
+        try await supabase.auth.update(user: UserAttributes(password: newPassword))
+        currentOTP = ""
+        pendingOTPEmail = nil
+    }
+
+    // MARK: - Email Existence Check
+
+    func emailExists(_ email: String) async -> Bool {
+        do {
+            struct EmailRow: Decodable { let id: String }
+            let rows: [EmailRow] = try await supabase
+                .from("staff_members").select("id")
+                .eq("email", value: email).limit(1).execute().value
+            return !rows.isEmpty
+        } catch {
+            return false
+        }
+    }
+
     // MARK: - Create Staff Account
     // Calls `create_staff_member` SECURITY DEFINER Postgres RPC — no Edge Function.
     // The nonisolated static helper escapes @MainActor so the Supabase SDK
@@ -299,31 +335,22 @@ final class AuthManager {
         role: UserRole,
         tempPassword: String
     ) async throws -> UUID {
-        try await AuthManager.invokeCreateStaffRPC(
-            email: email,
-            name: name,
-            roleRawValue: role.rawValue,
-            tempPassword: tempPassword
-        )
-    }
+        // Use Edge Function so service_role key stays server-side.
+        // [String: String] is Sendable — avoids @MainActor Encodable isolation errors.
+        let body = try JSONEncoder().encode([
+            "email": email,
+            "name": name,
+            "role": role.rawValue,
+            "tempPassword": tempPassword
+        ] as [String: String])
 
-    private static func invokeCreateStaffRPC(
-        email: String,
-        name: String,
-        roleRawValue: String,
-        tempPassword: String
-    ) async throws -> UUID {
-        let params = CreateStaffRPCParams(
-            p_email:        email,
-            p_raw_password: tempPassword,
-            p_name:         name,
-            p_role:         roleRawValue
+        struct CreateResponse: Decodable { let id: String?; let error: String? }
+        let decoded: CreateResponse = try await supabase.functions.invoke(
+            "create-staff-account",
+            options: FunctionInvokeOptions(body: body)
         )
-        let uuidString: String = try await supabase
-            .rpc("create_staff_member", params: params)
-            .execute()
-            .value
-        guard let uuid = UUID(uuidString: uuidString) else {
+        if let errMsg = decoded.error { throw AuthError.networkError(errMsg) }
+        guard let idStr = decoded.id, let uuid = UUID(uuidString: idStr) else {
             throw AuthError.createStaffFailed
         }
         return uuid

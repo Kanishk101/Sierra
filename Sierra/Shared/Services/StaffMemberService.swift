@@ -207,4 +207,96 @@ struct StaffMemberService {
             .eq("id", value: id.uuidString)
             .execute()
     }
+
+    // MARK: - Mark Profile Complete (called after onboarding submission)
+
+    static func markProfileComplete(
+        staffId: UUID,
+        name: String,
+        phone: String,
+        gender: String,
+        dateOfBirth: String,
+        address: String,
+        emergencyContactName: String,
+        emergencyContactPhone: String,
+        aadhaarNumber: String
+    ) async throws {
+        struct Payload: Encodable {
+            let is_profile_complete: Bool
+            let name: String
+            let phone: String
+            let gender: String
+            let date_of_birth: String
+            let address: String
+            let emergency_contact_name: String
+            let emergency_contact_phone: String
+            let aadhaar_number: String
+        }
+
+        let payload = Payload(
+            is_profile_complete:     true,
+            name:                    name,
+            phone:                   phone,
+            gender:                  gender,
+            date_of_birth:           dateOfBirth,
+            address:                 address,
+            emergency_contact_name:  emergencyContactName,
+            emergency_contact_phone: emergencyContactPhone,
+            aadhaar_number:          aadhaarNumber
+        )
+
+        try await supabase
+            .from("staff_members")
+            .update(payload)
+            .eq("id", value: staffId.uuidString)
+            .execute()
+    }
+
+    // MARK: - Set Approval Status (called by StaffApplicationStore approve/reject)
+
+    static func setApprovalStatus(
+        staffId: UUID,
+        approved: Bool,
+        rejectionReason: String? = nil
+    ) async throws {
+        struct Payload: Encodable {
+            let is_approved: Bool
+            let status: String
+            let rejection_reason: String?
+        }
+
+        let payload = Payload(
+            is_approved:      approved,
+            status:           approved ? StaffStatus.active.rawValue : StaffStatus.suspended.rawValue,
+            rejection_reason: rejectionReason
+        )
+
+        try await supabase
+            .from("staff_members")
+            .update(payload)
+            .eq("id", value: staffId.uuidString)
+            .execute()
+    }
+}
+
+// MARK: - StaffMember → AuthUser Mapper
+
+extension StaffMember {
+    /// Builds an AuthUser from a StaffMember record.
+    /// Used by AuthManager.signIn() after Supabase Auth succeeds —
+    /// replaces the old AuthUserDB.toAuthUser() mapper.
+    func toAuthUser() -> AuthUser {
+        AuthUser(
+            id:                id,
+            email:             email,
+            role:              role,
+            isFirstLogin:      isFirstLogin,
+            isProfileComplete: isProfileComplete,
+            isApproved:        isApproved,
+            name:              name,
+            rejectionReason:   rejectionReason,
+            phone:             phone,
+            createdAt:         createdAt
+        )
+    }
 }

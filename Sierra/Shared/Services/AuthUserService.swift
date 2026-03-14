@@ -1,11 +1,10 @@
 import Foundation
 import Supabase
 
-// MARK: - AuthUserService
-// Queries the `staff_members` table for auth-relevant fields.
-// Password management is handled exclusively by Supabase Auth.
-
-// Uses global `supabase` constant from SupabaseManager.swift
+// ⚠️ DEPRECATED — This file targets auth_users which no longer exists in Schema v2.
+// All functionality has been moved to StaffMemberService + AuthManager (Supabase Auth).
+// This file will be deleted in the cleanup phase.
+// No call sites remain — safe to remove.
 
 private let iso: ISO8601DateFormatter = {
     let f = ISO8601DateFormatter()
