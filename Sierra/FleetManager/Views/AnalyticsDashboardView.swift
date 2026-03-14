@@ -190,7 +190,7 @@ struct AnalyticsDashboardView: View {
                     .frame(height: 200)
             } else {
                 ZStack {
-                    Chart(appeared ? fleetSlices : []) { slice in
+                    Chart(fleetSlices) { slice in
                         SectorMark(
                             angle: .value("Count", slice.count),
                             innerRadius: .ratio(0.55),
@@ -260,7 +260,7 @@ struct AnalyticsDashboardView: View {
     }
 
     private func updateFleetSelection(from angle: Double?) {
-        guard let angle, !fleetSlices.isEmpty else {
+        guard let angle, !fleetSlices.isEmpty, angle.isFinite else {
             withAnimation(.spring(duration: 0.25)) { viewModel.selectedFleetStatus = nil }
             return
         }
@@ -293,7 +293,7 @@ struct AnalyticsDashboardView: View {
                     .frame(height: 200)
             } else {
                 ZStack {
-                    Chart(appeared ? tripSlices : []) { slice in
+                    Chart(tripSlices) { slice in
                         SectorMark(
                             angle: .value("Count", slice.count),
                             innerRadius: .ratio(0.55),
@@ -362,7 +362,7 @@ struct AnalyticsDashboardView: View {
     }
 
     private func updateTripSelection(from angle: Double?) {
-        guard let angle, !tripSlices.isEmpty else {
+        guard let angle, !tripSlices.isEmpty, angle.isFinite else {
             withAnimation(.spring(duration: 0.25)) { viewModel.selectedTripStatus = nil }
             return
         }
@@ -395,7 +395,7 @@ struct AnalyticsDashboardView: View {
                     .frame(height: 200)
             } else {
                 ZStack {
-                    Chart(appeared ? staffSlices : []) { slice in
+                    Chart(staffSlices) { slice in
                         SectorMark(
                             angle: .value("Count", slice.count),
                             innerRadius: .ratio(0.55),
@@ -464,7 +464,7 @@ struct AnalyticsDashboardView: View {
     }
 
     private func updateStaffSelection(from angle: Double?) {
-        guard let angle, !staffSlices.isEmpty else {
+        guard let angle, !staffSlices.isEmpty, angle.isFinite else {
             withAnimation(.spring(duration: 0.25)) { viewModel.selectedStaffLabel = nil }
             return
         }
@@ -496,7 +496,7 @@ struct AnalyticsDashboardView: View {
                                        description: Text("Trip data will appear here once trips are created."))
                     .frame(height: 180)
             } else {
-                Chart(appeared ? monthlyData : []) { item in
+                Chart(monthlyData) { item in
                     BarMark(
                         x: .value("Month", item.month),
                         y: .value("Trips", item.count)
