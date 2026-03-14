@@ -42,7 +42,8 @@ final class TwoFactorViewModel {
         onCancelled: (() -> Void)? = nil
     ) {
         self.context = context
-        self.service = service ?? MockOTPVerificationService()
+        // Default to the real Supabase service — never fall back to mock in production
+        self.service = service ?? SupabaseOTPVerificationService()
         self.onVerified = onVerified
         self.onCancelled = onCancelled
     }
@@ -62,7 +63,8 @@ final class TwoFactorViewModel {
             sessionToken: "",
             authDestination: AuthManager.shared.currentUser.map { AuthManager.shared.destination(for: $0) } ?? .fleetManagerDashboard
         )
-        self.init(context: ctx, onVerified: onVerified, onCancelled: onCancelled)
+        // Explicitly pass SupabaseOTPVerificationService so convenience init never uses mock
+        self.init(context: ctx, service: SupabaseOTPVerificationService(), onVerified: onVerified, onCancelled: onCancelled)
     }
 
     // MARK: - Computed
@@ -121,10 +123,29 @@ final class TwoFactorViewModel {
             isLoading = false
             startExpiryCountdown(until: result.expiresAt)
             startResendCooldown(until: result.cooldownUntil)
+        } catch let authErr as AuthError {
+            // Map each AuthError to a precise, actionable message
+            state = .idle
+            isLoading = false
+            switch authErr {
+            case .networkError(let msg) where msg.lowercased().contains("invalid"):
+                // Supabase rejected the email address (fake domain, typo, etc.)
+                banner = .error("Could not send code \u{2014} email address is not valid. Contact your fleet manager.")
+            case .networkError(let msg):
+                banner = .error("Could not send code: \(msg)")
+            case .userNotFound:
+                banner = .error("Account not found. Please sign in again.")
+            case .otpExpired:
+                // Should not happen on send, but handle defensively
+                banner = .warning("Previous code expired. Tap Resend for a fresh code.")
+                state = .awaitingEntry
+            default:
+                banner = .error("Failed to send code. Please try again.")
+            }
         } catch {
             state = .idle
             isLoading = false
-            banner = .error("Failed to send code. Please try again.")
+            banner = .error("Failed to send code: \(error.localizedDescription)")
         }
     }
 
@@ -155,10 +176,41 @@ final class TwoFactorViewModel {
                     clearDigits()
                     banner = .warning("Incorrect code. \(remaining) attempt\(remaining == 1 ? "" : "s") remaining.")
                 }
+            } catch let authErr as AuthError {
+                // Map each typed error to the right UX response
+                isLoading = false
+                switch authErr {
+                case .otpExpired:
+                    // Code timed out — don't say "connection error"
+                    state = .expired
+                    expiryTimer?.cancel()
+                    clearDigits()
+                    banner = .warning("Code has expired. Tap Resend to get a new one.")
+
+                case .otpInvalid:
+                    // Wrong code — treat same as a failed result
+                    state = .failed(attemptsRemaining: 0)
+                    withAnimation(.default) { shakeCount += 1 }
+                    clearDigits()
+                    banner = .warning("Incorrect code. Please check and try again.")
+
+                case .networkError(let msg):
+                    state = .awaitingEntry
+                    banner = .error("Network error: \(msg)")
+
+                case .userNotFound:
+                    state = .awaitingEntry
+                    banner = .error("Session expired. Please sign in again.")
+
+                default:
+                    state = .awaitingEntry
+                    banner = .error("Verification failed \u{2014} \(authErr.localizedDescription)")
+                }
             } catch {
+                // Non-AuthError catch-all — truly unexpected
                 state = .awaitingEntry
                 isLoading = false
-                banner = .error("Verification failed. Check your connection.")
+                banner = .error("Verification failed: \(error.localizedDescription)")
             }
         }
     }
@@ -174,7 +226,9 @@ final class TwoFactorViewModel {
         clearDigits()
         Task {
             await sendOTP()
-            banner = .info("A new code has been sent to \(maskedEmail).")
+            if case .awaitingEntry = state {
+                banner = .info("A new code has been sent to \(maskedEmail).")
+            }
         }
     }
 
