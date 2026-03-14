@@ -54,7 +54,7 @@ struct SierraAppThemeModifier: ViewModifier {
         ]
 
         // Use the SAME opaque appearance for all scroll states — prevents flicker
-        let scrollAppearance = navAppearance.copy() as! UINavigationBarAppearance
+        let scrollAppearance = navAppearance.copy() as? UINavigationBarAppearance ?? UINavigationBarAppearance()
         UINavigationBar.appearance().standardAppearance = navAppearance
         UINavigationBar.appearance().compactAppearance = navAppearance
         UINavigationBar.appearance().scrollEdgeAppearance = scrollAppearance

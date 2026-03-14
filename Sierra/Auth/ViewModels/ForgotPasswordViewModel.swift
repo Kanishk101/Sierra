@@ -51,19 +51,12 @@ final class ForgotPasswordViewModel {
         }
 
         isLoading = true
-        do {
-            try await AuthManager.shared.requestPasswordReset(email: trimmed)
-            isLoading = false
-            withAnimation(.easeInOut(duration: 0.3)) {
-                step = .emailSent
-            }
-        } catch {
-            isLoading = false
-            // Supabase does not reveal whether the email exists to prevent enumeration.
-            // Always show the sent step — the user sees a neutral message.
-            withAnimation(.easeInOut(duration: 0.3)) {
-                step = .emailSent
-            }
+        _ = await AuthManager.shared.requestPasswordReset(email: trimmed)
+        isLoading = false
+        // Supabase does not reveal whether the email exists to prevent enumeration.
+        // Always show the sent step — the user sees a neutral message.
+        withAnimation(.easeInOut(duration: 0.3)) {
+            step = .emailSent
         }
     }
 
@@ -85,7 +78,7 @@ final class ForgotPasswordViewModel {
         let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         isLoading = true
-        _ = try? await AuthManager.shared.requestPasswordReset(email: trimmed)
+        _ = await AuthManager.shared.requestPasswordReset(email: trimmed)
         isLoading = false
     }
 }

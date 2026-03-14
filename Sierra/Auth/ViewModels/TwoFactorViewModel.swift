@@ -37,12 +37,12 @@ final class TwoFactorViewModel {
 
     init(
         context: TwoFactorContext,
-        service: OTPVerificationServiceProtocol = MockOTPVerificationService(),
+        service: OTPVerificationServiceProtocol? = nil,
         onVerified: (() -> Void)? = nil,
         onCancelled: (() -> Void)? = nil
     ) {
         self.context = context
-        self.service = service
+        self.service = service ?? MockOTPVerificationService()
         self.onVerified = onVerified
         self.onCancelled = onCancelled
     }

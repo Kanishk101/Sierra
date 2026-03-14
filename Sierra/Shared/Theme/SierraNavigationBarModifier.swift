@@ -57,7 +57,7 @@ struct SierraNavigationBarModifier: ViewModifier {
             .foregroundColor: UIColor.clear
         ]
 
-        let scrollAppearance = appearance.copy() as! UINavigationBarAppearance
+        let scrollAppearance = appearance.copy() as? UINavigationBarAppearance ?? UINavigationBarAppearance()
         UINavigationBar.appearance().standardAppearance = appearance
         UINavigationBar.appearance().compactAppearance = appearance
         UINavigationBar.appearance().scrollEdgeAppearance = scrollAppearance

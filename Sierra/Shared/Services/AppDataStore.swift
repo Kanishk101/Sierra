@@ -768,7 +768,7 @@ final class AppDataStore {
 
     private func subscribeToEmergencyAlerts() {
         let channel = supabase.channel("emergency_alerts_channel")
-        channel.onPostgresChange(InsertAction.self, schema: "public", table: "emergency_alerts") { [weak self] action in
+        _ = channel.onPostgresChange(InsertAction.self, schema: "public", table: "emergency_alerts") { [weak self] action in
             guard let self else { return }
             Task { @MainActor in
                 if let data = try? JSONEncoder().encode(action.record),
@@ -778,7 +778,11 @@ final class AppDataStore {
             }
         }
         Task {
-            await channel.subscribe()
+            do {
+                try await channel.subscribeWithError()
+            } catch {
+                print("[AppDataStore] Emergency alerts channel error: \(error)")
+            }
             await MainActor.run { self.emergencyAlertsChannel = channel }
         }
     }
