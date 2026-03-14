@@ -38,6 +38,7 @@ final class AuthManager {
     var needsReauth: Bool = false
     private var currentOTP: String = ""
     var pendingOTPEmail: String?
+    private var resetOTP: String = ""
     private let autoLockSeconds: TimeInterval = 300
 
     private init() { restoreSessionSilently() }
@@ -201,6 +202,11 @@ final class AuthManager {
         return match
     }
 
+    /// Verify a password-reset OTP (separate from 2FA login OTP).
+    func verifyResetOTP(_ code: String) -> Bool {
+        return code == resetOTP
+    }
+
     // MARK: - Password Management
 
     func updatePasswordAndFirstLogin(newPassword: String) async throws {
@@ -292,21 +298,39 @@ final class AuthManager {
 
     func requestPasswordReset(email: String) async -> Bool {
         do {
+            // Check existence against staff_members
             struct EmailRow: Decodable { let id: String }
             let rows: [EmailRow] = try await supabase
                 .from("staff_members").select("id")
                 .eq("email", value: email).limit(1).execute().value
-            guard !rows.isEmpty else { return true }
-            try await supabase.auth.resetPasswordForEmail(email)
+
+            guard !rows.isEmpty else { return false }
+
+            // Generate + send OTP via email
+            pendingOTPEmail = email
+            let randomOTP = String(format: "%06d", Int.random(in: 100000...999999))
+            resetOTP = randomOTP
+            sendEmail(userEmail: email, otp: randomOTP)
+
             return true
-        } catch { return true }
+        } catch {
+            return false
+        }
     }
 
     func resetPassword(code: String, newPassword: String) async throws {
         try await Task.sleep(for: .milliseconds(600))
-        guard code == currentOTP else { throw AuthError.invalidCredentials }
+
+        guard code == resetOTP else { throw AuthError.invalidCredentials }
+
+        // Update password via Supabase Auth
         try await supabase.auth.update(user: UserAttributes(password: newPassword))
-        currentOTP = ""
+
+        // Hash and store the new password locally
+        let hashed = CryptoService.hash(password: newPassword)
+        _ = KeychainService.save(hashed, forKey: Keys.hashedCred)
+
+        resetOTP = ""
         pendingOTPEmail = nil
     }
 
