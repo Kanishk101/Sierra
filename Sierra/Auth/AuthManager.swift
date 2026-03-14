@@ -325,10 +325,20 @@ final class AuthManager {
     }
 
     // MARK: - Create Staff Account
-    // Pure Swift-side — mirrors the original two-step architecture, adapted for Schema v2:
-    // Step 1: supabase.auth.signUp() → creates auth.users record, returns authoritative UUID
-    // Step 2: StaffMemberService.addStaffMember() → inserts staff_members with that same UUID
-    // No RPC, no Edge Function, no service_role key needed.
+    // Uses the `create_staff_member` SECURITY DEFINER Postgres RPC.
+    //
+    // Why RPC and not supabase.auth.signUp() + direct insert:
+    // supabase.auth.signUp() switches the active SDK session to the newly created user.
+    // Any subsequent insert into staff_members runs under the new user's session, which
+    // has no staff_members row yet — get_my_role() returns null and the fm_all_staff
+    // INSERT policy blocks it with a 403.
+    //
+    // The RPC runs under the admin's existing session as SECURITY DEFINER, atomically
+    // inserts into auth.users + staff_members in one transaction, and never changes the
+    // caller's active session. This is the only approach compatible with the current RLS.
+    //
+    // RPC params: p_email, p_raw_password, p_name, p_role
+    // Returns: UUID of the newly created user
 
     func createStaffAccount(
         email: String,
@@ -336,38 +346,24 @@ final class AuthManager {
         role: UserRole,
         tempPassword: String
     ) async throws -> UUID {
-        // 1. Create the auth.users record — Supabase returns the authoritative UUID
-        let signUpResponse = try await supabase.auth.signUp(
-            email: email,
-            password: tempPassword
-        )
-        let newUserId = signUpResponse.user.id
+        struct RPCParams: Encodable {
+            let p_email: String
+            let p_raw_password: String
+            let p_name: String
+            let p_role: String
+        }
 
-        // 2. Insert the staff_members row using the same UUID
-        let newMember = StaffMember(
-            id:                newUserId,
-            name:              name,
-            role:              role,
-            status:            .pendingApproval,
-            email:             email,
-            phone:             nil,
-            availability:      .unavailable,
-            dateOfBirth:       nil,
-            gender:            nil,
-            address:           nil,
-            emergencyContactName:  nil,
-            emergencyContactPhone: nil,
-            aadhaarNumber:     nil,
-            profilePhotoUrl:   nil,
-            isFirstLogin:      true,
-            isProfileComplete: false,
-            isApproved:        false,
-            rejectionReason:   nil,
-            joinedDate:        Date(),
-            createdAt:         Date(),
-            updatedAt:         Date()
+        let params = RPCParams(
+            p_email:        email,
+            p_raw_password: tempPassword,
+            p_name:         name,
+            p_role:         role.rawValue
         )
-        try await StaffMemberService.addStaffMember(newMember)
+
+        let newUserId: UUID = try await supabase
+            .rpc("create_staff_member", params: params)
+            .execute()
+            .value
 
         return newUserId
     }
