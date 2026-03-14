@@ -322,30 +322,29 @@ final class AuthManager {
         tempPassword: String
     ) async throws -> UUID {
 
-        struct RPCParams: Encodable {
-            let p_email:        String
-            let p_raw_password: String
-            let p_name:         String
-            let p_role:         String
-        }
+        // All admin user-creation goes through the Edge Function (service_role key stays server-side)
+        let payload: [String: String] = [
+            "email":        email,
+            "name":         name,
+            "role":         role.rawValue,
+            "tempPassword": tempPassword
+        ]
+        let bodyData = try JSONEncoder().encode(payload)
 
-        let params = RPCParams(
-            p_email:        email,
-            p_raw_password: tempPassword,
-            p_name:         name,
-            p_role:         role.rawValue
+        // Edge Function returns { id: "uuid-string" } or { error: "msg" }
+        struct CreateResponse: Decodable { let id: String?; let error: String? }
+
+        let decoded: CreateResponse = try await supabase.functions.invoke(
+            "create-staff-account",
+            options: FunctionInvokeOptions(body: bodyData)
         )
 
-        // The RPC returns the new user UUID as a plain string
-        let uuidString: String = try await supabase
-            .rpc("create_staff_member", params: params)
-            .execute()
-            .value
-
-        guard let uuid = UUID(uuidString: uuidString) else {
+        if let errMsg = decoded.error {
+            throw AuthError.networkError(errMsg)
+        }
+        guard let idStr = decoded.id, let uuid = UUID(uuidString: idStr) else {
             throw AuthError.createStaffFailed
         }
-
         return uuid
     }
 
