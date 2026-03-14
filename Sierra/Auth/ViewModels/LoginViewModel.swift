@@ -14,7 +14,7 @@ final class LoginViewModel {
 
     /// Production OTP service injected into TwoFactorViewModel.
     /// Override in tests with a MockOTPVerificationService.
-    var otpService: OTPVerificationServiceProtocol = AuthManagerOTPVerificationService()
+    var otpService: OTPVerificationServiceProtocol = SupabaseOTPVerificationService()
 
     // MARK: - Auth State (single source of truth)
 

@@ -15,15 +15,18 @@ final class CreateStaffViewModel {
     // MARK: - Step 2: Details
 
     var fullName: String = ""
-    var email: String = ""
+    var email: String    = ""
 
     // MARK: - UI State
 
-    var isLoading: Bool = false
-    var successMessage: String?
-    var errorMessage: String?
-    var showSuccess: Bool = false
-    var createdStaffName: String = ""
+    var isLoading:        Bool    = false
+    var errorMessage:     String?
+    var showSuccess:      Bool    = false
+    var createdStaffName: String  = ""
+
+    // Temp-password alert state
+    var showTempPasswordAlert: Bool   = false
+    var generatedTempPassword: String = ""
 
     // MARK: - Validation
 
@@ -52,34 +55,40 @@ final class CreateStaffViewModel {
     func createStaff() async {
         guard canSubmit, let role = selectedRole else { return }
 
-        isLoading = true
+        isLoading    = true
         errorMessage = nil
 
-        let tempPassword = generateTemporaryPassword()
+        let tempPassword = generateTempPassword()
         let trimmedName  = fullName.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
 
         do {
-            // 1. Create staff account via Edge Function (AuthManager handles service_role logic)
-            try await AuthManager.shared.createStaffAccount(
-                email: trimmedEmail,
-                name: trimmedName,
-                role: role,
+            // 1. Create staff account via Edge Function — returns the new UUID
+            _ = try await AuthManager.shared.createStaffAccount(
+                email:        trimmedEmail,
+                name:         trimmedName,
+                role:         role,
                 tempPassword: tempPassword
             )
 
-            // 2. Send credentials email
-            try await EmailService.sendCredentials(
-                to: trimmedEmail,
-                name: trimmedName,
-                password: tempPassword,
-                role: role
-            )
+            // 2. Refresh store so the new staff member appears immediately
+            await AppDataStore.shared.loadAll()
 
-            isLoading = false
-            createdStaffName = trimmedName
-            showSuccess = true
-            successMessage = "Account created for \(trimmedName)"
+            // 3. Optionally send credentials email (fire-and-forget)
+            Task {
+                try? await EmailService.sendCredentials(
+                    to:       trimmedEmail,
+                    name:     trimmedName,
+                    password: tempPassword,
+                    role:     role
+                )
+            }
+
+            isLoading             = false
+            createdStaffName      = trimmedName
+            generatedTempPassword = tempPassword
+            showTempPasswordAlert = true        // shows copy-password alert
+            showSuccess           = true
 
             NotificationCenter.default.post(
                 name: .staffCreated,
@@ -90,41 +99,33 @@ final class CreateStaffViewModel {
                     "role":  role.rawValue
                 ]
             )
+        } catch let authErr as AuthError {
+            isLoading    = false
+            errorMessage = authErr.errorDescription ?? "Failed to create staff account."
         } catch {
-            isLoading = false
-            if let authErr = error as? AuthError, authErr == .createStaffFailed {
-                errorMessage = authErr.errorDescription
-            } else {
-                errorMessage = "Failed to create staff account. Please try again."
-            }
+            isLoading    = false
+            errorMessage = error.localizedDescription
         }
     }
 
     func reset() {
-        selectedRole = nil
-        fullName = ""
-        email = ""
-        isLoading = false
-        successMessage = nil
-        errorMessage = nil
-        showSuccess = false
-        createdStaffName = ""
+        selectedRole          = nil
+        fullName              = ""
+        email                 = ""
+        isLoading             = false
+        errorMessage          = nil
+        showSuccess           = false
+        createdStaffName      = ""
+        showTempPasswordAlert = false
+        generatedTempPassword = ""
     }
 
     // MARK: - Private
 
-    private func generateTemporaryPassword() -> String {
-        let uppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        let lowercase = "abcdefghijklmnopqrstuvwxyz"
-        let digits    = "0123456789"
-        let all       = uppercase + lowercase + digits
-
-        var password = ""
-        password += String(uppercase.randomElement()!)
-        password += String(lowercase.randomElement()!)
-        password += String(digits.randomElement()!)
-        for _ in 0..<7 { password += String(all.randomElement()!) }
-        return String(password.shuffled())
+    /// Generates a 12-character password with upper, lower, digit, and symbol characters.
+    private func generateTempPassword() -> String {
+        let chars = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$"
+        return String((0..<12).compactMap { _ in chars.randomElement() })
     }
 
     private func isValidEmail(_ email: String) -> Bool {

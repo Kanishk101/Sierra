@@ -373,14 +373,12 @@ final class AuthManager {
 
     // MARK: - Create Staff Account (Admin only — requires Edge Function)
 
-    /// Creates a new staff account via the `create-staff-account` Edge Function.
-    /// The service_role key is never embedded in the iOS app.
     func createStaffAccount(
         email: String,
         name: String,
         role: UserRole,
         tempPassword: String
-    ) async throws {
+    ) async throws -> UUID {
         let payload: [String: String] = [
             "email":    email,
             "password": tempPassword,
@@ -391,10 +389,27 @@ final class AuthManager {
             "create-staff-account",
             options: FunctionInvokeOptions(body: try JSONEncoder().encode(payload))
         )
-        guard let json = try? JSONDecoder().decode([String: String].self, from: data),
-              json["id"] != nil else {
+
+        // Decode response — Edge Function returns { id, email } on success or { error } on failure
+        struct CreateResponse: Decodable {
+            let id:    String?
+            let email: String?
+            let error: String?
+        }
+
+        guard let response = try? JSONDecoder().decode(CreateResponse.self, from: data) else {
             throw AuthError.createStaffFailed
         }
+
+        if let errorMsg = response.error {
+            throw AuthError.networkError(errorMsg)
+        }
+
+        guard let idString = response.id, let uuid = UUID(uuidString: idString) else {
+            throw AuthError.createStaffFailed
+        }
+
+        return uuid
     }
 
     // MARK: - Auto-Lock

@@ -6,7 +6,8 @@ import SwiftUI
 struct DashboardHomeView: View {
 
     @Environment(AppDataStore.self) private var store
-    @State private var showProfile = false
+    @State private var showProfile   = false
+    @State private var showAnalytics = false
 
     var body: some View {
         NavigationStack {
@@ -36,6 +37,15 @@ struct DashboardHomeView: View {
             .navigationTitle("Dashboard")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showAnalytics = true
+                    } label: {
+                        Image(systemName: "chart.pie.fill")
+                            .font(SierraFont.body(17, weight: .semibold))
+                            .foregroundStyle(SierraTheme.Colors.ember)
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showProfile = true } label: {
                         SierraAvatarView(initials: "FA", size: 34, gradient: SierraAvatarView.admin())
@@ -45,6 +55,10 @@ struct DashboardHomeView: View {
             .sheet(isPresented: $showProfile) {
                 AdminProfileView()
                     .presentationDetents([.medium])
+            }
+            .sheet(isPresented: $showAnalytics) {
+                AnalyticsDashboardView()
+                    .environment(AppDataStore.shared)
             }
             .onAppear {
                 print("[DashboardHomeView] Appeared — vehicles: \(store.vehicles.count), trips: \(store.trips.count), staff: \(store.staff.count)")

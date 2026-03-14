@@ -736,6 +736,15 @@ final class AppDataStore {
             .first
     }
 
+    func availableDrivers() -> [StaffMember] {
+        staff.filter { $0.role == .driver && $0.status == .active && $0.availability == .available }
+    }
+
+    func availableVehicles() -> [Vehicle] {
+        vehicles.filter { $0.status == .idle && $0.assignedDriverId == nil }
+    }
+
+
     func activeTrip(forDriverId driverId: String) -> Trip? {
         trips.first { $0.driverId == driverId && ($0.status == .active || $0.status == .scheduled) }
     }

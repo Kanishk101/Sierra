@@ -84,23 +84,35 @@ struct SupabaseAuthService {
 
     /// Maps raw Supabase / URLSession errors into typed AuthError cases.
     private static func mapError(_ error: Error) -> AuthError {
-        let message = error.localizedDescription.lowercased()
+        let message     = error.localizedDescription.lowercased()
+        let description = String(describing: error).lowercased()
+        let combined    = message + " " + description
 
-        if message.contains("invalid login credentials")
-            || message.contains("invalid email or password")
-            || message.contains("invalid credentials") {
+        if combined.contains("invalid login credentials")
+            || combined.contains("invalid email or password")
+            || combined.contains("invalid credentials") {
             return .invalidCredentials
         }
-        if message.contains("otp expired") || message.contains("token has expired") {
+        if combined.contains("otp expired")
+            || combined.contains("token has expired")
+            || combined.contains("expired") {
             return .otpExpired
         }
-        if message.contains("otp") || message.contains("token is invalid") {
+        if combined.contains("otp")
+            || combined.contains("token is invalid")
+            || combined.contains("invalid token") {
             return .otpInvalid
         }
-        if message.contains("network") || message.contains("could not connect")
-            || message.contains("connection") {
+        if combined.contains("email") && combined.contains("invalid") {
+            return .networkError("Email address is invalid. Please use a real email address.")
+        }
+        if combined.contains("network")
+            || combined.contains("could not connect")
+            || combined.contains("connection")
+            || combined.contains("url session") {
             return .networkError(error.localizedDescription)
         }
+        // Default — return with full description for debugging
         return .networkError(error.localizedDescription)
     }
 }

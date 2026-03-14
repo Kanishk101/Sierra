@@ -2,7 +2,8 @@ import SwiftUI
 
 
 struct CreateStaffView: View {
-    @State private var viewModel = CreateStaffViewModel()
+    @State private var viewModel        = CreateStaffViewModel()
+    @State private var isPasswordCopied = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -21,6 +22,18 @@ struct CreateStaffView: View {
                     Button("Cancel") { dismiss() }
                         .foregroundStyle(.secondary)
                 }
+            }
+            // Temp-password copy alert — shown after successful account creation
+            .alert("Account Created", isPresented: $viewModel.showTempPasswordAlert) {
+                Button(isPasswordCopied ? "✓ Copied!" : "Copy Password") {
+                    UIPasteboard.general.string = viewModel.generatedTempPassword
+                    isPasswordCopied = true
+                }
+                Button("Done", role: .cancel) {
+                    isPasswordCopied = false
+                }
+            } message: {
+                Text("The account for \(viewModel.createdStaffName) has been created.\n\nTemporary password:\n\(viewModel.generatedTempPassword)\n\nShare this with the staff member. They will be prompted to change it on first login.")
             }
         }
     }

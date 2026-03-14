@@ -7,14 +7,24 @@ import SwiftUI
 // - Role filter now uses .driver / .maintenancePersonnel
 // - Added .task { await store.loadAll() } for data loading
 // - Added .refreshable for pull-to-refresh
+// Phase 1 additions:
+// - Added @State searchText + .searchable modifier
+// - filteredStaff now also filters by displayName / email
 
 struct StaffListView: View {
     @Environment(AppDataStore.self) private var store
     @State private var selectedSegment: UserRole = .driver
     @State private var showAddSheet = false
+    @State private var searchText = ""
 
     private var filteredStaff: [StaffMember] {
-        store.staff.filter { $0.role == selectedSegment }
+        let byRole = store.staff.filter { $0.role == selectedSegment }
+        guard !searchText.isEmpty else { return byRole }
+        let q = searchText.lowercased()
+        return byRole.filter {
+            $0.displayName.lowercased().contains(q) ||
+            $0.email.lowercased().contains(q)
+        }
     }
 
     var body: some View {
@@ -36,9 +46,13 @@ struct StaffListView: View {
                             Image(systemName: selectedSegment == .driver ? "person.fill" : "wrench.fill")
                                 .font(.system(size: 40, weight: .light))
                                 .foregroundStyle(SierraTheme.Colors.granite)
-                            Text("No \(selectedSegment == .driver ? "drivers" : "maintenance staff") yet")
-                                .font(SierraFont.bodyText)
-                                .foregroundStyle(SierraTheme.Colors.secondaryText)
+                            Text(
+                                searchText.isEmpty
+                                    ? "No \(selectedSegment == .driver ? "drivers" : "maintenance staff") yet"
+                                    : "No results for \"\(searchText)\""
+                            )
+                            .font(SierraFont.bodyText)
+                            .foregroundStyle(SierraTheme.Colors.secondaryText)
                         }
                         Spacer()
                     } else {
@@ -66,6 +80,7 @@ struct StaffListView: View {
             }
             .navigationTitle("Staff")
             .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $searchText, prompt: "Search by name or email…")
             .animation(.easeInOut(duration: 0.25), value: selectedSegment)
             .sheet(isPresented: $showAddSheet) {
                 CreateStaffView()

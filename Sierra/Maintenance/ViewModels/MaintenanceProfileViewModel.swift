@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import PhotosUI
+import Supabase
 
 enum CertificationType: String, CaseIterable {
     case automotiveTechnician = "Automotive Technician"
@@ -255,8 +256,25 @@ final class MaintenanceProfileViewModel {
             createdAt: now
         )
 
+        let supabase = SupabaseManager.shared.client
+
         do {
             try await AppDataStore.shared.addStaffApplication(application)
+
+            // Notify fleet manager via Edge Function (fire-and-forget — non-critical)
+            Task {
+                let payload: [String: String] = [
+                    "applicantName":  fullName,
+                    "applicantEmail": user.email,
+                    "role":           user.role.rawValue,
+                    "submittedAt":    ISO8601DateFormatter().string(from: Date())
+                ]
+                guard let bodyData = try? JSONEncoder().encode(payload) else { return }
+                _ = try? await supabase.functions.invoke(
+                    "notify-fleet-manager",
+                    options: FunctionInvokeOptions(body: bodyData)
+                )
+            }
 
             if var member = AppDataStore.shared.staffMember(for: user.id) {
                 member.name = fullName

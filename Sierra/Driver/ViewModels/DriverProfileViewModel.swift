@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import PhotosUI
+import Supabase
 
 // MARK: - Date formatter for Postgres DATE columns (yyyy-MM-dd)
 private let pgDateFormatter: DateFormatter = {
@@ -239,9 +240,26 @@ final class DriverProfileViewModel {
             createdAt: now
         )
 
+        let supabase = SupabaseManager.shared.client
+
         do {
             // Persist application to Supabase via AppDataStore
             try await AppDataStore.shared.addStaffApplication(application)
+
+            // Notify fleet manager via Edge Function (fire-and-forget — non-critical)
+            Task {
+                let payload: [String: String] = [
+                    "applicantName":  fullName,
+                    "applicantEmail": user.email,
+                    "role":           user.role.rawValue,
+                    "submittedAt":    ISO8601DateFormatter().string(from: Date())
+                ]
+                guard let bodyData = try? JSONEncoder().encode(payload) else { return }
+                _ = try? await supabase.functions.invoke(
+                    "notify-fleet-manager",
+                    options: FunctionInvokeOptions(body: bodyData)
+                )
+            }
 
             // Also update the StaffMember record with the personal details collected
             if var member = AppDataStore.shared.staffMember(for: user.id) {

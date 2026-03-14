@@ -1,9 +1,16 @@
 import SwiftUI
 
-/// Unified Staff tab with two modes: "Staff" (list all staff by role section)
-/// and "Applications" (filter by approval status).
+// CHANGES (Phase 1 restore):
+// - StaffDirectoryView uses store.staff filtered by role (not StaffMember.samples)
+// - StaffDirectoryView uses member.displayName (not member.name)
+// - StaffTabView adds @State searchText and passes $searchText to StaffDirectoryView
+// - .searchable(text: $searchText) added to NavigationStack
+// - ApplicationsListView preserved exactly from backup-current
+// - initialsCircle helper added as private extension on ApplicationsListView
+
 struct StaffTabView: View {
     @State private var mode: StaffMode = .staff
+    @State private var searchText = ""
 
     enum StaffMode: String, CaseIterable {
         case staff = "Staff"
@@ -26,7 +33,7 @@ struct StaffTabView: View {
                 // Content
                 switch mode {
                 case .staff:
-                    StaffDirectoryView()
+                    StaffDirectoryView(searchText: $searchText)
                 case .applications:
                     ApplicationsListView()
                 }
@@ -34,6 +41,7 @@ struct StaffTabView: View {
             .background(SierraTheme.Colors.appBackground.ignoresSafeArea())
             .navigationTitle("Staff")
             .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $searchText, prompt: "Search staff…")
             .animation(.easeInOut(duration: 0.2), value: mode)
         }
     }
@@ -43,13 +51,26 @@ struct StaffTabView: View {
 
 private struct StaffDirectoryView: View {
     @Environment(AppDataStore.self) private var store
+    @Binding var searchText: String
 
     private var drivers: [StaffMember] {
-        store.staff.filter { $0.role == .driver && $0.status != .suspended }
+        let all = store.staff.filter { $0.role == .driver && $0.status != .suspended }
+        guard !searchText.isEmpty else { return all }
+        let q = searchText.lowercased()
+        return all.filter {
+            $0.displayName.lowercased().contains(q) ||
+            $0.email.lowercased().contains(q)
+        }
     }
 
     private var maintenance: [StaffMember] {
-        store.staff.filter { $0.role == .maintenancePersonnel && $0.status != .suspended }
+        let all = store.staff.filter { $0.role == .maintenancePersonnel && $0.status != .suspended }
+        guard !searchText.isEmpty else { return all }
+        let q = searchText.lowercased()
+        return all.filter {
+            $0.displayName.lowercased().contains(q) ||
+            $0.email.lowercased().contains(q)
+        }
     }
 
     var body: some View {
@@ -61,8 +82,27 @@ private struct StaffDirectoryView: View {
                 if !maintenance.isEmpty {
                     sectionBlock("Maintenance", icon: "wrench.and.screwdriver.fill", members: maintenance)
                 }
+                if drivers.isEmpty && maintenance.isEmpty {
+                    VStack(spacing: Spacing.md) {
+                        Spacer(minLength: 60)
+                        Image(systemName: "person.2.slash")
+                            .font(.system(size: 44, weight: .light))
+                            .foregroundStyle(SierraTheme.Colors.granite)
+                        Text(searchText.isEmpty ? "No staff members yet" : "No results for \"\(searchText)\"")
+                            .font(SierraFont.bodyText)
+                            .foregroundStyle(SierraTheme.Colors.secondaryText)
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity)
+                }
             }
             .padding(.bottom, Spacing.xxl)
+        }
+        .task {
+            if store.staff.isEmpty { await store.loadAll() }
+        }
+        .refreshable {
+            await store.loadAll()
         }
     }
 
@@ -119,9 +159,9 @@ private struct StaffDirectoryView: View {
 
     private func staffStatusBadge(_ status: StaffStatus) -> some View {
         let (text, dotColor, bgColor, fgColor): (String, Color, Color, Color) = switch status {
-        case .active:          ("Active", SierraTheme.Colors.alpineMint, SierraTheme.Colors.alpineMint.opacity(0.12), SierraTheme.Colors.alpineDark)
-        case .pendingApproval: ("Pending", SierraTheme.Colors.warning, SierraTheme.Colors.warning.opacity(0.12), SierraTheme.Colors.warning)
-        case .suspended:       ("Suspended", SierraTheme.Colors.danger, SierraTheme.Colors.danger.opacity(0.12), SierraTheme.Colors.danger)
+        case .active:          ("Active",    SierraTheme.Colors.alpineMint, SierraTheme.Colors.alpineMint.opacity(0.12), SierraTheme.Colors.alpineDark)
+        case .pendingApproval: ("Pending",   SierraTheme.Colors.warning,    SierraTheme.Colors.warning.opacity(0.12),    SierraTheme.Colors.warning)
+        case .suspended:       ("Suspended", SierraTheme.Colors.danger,     SierraTheme.Colors.danger.opacity(0.12),     SierraTheme.Colors.danger)
         }
         return SierraBadge(
             label: text,
@@ -216,7 +256,11 @@ private struct ApplicationsListView: View {
 
     private func applicationCard(_ app: StaffApplication) -> some View {
         HStack(spacing: Spacing.md) {
-            initialsCircle(store.staffMember(for: app.staffMemberId)?.initials ?? String(app.phone.suffix(2)), size: 48, bg: avatarColor(for: app.status))
+            SierraAvatarView(
+                initials: store.staffMember(for: app.staffMemberId)?.initials ?? String(app.phone.suffix(2)),
+                size: 48,
+                gradient: [avatarColor(for: app.status), avatarColor(for: app.status).opacity(0.7)]
+            )
 
             VStack(alignment: .leading, spacing: Spacing.xxs) {
                 Text(store.staffMember(for: app.staffMemberId)?.displayName ?? app.phone)
@@ -259,7 +303,7 @@ private struct ApplicationsListView: View {
 
     private func statusBadge(_ status: ApprovalStatus) -> some View {
         let (text, color): (String, Color) = switch status {
-        case .pending:  ("Pending", SierraTheme.Colors.warning)
+        case .pending:  ("Pending",  SierraTheme.Colors.warning)
         case .approved: ("Approved", SierraTheme.Colors.alpineMint)
         case .rejected: ("Rejected", SierraTheme.Colors.danger)
         }
@@ -282,4 +326,5 @@ private struct ApplicationsListView: View {
 
 #Preview {
     StaffTabView()
+        .environment(AppDataStore.shared)
 }

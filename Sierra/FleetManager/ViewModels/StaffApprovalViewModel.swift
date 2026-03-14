@@ -11,6 +11,9 @@ final class StaffApprovalViewModel {
     var showRejectField: Bool = false
     var rejectionReason: String = ""
 
+    /// Set when approve/reject fails so callers can display the error.
+    var errorMessage: String?
+
     var filteredApplications: [StaffApplication] {
         store.staffApplications.filter { $0.status == selectedFilter }
     }
@@ -24,11 +27,12 @@ final class StaffApprovalViewModel {
     @MainActor
     func approve(staffId: UUID) async {
         let adminId = AuthManager.shared.currentUser?.id ?? UUID()
-        isProcessing = true
+        isProcessing  = true
+        errorMessage  = nil
         do {
             try await store.approveStaffApplication(id: staffId, reviewedBy: adminId)
         } catch {
-            // surface error if needed — caller can observe isProcessing returning false
+            errorMessage = error.localizedDescription
         }
         isProcessing = false
     }
@@ -39,17 +43,18 @@ final class StaffApprovalViewModel {
     func reject(staffId: UUID, reason: String) async {
         let adminId = AuthManager.shared.currentUser?.id ?? UUID()
         isProcessing = true
+        errorMessage = nil
         do {
             try await store.rejectStaffApplication(id: staffId, reason: reason, reviewedBy: adminId)
         } catch {
-            // surface error if needed
+            errorMessage = error.localizedDescription
         }
         isProcessing = false
         resetRejectState()
     }
 
     func resetRejectState() {
-        showRejectField = false
-        rejectionReason = ""
+        showRejectField  = false
+        rejectionReason  = ""
     }
 }
