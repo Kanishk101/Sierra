@@ -1,18 +1,21 @@
 import Foundation
-import UIKit
+import SwiftSMTP
 
 // MARK: - EmailService
-// Sends staff credential emails via the iOS native Mail app (mailto: URL).
-// The fleet manager's Mail app opens pre-filled with the credentials.
-// They tap Send — done. No API keys, no backend, no Edge Function needed.
+// Sends real emails via SwiftSMTP using Gmail SMTP.
+// Used for: staff credential emails after account creation.
 
 struct EmailService {
 
+    private static let smtpHost     = "smtp.gmail.com"
+    private static let smtpEmail    = "fleet.manager.system.infosys@gmail.com"
+    private static let smtpPassword = "xzaqwrcvlkfwqgjf"
+    private static let senderName   = "Fleet Manager System"
+
     // MARK: - Send Credentials
 
-    /// Opens the native iOS Mail app pre-filled with the new staff member's credentials.
-    /// Must be called on the MainActor so UIApplication.shared is accessible.
-    @MainActor
+    /// Sends login credentials to a newly created staff member via Gmail SMTP.
+    /// Called by CreateStaffViewModel after createStaffAccount() succeeds.
     static func sendCredentials(
         to email: String,
         name: String,
@@ -20,57 +23,96 @@ struct EmailService {
         role: UserRole
     ) async throws {
 
-        let subject = "Welcome to Sierra Fleet — Your Login Credentials"
+        let subject = "Welcome to FleetOS \u{2014} Your Login Credentials"
 
         let body = """
-        Hello \(name),
+            \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}
+            FleetOS \u{2014} Staff Credential Notification
+            \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}
 
-        Your Sierra Fleet account has been created by the Fleet Administrator.
+            Hello \(name),
 
-        Your login credentials are below:
+            Your FleetOS account has been created by a Fleet Administrator.
+            Below are your login credentials:
 
-        Email:    \(email)
-        Password: \(password)
-        Role:     \(role.displayName)
+            Email:    \(email)
+            Password: \(password)
+            Role:     \(role.displayName)
 
-        IMPORTANT: You will be required to change your password on first login.
-        After changing your password, please complete your profile to gain full access.
+            IMPORTANT:
+            You will be required to change your password on first login.
+            After changing your password, please complete your profile
+            to gain full access to the platform.
 
-        If you did not expect this email, please contact your fleet administrator immediately.
+            If you did not expect this email, please contact your
+            fleet administrator immediately.
 
-        — Sierra Fleet
-        """
+            \u{2014} The FleetOS Team
+            \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}
+            """
 
-        guard let encodedSubject = subject.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let encodedBody    = body.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let encodedEmail   = email.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let mailURL = URL(string: "mailto:\(encodedEmail)?subject=\(encodedSubject)&body=\(encodedBody)") else {
-            throw EmailError.invalidEmail
+        let smtp = SMTP(
+            hostname: smtpHost,
+            email:    smtpEmail,
+            password: smtpPassword
+        )
+
+        let mail = Mail(
+            from: Mail.User(name: senderName, email: smtpEmail),
+            to:   [Mail.User(name: name, email: email)],
+            subject: subject,
+            text:    body
+        )
+
+        // SwiftSMTP.send is callback-based — wrap in async continuation
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            smtp.send(mail) { error in
+                if let error = error {
+                    print("[EmailService] ERROR sending credentials to \(email): \(error)")
+                    continuation.resume(throwing: error)
+                } else {
+                    print("[EmailService] Credentials sent \u{2705} to \(email)")
+                    continuation.resume()
+                }
+            }
         }
-
-        guard UIApplication.shared.canOpenURL(mailURL) else {
-            // Mail app not configured on this device — fall back to console
-            print("[EmailService] Mail app not available. Credentials for \(email):")
-            print("Password: \(password)")
-            throw EmailError.mailAppUnavailable
-        }
-
-        await UIApplication.shared.open(mailURL)
     }
-}
 
-// MARK: - EmailError
+    // MARK: - Send OTP (legacy helper — kept for reference; real 2FA now uses Supabase)
 
-enum EmailError: LocalizedError {
-    case invalidEmail
-    case mailAppUnavailable
+    static func sendOTP(to email: String, otp: String) {
+        let smtp = SMTP(
+            hostname: smtpHost,
+            email:    smtpEmail,
+            password: smtpPassword
+        )
 
-    var errorDescription: String? {
-        switch self {
-        case .invalidEmail:
-            return "Could not compose email — invalid address."
-        case .mailAppUnavailable:
-            return "Mail app is not configured on this device. Share the credentials manually."
+        let mail = Mail(
+            from: Mail.User(name: senderName, email: smtpEmail),
+            to:   [Mail.User(name: "User", email: email)],
+            subject: "Your OTP Code",
+            text: """
+            Hello,
+
+            Your One-Time Password (OTP) for verification is:
+
+            OTP: \(otp)
+
+            This OTP is valid for the next 5 minutes. Please do not share it with anyone.
+
+            If you did not request this code, please ignore this email.
+
+            Regards,
+            Fleet Manager System
+            """
+        )
+
+        smtp.send(mail) { error in
+            if let error = error {
+                print("[EmailService] OTP send error: \(error)")
+            } else {
+                print("[EmailService] OTP sent \u{2705} to \(email)")
+            }
         }
     }
 }
