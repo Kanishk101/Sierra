@@ -1,17 +1,18 @@
 import Foundation
+import UIKit
 
-/// Simulates sending credential emails to newly created staff members.
-/// In production this would call a real email API.
+// MARK: - EmailService
+// Sends staff credential emails via the iOS native Mail app (mailto: URL).
+// The fleet manager's Mail app opens pre-filled with the credentials.
+// They tap Send — done. No API keys, no backend, no Edge Function needed.
+
 struct EmailService {
 
-    struct EmailContent {
-        let to: String
-        let subject: String
-        let body: String
-    }
+    // MARK: - Send Credentials
 
-    /// Simulates sending login credentials to a new staff member.
-    /// Prints the email content to console and returns after a 1.5s delay.
+    /// Opens the native iOS Mail app pre-filled with the new staff member's credentials.
+    /// Must be called on the MainActor so UIApplication.shared is accessible.
+    @MainActor
     static func sendCredentials(
         to email: String,
         name: String,
@@ -19,46 +20,57 @@ struct EmailService {
         role: UserRole
     ) async throws {
 
-        let content = EmailContent(
-            to: email,
-            subject: "Welcome to FleetOS — Your Login Credentials",
-            body: """
-            ─────────────────────────────────────
-            FleetOS — Staff Credential Notification
-            ─────────────────────────────────────
+        let subject = "Welcome to Sierra Fleet — Your Login Credentials"
 
-            Hello \(name),
+        let body = """
+        Hello \(name),
 
-            Your FleetOS account has been created by a Fleet Administrator.
-            Below are your login credentials:
+        Your Sierra Fleet account has been created by the Fleet Administrator.
 
-            ┌──────────────────────────────────┐
-            │  Email:    \(email)
-            │  Password: \(password)
-            │  Role:     \(role.displayName)
-            └──────────────────────────────────┘
+        Your login credentials are below:
 
-            ⚠️  IMPORTANT:
-            You will be required to change your password on first login.
-            After changing your password, please complete your profile
-            to gain full access to the platform.
+        Email:    \(email)
+        Password: \(password)
+        Role:     \(role.displayName)
 
-            If you did not expect this email, please contact your
-            fleet administrator immediately.
+        IMPORTANT: You will be required to change your password on first login.
+        After changing your password, please complete your profile to gain full access.
 
-            — The FleetOS Team
-            ─────────────────────────────────────
-            """
-        )
+        If you did not expect this email, please contact your fleet administrator immediately.
 
-        // Simulate network latency
-        try await Task.sleep(for: .milliseconds(1500))
+        — Sierra Fleet
+        """
 
-        // Print to console (dev simulation)
-        print("\n📧 EMAIL SENT ────────────────────")
-        print("To: \(content.to)")
-        print("Subject: \(content.subject)")
-        print(content.body)
-        print("──────────────────────────────────\n")
+        guard let encodedSubject = subject.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let encodedBody    = body.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let encodedEmail   = email.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let mailURL = URL(string: "mailto:\(encodedEmail)?subject=\(encodedSubject)&body=\(encodedBody)") else {
+            throw EmailError.invalidEmail
+        }
+
+        guard UIApplication.shared.canOpenURL(mailURL) else {
+            // Mail app not configured on this device — fall back to console
+            print("[EmailService] Mail app not available. Credentials for \(email):")
+            print("Password: \(password)")
+            throw EmailError.mailAppUnavailable
+        }
+
+        await UIApplication.shared.open(mailURL)
+    }
+}
+
+// MARK: - EmailError
+
+enum EmailError: LocalizedError {
+    case invalidEmail
+    case mailAppUnavailable
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidEmail:
+            return "Could not compose email — invalid address."
+        case .mailAppUnavailable:
+            return "Mail app is not configured on this device. Share the credentials manually."
+        }
     }
 }
