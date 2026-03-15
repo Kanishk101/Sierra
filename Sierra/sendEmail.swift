@@ -1,41 +1,81 @@
 import SwiftUI
 import SwiftSMTP
 
-/// Standalone helper used by legacy OTP flows.
-/// Real 2FA now goes through Supabase signInWithOTP.
-/// Kept for compatibility with any remaining callers.
+private let smtpClient = SMTP(
+    hostname: "smtp.gmail.com",
+    email:    "fleet.manager.system.infosys@gmail.com",
+    password: "gnurohgfexvvemnn"
+)
+
+private let senderUser = Mail.User(
+    name:  "Sierra Fleet Manager",
+    email: "fleet.manager.system.infosys@gmail.com"
+)
+
+// MARK: - 2FA OTP Email
+
+/// Sent during login 2FA — generic verification context.
 func sendEmail(userEmail: String, otp: String) {
-    let smtp = SMTP(
-        hostname: "smtp.gmail.com",
-        email:    "fleet.manager.system.infosys@gmail.com",
-        password: "gnurohgfexvvemnn"
-    )
-
     let mail = Mail(
-        from: Mail.User(name: "Fleet Manager System", email: "fleet.manager.system.infosys@gmail.com"),
-        to:   [Mail.User(name: "User", email: userEmail)],
-        subject: "Your OTP Code",
+        from:    senderUser,
+        to:      [Mail.User(name: "User", email: userEmail)],
+        subject: "🔐 Your Login Verification Code — Sierra FMS",
         text: """
-        Hello,
+        Sierra Fleet Manager — Login Verification
+        ==========================================
 
-        Your One-Time Password (OTP) for verification is:
+        Your two-factor authentication code:
 
-        OTP: \(otp)
+        \(otp)
 
-        This OTP is valid for the next 5 minutes. Please do not share it with anyone.
+        This code is valid for 10 minutes.
+        Do not share it with anyone.
 
-        If you did not request this code, please ignore this email.
+        If you did not attempt to sign in to Sierra Fleet Manager,
+        please contact your fleet administrator immediately.
 
-        Regards,
-        Fleet Manager System
+        — Sierra Fleet Manager System
         """
     )
 
-    smtp.send(mail) { error in
-        if let error = error {
-            print("ERROR: \(error)")
-        } else {
-            print("OTP SENT \u{2705}")
-        }
+    smtpClient.send(mail) { error in
+        if let error { print("2FA EMAIL ERROR: \(error)") }
+        else          { print("2FA OTP SENT \u{2705}") }
+    }
+}
+
+// MARK: - Password Reset OTP Email
+
+/// Sent during Forgot Password — distinct template so users
+/// can immediately tell this apart from a login verification code.
+func sendResetEmail(userEmail: String, otp: String) {
+    let mail = Mail(
+        from:    senderUser,
+        to:      [Mail.User(name: "User", email: userEmail)],
+        subject: "🔑 Password Reset Code — Sierra FMS",
+        text: """
+        Sierra Fleet Manager — Password Reset Request
+        =============================================
+
+        We received a request to reset your Sierra FMS account password.
+
+        Your password reset code:
+
+        \(otp)
+
+        Enter this code in the app to set a new password.
+        Valid for 10 minutes.
+
+        ⚠️  Did not request this?
+        If you did NOT ask for a password reset, ignore this email.
+        Your password will remain unchanged and no action is needed.
+
+        — Sierra Fleet Manager System
+        """
+    )
+
+    smtpClient.send(mail) { error in
+        if let error { print("RESET EMAIL ERROR: \(error)") }
+        else          { print("RESET OTP SENT \u{2705}") }
     }
 }

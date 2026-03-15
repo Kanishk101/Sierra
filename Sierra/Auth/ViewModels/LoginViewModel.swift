@@ -169,6 +169,23 @@ final class LoginViewModel {
     func biometricSignIn() async {
         authState = .loading
 
+        // Start prefetching dashboard data immediately while the biometric prompt shows.
+        // AuthManager.currentUser is already restored from Keychain at init via
+        // restoreSessionSilently(), so the role is available without any async work.
+        // Face ID/Touch ID takes ~1–2s — by the time it resolves, data is ready.
+        if let existingUser = AuthManager.shared.currentUser {
+            Task.detached {
+                switch existingUser.role {
+                case .fleetManager:
+                    await AppDataStore.shared.loadAll()
+                case .driver:
+                    await AppDataStore.shared.loadDriverData(driverId: existingUser.id)
+                case .maintenancePersonnel:
+                    await AppDataStore.shared.loadMaintenanceData(staffId: existingUser.id)
+                }
+            }
+        }
+
         do {
             try await BiometricManager.shared.authenticate()
             if let _ = AuthManager.shared.restoreSession(),

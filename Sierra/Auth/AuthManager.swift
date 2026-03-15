@@ -56,6 +56,11 @@ final class AuthManager {
     var pendingOTPEmail: String?
     private var resetOTP: String = ""
     private let autoLockSeconds: TimeInterval = 300
+    /// Cooldown to prevent 2FA OTP spam (30 s window)
+    private var otpLastSentAt: Date?
+    /// Cooldown to prevent reset OTP spam (30 s window)
+    private var resetOTPLastSentAt: Date?
+    private let otpCooldownSeconds: TimeInterval = 30
 
     private init() { restoreSessionSilently() }
 
@@ -63,6 +68,10 @@ final class AuthManager {
     // Vinayak pattern: query staff_members by email, compare password column directly.
 
     func signIn(email: String, password: String) async throws -> UserRole {
+        // Reset OTP cooldown for each fresh login attempt so switching between
+        // test accounts doesn't silently skip OTP generation.
+        otpLastSentAt = nil
+
         let rows: [StaffLoginRow] = try await supabase
             .from("staff_members")
             .select()
@@ -136,6 +145,8 @@ final class AuthManager {
         isAuthenticated = false
         needsReauth = false
         pendingOTPEmail = nil
+        otpLastSentAt = nil
+        resetOTPLastSentAt = nil
         KeychainService.delete(key: Keys.currentUser)
         KeychainService.delete(key: Keys.hashedCred)
         KeychainService.delete(key: Keys.sessionToken)
@@ -219,9 +230,18 @@ final class AuthManager {
 
     @discardableResult
     func generateOTP() -> String {
+        // Rate-limit: ignore if an OTP was already sent within the cooldown window.
+        if let last = otpLastSentAt, Date().timeIntervalSince(last) < otpCooldownSeconds {
+            print("[AuthManager] generateOTP skipped — cooldown active (\(Int(otpCooldownSeconds - Date().timeIntervalSince(last)))s remaining)")
+            return currentOTP
+        }
         let otp = String(format: "%06d", Int.random(in: 100000...999999))
         currentOTP = otp
+        otpLastSentAt = Date()
         pendingOTPEmail = currentUser?.email
+        #if DEBUG
+        print("🔑 [AuthManager.generateOTP] OTP = \(otp) → \(pendingOTPEmail ?? "no email")")
+        #endif
         if let email = pendingOTPEmail {
             Task.detached {
                 sendEmail(userEmail: email, otp: otp)
@@ -329,6 +349,11 @@ final class AuthManager {
     // MARK: - Password Reset
 
     func requestPasswordReset(email: String) async -> Bool {
+        // Rate-limit: ignore duplicate requests within the cooldown window.
+        if let last = resetOTPLastSentAt, Date().timeIntervalSince(last) < otpCooldownSeconds {
+            print("[AuthManager] requestPasswordReset skipped — cooldown active")
+            return true  // return true so UI advances normally (OTP was already sent)
+        }
         do {
             struct EmailRow: Decodable { let id: String }
             let rows: [EmailRow] = try await supabase
@@ -340,7 +365,8 @@ final class AuthManager {
             pendingOTPEmail = email
             let otp = String(format: "%06d", Int.random(in: 100000...999999))
             resetOTP = otp
-            sendEmail(userEmail: email, otp: otp)
+            resetOTPLastSentAt = Date()
+            sendResetEmail(userEmail: email, otp: otp)
             return true
         } catch {
             return false

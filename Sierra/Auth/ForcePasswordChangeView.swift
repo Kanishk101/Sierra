@@ -248,12 +248,13 @@ struct ForcePasswordChangeView: View {
     private func destinationView(for destination: AuthDestination) -> some View {
         switch destination {
         case .fleetManagerDashboard:  AdminDashboardView()
-        case .driverOnboarding:      DriverProfileSetupView()
-        case .maintenanceOnboarding: MaintenanceProfileSetupView()
-        case .driverDashboard:       DriverTabView()
-        case .maintenanceDashboard:  MaintenanceDashboardView()
-        case .pendingApproval:       PendingApprovalView()
-        case .changePassword:        EmptyView()
+        case .driverOnboarding:       DriverProfileSetupView()
+        case .maintenanceOnboarding:  MaintenanceProfileSetupView()
+        case .driverDashboard:        DriverTabView()
+        case .maintenanceDashboard:   MaintenanceDashboardView()
+        case .pendingApproval:        PendingApprovalView()
+        case .rejected:               RejectedView()
+        case .changePassword:         EmptyView()
         }
     }
 }
