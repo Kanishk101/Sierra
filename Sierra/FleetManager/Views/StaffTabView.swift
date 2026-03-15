@@ -1,13 +1,5 @@
 import SwiftUI
 
-// CHANGES (Phase 1 restore):
-// - StaffDirectoryView uses store.staff filtered by role (not StaffMember.samples)
-// - StaffDirectoryView uses member.displayName (not member.name)
-// - StaffTabView adds @State searchText and passes $searchText to StaffDirectoryView
-// - .searchable(text: $searchText) added to NavigationStack
-// - ApplicationsListView preserved exactly from backup-current
-// - initialsCircle helper added as private extension on ApplicationsListView
-
 struct StaffTabView: View {
     @State private var mode: StaffMode = .staff
     @State private var searchText = ""
@@ -47,14 +39,20 @@ struct StaffTabView: View {
     }
 }
 
-// MARK: - Staff Directory (All Staff by Role Section)
+// MARK: - Staff Directory
 
 private struct StaffDirectoryView: View {
     @Environment(AppDataStore.self) private var store
     @Binding var searchText: String
 
+    // Only show active + approved staff.
+    // Pending-approval and suspended members live in the Applications tab.
     private var drivers: [StaffMember] {
-        let all = store.staff.filter { $0.role == .driver && $0.status != .suspended }
+        let all = store.staff.filter {
+            $0.role == .driver
+            && $0.status == .active
+            && $0.isApproved
+        }
         guard !searchText.isEmpty else { return all }
         let q = searchText.lowercased()
         return all.filter {
@@ -64,7 +62,11 @@ private struct StaffDirectoryView: View {
     }
 
     private var maintenance: [StaffMember] {
-        let all = store.staff.filter { $0.role == .maintenancePersonnel && $0.status != .suspended }
+        let all = store.staff.filter {
+            $0.role == .maintenancePersonnel
+            && $0.status == .active
+            && $0.isApproved
+        }
         guard !searchText.isEmpty else { return all }
         let q = searchText.lowercased()
         return all.filter {
@@ -150,18 +152,26 @@ private struct StaffDirectoryView: View {
 
             Spacer()
 
-            staffStatusBadge(member.status)
+            // Show availability — not account status — as the badge
+            availabilityBadge(member.availability)
         }
         .padding(Spacing.md)
         .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
         .sierraShadow(SierraTheme.Shadow.card)
     }
 
-    private func staffStatusBadge(_ status: StaffStatus) -> some View {
-        let (text, dotColor, bgColor, fgColor): (String, Color, Color, Color) = switch status {
-        case .active:          ("Active",    SierraTheme.Colors.alpineMint, SierraTheme.Colors.alpineMint.opacity(0.12), SierraTheme.Colors.alpineDark)
-        case .pendingApproval: ("Pending",   SierraTheme.Colors.warning,    SierraTheme.Colors.warning.opacity(0.12),    SierraTheme.Colors.warning)
-        case .suspended:       ("Suspended", SierraTheme.Colors.danger,     SierraTheme.Colors.danger.opacity(0.12),     SierraTheme.Colors.danger)
+    private func availabilityBadge(_ availability: StaffAvailability) -> some View {
+        let (text, dotColor, bgColor, fgColor): (String, Color, Color, Color) = switch availability {
+        case .available:
+            ("Available",   SierraTheme.Colors.alpineMint,  SierraTheme.Colors.alpineMint.opacity(0.12),  SierraTheme.Colors.alpineDark)
+        case .unavailable:
+            ("Unavailable", SierraTheme.Colors.danger,      SierraTheme.Colors.danger.opacity(0.12),      SierraTheme.Colors.danger)
+        case .busy:
+            ("Busy",        SierraTheme.Colors.ember,       SierraTheme.Colors.ember.opacity(0.12),       SierraTheme.Colors.emberDark)
+        case .onTrip:
+            ("On Trip",     SierraTheme.Colors.sierraBlue,  SierraTheme.Colors.sierraBlue.opacity(0.12),  SierraTheme.Colors.sierraBlue)
+        case .onTask:
+            ("On Task",     SierraTheme.Colors.warning,     SierraTheme.Colors.warning.opacity(0.12),     SierraTheme.Colors.warning)
         }
         return SierraBadge(
             label: text,
@@ -173,7 +183,7 @@ private struct StaffDirectoryView: View {
     }
 }
 
-// MARK: - Applications List (with filter)
+// MARK: - Applications List
 
 private struct ApplicationsListView: View {
     @Environment(AppDataStore.self) private var store
