@@ -185,7 +185,9 @@ final class AuthManager {
         currentOTP = otp
         pendingOTPEmail = currentUser?.email
         if let email = pendingOTPEmail {
-            sendEmail(userEmail: email, otp: otp)
+            Task.detached {
+                sendEmail(userEmail: email, otp: otp)
+            }
         }
         return otp
     }

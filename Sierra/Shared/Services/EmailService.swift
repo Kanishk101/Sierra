@@ -9,7 +9,7 @@ struct EmailService {
 
     private static let smtpHost     = "smtp.gmail.com"
     private static let smtpEmail    = "fleet.manager.system.infosys@gmail.com"
-    private static let smtpPassword = "xzaqwrcvlkfwqgjf"
+    private static let smtpPassword = "gnurohgfexvvemnn"
     private static let senderName   = "Fleet Manager System"
 
     // MARK: - Send Credentials

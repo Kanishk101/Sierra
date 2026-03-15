@@ -8,7 +8,7 @@ func sendEmail(userEmail: String, otp: String) {
     let smtp = SMTP(
         hostname: "smtp.gmail.com",
         email:    "fleet.manager.system.infosys@gmail.com",
-        password: "xzaqwrcvlkfwqgjf"
+        password: "gnurohgfexvvemnn"
     )
 
     let mail = Mail(
