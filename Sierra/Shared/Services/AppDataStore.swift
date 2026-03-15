@@ -116,12 +116,16 @@ final class AppDataStore {
     func loadDriverData(driverId: UUID) async {
         isLoading = true
         do {
+            async let selfMemberTask   = StaffMemberService.fetchStaffMember(id: driverId)
             async let vehiclesTask     = VehicleService.fetchAllVehicles()
             async let tripsTask        = TripService.fetchTrips(driverId: driverId)
             async let fuelLogsTask     = FuelLogService.fetchFuelLogs(driverId: driverId)
             async let inspectionsTask  = VehicleInspectionService.fetchAllInspections()
             async let driverProfTask   = DriverProfileService.fetchDriverProfile(staffMemberId: driverId)
 
+            if let selfMember = try await selfMemberTask {
+                staff = [selfMember]   // single-element — own row only
+            }
             vehicles           = try await vehiclesTask
             trips              = try await tripsTask
             fuelLogs           = try await fuelLogsTask
@@ -140,6 +144,7 @@ final class AppDataStore {
     func loadMaintenanceData(staffId: UUID) async {
         isLoading = true
         do {
+            async let selfMemberTask = StaffMemberService.fetchStaffMember(id: staffId)
             async let vehiclesTask   = VehicleService.fetchAllVehicles()
             async let workOrdersTask = WorkOrderService.fetchWorkOrders(assignedToId: staffId)
             async let maintTasksTask = MaintenanceTaskService.fetchMaintenanceTasks(assignedToId: staffId)
@@ -147,6 +152,9 @@ final class AppDataStore {
             async let partsTask      = PartUsedService.fetchAllPartsUsed()
             async let maintProfTask  = MaintenanceProfileService.fetchMaintenanceProfile(staffMemberId: staffId)
 
+            if let selfMember = try await selfMemberTask {
+                staff = [selfMember]   // single-element — own row only
+            }
             vehicles           = try await vehiclesTask
             workOrders         = try await workOrdersTask
             maintenanceTasks   = try await maintTasksTask
@@ -745,8 +753,8 @@ final class AppDataStore {
     }
 
 
-    func activeTrip(forDriverId driverId: String) -> Trip? {
-        trips.first { $0.driverId == driverId && ($0.status == .active || $0.status == .scheduled) }
+    func activeTrip(forDriverId driverId: UUID) -> Trip? {
+        trips.first { $0.driverId == driverId.uuidString && ($0.status == .active || $0.status == .scheduled) }
     }
 
     func workOrder(forMaintenanceTask taskId: UUID) -> WorkOrder? {

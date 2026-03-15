@@ -82,7 +82,7 @@ struct StaffReviewSheet: View {
                 Button("Cancel", role: .cancel) {}
                 Button("Approve") {
                     Task {
-                        await viewModel.approve(staffId: application.id)
+                        await viewModel.approve(applicationId: application.id)
                         dismiss()
                     }
                 }
@@ -332,7 +332,7 @@ struct StaffReviewSheet: View {
 
             Button {
                 Task {
-                    await viewModel.reject(staffId: application.id, reason: viewModel.rejectionReason)
+                    await viewModel.reject(applicationId: application.id, reason: viewModel.rejectionReason)
                     dismiss()
                 }
             } label: {

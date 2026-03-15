@@ -25,7 +25,7 @@ struct SixDigitInputView: View {
     var onComplete: () -> Void
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             ForEach(0..<6, id: \.self) { index in
                 SingleDigitField(
                     text: Binding(
@@ -39,6 +39,7 @@ struct SixDigitInputView: View {
                 )
             }
         }
+        .frame(maxWidth: .infinity)
         .modifier(ShakeEffect(animatableData: CGFloat(shakeCount)))
     }
 
@@ -101,7 +102,7 @@ struct SingleDigitField: View {
             onBackspace: onBackspace,
             onPaste: onPaste
         )
-        .frame(width: 45, height: 56)
+        .frame(width: 42, height: 56)
         .multilineTextAlignment(.center)
         .font(.system(size: 22, weight: .bold, design: .rounded))
         .foregroundStyle(SierraTheme.Colors.primaryText)

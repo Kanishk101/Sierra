@@ -25,12 +25,12 @@ final class StaffApprovalViewModel {
     // MARK: - Approve
 
     @MainActor
-    func approve(staffId: UUID) async {
+    func approve(applicationId: UUID) async {
         let adminId = AuthManager.shared.currentUser?.id ?? UUID()
         isProcessing  = true
         errorMessage  = nil
         do {
-            try await store.approveStaffApplication(id: staffId, reviewedBy: adminId)
+            try await store.approveStaffApplication(id: applicationId, reviewedBy: adminId)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -40,12 +40,12 @@ final class StaffApprovalViewModel {
     // MARK: - Reject
 
     @MainActor
-    func reject(staffId: UUID, reason: String) async {
+    func reject(applicationId: UUID, reason: String) async {
         let adminId = AuthManager.shared.currentUser?.id ?? UUID()
         isProcessing = true
         errorMessage = nil
         do {
-            try await store.rejectStaffApplication(id: staffId, reason: reason, reviewedBy: adminId)
+            try await store.rejectStaffApplication(id: applicationId, reason: reason, reviewedBy: adminId)
         } catch {
             errorMessage = error.localizedDescription
         }

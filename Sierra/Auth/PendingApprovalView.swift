@@ -2,6 +2,7 @@ import SwiftUI
 
 struct PendingApprovalView: View {
     @State private var pulseScale: CGFloat = 0.95
+    @State private var pollingTask: Task<Void, Never>?
 
     var body: some View {
         ZStack {
@@ -61,9 +62,29 @@ struct PendingApprovalView: View {
                 .padding(.bottom, 48)
             }
         }
+        .onAppear { startPolling() }
+        .onDisappear { stopPolling() }
+    }
+
+    // MARK: - Polling
+
+    private func startPolling() {
+        pollingTask = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(10))
+                guard !Task.isCancelled else { return }
+                try? await AuthManager.shared.refreshCurrentUser()
+            }
+        }
+    }
+
+    private func stopPolling() {
+        pollingTask?.cancel()
+        pollingTask = nil
     }
 }
 
 #Preview {
     PendingApprovalView()
 }
+

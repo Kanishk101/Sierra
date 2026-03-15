@@ -119,8 +119,6 @@ final class LoginViewModel {
             }
 
             // Build 2FA context — do NOT navigate to dashboard yet.
-            // AuthManagerOTPVerificationService will send the OTP automatically
-            // when TwoFactorViewModel.onAppear() fires.
             let context = TwoFactorContext(
                 userID: user?.id.uuidString ?? UUID().uuidString,
                 role: role,
@@ -145,6 +143,11 @@ final class LoginViewModel {
                     }
                 }
             }
+
+            // Pre-generate OTP and fire SwiftSMTP NOW — before the screen appears.
+            // service.sendOTP() returns instantly (no re-generate), so the 2FA screen
+            // shows immediately in .awaitingEntry with no SMTP lag.
+            AuthManager.shared.generateOTP()
 
             // This triggers TwoFactorView — NOT the dashboard
             #if DEBUG

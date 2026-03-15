@@ -19,7 +19,7 @@ struct DriverHomeView: View {
     /// Active/scheduled trip for this driver.
     private var currentTrip: Trip? {
         guard let member = driverMember else { return nil }
-        return store.activeTrip(forDriverId: member.id.uuidString)
+        return store.activeTrip(forDriverId: member.id)
     }
 
     var body: some View {

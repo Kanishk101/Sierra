@@ -7,13 +7,16 @@
 
 import Foundation
 
-// OTP is sent via SwiftSMTP — look for the 📧 line in Xcode console after sign-in.
+// OTP is pre-generated in LoginViewModel.signIn() before the 2FA screen appears.
+// sendOTP() returns instantly — no SMTP wait on screen appear.
+// resendOTP() generates a fresh OTP and fires a new email.
 
 final class AuthManagerOTPVerificationService: OTPVerificationServiceProtocol {
 
     func sendOTP(context: TwoFactorContext) async throws -> OTPSendResult {
+        // OTP was pre-generated in LoginViewModel.signIn() before screen appeared.
+        // Do NOT call generateOTP() again — it would overwrite the already-sent OTP.
         guard AuthManager.shared.currentUser != nil else { throw AuthError.userNotFound }
-        _ = AuthManager.shared.generateOTP()   // prints OTP to console in DEBUG
         return OTPSendResult(
             success: true,
             maskedDestination: context.maskedDestination,
@@ -34,6 +37,14 @@ final class AuthManagerOTPVerificationService: OTPVerificationServiceProtocol {
     }
 
     func resendOTP(context: TwoFactorContext) async throws -> OTPSendResult {
-        try await sendOTP(context: context)
+        // Resend: generate a new OTP and fire a fresh email
+        guard AuthManager.shared.currentUser != nil else { throw AuthError.userNotFound }
+        _ = AuthManager.shared.generateOTP()
+        return OTPSendResult(
+            success: true,
+            maskedDestination: context.maskedDestination,
+            expiresAt: Date().addingTimeInterval(600),
+            cooldownUntil: Date().addingTimeInterval(30)
+        )
     }
 }
