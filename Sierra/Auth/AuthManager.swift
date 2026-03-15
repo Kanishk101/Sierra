@@ -102,9 +102,23 @@ final class AuthManager {
     }
 
     // MARK: - Complete Authentication
+    // Called after 2FA succeeds (or for first-login bypass).
+    // Triggers role-specific AppDataStore load so dashboards have data immediately.
 
     func completeAuthentication() {
         isAuthenticated = true
+        saveSessionToken()
+        guard let user = currentUser else { return }
+        Task {
+            switch user.role {
+            case .fleetManager:
+                await AppDataStore.shared.loadAll()
+            case .driver:
+                await AppDataStore.shared.loadDriverData(driverId: user.id)
+            case .maintenancePersonnel:
+                await AppDataStore.shared.loadMaintenanceData(staffId: user.id)
+            }
+        }
     }
 
     func saveSessionToken() {
@@ -137,6 +151,16 @@ final class AuthManager {
               let user = KeychainService.load(key: Keys.currentUser, as: AuthUser.self) else { return nil }
         currentUser = user
         isAuthenticated = true
+        Task {
+            switch user.role {
+            case .fleetManager:
+                await AppDataStore.shared.loadAll()
+            case .driver:
+                await AppDataStore.shared.loadDriverData(driverId: user.id)
+            case .maintenancePersonnel:
+                await AppDataStore.shared.loadMaintenanceData(staffId: user.id)
+            }
+        }
         return user.role
     }
 
