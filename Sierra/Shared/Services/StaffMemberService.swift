@@ -12,8 +12,6 @@ private let iso: ISO8601DateFormatter = {
 }()
 
 // MARK: - StaffMemberInsertPayload
-// Includes id + password (vinayak pattern)
-// Excludes: created_at, updated_at
 
 struct StaffMemberInsertPayload: Encodable {
     let id: String
@@ -62,12 +60,7 @@ struct StaffMemberInsertPayload: Encodable {
 }
 
 // MARK: - StaffMemberUpdatePayload
-// Profile-only fields — excludes auth and admin-controlled columns:
-//   password        → only via AuthManager.updatePasswordAndFirstLogin()
-//   is_first_login  → only via AuthManager.updatePasswordAndFirstLogin() / markPasswordChanged()
-//   is_approved     → only via StaffMemberService.setApprovalStatus()
-//   rejection_reason→ only via StaffMemberService.setApprovalStatus()
-//   id, created_at, updated_at → never in updates
+// Profile-only fields — excludes auth and admin-controlled columns.
 
 struct StaffMemberUpdatePayload: Encodable {
     let name: String?
@@ -192,10 +185,11 @@ struct StaffMemberService {
     }
 
     static func fetchStaffMember(id: UUID) async throws -> StaffMember? {
+        // Always lowercase UUID for PostgREST filter compatibility
         let rows: [StaffMemberDB] = try await supabase
             .from("staff_members")
             .select()
-            .eq("id", value: id.uuidString)
+            .eq("id", value: id.uuidString.lowercased())
             .execute()
             .value
         return rows.first?.toStaffMember()
@@ -234,14 +228,43 @@ struct StaffMemberService {
             .execute()
     }
 
-    // MARK: Update (profile fields only — never touches auth/admin columns)
+    // MARK: Update (profile fields only)
 
     static func updateStaffMember(_ member: StaffMember) async throws {
         try await supabase
             .from("staff_members")
             .update(StaffMemberUpdatePayload(from: member))
-            .eq("id", value: member.id.uuidString)
+            .eq("id", value: member.id.uuidString.lowercased())
             .execute()
+    }
+
+    // MARK: - Targeted availability-only update with verification
+    // Returns the DB-confirmed availability value, or nil if 0 rows matched.
+
+    static func updateAvailability(staffId: UUID, available: Bool) async throws -> String? {
+        struct Row: Decodable { let id: UUID; let availability: String }
+        let value = available
+            ? StaffAvailability.available.rawValue
+            : StaffAvailability.unavailable.rawValue
+        struct Payload: Encodable { let availability: String }
+
+        let idLower = staffId.uuidString.lowercased()
+        print("[StaffMemberService] updateAvailability called: id=\(idLower) value=\(value)")
+
+        let rows: [Row] = try await supabase
+            .from("staff_members")
+            .update(Payload(availability: value))
+            .eq("id", value: idLower)
+            .select("id, availability")
+            .execute()
+            .value
+
+        if rows.isEmpty {
+            print("[StaffMemberService] \u26a0\ufe0f 0 rows updated — UUID \(idLower) not found in DB")
+            return nil
+        }
+        print("[StaffMemberService] \u2705 confirmed: \(rows[0].id) \u2192 \(rows[0].availability)")
+        return rows[0].availability
     }
 
     // MARK: Delete
@@ -250,11 +273,11 @@ struct StaffMemberService {
         try await supabase
             .from("staff_members")
             .delete()
-            .eq("id", value: id.uuidString)
+            .eq("id", value: id.uuidString.lowercased())
             .execute()
     }
 
-    // MARK: - Mark Profile Complete (targeted update — does not touch auth/admin fields)
+    // MARK: - Mark Profile Complete
 
     static func markProfileComplete(
         staffId: UUID,
@@ -291,11 +314,11 @@ struct StaffMemberService {
                 emergency_contact_phone: emergencyContactPhone,
                 aadhaar_number:          aadhaarNumber
             ))
-            .eq("id", value: staffId.uuidString)
+            .eq("id", value: staffId.uuidString.lowercased())
             .execute()
     }
 
-    // MARK: - Set Approval Status (admin-only — targeted update)
+    // MARK: - Set Approval Status
 
     static func setApprovalStatus(
         staffId: UUID,
@@ -314,7 +337,7 @@ struct StaffMemberService {
                 status:           approved ? StaffStatus.active.rawValue : StaffStatus.suspended.rawValue,
                 rejection_reason: rejectionReason
             ))
-            .eq("id", value: staffId.uuidString)
+            .eq("id", value: staffId.uuidString.lowercased())
             .execute()
     }
 }
