@@ -67,6 +67,12 @@ struct VehicleListView: View {
             .navigationDestination(for: UUID.self) { id in
                 VehicleDetailView(vehicleId: id)
             }
+            .task {
+                if store.vehicles.isEmpty { await store.loadAll() }
+            }
+            .refreshable {
+                await store.loadAll()
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showAddSheet = true } label: {

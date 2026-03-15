@@ -10,12 +10,15 @@ final class AppDataStore {
     private init() {
         subscribeToEmergencyAlerts()
         subscribeToStaffMemberUpdates()
+        subscribeToVehicleUpdates()
+        subscribeToTripUpdates()
     }
 
     // MARK: - Realtime
 
     private var emergencyAlertsChannel: RealtimeChannelV2?
     private var staffMembersChannel: RealtimeChannelV2?
+    // vehiclesChannel and tripsChannel declared alongside their subscribe methods below
 
     // MARK: - Data Arrays
 
@@ -167,7 +170,7 @@ final class AppDataStore {
         guard let confirmedValue = try await StaffMemberService.updateAvailability(
             staffId: staffId, available: available
         ) else {
-            print("[AppDataStore] \u26a0\ufe0f updateDriverAvailability: DB returned 0 rows for \(staffId)")
+            print("[AppDataStore] ⚠️ updateDriverAvailability: DB returned 0 rows for \(staffId)")
             return
         }
         // Patch local store with the DB-confirmed value
@@ -598,6 +601,54 @@ final class AppDataStore {
         Task {
             do { try await channel.subscribeWithError() } catch { print("[AppDataStore] Staff members channel error: \(error)") }
             await MainActor.run { self.staffMembersChannel = channel }
+        }
+    }
+
+    // MARK: - Realtime — Vehicles UPDATE
+
+    private var vehiclesChannel: RealtimeChannelV2?
+
+    private func subscribeToVehicleUpdates() {
+        let channel = supabase.channel("vehicles_updates_channel")
+        _ = channel.onPostgresChange(UpdateAction.self, schema: "public", table: "vehicles") { [weak self] action in
+            guard let self else { return }
+            Task { @MainActor in
+                guard let idValue = action.record["id"],
+                      case let .string(idString) = idValue,
+                      let updatedId = UUID(uuidString: idString) else { return }
+                if let fresh = try? await VehicleService.fetchVehicle(id: updatedId),
+                   let idx = self.vehicles.firstIndex(where: { $0.id == updatedId }) {
+                    self.vehicles[idx] = fresh
+                }
+            }
+        }
+        Task {
+            do { try await channel.subscribeWithError() } catch { print("[AppDataStore] Vehicles channel error: \(error)") }
+            await MainActor.run { self.vehiclesChannel = channel }
+        }
+    }
+
+    // MARK: - Realtime — Trips UPDATE
+
+    private var tripsChannel: RealtimeChannelV2?
+
+    private func subscribeToTripUpdates() {
+        let channel = supabase.channel("trips_updates_channel")
+        _ = channel.onPostgresChange(UpdateAction.self, schema: "public", table: "trips") { [weak self] action in
+            guard let self else { return }
+            Task { @MainActor in
+                guard let idValue = action.record["id"],
+                      case let .string(idString) = idValue,
+                      let updatedId = UUID(uuidString: idString) else { return }
+                if let fresh = try? await TripService.fetchTrip(id: updatedId),
+                   let idx = self.trips.firstIndex(where: { $0.id == updatedId }) {
+                    self.trips[idx] = fresh
+                }
+            }
+        }
+        Task {
+            do { try await channel.subscribeWithError() } catch { print("[AppDataStore] Trips channel error: \(error)") }
+            await MainActor.run { self.tripsChannel = channel }
         }
     }
 }

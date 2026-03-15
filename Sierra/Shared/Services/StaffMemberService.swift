@@ -260,10 +260,10 @@ struct StaffMemberService {
             .value
 
         if rows.isEmpty {
-            print("[StaffMemberService] \u26a0\ufe0f 0 rows updated — UUID \(idLower) not found in DB")
+            print("[StaffMemberService] ⚠️ 0 rows updated — UUID \(idLower) not found in DB")
             return nil
         }
-        print("[StaffMemberService] \u2705 confirmed: \(rows[0].id) \u2192 \(rows[0].availability)")
+        print("[StaffMemberService] ✅ confirmed: \(rows[0].id) → \(rows[0].availability)")
         return rows[0].availability
     }
 

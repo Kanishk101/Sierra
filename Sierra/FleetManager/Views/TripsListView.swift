@@ -69,6 +69,12 @@ struct TripsListView: View {
         .onAppear {
             print("[TripsListView] Appeared — \(store.trips.count) trips loaded")
         }
+        .task {
+            if store.trips.isEmpty { await store.loadAll() }
+        }
+        .refreshable {
+            await store.loadAll()
+        }
     }
 
     // ─────────────────────────────────────────────────────────────
