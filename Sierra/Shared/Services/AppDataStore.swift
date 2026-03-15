@@ -196,6 +196,30 @@ final class AppDataStore {
         staffApplications.removeAll    { $0.staffMemberId == id }
     }
 
+    // MARK: - Targeted availability update
+    // Used by DriverHomeView toggle — sends ONLY the availability column.
+    // Does not go through StaffMemberUpdatePayload to avoid full-profile
+    // write failures due to type mismatches on other columns.
+
+    func updateDriverAvailability(staffId: UUID, available: Bool) async throws {
+        struct Payload: Encodable {
+            let availability: String
+        }
+        let value = available
+            ? StaffAvailability.available.rawValue
+            : StaffAvailability.unavailable.rawValue
+        try await supabase
+            .from("staff_members")
+            .update(Payload(availability: value))
+            .eq("id", value: staffId.uuidString)
+            .execute()
+        // Patch local store immediately
+        if let idx = staff.firstIndex(where: { $0.id == staffId }) {
+            staff[idx].availability = available ? .available : .unavailable
+        }
+        print("[AppDataStore] availability → \(value) for \(staffId)")
+    }
+
     // MARK: Driver Profile
 
     func addDriverProfile(_ profile: DriverProfile) async throws {
@@ -798,8 +822,8 @@ final class AppDataStore {
     // ─────────────────────────────────────────────────────────────
     // MARK: - Realtime — Staff Members (UPDATE)
     // Listens for any UPDATE on staff_members and patches store.staff
-    // in place. This makes driver availability changes visible to the
-    // admin in real time without any pull-to-refresh.
+    // in place. Makes driver availability changes visible to admin
+    // in real time without any pull-to-refresh.
     // ─────────────────────────────────────────────────────────────
 
     private func subscribeToStaffMemberUpdates() {
@@ -808,18 +832,14 @@ final class AppDataStore {
         _ = channel.onPostgresChange(UpdateAction.self, schema: "public", table: "staff_members") { [weak self] action in
             guard let self else { return }
             Task { @MainActor in
-                // Extract the updated row's id from the record payload
                 guard let idValue = action.record["id"],
                       case let .string(idString) = idValue,
                       let updatedId = UUID(uuidString: idString) else { return }
 
-                // Re-fetch only this one row from Supabase so we get a clean decode
                 if let fresh = try? await StaffMemberService.fetchStaffMember(id: updatedId) {
                     if let idx = self.staff.firstIndex(where: { $0.id == updatedId }) {
                         self.staff[idx] = fresh
                     }
-                    // Also refresh own record for driver/maintenance sessions
-                    // (their store.staff is a single-element array of themselves)
                 }
             }
         }

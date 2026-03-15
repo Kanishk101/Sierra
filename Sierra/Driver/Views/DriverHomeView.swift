@@ -10,10 +10,14 @@ struct DriverHomeView: View {
     private var user: AuthUser? { AuthManager.shared.currentUser }
 
     /// The StaffMember record for the current driver in AppDataStore.
+    /// Uses the authenticated user's UUID for exact match.
     private var driverMember: StaffMember? {
         guard let userId = user?.id else { return nil }
         return store.staff.first { $0.id == userId }
-            ?? store.staff.first { $0.role == .driver && $0.status == .active }
+    }
+
+    private var isAvailable: Bool {
+        driverMember?.availability == .available
     }
 
     /// Active/scheduled trip for this driver.
@@ -25,16 +29,13 @@ struct DriverHomeView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
-                // Greeting card
                 greetingCard
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
 
-                // Availability toggle
                 availabilityCard
                     .padding(.horizontal, 16)
 
-                // Current assignment
                 if let trip = currentTrip {
                     activeTripCard(trip)
                         .padding(.horizontal, 16)
@@ -79,23 +80,17 @@ struct DriverHomeView: View {
 
     private var greetingText: String {
         let hour = Calendar.current.component(.hour, from: Date())
-        let memberFirst: String? = driverMember.flatMap { m in m.displayName.split(separator: " ").first.map(String.init) }
-        let userFirst: String? = user?.name?.split(separator: " ").first.map(String.init)
-        let firstName: String = memberFirst ?? userFirst ?? "Driver"
-        let timeOfDay: String
-        if hour < 12 { timeOfDay = "morning" }
-        else if hour < 17 { timeOfDay = "afternoon" }
-        else { timeOfDay = "evening" }
+        let firstName: String =
+            driverMember?.displayName.split(separator: " ").first.map(String.init)
+            ?? user?.name?.split(separator: " ").first.map(String.init)
+            ?? "Driver"
+        let timeOfDay = hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening"
         return "Good \(timeOfDay), \(firstName)"
     }
 
     // ─────────────────────────────────
     // MARK: - Availability Toggle Card
     // ─────────────────────────────────
-
-    private var isAvailable: Bool {
-        driverMember?.availability == .available
-    }
 
     private var availabilityCard: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -115,7 +110,17 @@ struct DriverHomeView: View {
                 Toggle("", isOn: Binding(
                     get: { isAvailable },
                     set: { newValue in
-                        toggleAvailability(newValue)
+                        guard let id = driverMember?.id else {
+                            print("[DriverHomeView] toggleAvailability: driverMember is nil — store.staff.count=\(store.staff.count)")
+                            return
+                        }
+                        Task {
+                            do {
+                                try await store.updateDriverAvailability(staffId: id, available: newValue)
+                            } catch {
+                                print("[DriverHomeView] availability update FAILED: \(error)")
+                            }
+                        }
                     }
                 ))
                 .labelsHidden()
@@ -127,25 +132,17 @@ struct DriverHomeView: View {
         .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
     }
 
-    private func toggleAvailability(_ available: Bool) {
-        guard var member = driverMember else { return }
-        member.availability = available ? .available : .unavailable
-        Task { try? await store.updateStaffMember(member) }
-    }
-
     // ─────────────────────────────────
     // MARK: - Active Trip Card
     // ─────────────────────────────────
 
     private func activeTripCard(_ trip: Trip) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Header
             Text("ACTIVE ASSIGNMENT")
                 .font(SierraFont.body(11, weight: .bold))
                 .foregroundStyle(SierraTheme.Colors.ember)
                 .kerning(1.2)
 
-            // Task ID
             Text(trip.taskId)
                 .font(.system(size: 13, weight: .semibold, design: .monospaced))
                 .foregroundStyle(.secondary)
@@ -153,12 +150,10 @@ struct DriverHomeView: View {
                 .padding(.vertical, 4)
                 .background(Color.gray.opacity(0.12), in: Capsule())
 
-            // Route
-            Text("\(trip.origin) → \(trip.destination)")
+            Text("\(trip.origin) \u{2192} \(trip.destination)")
                 .font(SierraFont.body(16, weight: .bold))
                 .foregroundStyle(SierraTheme.Colors.primaryText)
 
-            // Vehicle info
             if let vId = trip.vehicleId,
                let vUUID = UUID(uuidString: vId),
                let vehicle = store.vehicle(for: vUUID) {
@@ -178,7 +173,6 @@ struct DriverHomeView: View {
                 }
             }
 
-            // Scheduled time
             HStack(spacing: 6) {
                 Image(systemName: "clock")
                     .font(SierraFont.caption2)
@@ -188,7 +182,6 @@ struct DriverHomeView: View {
                     .foregroundStyle(.secondary)
             }
 
-            // View Details button
             NavigationLink(value: trip.id) {
                 Text("View Details")
                     .font(SierraFont.caption1)
@@ -229,19 +222,18 @@ struct DriverHomeView: View {
                 .font(SierraFont.body(18, weight: .bold))
                 .foregroundStyle(.gray)
 
-            Text("Your Fleet Manager hasn't assigned\na delivery task yet.")
+            Text("Your Fleet Manager hasn\u{2019}t assigned\na delivery task yet.")
                 .font(SierraFont.caption1)
                 .foregroundStyle(.gray.opacity(0.7))
                 .multilineTextAlignment(.center)
                 .lineSpacing(2)
 
-            // Availability reminder
             if isAvailable {
                 HStack(spacing: 6) {
                     Image(systemName: "checkmark.circle.fill")
                         .font(SierraFont.caption1)
                         .foregroundStyle(SierraTheme.Colors.alpineMint)
-                    Text("You're Available — waiting for assignment")
+                    Text("You\u{2019}re Available \u{2014} waiting for assignment")
                         .font(SierraFont.caption1)
                         .foregroundStyle(SierraTheme.Colors.alpineMint)
                 }
@@ -263,7 +255,14 @@ struct DriverHomeView: View {
                     .background(SierraTheme.Colors.warning.opacity(0.08), in: Capsule())
 
                     Button {
-                        toggleAvailability(true)
+                        guard let id = driverMember?.id else { return }
+                        Task {
+                            do {
+                                try await store.updateDriverAvailability(staffId: id, available: true)
+                            } catch {
+                                print("[DriverHomeView] Set Available FAILED: \(error)")
+                            }
+                        }
                     } label: {
                         Text("Set Available")
                             .font(SierraFont.caption1)
