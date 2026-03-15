@@ -1,4 +1,4 @@
-import SwiftUI
+import Foundation
 import SwiftSMTP
 
 private let smtpClient = SMTP(

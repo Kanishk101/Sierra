@@ -371,8 +371,7 @@ struct StaffDetailSheet: View {
     }
 }
 
-// StaffMember needs Identifiable for sheet(item:)
-extension StaffMember: @retroactive Identifiable {}
+
 
 #Preview {
     StaffListView()

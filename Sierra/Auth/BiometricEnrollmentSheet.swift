@@ -17,8 +17,9 @@ struct BiometricEnrollmentSheet: View {
         VStack(spacing: 24) {
             Spacer()
 
-            // Face ID icon
-            Image(systemName: biometric.biometricIconName)
+            // Always show Face ID symbol — biometricIconName returns lock.fill on Simulator
+            // since LAContext.biometryType == .none without real hardware.
+            Image(systemName: "faceid")
                 .font(.system(size: 64))
                 .foregroundStyle(SierraTheme.Colors.ember)
                 .padding(.bottom, 8)
