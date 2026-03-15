@@ -2,8 +2,9 @@ import SwiftUI
 
 
 struct ForcePasswordChangeView: View {
-    @State private var viewModel = ForcePasswordChangeViewModel()
-    @State private var appeared  = false
+    @State private var viewModel       = ForcePasswordChangeViewModel()
+    @State private var appeared        = false
+    @State private var showDestination = false
 
     var body: some View {
         ZStack {
@@ -57,17 +58,32 @@ struct ForcePasswordChangeView: View {
         .onAppear {
             withAnimation(.spring(duration: 0.5, bounce: 0.25)) { appeared = true }
         }
-        // Navigate to role-specific destination after password change
-        .fullScreenCover(isPresented: $viewModel.completed) {
+        // 2FA OTP screen — shown after password change succeeds
+        .fullScreenCover(isPresented: $viewModel.awaitingOTP) {
+            TwoFactorView(
+                viewModel: TwoFactorViewModel(
+                    subtitle: "Verify your identity",
+                    maskedEmail: AuthManager.shared.maskedEmail,
+                    onVerified: {
+                        viewModel.awaitingOTP = false
+                        AuthManager.shared.completeAuthentication()
+                        AuthManager.shared.saveSessionToken()
+                        showDestination = true
+                    },
+                    onCancelled: {
+                        viewModel.awaitingOTP = false
+                    }
+                )
+            )
+        }
+        // Navigate to role-specific destination after 2FA completes
+        .fullScreenCover(isPresented: $showDestination) {
             ZStack {
                 SierraTheme.Colors.appBackground.ignoresSafeArea()
                 if let dest = viewModel.nextDestination {
                     destinationView(for: dest)
                 }
             }
-        }
-        .onChange(of: viewModel.readyToNavigate) { _, ready in
-            if ready { viewModel.completed = true }
         }
     }
 

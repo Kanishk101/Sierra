@@ -41,7 +41,7 @@ final class TwoFactorViewModel {
         onCancelled: (() -> Void)? = nil
     ) {
         self.context = context
-        self.service = service ?? SupabaseOTPVerificationService()
+        self.service = service ?? AuthManagerOTPVerificationService()
         self.onVerified = onVerified
         self.onCancelled = onCancelled
     }
@@ -60,7 +60,7 @@ final class TwoFactorViewModel {
             sessionToken: "",
             authDestination: AuthManager.shared.currentUser.map { AuthManager.shared.destination(for: $0) } ?? .fleetManagerDashboard
         )
-        self.init(context: ctx, service: SupabaseOTPVerificationService(), onVerified: onVerified, onCancelled: onCancelled)
+        self.init(context: ctx, service: AuthManagerOTPVerificationService(), onVerified: onVerified, onCancelled: onCancelled)
     }
 
     // MARK: - Computed

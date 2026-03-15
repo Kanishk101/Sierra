@@ -13,27 +13,20 @@ enum AuthDestination: Equatable {
     case maintenanceDashboard
 }
 
-// MARK: - CreateStaffRPCParams
-// File-level + Sendable: structs inside @MainActor inherit actor isolation and
-// cannot satisfy the Sendable constraint on supabase.rpc()'s type parameter.
+// MARK: - StaffLoginRow (local Decodable for signIn query)
 
-private struct CreateStaffRPCParams: Encodable, Sendable {
-    let p_email: String
-    let p_raw_password: String
-    let p_name: String
-    let p_role: String
-}
-
-// MARK: - RPC helper (nonisolated — escapes @MainActor so async/throws resolves)
-// The Supabase SDK rpc().execute().value chain is not recognised as async/throws
-// when called directly inside a @MainActor func. A nonisolated static func has
-// no actor binding so the compiler resolves the call correctly.
-
-private func invokeCreateStaffRPC(_ params: CreateStaffRPCParams) async throws -> UUID {
-    try await supabase
-        .rpc("create_staff_member", params: params)
-        .execute()
-        .value
+private struct StaffLoginRow: Decodable {
+    let id: String
+    let email: String
+    let password: String
+    let role: String
+    let name: String?
+    let phone: String?
+    let is_first_login: Bool?
+    let is_profile_complete: Bool?
+    let is_approved: Bool?
+    let rejection_reason: String?
+    let created_at: String?
 }
 
 // MARK: - AuthManager
@@ -66,75 +59,52 @@ final class AuthManager {
     private init() { restoreSessionSilently() }
 
     // MARK: - Sign In
+    // Vinayak pattern: query staff_members by email, compare password column directly.
 
     func signIn(email: String, password: String) async throws -> UserRole {
-        let session = try await supabase.auth.signIn(email: email, password: password)
-        let authUserId = session.user.id
-
-        struct RoleRow: Decodable {
-            let role: String
-            let name: String?
-            let isFirstLogin: Bool
-            let isProfileComplete: Bool
-            let isApproved: Bool
-            let rejectionReason: String?
-            let phone: String?
-            let createdAt: Date?
-            enum CodingKeys: String, CodingKey {
-                case role, name, phone
-                case isFirstLogin      = "is_first_login"
-                case isProfileComplete = "is_profile_complete"
-                case isApproved        = "is_approved"
-                case rejectionReason   = "rejection_reason"
-                case createdAt         = "created_at"
-            }
-        }
-
-        let rows: [RoleRow] = try await supabase
+        let rows: [StaffLoginRow] = try await supabase
             .from("staff_members")
-            .select("role, name, is_first_login, is_profile_complete, is_approved, rejection_reason, phone, created_at")
-            .eq("id", value: authUserId.uuidString)
+            .select()
+            .eq("email", value: email)
             .limit(1)
             .execute()
             .value
 
         guard let row = rows.first else {
-            try? await supabase.auth.signOut()
-            throw AuthError.userNotFound
+            throw AuthError.invalidCredentials
+        }
+
+        guard row.password == password else {
+            throw AuthError.invalidCredentials
         }
 
         let user = AuthUser(
-            id: authUserId,
-            email: session.user.email ?? email,
+            id: UUID(uuidString: row.id) ?? UUID(),
+            email: row.email,
             role: UserRole(rawValue: row.role) ?? .driver,
-            isFirstLogin: row.isFirstLogin,
-            isProfileComplete: row.isProfileComplete,
-            isApproved: row.isApproved,
+            isFirstLogin: row.is_first_login ?? true,
+            isProfileComplete: row.is_profile_complete ?? false,
+            isApproved: row.is_approved ?? false,
             name: row.name,
-            rejectionReason: row.rejectionReason,
+            rejectionReason: row.rejection_reason,
             phone: row.phone,
-            createdAt: row.createdAt
+            createdAt: ISO8601DateFormatter().date(from: row.created_at ?? "") ?? Date()
         )
+
+        let hashed = CryptoService.hash(password: password)
+        _ = KeychainService.save(hashed, forKey: Keys.hashedCred)
+        _ = KeychainService.save(user, forKey: Keys.currentUser)
+
         currentUser = user
         pendingOTPEmail = user.email
-        _ = KeychainService.save(user, forKey: Keys.currentUser)
+        // NOTE: Do NOT set isAuthenticated here — 2FA must complete first
         return user.role
     }
 
     // MARK: - Complete Authentication
 
-    func completeAuthentication(saveToken: Bool = true) {
-        if saveToken { saveSessionToken() }
+    func completeAuthentication() {
         isAuthenticated = true
-        if let user = currentUser {
-            Task {
-                switch user.role {
-                case .fleetManager:         await AppDataStore.shared.loadAll()
-                case .driver:               await AppDataStore.shared.loadDriverData(driverId: user.id)
-                case .maintenancePersonnel: await AppDataStore.shared.loadMaintenanceData(staffId: user.id)
-                }
-            }
-        }
     }
 
     func saveSessionToken() {
@@ -147,7 +117,6 @@ final class AuthManager {
     // MARK: - Sign Out
 
     func signOut() {
-        Task { try? await supabase.auth.signOut() }
         currentUser = nil
         isAuthenticated = false
         needsReauth = false
@@ -208,13 +177,16 @@ final class AuthManager {
         return "\(email.prefix(1))***\(email[atRange.lowerBound...])"
     }
 
-    // MARK: - Legacy OTP helpers
+    // MARK: - OTP helpers
 
     @discardableResult
     func generateOTP() -> String {
         let otp = String(format: "%06d", Int.random(in: 100000...999999))
         currentOTP = otp
         pendingOTPEmail = currentUser?.email
+        if let email = pendingOTPEmail {
+            sendEmail(userEmail: email, otp: otp)
+        }
         return otp
     }
 
@@ -231,21 +203,23 @@ final class AuthManager {
     // MARK: - Password Management
 
     func updatePasswordAndFirstLogin(newPassword: String) async throws {
-        guard let user = currentUser else { throw AuthError.invalidCredentials }
+        guard var user = currentUser else { throw AuthError.invalidCredentials }
 
-        try await supabase.auth.update(user: UserAttributes(password: newPassword))
+        struct Payload: Encodable {
+            let password: String
+            let is_first_login: Bool
+        }
 
-        struct FirstLoginPayload: Encodable { let is_first_login: Bool }
         try await supabase
             .from("staff_members")
-            .update(FirstLoginPayload(is_first_login: false))
+            .update(Payload(password: newPassword, is_first_login: false))
             .eq("id", value: user.id.uuidString)
             .execute()
 
-        var updated = user
-        updated.isFirstLogin = false
-        currentUser = updated
-        _ = KeychainService.save(updated, forKey: Keys.currentUser)
+        user.isFirstLogin = false
+        currentUser = user
+        _ = KeychainService.save(user, forKey: Keys.currentUser)
+
         let hashed = CryptoService.hash(password: newPassword)
         _ = KeychainService.save(hashed, forKey: Keys.hashedCred)
     }
@@ -324,10 +298,9 @@ final class AuthManager {
             guard !rows.isEmpty else { return false }
 
             pendingOTPEmail = email
-            let randomOTP = String(format: "%06d", Int.random(in: 100000...999999))
-            resetOTP = randomOTP
-            sendEmail(userEmail: email, otp: randomOTP)
-
+            let otp = String(format: "%06d", Int.random(in: 100000...999999))
+            resetOTP = otp
+            sendEmail(userEmail: email, otp: otp)
             return true
         } catch {
             return false
@@ -337,9 +310,17 @@ final class AuthManager {
     func resetPassword(code: String, newPassword: String) async throws {
         try await Task.sleep(for: .milliseconds(600))
         guard code == resetOTP else { throw AuthError.invalidCredentials }
-        try await supabase.auth.update(user: UserAttributes(password: newPassword))
+        guard let email = pendingOTPEmail else { throw AuthError.invalidCredentials }
+
+        try await supabase
+            .from("staff_members")
+            .update(["password": newPassword])
+            .eq("email", value: email)
+            .execute()
+
         let hashed = CryptoService.hash(password: newPassword)
         _ = KeychainService.save(hashed, forKey: Keys.hashedCred)
+
         resetOTP = ""
         pendingOTPEmail = nil
     }
@@ -356,27 +337,6 @@ final class AuthManager {
         } catch {
             return false
         }
-    }
-
-    // MARK: - Create Staff Account
-    // Delegates to the file-level invokeCreateStaffRPC() helper which is
-    // nonisolated — required so the compiler sees rpc().execute().value as
-    // async throws. Calling it directly from a @MainActor func causes the
-    // "No try/await" false-positive errors.
-
-    func createStaffAccount(
-        email: String,
-        name: String,
-        role: UserRole,
-        tempPassword: String
-    ) async throws -> UUID {
-        let params = CreateStaffRPCParams(
-            p_email:        email,
-            p_raw_password: tempPassword,
-            p_name:         name,
-            p_role:         role.rawValue
-        )
-        return try await invokeCreateStaffRPC(params)
     }
 
     // MARK: - Auto-Lock

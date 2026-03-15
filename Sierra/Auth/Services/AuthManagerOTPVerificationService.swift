@@ -7,8 +7,7 @@
 
 import Foundation
 
-// OTP is printed to Xcode console — look for the 📧 line after signing in.
-// Swap to SupabaseOTPVerificationService when real email is ready.
+// OTP is sent via SwiftSMTP — look for the 📧 line in Xcode console after sign-in.
 
 final class AuthManagerOTPVerificationService: OTPVerificationServiceProtocol {
 

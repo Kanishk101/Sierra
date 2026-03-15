@@ -12,7 +12,7 @@ private let iso: ISO8601DateFormatter = {
 }()
 
 // MARK: - StaffMemberInsertPayload
-// Includes id (mirrors auth.users.id — must be set explicitly)
+// Includes id + password (vinayak pattern)
 // Excludes: created_at, updated_at
 
 struct StaffMemberInsertPayload: Encodable {
@@ -21,114 +21,159 @@ struct StaffMemberInsertPayload: Encodable {
     let role: String
     let status: String
     let email: String
+    let password: String
     let phone: String?
     let availability: String
-    let dateOfBirth: String?
+    let is_first_login: Bool
+    let is_profile_complete: Bool
+    let is_approved: Bool
+    let rejection_reason: String?
+    let date_of_birth: String?
     let gender: String?
     let address: String?
-    let emergencyContactName: String?
-    let emergencyContactPhone: String?
-    let aadhaarNumber: String?
-    let profilePhotoUrl: String?
-    let isFirstLogin: Bool
-    let isProfileComplete: Bool
-    let isApproved: Bool
-    let rejectionReason: String?
-    let joinedDate: String?
+    let emergency_contact_name: String?
+    let emergency_contact_phone: String?
+    let aadhaar_number: String?
+    let profile_photo_url: String?
+    let joined_date: String?
 
-    enum CodingKeys: String, CodingKey {
-        case id, name, role, status, email, phone, availability
-        case dateOfBirth          = "date_of_birth"
-        case gender, address
-        case emergencyContactName  = "emergency_contact_name"
-        case emergencyContactPhone = "emergency_contact_phone"
-        case aadhaarNumber        = "aadhaar_number"
-        case profilePhotoUrl      = "profile_photo_url"
-        case isFirstLogin         = "is_first_login"
-        case isProfileComplete    = "is_profile_complete"
-        case isApproved           = "is_approved"
-        case rejectionReason      = "rejection_reason"
-        case joinedDate           = "joined_date"
-    }
-
-    init(from m: StaffMember) {
-        id                   = m.id.uuidString
-        name                 = m.name
-        role                 = m.role.rawValue
-        status               = m.status.rawValue
-        email                = m.email
-        phone                = m.phone
-        availability         = m.availability.rawValue
-        dateOfBirth          = m.dateOfBirth
-        gender               = m.gender
-        address              = m.address
-        emergencyContactName  = m.emergencyContactName
-        emergencyContactPhone = m.emergencyContactPhone
-        aadhaarNumber        = m.aadhaarNumber
-        profilePhotoUrl      = m.profilePhotoUrl
-        isFirstLogin         = m.isFirstLogin
-        isProfileComplete    = m.isProfileComplete
-        isApproved           = m.isApproved
-        rejectionReason      = m.rejectionReason
-        joinedDate           = m.joinedDate.map { iso.string(from: $0) }
+    init(from s: StaffMember, password: String = "") {
+        self.id                    = s.id.uuidString
+        self.name                  = s.name
+        self.role                  = s.role.rawValue
+        self.status                = s.status.rawValue
+        self.email                 = s.email
+        self.password              = password
+        self.phone                 = s.phone
+        self.availability          = s.availability.rawValue
+        self.is_first_login        = s.isFirstLogin
+        self.is_profile_complete   = s.isProfileComplete
+        self.is_approved           = s.isApproved
+        self.rejection_reason      = s.rejectionReason
+        self.date_of_birth         = s.dateOfBirth
+        self.gender                = s.gender
+        self.address               = s.address
+        self.emergency_contact_name  = s.emergencyContactName
+        self.emergency_contact_phone = s.emergencyContactPhone
+        self.aadhaar_number        = s.aadhaarNumber
+        self.profile_photo_url     = s.profilePhotoUrl
+        self.joined_date           = s.joinedDate.map { iso.string(from: $0) }
     }
 }
 
 // MARK: - StaffMemberUpdatePayload
-// Excludes: id, created_at, updated_at
+// Excludes: id, password, created_at, updated_at
+// Password is updated separately via AuthManager.
 
 struct StaffMemberUpdatePayload: Encodable {
     let name: String?
     let role: String
     let status: String
+    let email: String
     let phone: String?
     let availability: String
-    let dateOfBirth: String?
+    let is_first_login: Bool
+    let is_profile_complete: Bool
+    let is_approved: Bool
+    let rejection_reason: String?
+    let date_of_birth: String?
     let gender: String?
     let address: String?
-    let emergencyContactName: String?
-    let emergencyContactPhone: String?
-    let aadhaarNumber: String?
-    let profilePhotoUrl: String?
-    let isFirstLogin: Bool
-    let isProfileComplete: Bool
-    let isApproved: Bool
-    let rejectionReason: String?
-    let joinedDate: String?
+    let emergency_contact_name: String?
+    let emergency_contact_phone: String?
+    let aadhaar_number: String?
+    let profile_photo_url: String?
 
-    enum CodingKeys: String, CodingKey {
-        case name, role, status, phone, availability
-        case dateOfBirth          = "date_of_birth"
-        case gender, address
-        case emergencyContactName  = "emergency_contact_name"
-        case emergencyContactPhone = "emergency_contact_phone"
-        case aadhaarNumber        = "aadhaar_number"
-        case profilePhotoUrl      = "profile_photo_url"
-        case isFirstLogin         = "is_first_login"
-        case isProfileComplete    = "is_profile_complete"
-        case isApproved           = "is_approved"
-        case rejectionReason      = "rejection_reason"
-        case joinedDate           = "joined_date"
+    init(from s: StaffMember) {
+        self.name                  = s.name
+        self.role                  = s.role.rawValue
+        self.status                = s.status.rawValue
+        self.email                 = s.email
+        self.phone                 = s.phone
+        self.availability          = s.availability.rawValue
+        self.is_first_login        = s.isFirstLogin
+        self.is_profile_complete   = s.isProfileComplete
+        self.is_approved           = s.isApproved
+        self.rejection_reason      = s.rejectionReason
+        self.date_of_birth         = s.dateOfBirth
+        self.gender                = s.gender
+        self.address               = s.address
+        self.emergency_contact_name  = s.emergencyContactName
+        self.emergency_contact_phone = s.emergencyContactPhone
+        self.aadhaar_number        = s.aadhaarNumber
+        self.profile_photo_url     = s.profilePhotoUrl
+    }
+}
+
+// MARK: - StaffMemberDB (full v2 decode struct with password)
+
+struct StaffMemberDB: Decodable {
+    let id: UUID
+    let name: String?
+    let role: String
+    let status: String
+    let email: String
+    let password: String
+    let phone: String?
+    let availability: String
+    let is_first_login: Bool?
+    let is_profile_complete: Bool?
+    let is_approved: Bool?
+    let rejection_reason: String?
+    let date_of_birth: String?
+    let gender: String?
+    let address: String?
+    let emergency_contact_name: String?
+    let emergency_contact_phone: String?
+    let aadhaar_number: String?
+    let profile_photo_url: String?
+    let joined_date: String?
+    let created_at: String?
+    let updated_at: String?
+}
+
+// MARK: - StaffMemberDB Mappers
+
+extension StaffMemberDB {
+    func toStaffMember() -> StaffMember {
+        StaffMember(
+            id: id,
+            name: name,
+            role: UserRole(rawValue: role) ?? .driver,
+            status: StaffStatus(rawValue: status) ?? .pendingApproval,
+            email: email,
+            phone: phone,
+            availability: StaffAvailability(rawValue: availability) ?? .unavailable,
+            dateOfBirth: date_of_birth,
+            gender: gender,
+            address: address,
+            emergencyContactName: emergency_contact_name,
+            emergencyContactPhone: emergency_contact_phone,
+            aadhaarNumber: aadhaar_number,
+            profilePhotoUrl: profile_photo_url,
+            isFirstLogin: is_first_login ?? true,
+            isProfileComplete: is_profile_complete ?? false,
+            isApproved: is_approved ?? false,
+            rejectionReason: rejection_reason,
+            joinedDate: joined_date.flatMap { iso.date(from: $0) },
+            createdAt: created_at.flatMap { iso.date(from: $0) } ?? Date(),
+            updatedAt: updated_at.flatMap { iso.date(from: $0) } ?? Date()
+        )
     }
 
-    init(from m: StaffMember) {
-        name                 = m.name
-        role                 = m.role.rawValue
-        status               = m.status.rawValue
-        phone                = m.phone
-        availability         = m.availability.rawValue
-        dateOfBirth          = m.dateOfBirth
-        gender               = m.gender
-        address              = m.address
-        emergencyContactName  = m.emergencyContactName
-        emergencyContactPhone = m.emergencyContactPhone
-        aadhaarNumber        = m.aadhaarNumber
-        profilePhotoUrl      = m.profilePhotoUrl
-        isFirstLogin         = m.isFirstLogin
-        isProfileComplete    = m.isProfileComplete
-        isApproved           = m.isApproved
-        rejectionReason      = m.rejectionReason
-        joinedDate           = m.joinedDate.map { iso.string(from: $0) }
+    func toAuthUser() -> AuthUser {
+        AuthUser(
+            id: id,
+            email: email,
+            role: UserRole(rawValue: role) ?? .driver,
+            isFirstLogin: is_first_login ?? true,
+            isProfileComplete: is_profile_complete ?? false,
+            isApproved: is_approved ?? false,
+            name: name,
+            rejectionReason: rejection_reason,
+            phone: phone,
+            createdAt: created_at.flatMap { iso.date(from: $0) } ?? Date()
+        )
     }
 }
 
@@ -139,36 +184,38 @@ struct StaffMemberService {
     // MARK: Fetch
 
     static func fetchAllStaffMembers() async throws -> [StaffMember] {
-        try await supabase
+        let rows: [StaffMemberDB] = try await supabase
             .from("staff_members")
             .select()
             .order("created_at", ascending: false)
             .execute()
             .value
+        return rows.map { $0.toStaffMember() }
     }
 
     static func fetchStaffMember(id: UUID) async throws -> StaffMember? {
-        let rows: [StaffMember] = try await supabase
+        let rows: [StaffMemberDB] = try await supabase
             .from("staff_members")
             .select()
             .eq("id", value: id.uuidString)
             .execute()
             .value
-        return rows.first
+        return rows.first?.toStaffMember()
     }
 
     static func fetchStaffMembers(role: UserRole) async throws -> [StaffMember] {
-        try await supabase
+        let rows: [StaffMemberDB] = try await supabase
             .from("staff_members")
             .select()
             .eq("role", value: role.rawValue)
             .order("name", ascending: true)
             .execute()
             .value
+        return rows.map { $0.toStaffMember() }
     }
 
     static func fetchAvailableDrivers() async throws -> [StaffMember] {
-        try await supabase
+        let rows: [StaffMemberDB] = try await supabase
             .from("staff_members")
             .select()
             .eq("role", value: UserRole.driver.rawValue)
@@ -177,14 +224,15 @@ struct StaffMemberService {
             .order("name", ascending: true)
             .execute()
             .value
+        return rows.map { $0.toStaffMember() }
     }
 
     // MARK: Insert
 
-    static func addStaffMember(_ member: StaffMember) async throws {
+    static func addStaffMember(_ member: StaffMember, password: String = "") async throws {
         try await supabase
             .from("staff_members")
-            .insert(StaffMemberInsertPayload(from: member))
+            .insert(StaffMemberInsertPayload(from: member, password: password))
             .execute()
     }
 
@@ -252,7 +300,7 @@ struct StaffMemberService {
             .execute()
     }
 
-    // MARK: - Set Approval Status (called by StaffApplicationStore approve/reject)
+    // MARK: - Set Approval Status (called by AppDataStore approve/reject)
 
     static func setApprovalStatus(
         staffId: UUID,
@@ -282,9 +330,6 @@ struct StaffMemberService {
 // MARK: - StaffMember → AuthUser Mapper
 
 extension StaffMember {
-    /// Builds an AuthUser from a StaffMember record.
-    /// Used by AuthManager.signIn() after Supabase Auth succeeds —
-    /// replaces the old AuthUserDB.toAuthUser() mapper.
     func toAuthUser() -> AuthUser {
         AuthUser(
             id:                id,

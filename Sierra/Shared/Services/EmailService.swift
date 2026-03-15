@@ -15,7 +15,7 @@ struct EmailService {
     // MARK: - Send Credentials
 
     /// Sends login credentials to a newly created staff member via Gmail SMTP.
-    /// Called by CreateStaffViewModel after createStaffAccount() succeeds.
+    /// Called by CreateStaffViewModel after staff_members row is inserted.
     static func sendCredentials(
         to email: String,
         name: String,

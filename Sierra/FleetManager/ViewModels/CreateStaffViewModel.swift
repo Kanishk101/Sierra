@@ -23,10 +23,7 @@ final class CreateStaffViewModel {
     var errorMessage:     String?
     var showSuccess:      Bool    = false
     var createdStaffName: String  = ""
-
-    // Temp-password alert (shown after account creation so admin can copy it)
-    var showTempPasswordAlert: Bool   = false
-    var generatedTempPassword: String = ""
+    var successMessage:   String  = ""
 
     // MARK: - Validation
 
@@ -55,77 +52,82 @@ final class CreateStaffViewModel {
     func createStaff() async {
         guard canSubmit, let role = selectedRole else { return }
 
-        isLoading    = true
+        isLoading = true
         errorMessage = nil
 
-        let tempPassword = generateTempPassword()
+        let tempPassword = generateTemporaryPassword()
         let trimmedName  = fullName.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        let newId        = UUID()
+        let now          = Date()
 
         do {
-            // 1. Create the account via Postgres RPC (no Edge Function needed)
-            _ = try await AuthManager.shared.createStaffAccount(
-                email:        trimmedEmail,
-                name:         trimmedName,
-                role:         role,
-                tempPassword: tempPassword
+            // Step 1: Build StaffMember with all v2 fields
+            let newStaff = StaffMember(
+                id:                    newId,
+                name:                  trimmedName,
+                role:                  role,
+                status:                .pendingApproval,
+                email:                 trimmedEmail,
+                phone:                 nil,
+                availability:          .unavailable,
+                dateOfBirth:           nil,
+                gender:                nil,
+                address:               nil,
+                emergencyContactName:  nil,
+                emergencyContactPhone: nil,
+                aadhaarNumber:         nil,
+                profilePhotoUrl:       nil,
+                isFirstLogin:          true,
+                isProfileComplete:     false,
+                isApproved:            false,
+                rejectionReason:       nil,
+                joinedDate:            now,
+                createdAt:             now,
+                updatedAt:             now
             )
 
-            // 2. Refresh the store so the new staff member appears immediately
-            await AppDataStore.shared.loadAll()
+            // Step 2: Insert into staff_members with password column
+            try await StaffMemberService.addStaffMember(newStaff, password: tempPassword)
 
-            isLoading             = false
-            createdStaffName      = trimmedName
-            generatedTempPassword = tempPassword
-            showTempPasswordAlert = true
-            showSuccess           = true
+            // Step 3: Email credentials via SwiftSMTP
+            try await EmailService.sendCredentials(
+                to:       trimmedEmail,
+                name:     trimmedName,
+                password: tempPassword,
+                role:     role
+            )
 
-            // 3. Open Mail app pre-filled with credentials (fire-and-forget)
-            // If Mail app isn’t configured, the error is swallowed —
-            // admin can still copy the password from the alert.
-            Task { @MainActor in
-                try? await EmailService.sendCredentials(
-                    to:       trimmedEmail,
-                    name:     trimmedName,
-                    password: tempPassword,
-                    role:     role
-                )
-            }
+            isLoading        = false
+            createdStaffName = trimmedName
+            showSuccess      = true
+            successMessage   = "Account created for \(trimmedName)"
 
             NotificationCenter.default.post(
                 name: .staffCreated,
                 object: nil,
-                userInfo: [
-                    "name":  trimmedName,
-                    "email": trimmedEmail,
-                    "role":  role.rawValue
-                ]
+                userInfo: ["name": trimmedName, "email": trimmedEmail, "role": role.rawValue]
             )
-
-        } catch let authErr as AuthError {
-            isLoading    = false
-            errorMessage = authErr.errorDescription ?? "Failed to create staff account."
         } catch {
             isLoading    = false
-            errorMessage = error.localizedDescription
+            errorMessage = "Failed to create staff account. Please try again."
         }
     }
 
     func reset() {
-        selectedRole          = nil
-        fullName              = ""
-        email                 = ""
-        isLoading             = false
-        errorMessage          = nil
-        showSuccess           = false
-        createdStaffName      = ""
-        showTempPasswordAlert = false
-        generatedTempPassword = ""
+        selectedRole     = nil
+        fullName         = ""
+        email            = ""
+        isLoading        = false
+        errorMessage     = nil
+        showSuccess      = false
+        createdStaffName = ""
+        successMessage   = ""
     }
 
     // MARK: - Private
 
-    private func generateTempPassword() -> String {
+    private func generateTemporaryPassword() -> String {
         let chars = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$"
         return String((0..<12).compactMap { _ in chars.randomElement() })
     }

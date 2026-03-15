@@ -14,7 +14,7 @@ final class LoginViewModel {
 
     /// Production OTP service injected into TwoFactorViewModel.
     /// Override in tests with a MockOTPVerificationService.
-    var otpService: OTPVerificationServiceProtocol = SupabaseOTPVerificationService()
+    var otpService: OTPVerificationServiceProtocol = AuthManagerOTPVerificationService()
 
     // MARK: - Auth State (single source of truth)
 
@@ -119,7 +119,7 @@ final class LoginViewModel {
             }
 
             // Build 2FA context — do NOT navigate to dashboard yet.
-            // SupabaseOTPVerificationService will send the OTP automatically
+            // AuthManagerOTPVerificationService will send the OTP automatically
             // when TwoFactorViewModel.onAppear() fires.
             let context = TwoFactorContext(
                 userID: user?.id.uuidString ?? UUID().uuidString,

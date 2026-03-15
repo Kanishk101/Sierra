@@ -1,6 +1,5 @@
 import Foundation
 import SwiftUI
-import Supabase
 
 enum PasswordStrength: Int, Comparable {
     case weak = 0
@@ -55,11 +54,8 @@ final class ForcePasswordChangeViewModel {
     var isLoading: Bool = false
     var errorMessage: String?
     var currentPasswordError: String?
-    var passwordChanged: Bool = false
     var nextDestination: AuthDestination?
-    var completed: Bool = false       // true once biometric sheet is dismissed
-    var readyToNavigate: Bool = false // true right after password change — triggers biometric prompt
-    var awaitingOTP: Bool = false
+    var awaitingOTP: Bool = false     // triggers TwoFactorView fullScreenCover
 
     // MARK: - Strength
 
@@ -109,12 +105,11 @@ final class ForcePasswordChangeViewModel {
     @MainActor
     func setNewPassword() async {
         guard canSubmit else { return }
-
         currentPasswordError = nil
         errorMessage = nil
         isLoading = true
 
-        // 1. Verify current password via Supabase Auth (no local hash needed)
+        // 1. Verify current password — re-queries staff_members by email + password
         let isValidCurrent = await verifyCurrentPassword()
         guard isValidCurrent else {
             isLoading = false
@@ -122,7 +117,7 @@ final class ForcePasswordChangeViewModel {
             return
         }
 
-        // 2. New password must differ
+        // 2. New password must differ from current
         guard newPassword != currentPassword else {
             isLoading = false
             errorMessage = "New password must be different from your current password"
@@ -130,7 +125,7 @@ final class ForcePasswordChangeViewModel {
         }
 
         do {
-            // 3. Update via Supabase Auth + mark isFirstLogin = false in staff_members
+            // 3. Update staff_members.password + is_first_login (Phase 2)
             try await AuthManager.shared.updatePasswordAndFirstLogin(newPassword: newPassword)
 
             // 4. Determine next destination
@@ -142,26 +137,25 @@ final class ForcePasswordChangeViewModel {
                 }
             }
 
-            // 5. Complete authentication (fleet manager gets token now; others after onboarding)
-            let saveToken = AuthManager.shared.currentUser?.role == .fleetManager
-            AuthManager.shared.completeAuthentication(saveToken: saveToken)
-
+            // 5. Generate OTP + send via SwiftSMTP — triggers TwoFactorView
+            AuthManager.shared.generateOTP()
             isLoading = false
-            readyToNavigate = true
+            awaitingOTP = true
 
         } catch {
             isLoading = false
-            errorMessage = error.localizedDescription
+            errorMessage = "Failed to update password. Please try again."
         }
     }
 
     // MARK: - Private
 
-    /// Re-verifies the current password by attempting a Supabase Auth sign-in.
+    /// Re-verifies the current password via AuthManager.signIn() which
+    /// queries staff_members by email + password (vinayak pattern).
     private func verifyCurrentPassword() async -> Bool {
         guard let email = AuthManager.shared.currentUser?.email else { return false }
         do {
-            _ = try await supabase.auth.signIn(email: email, password: currentPassword)
+            _ = try await AuthManager.shared.signIn(email: email, password: currentPassword)
             return true
         } catch {
             return false

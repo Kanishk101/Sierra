@@ -30,8 +30,6 @@ struct OTPVerifyResult {
 
 final class MockOTPVerificationService: OTPVerificationServiceProtocol {
 
-    /// Dev-only valid OTP. In production this lives server-side.
-    private let devOTP = "123456"
     private var attemptsUsed = 0
 
     func sendOTP(context: TwoFactorContext) async throws -> OTPSendResult {
@@ -47,7 +45,7 @@ final class MockOTPVerificationService: OTPVerificationServiceProtocol {
 
     func verifyOTP(code: String, context: TwoFactorContext) async throws -> OTPVerifyResult {
         try await Task.sleep(nanoseconds: 800_000_000)
-        let correct = code == devOTP
+        let correct = AuthManager.shared.verifyOTP(code)
         if correct {
             attemptsUsed = 0
             return OTPVerifyResult(
@@ -60,7 +58,7 @@ final class MockOTPVerificationService: OTPVerificationServiceProtocol {
         } else {
             attemptsUsed += 1
             let remaining = max(0, 3 - attemptsUsed)
-            let locked = remaining == 0
+            let locked    = remaining == 0
             return OTPVerifyResult(
                 success: false,
                 attemptsRemaining: remaining,
