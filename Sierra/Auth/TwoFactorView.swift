@@ -34,7 +34,7 @@ struct TwoFactorView: View {
                         Spacer(minLength: 40)
                         cancelButton.padding(.bottom, 32)
                     }
-                    .frame(minHeight: geo.size.height)
+                    .frame(maxWidth: .infinity, minHeight: geo.size.height)
                 }
                 .scrollDismissesKeyboard(.interactively)
             }

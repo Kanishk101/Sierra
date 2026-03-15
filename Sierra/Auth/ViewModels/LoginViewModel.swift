@@ -130,6 +130,22 @@ final class LoginViewModel {
                 authDestination: destination
             )
 
+            // Prefetch dashboard data while the user is on the 2FA screen.
+            // By the time they verify the OTP and land on the dashboard,
+            // AppDataStore will already be populated — no 0→value flicker.
+            if let user {
+                Task.detached {
+                    switch user.role {
+                    case .fleetManager:
+                        await AppDataStore.shared.loadAll()
+                    case .driver:
+                        await AppDataStore.shared.loadDriverData(driverId: user.id)
+                    case .maintenancePersonnel:
+                        await AppDataStore.shared.loadMaintenanceData(staffId: user.id)
+                    }
+                }
+            }
+
             // This triggers TwoFactorView — NOT the dashboard
             #if DEBUG
             print("📋 [LoginViewModel.signIn] About to set authState = .requiresTwoFactor")

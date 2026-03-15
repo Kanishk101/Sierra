@@ -107,34 +107,23 @@ final class TwoFactorViewModel {
     }
 
     func sendOTP() async {
-        state = .sending
-        isLoading = true
-        do {
-            let result = try await service.sendOTP(context: context)
-            state = .awaitingEntry
-            isLoading = false
-            startExpiryCountdown(until: result.expiresAt)
-            startResendCooldown(until: result.cooldownUntil)
-        } catch let authErr as AuthError {
-            state = .idle
-            isLoading = false
-            switch authErr {
-            case .networkError(let msg) where msg.lowercased().contains("invalid"):
-                banner = .error("Could not send code — email address is not valid. Contact your fleet manager.")
-            case .networkError(let msg):
-                banner = .error("Could not send code: \(msg)")
-            case .userNotFound:
-                banner = .error("Account not found. Please sign in again.")
-            case .otpExpired:
-                banner = .warning("Previous code expired. Tap Resend for a fresh code.")
-                state = .awaitingEntry
-            default:
-                banner = .error("Failed to send code. Please try again.")
+        // Immediately show the OTP input — don't block on the SMTP round-trip.
+        // Fire the email in the background; if it fails a banner will appear.
+        state = .awaitingEntry
+        isLoading = false
+        // Start timers optimistically (10-minute expiry, 30-second resend cooldown)
+        startExpiryCountdown(until: Date().addingTimeInterval(600))
+        startResendCooldown(until: Date().addingTimeInterval(30))
+
+        Task.detached { [weak self] in
+            guard let self else { return }
+            do {
+                _ = try await self.service.sendOTP(context: self.context)
+            } catch {
+                await MainActor.run {
+                    self.banner = .error("Could not send code. Check your connection and tap Resend.")
+                }
             }
-        } catch {
-            state = .idle
-            isLoading = false
-            banner = .error("Failed to send code: \(error.localizedDescription)")
         }
     }
 
