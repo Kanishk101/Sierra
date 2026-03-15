@@ -8,7 +8,15 @@ struct StaffListView: View {
     @State private var selectedMember: StaffMember?
 
     private var filteredStaff: [StaffMember] {
-        let byRole = store.staff.filter { $0.role != .fleetManager && $0.role == selectedSegment }
+        // Only show staff who are fully active & approved.
+        // Pending-approval and suspended members are handled
+        // in PendingApprovalsView, not here.
+        let byRole = store.staff.filter {
+            $0.role != .fleetManager
+            && $0.role == selectedSegment
+            && $0.status == .active
+            && $0.isApproved
+        }
         guard !searchText.isEmpty else { return byRole }
         let q = searchText.lowercased()
         return byRole.filter {
@@ -103,24 +111,13 @@ struct StaffListView: View {
                     .sierraStyle(.cardTitle)
                 Text(member.email)
                     .sierraStyle(.caption)
-                // Availability pill for drivers
-                if member.role == .driver {
-                    HStack(spacing: 4) {
-                        Circle()
-                            .fill(availabilityColor(member.availability))
-                            .frame(width: 6, height: 6)
-                        Text(member.availability.rawValue)
-                            .font(SierraFont.body(11, weight: .medium))
-                            .foregroundStyle(availabilityColor(member.availability))
-                    }
-                }
             }
 
             Spacer()
 
             VStack(alignment: .trailing, spacing: 4) {
-                staffStatusBadge(member.status)
-                // Chevron hint
+                // Availability is the primary status shown in the list
+                availabilityBadge(member.availability)
                 Image(systemName: "chevron.right")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(SierraTheme.Colors.granite.opacity(0.4))
@@ -131,11 +128,20 @@ struct StaffListView: View {
         .sierraShadow(SierraTheme.Shadow.card)
     }
 
-    private func staffStatusBadge(_ status: StaffStatus) -> some View {
-        let (text, dot, bg, fg): (String, Color, Color, Color) = switch status {
-        case .active:          ("Active",    SierraTheme.Colors.alpineMint, SierraTheme.Colors.alpineMint.opacity(0.12), SierraTheme.Colors.alpineDark)
-        case .pendingApproval: ("Pending",   SierraTheme.Colors.warning,    SierraTheme.Colors.warning.opacity(0.12),    SierraTheme.Colors.warning)
-        case .suspended:       ("Suspended", SierraTheme.Colors.danger,     SierraTheme.Colors.danger.opacity(0.12),     SierraTheme.Colors.danger)
+    // MARK: - Availability Badge
+
+    private func availabilityBadge(_ availability: StaffAvailability) -> some View {
+        let (text, dot, bg, fg): (String, Color, Color, Color) = switch availability {
+        case .available:
+            ("Available",   SierraTheme.Colors.alpineMint,  SierraTheme.Colors.alpineMint.opacity(0.12),  SierraTheme.Colors.alpineDark)
+        case .unavailable:
+            ("Unavailable", SierraTheme.Colors.danger,      SierraTheme.Colors.danger.opacity(0.12),      SierraTheme.Colors.danger)
+        case .busy:
+            ("Busy",        SierraTheme.Colors.ember,       SierraTheme.Colors.ember.opacity(0.12),       SierraTheme.Colors.emberDark)
+        case .onTrip:
+            ("On Trip",     SierraTheme.Colors.sierraBlue,  SierraTheme.Colors.sierraBlue.opacity(0.12),  SierraTheme.Colors.sierraBlue)
+        case .onTask:
+            ("On Task",     SierraTheme.Colors.warning,     SierraTheme.Colors.warning.opacity(0.12),     SierraTheme.Colors.warning)
         }
         return SierraBadge(label: text, dotColor: dot, backgroundColor: bg, foregroundColor: fg, size: .compact)
     }
@@ -147,16 +153,6 @@ struct StaffListView: View {
         case .fleetManager:         SierraAvatarView.driver()
         }
     }
-
-    private func availabilityColor(_ a: StaffAvailability) -> Color {
-        switch a {
-        case .available:   return SierraTheme.Colors.alpineMint
-        case .busy:        return SierraTheme.Colors.ember
-        case .onTrip:      return SierraTheme.Colors.sierraBlue
-        case .onTask:      return SierraTheme.Colors.warning
-        case .unavailable: return SierraTheme.Colors.danger
-        }
-    }
 }
 
 // MARK: - Staff Detail Sheet
@@ -166,18 +162,15 @@ struct StaffDetailSheet: View {
     @Environment(AppDataStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
-    // Assigned vehicle lookup
     private var assignedVehicle: Vehicle? {
         store.vehicles.first { $0.assignedDriverId == member.id.uuidString }
     }
 
-    // Active/scheduled trip for this driver
     private var activeTrip: Trip? {
         guard member.role == .driver else { return nil }
         return store.activeTrip(forDriverId: member.id)
     }
 
-    // Recent trips count
     private var tripCount: Int {
         store.trips(forDriver: member.id).count
     }
@@ -187,14 +180,11 @@ struct StaffDetailSheet: View {
             ScrollView {
                 VStack(spacing: 20) {
 
-                    // Hero
                     heroSection
 
-                    // Status cards row
                     statusRow
                         .padding(.horizontal, Spacing.lg)
 
-                    // Assigned vehicle
                     if let vehicle = assignedVehicle {
                         infoCard(title: "Assigned Vehicle", icon: "car.fill", color: SierraTheme.Colors.sierraBlue) {
                             labeledRow("Name", vehicle.name)
@@ -212,7 +202,6 @@ struct StaffDetailSheet: View {
                         .padding(.horizontal, Spacing.lg)
                     }
 
-                    // Active trip
                     if let trip = activeTrip {
                         infoCard(title: "Current Trip", icon: "arrow.triangle.swap", color: .green) {
                             labeledRow("Route", "\(trip.origin) \u{2192} \(trip.destination)")
@@ -222,7 +211,6 @@ struct StaffDetailSheet: View {
                         .padding(.horizontal, Spacing.lg)
                     }
 
-                    // Contact info
                     infoCard(title: "Contact", icon: "person.crop.circle", color: SierraTheme.Colors.ember) {
                         labeledRow("Email", member.email)
                         if let phone = member.phone { labeledRow("Phone", phone) }
@@ -235,7 +223,6 @@ struct StaffDetailSheet: View {
                     }
                     .padding(.horizontal, Spacing.lg)
 
-                    // Personal info
                     if member.isProfileComplete {
                         infoCard(title: "Profile", icon: "doc.text", color: SierraTheme.Colors.alpineMint) {
                             if let dob = member.dateOfBirth { labeledRow("Date of Birth", dob) }
@@ -246,7 +233,6 @@ struct StaffDetailSheet: View {
                         .padding(.horizontal, Spacing.lg)
                     }
 
-                    // Stats
                     infoCard(title: "Activity", icon: "chart.bar.fill", color: SierraTheme.Colors.warning) {
                         labeledRow("Total Trips", "\(tripCount)")
                         labeledRow("Profile", member.isProfileComplete ? "Complete" : "Incomplete")
@@ -294,14 +280,17 @@ struct StaffDetailSheet: View {
     }
 
     // MARK: - Status Row
+    // Shows availability as the primary status. Account-level status
+    // (active/suspended) is not surfaced here since the list is already
+    // filtered to active+approved staff only.
 
     private var statusRow: some View {
         HStack(spacing: 12) {
-            miniStatusCard("Status", member.status.rawValue, statusColor(member.status))
-            if member.role == .driver {
-                miniStatusCard("Availability", member.availability.rawValue, availabilityColor(member.availability))
-            }
-            miniStatusCard("Approved", member.isApproved ? "Yes" : "No", member.isApproved ? SierraTheme.Colors.alpineMint : SierraTheme.Colors.danger)
+            miniStatusCard("Availability", member.availability.rawValue, availabilityColor(member.availability))
+            miniStatusCard("Approved", member.isApproved ? "Yes" : "No",
+                           member.isApproved ? SierraTheme.Colors.alpineMint : SierraTheme.Colors.danger)
+            miniStatusCard("Profile", member.isProfileComplete ? "Complete" : "Incomplete",
+                           member.isProfileComplete ? SierraTheme.Colors.alpineMint : SierraTheme.Colors.warning)
         }
     }
 
@@ -354,21 +343,13 @@ struct StaffDetailSheet: View {
 
     // MARK: - Color helpers
 
-    private func statusColor(_ s: StaffStatus) -> Color {
-        switch s {
-        case .active:          return SierraTheme.Colors.alpineMint
-        case .pendingApproval: return SierraTheme.Colors.warning
-        case .suspended:       return SierraTheme.Colors.danger
-        }
-    }
-
     private func availabilityColor(_ a: StaffAvailability) -> Color {
         switch a {
         case .available:   return SierraTheme.Colors.alpineMint
+        case .unavailable: return SierraTheme.Colors.danger
         case .busy:        return SierraTheme.Colors.ember
         case .onTrip:      return SierraTheme.Colors.sierraBlue
         case .onTask:      return SierraTheme.Colors.warning
-        case .unavailable: return SierraTheme.Colors.danger
         }
     }
 }
