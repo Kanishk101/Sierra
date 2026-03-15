@@ -14,12 +14,14 @@ final class AppDataStore {
 
     private init() {
         subscribeToEmergencyAlerts()
+        subscribeToStaffMemberUpdates()
     }
 
 
     // MARK: - Realtime
 
     private var emergencyAlertsChannel: RealtimeChannelV2?
+    private var staffMembersChannel: RealtimeChannelV2?
 
     // ─────────────────────────────────────────────────────────────
     // MARK: - 17 Data Arrays
@@ -255,6 +257,7 @@ final class AppDataStore {
         )
         if let staffIdx = staff.firstIndex(where: { $0.id == app.staffMemberId }) {
             staff[staffIdx].isApproved = true
+            staff[staffIdx].status     = .active
         }
     }
 
@@ -276,6 +279,7 @@ final class AppDataStore {
         if let staffIdx = staff.firstIndex(where: { $0.id == app.staffMemberId }) {
             staff[staffIdx].isApproved      = false
             staff[staffIdx].rejectionReason = reason
+            staff[staffIdx].status          = .suspended
         }
     }
 
@@ -373,7 +377,6 @@ final class AppDataStore {
         try await TripService.updateTrip(trip)
         trips[idx] = trip
 
-        // Update vehicle odometer and trip count
         if let vehicleIdStr = trip.vehicleId,
            let vehicleId    = UUID(uuidString: vehicleIdStr),
            let vIdx         = vehicles.firstIndex(where: { $0.id == vehicleId }) {
@@ -404,7 +407,6 @@ final class AppDataStore {
         try await VehicleInspectionService.addInspection(inspection)
         vehicleInspections.append(inspection)
 
-        // Link inspection to trip
         let tripId = inspection.tripId
         if let tripIdx = trips.firstIndex(where: { $0.id == tripId }) {
             if inspection.type == .preTripInspection {
@@ -415,7 +417,6 @@ final class AppDataStore {
             try await TripService.updateTrip(trips[tripIdx])
         }
 
-        // If failed, put vehicle in maintenance
         if inspection.overallResult == .failed {
             if let vIdx = vehicles.firstIndex(where: { $0.id == inspection.vehicleId }) {
                 vehicles[vIdx].status = .inMaintenance
@@ -438,7 +439,6 @@ final class AppDataStore {
     func addProofOfDelivery(_ pod: ProofOfDelivery) async throws {
         try await ProofOfDeliveryService.addProofOfDelivery(pod)
         proofOfDeliveries.append(pod)
-        // Link POD to the trip
         if let tripIdx = trips.firstIndex(where: { $0.id == pod.tripId }) {
             trips[tripIdx].proofOfDeliveryId = pod.id
             try await TripService.updateTrip(trips[tripIdx])
@@ -479,7 +479,6 @@ final class AppDataStore {
         try await MaintenanceTaskService.addMaintenanceTask(task)
         maintenanceTasks.insert(task, at: 0)
 
-        // Put vehicle in maintenance
         if let idx = vehicles.firstIndex(where: { $0.id == task.vehicleId }) {
             vehicles[idx].status = .inMaintenance
             try? await VehicleService.updateVehicle(vehicles[idx])
@@ -499,7 +498,6 @@ final class AppDataStore {
             maintenanceTasks[idx].status      = .completed
             maintenanceTasks[idx].completedAt = Date()
 
-            // Revert vehicle to idle
             let vehicleId = maintenanceTasks[idx].vehicleId
             if let vIdx = vehicles.firstIndex(where: { $0.id == vehicleId }) {
                 vehicles[vIdx].status = .idle
@@ -561,7 +559,6 @@ final class AppDataStore {
     func addPartUsed(_ part: PartUsed) async throws {
         try await PartUsedService.addPartUsed(part)
         partsUsed.append(part)
-        // Recalculate work order parts cost
         let total = partsUsed
             .filter   { $0.workOrderId == part.workOrderId }
             .reduce(0) { $0 + $1.totalCost }
@@ -576,7 +573,6 @@ final class AppDataStore {
         let workOrderId = part.workOrderId
         try await PartUsedService.deletePartUsed(id: id)
         partsUsed.removeAll { $0.id == id }
-        // Recalculate after removal
         let total = partsUsed
             .filter   { $0.workOrderId == workOrderId }
             .reduce(0) { $0 + $1.totalCost }
@@ -613,8 +609,6 @@ final class AppDataStore {
         try await GeofenceService.toggleGeofence(id: id, isActive: newState)
         geofences[idx].isActive = newState
     }
-
-    // Geofence Events
 
     func addGeofenceEvent(_ event: GeofenceEvent) async throws {
         try await GeofenceEventService.addGeofenceEvent(event)
@@ -653,8 +647,6 @@ final class AppDataStore {
 
     // ─────────────────────────────────────────────────────────────
     // MARK: - Lookup Helpers
-    // NOTE: All methods use explicit named parameters to avoid collision
-    // with stored array property names.
     // ─────────────────────────────────────────────────────────────
 
     func driverProfile(for staffId: UUID) -> DriverProfile? {
@@ -752,7 +744,6 @@ final class AppDataStore {
         vehicles.filter { $0.status == .idle && $0.assignedDriverId == nil }
     }
 
-
     func activeTrip(forDriverId driverId: UUID) -> Trip? {
         trips.first { $0.driverId == driverId.uuidString && ($0.status == .active || $0.status == .scheduled) }
     }
@@ -780,7 +771,7 @@ final class AppDataStore {
     }
 
     // ─────────────────────────────────────────────────────────────
-    // MARK: - Realtime — Emergency Alerts
+    // MARK: - Realtime — Emergency Alerts (INSERT)
     // ─────────────────────────────────────────────────────────────
 
     private func subscribeToEmergencyAlerts() {
@@ -801,6 +792,45 @@ final class AppDataStore {
                 print("[AppDataStore] Emergency alerts channel error: \(error)")
             }
             await MainActor.run { self.emergencyAlertsChannel = channel }
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // MARK: - Realtime — Staff Members (UPDATE)
+    // Listens for any UPDATE on staff_members and patches store.staff
+    // in place. This makes driver availability changes visible to the
+    // admin in real time without any pull-to-refresh.
+    // ─────────────────────────────────────────────────────────────
+
+    private func subscribeToStaffMemberUpdates() {
+        let channel = supabase.channel("staff_members_updates_channel")
+
+        _ = channel.onPostgresChange(UpdateAction.self, schema: "public", table: "staff_members") { [weak self] action in
+            guard let self else { return }
+            Task { @MainActor in
+                // Extract the updated row's id from the record payload
+                guard let idValue = action.record["id"],
+                      case let .string(idString) = idValue,
+                      let updatedId = UUID(uuidString: idString) else { return }
+
+                // Re-fetch only this one row from Supabase so we get a clean decode
+                if let fresh = try? await StaffMemberService.fetchStaffMember(id: updatedId) {
+                    if let idx = self.staff.firstIndex(where: { $0.id == updatedId }) {
+                        self.staff[idx] = fresh
+                    }
+                    // Also refresh own record for driver/maintenance sessions
+                    // (their store.staff is a single-element array of themselves)
+                }
+            }
+        }
+
+        Task {
+            do {
+                try await channel.subscribeWithError()
+            } catch {
+                print("[AppDataStore] Staff members channel error: \(error)")
+            }
+            await MainActor.run { self.staffMembersChannel = channel }
         }
     }
 }
