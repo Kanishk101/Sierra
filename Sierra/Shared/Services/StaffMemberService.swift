@@ -38,32 +38,36 @@ struct StaffMemberInsertPayload: Encodable {
     let joined_date: String?
 
     init(from s: StaffMember, password: String = "") {
-        self.id                    = s.id.uuidString
-        self.name                  = s.name
-        self.role                  = s.role.rawValue
-        self.status                = s.status.rawValue
-        self.email                 = s.email
-        self.password              = password
-        self.phone                 = s.phone
-        self.availability          = s.availability.rawValue
-        self.is_first_login        = s.isFirstLogin
-        self.is_profile_complete   = s.isProfileComplete
-        self.is_approved           = s.isApproved
-        self.rejection_reason      = s.rejectionReason
-        self.date_of_birth         = s.dateOfBirth
-        self.gender                = s.gender
-        self.address               = s.address
+        self.id                      = s.id.uuidString
+        self.name                    = s.name
+        self.role                    = s.role.rawValue
+        self.status                  = s.status.rawValue
+        self.email                   = s.email
+        self.password                = password
+        self.phone                   = s.phone
+        self.availability            = s.availability.rawValue
+        self.is_first_login          = s.isFirstLogin
+        self.is_profile_complete     = s.isProfileComplete
+        self.is_approved             = s.isApproved
+        self.rejection_reason        = s.rejectionReason
+        self.date_of_birth           = s.dateOfBirth
+        self.gender                  = s.gender
+        self.address                 = s.address
         self.emergency_contact_name  = s.emergencyContactName
         self.emergency_contact_phone = s.emergencyContactPhone
-        self.aadhaar_number        = s.aadhaarNumber
-        self.profile_photo_url     = s.profilePhotoUrl
-        self.joined_date           = s.joinedDate.map { iso.string(from: $0) }
+        self.aadhaar_number          = s.aadhaarNumber
+        self.profile_photo_url       = s.profilePhotoUrl
+        self.joined_date             = s.joinedDate.map { iso.string(from: $0) }
     }
 }
 
 // MARK: - StaffMemberUpdatePayload
-// Excludes: id, password, created_at, updated_at
-// Password is updated separately via AuthManager.
+// Profile-only fields — excludes auth and admin-controlled columns:
+//   password        → only via AuthManager.updatePasswordAndFirstLogin()
+//   is_first_login  → only via AuthManager.updatePasswordAndFirstLogin() / markPasswordChanged()
+//   is_approved     → only via StaffMemberService.setApprovalStatus()
+//   rejection_reason→ only via StaffMemberService.setApprovalStatus()
+//   id, created_at, updated_at → never in updates
 
 struct StaffMemberUpdatePayload: Encodable {
     let name: String?
@@ -72,10 +76,7 @@ struct StaffMemberUpdatePayload: Encodable {
     let email: String
     let phone: String?
     let availability: String
-    let is_first_login: Bool
     let is_profile_complete: Bool
-    let is_approved: Bool
-    let rejection_reason: String?
     let date_of_birth: String?
     let gender: String?
     let address: String?
@@ -85,23 +86,20 @@ struct StaffMemberUpdatePayload: Encodable {
     let profile_photo_url: String?
 
     init(from s: StaffMember) {
-        self.name                  = s.name
-        self.role                  = s.role.rawValue
-        self.status                = s.status.rawValue
-        self.email                 = s.email
-        self.phone                 = s.phone
-        self.availability          = s.availability.rawValue
-        self.is_first_login        = s.isFirstLogin
-        self.is_profile_complete   = s.isProfileComplete
-        self.is_approved           = s.isApproved
-        self.rejection_reason      = s.rejectionReason
-        self.date_of_birth         = s.dateOfBirth
-        self.gender                = s.gender
-        self.address               = s.address
+        self.name                    = s.name
+        self.role                    = s.role.rawValue
+        self.status                  = s.status.rawValue
+        self.email                   = s.email
+        self.phone                   = s.phone
+        self.availability            = s.availability.rawValue
+        self.is_profile_complete     = s.isProfileComplete
+        self.date_of_birth           = s.dateOfBirth
+        self.gender                  = s.gender
+        self.address                 = s.address
         self.emergency_contact_name  = s.emergencyContactName
         self.emergency_contact_phone = s.emergencyContactPhone
-        self.aadhaar_number        = s.aadhaarNumber
-        self.profile_photo_url     = s.profilePhotoUrl
+        self.aadhaar_number          = s.aadhaarNumber
+        self.profile_photo_url       = s.profilePhotoUrl
     }
 }
 
@@ -236,7 +234,7 @@ struct StaffMemberService {
             .execute()
     }
 
-    // MARK: Update
+    // MARK: Update (profile fields only — never touches auth/admin columns)
 
     static func updateStaffMember(_ member: StaffMember) async throws {
         try await supabase
@@ -256,7 +254,7 @@ struct StaffMemberService {
             .execute()
     }
 
-    // MARK: - Mark Profile Complete (called after onboarding submission)
+    // MARK: - Mark Profile Complete (targeted update — does not touch auth/admin fields)
 
     static func markProfileComplete(
         staffId: UUID,
@@ -280,27 +278,24 @@ struct StaffMemberService {
             let emergency_contact_phone: String
             let aadhaar_number: String
         }
-
-        let payload = Payload(
-            is_profile_complete:     true,
-            name:                    name,
-            phone:                   phone,
-            gender:                  gender,
-            date_of_birth:           dateOfBirth,
-            address:                 address,
-            emergency_contact_name:  emergencyContactName,
-            emergency_contact_phone: emergencyContactPhone,
-            aadhaar_number:          aadhaarNumber
-        )
-
         try await supabase
             .from("staff_members")
-            .update(payload)
+            .update(Payload(
+                is_profile_complete:     true,
+                name:                    name,
+                phone:                   phone,
+                gender:                  gender,
+                date_of_birth:           dateOfBirth,
+                address:                 address,
+                emergency_contact_name:  emergencyContactName,
+                emergency_contact_phone: emergencyContactPhone,
+                aadhaar_number:          aadhaarNumber
+            ))
             .eq("id", value: staffId.uuidString)
             .execute()
     }
 
-    // MARK: - Set Approval Status (called by AppDataStore approve/reject)
+    // MARK: - Set Approval Status (admin-only — targeted update)
 
     static func setApprovalStatus(
         staffId: UUID,
@@ -312,16 +307,13 @@ struct StaffMemberService {
             let status: String
             let rejection_reason: String?
         }
-
-        let payload = Payload(
-            is_approved:      approved,
-            status:           approved ? StaffStatus.active.rawValue : StaffStatus.suspended.rawValue,
-            rejection_reason: rejectionReason
-        )
-
         try await supabase
             .from("staff_members")
-            .update(payload)
+            .update(Payload(
+                is_approved:      approved,
+                status:           approved ? StaffStatus.active.rawValue : StaffStatus.suspended.rawValue,
+                rejection_reason: rejectionReason
+            ))
             .eq("id", value: staffId.uuidString)
             .execute()
     }

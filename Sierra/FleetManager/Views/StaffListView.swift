@@ -1,30 +1,18 @@
 import SwiftUI
 
-// CHANGES IN THIS FILE (Phase 5):
-// - Replaced StaffRole (non-existent enum) with UserRole
-// - Replaced StaffMember.samples with @Environment(AppDataStore.self) store.staff
-// - Fixed member.name (now optional) to member.displayName
-// - Role filter now uses .driver / .maintenancePersonnel
-// - Added .task { await store.loadAll() } for data loading
-// - Added .refreshable for pull-to-refresh
-// Phase 1 additions:
-// - Added @State searchText + .searchable modifier
-// - filteredStaff now also filters by displayName / email
-
 struct StaffListView: View {
     @Environment(AppDataStore.self) private var store
     @State private var selectedSegment: UserRole = .driver
     @State private var showAddSheet = false
     @State private var searchText = ""
+    @State private var selectedMember: StaffMember?
 
     private var filteredStaff: [StaffMember] {
-        // Exclude fleet managers — this list is driver/maintenance only
         let byRole = store.staff.filter { $0.role != .fleetManager && $0.role == selectedSegment }
         guard !searchText.isEmpty else { return byRole }
         let q = searchText.lowercased()
         return byRole.filter {
-            $0.displayName.lowercased().contains(q) ||
-            $0.email.lowercased().contains(q)
+            $0.displayName.lowercased().contains(q) || $0.email.lowercased().contains(q)
         }
     }
 
@@ -32,7 +20,6 @@ struct StaffListView: View {
         NavigationStack {
             ZStack(alignment: .bottomTrailing) {
                 VStack(spacing: 0) {
-                    // Segmented picker
                     Picker("Role", selection: $selectedSegment) {
                         Text("Drivers").tag(UserRole.driver)
                         Text("Maintenance").tag(UserRole.maintenancePersonnel)
@@ -59,38 +46,44 @@ struct StaffListView: View {
                     } else {
                         List {
                             ForEach(filteredStaff) { member in
-                                staffRow(member)
-                                    .listRowInsets(EdgeInsets(top: 6, leading: Spacing.md, bottom: 6, trailing: Spacing.md))
-                                    .listRowSeparator(.hidden)
-                                    .listRowBackground(Color.clear)
+                                Button {
+                                    selectedMember = member
+                                } label: {
+                                    staffRow(member)
+                                }
+                                .buttonStyle(.plain)
+                                .listRowInsets(EdgeInsets(top: 6, leading: Spacing.md, bottom: 6, trailing: Spacing.md))
+                                .listRowSeparator(.hidden)
+                                .listRowBackground(Color.clear)
                             }
                         }
                         .listStyle(.plain)
                         .scrollContentBackground(.hidden)
-                        .refreshable {
-                            await store.loadAll()
-                        }
+                        .refreshable { await store.loadAll() }
                     }
                 }
                 .background(SierraTheme.Colors.appBackground.ignoresSafeArea())
 
-                // FAB
                 SierraFAB { showAddSheet = true }
                     .padding(.trailing, Spacing.xl)
                     .padding(.bottom, Spacing.xl)
             }
             .navigationTitle("Staff")
             .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $searchText, prompt: "Search by name or email…")
+            .searchable(text: $searchText, prompt: "Search by name or email\u{2026}")
             .animation(.easeInOut(duration: 0.25), value: selectedSegment)
             .sheet(isPresented: $showAddSheet) {
                 CreateStaffView()
                     .presentationDetents([.medium, .large])
             }
+            .sheet(item: $selectedMember) { member in
+                StaffDetailSheet(member: member)
+                    .environment(AppDataStore.shared)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+            }
             .task {
-                if store.staff.isEmpty {
-                    await store.loadAll()
-                }
+                if store.staff.isEmpty { await store.loadAll() }
             }
         }
     }
@@ -110,11 +103,28 @@ struct StaffListView: View {
                     .sierraStyle(.cardTitle)
                 Text(member.email)
                     .sierraStyle(.caption)
+                // Availability pill for drivers
+                if member.role == .driver {
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(availabilityColor(member.availability))
+                            .frame(width: 6, height: 6)
+                        Text(member.availability.rawValue)
+                            .font(SierraFont.body(11, weight: .medium))
+                            .foregroundStyle(availabilityColor(member.availability))
+                    }
+                }
             }
 
             Spacer()
 
-            staffStatusBadge(member.status)
+            VStack(alignment: .trailing, spacing: 4) {
+                staffStatusBadge(member.status)
+                // Chevron hint
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(SierraTheme.Colors.granite.opacity(0.4))
+            }
         }
         .padding(Spacing.md)
         .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
@@ -122,28 +132,247 @@ struct StaffListView: View {
     }
 
     private func staffStatusBadge(_ status: StaffStatus) -> some View {
-        let (text, dotColor, bgColor, fgColor): (String, Color, Color, Color) = switch status {
+        let (text, dot, bg, fg): (String, Color, Color, Color) = switch status {
         case .active:          ("Active",    SierraTheme.Colors.alpineMint, SierraTheme.Colors.alpineMint.opacity(0.12), SierraTheme.Colors.alpineDark)
         case .pendingApproval: ("Pending",   SierraTheme.Colors.warning,    SierraTheme.Colors.warning.opacity(0.12),    SierraTheme.Colors.warning)
         case .suspended:       ("Suspended", SierraTheme.Colors.danger,     SierraTheme.Colors.danger.opacity(0.12),     SierraTheme.Colors.danger)
         }
-        return SierraBadge(
-            label: text,
-            dotColor: dotColor,
-            backgroundColor: bgColor,
-            foregroundColor: fgColor,
-            size: .compact
-        )
+        return SierraBadge(label: text, dotColor: dot, backgroundColor: bg, foregroundColor: fg, size: .compact)
     }
 
     private func avatarGradient(for member: StaffMember) -> [Color] {
         switch member.role {
         case .driver:               SierraAvatarView.driver()
         case .maintenancePersonnel: SierraAvatarView.maintenance()
-        case .fleetManager:         SierraAvatarView.driver() // fallback
+        case .fleetManager:         SierraAvatarView.driver()
+        }
+    }
+
+    private func availabilityColor(_ a: StaffAvailability) -> Color {
+        switch a {
+        case .available:   return SierraTheme.Colors.alpineMint
+        case .onTrip:      return SierraTheme.Colors.sierraBlue
+        case .onTask:      return SierraTheme.Colors.warning
+        case .unavailable: return SierraTheme.Colors.danger
         }
     }
 }
+
+// MARK: - Staff Detail Sheet
+
+struct StaffDetailSheet: View {
+    let member: StaffMember
+    @Environment(AppDataStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+
+    // Assigned vehicle lookup
+    private var assignedVehicle: Vehicle? {
+        store.vehicles.first { $0.assignedDriverId == member.id.uuidString }
+    }
+
+    // Active/scheduled trip for this driver
+    private var activeTrip: Trip? {
+        guard member.role == .driver else { return nil }
+        return store.activeTrip(forDriverId: member.id)
+    }
+
+    // Recent trips count
+    private var tripCount: Int {
+        store.trips(forDriver: member.id).count
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 20) {
+
+                    // Hero
+                    heroSection
+
+                    // Status cards row
+                    statusRow
+                        .padding(.horizontal, Spacing.lg)
+
+                    // Assigned vehicle
+                    if let vehicle = assignedVehicle {
+                        infoCard(title: "Assigned Vehicle", icon: "car.fill", color: SierraTheme.Colors.sierraBlue) {
+                            labeledRow("Name", vehicle.name)
+                            labeledRow("Plate", vehicle.licensePlate)
+                            labeledRow("Model", vehicle.model)
+                            labeledRow("Status", vehicle.status.rawValue)
+                        }
+                        .padding(.horizontal, Spacing.lg)
+                    } else if member.role == .driver {
+                        infoCard(title: "Assigned Vehicle", icon: "car.fill", color: SierraTheme.Colors.granite) {
+                            Text("No vehicle assigned")
+                                .font(SierraFont.bodyText)
+                                .foregroundStyle(SierraTheme.Colors.secondaryText)
+                        }
+                        .padding(.horizontal, Spacing.lg)
+                    }
+
+                    // Active trip
+                    if let trip = activeTrip {
+                        infoCard(title: "Current Trip", icon: "arrow.triangle.swap", color: .green) {
+                            labeledRow("Route", "\(trip.origin) \u{2192} \(trip.destination)")
+                            labeledRow("Status", trip.status.rawValue)
+                            labeledRow("Task ID", trip.taskId)
+                        }
+                        .padding(.horizontal, Spacing.lg)
+                    }
+
+                    // Contact info
+                    infoCard(title: "Contact", icon: "person.crop.circle", color: SierraTheme.Colors.ember) {
+                        labeledRow("Email", member.email)
+                        if let phone = member.phone { labeledRow("Phone", phone) }
+                        if let emergency = member.emergencyContactName {
+                            labeledRow("Emergency Contact", emergency)
+                        }
+                        if let emergencyPhone = member.emergencyContactPhone {
+                            labeledRow("Emergency Phone", emergencyPhone)
+                        }
+                    }
+                    .padding(.horizontal, Spacing.lg)
+
+                    // Personal info
+                    if member.isProfileComplete {
+                        infoCard(title: "Profile", icon: "doc.text", color: SierraTheme.Colors.alpineMint) {
+                            if let dob = member.dateOfBirth { labeledRow("Date of Birth", dob) }
+                            if let gender = member.gender { labeledRow("Gender", gender) }
+                            if let address = member.address { labeledRow("Address", address) }
+                            if let aadhaar = member.aadhaarNumber { labeledRow("Aadhaar", aadhaar) }
+                        }
+                        .padding(.horizontal, Spacing.lg)
+                    }
+
+                    // Stats
+                    infoCard(title: "Activity", icon: "chart.bar.fill", color: SierraTheme.Colors.warning) {
+                        labeledRow("Total Trips", "\(tripCount)")
+                        labeledRow("Profile", member.isProfileComplete ? "Complete" : "Incomplete")
+                        if let joined = member.joinedDate {
+                            labeledRow("Joined", joined.formatted(.dateTime.day().month(.abbreviated).year()))
+                        }
+                    }
+                    .padding(.horizontal, Spacing.lg)
+
+                    Spacer(minLength: 32)
+                }
+            }
+            .background(SierraTheme.Colors.appBackground.ignoresSafeArea())
+            .navigationTitle(member.displayName)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                        .font(SierraFont.body(17, weight: .semibold))
+                        .foregroundStyle(SierraTheme.Colors.ember)
+                }
+            }
+        }
+    }
+
+    // MARK: - Hero
+
+    private var heroSection: some View {
+        VStack(spacing: 12) {
+            SierraAvatarView(
+                initials: member.initials,
+                size: 80,
+                gradient: member.role == .driver ? SierraAvatarView.driver() : SierraAvatarView.maintenance()
+            )
+            Text(member.displayName)
+                .font(SierraFont.title2)
+                .foregroundStyle(SierraTheme.Colors.primaryText)
+            Text(member.displayRole)
+                .font(SierraFont.subheadline)
+                .foregroundStyle(SierraTheme.Colors.secondaryText)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 24)
+        .padding(.bottom, 8)
+    }
+
+    // MARK: - Status Row
+
+    private var statusRow: some View {
+        HStack(spacing: 12) {
+            miniStatusCard("Status", member.status.rawValue, statusColor(member.status))
+            if member.role == .driver {
+                miniStatusCard("Availability", member.availability.rawValue, availabilityColor(member.availability))
+            }
+            miniStatusCard("Approved", member.isApproved ? "Yes" : "No", member.isApproved ? SierraTheme.Colors.alpineMint : SierraTheme.Colors.danger)
+        }
+    }
+
+    private func miniStatusCard(_ label: String, _ value: String, _ color: Color) -> some View {
+        VStack(spacing: 4) {
+            Text(value)
+                .font(SierraFont.body(13, weight: .bold))
+                .foregroundStyle(color)
+            Text(label)
+                .font(SierraFont.caption2)
+                .foregroundStyle(SierraTheme.Colors.secondaryText)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    // MARK: - Info Card
+
+    private func infoCard<Content: View>(title: String, icon: String, color: Color, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(SierraFont.caption1)
+                    .foregroundStyle(color)
+                Text(title)
+                    .font(SierraFont.headline)
+                    .foregroundStyle(SierraTheme.Colors.primaryText)
+            }
+            content()
+        }
+        .padding(Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+        .sierraShadow(SierraTheme.Shadow.card)
+    }
+
+    private func labeledRow(_ label: String, _ value: String) -> some View {
+        HStack {
+            Text(label)
+                .font(SierraFont.caption1)
+                .foregroundStyle(SierraTheme.Colors.secondaryText)
+                .frame(width: 130, alignment: .leading)
+            Text(value)
+                .font(SierraFont.body(14, weight: .medium))
+                .foregroundStyle(SierraTheme.Colors.primaryText)
+            Spacer()
+        }
+    }
+
+    // MARK: - Color helpers
+
+    private func statusColor(_ s: StaffStatus) -> Color {
+        switch s {
+        case .active:          return SierraTheme.Colors.alpineMint
+        case .pendingApproval: return SierraTheme.Colors.warning
+        case .suspended:       return SierraTheme.Colors.danger
+        }
+    }
+
+    private func availabilityColor(_ a: StaffAvailability) -> Color {
+        switch a {
+        case .available:   return SierraTheme.Colors.alpineMint
+        case .onTrip:      return SierraTheme.Colors.sierraBlue
+        case .onTask:      return SierraTheme.Colors.warning
+        case .unavailable: return SierraTheme.Colors.danger
+        }
+    }
+}
+
+// StaffMember needs Identifiable for sheet(item:)
+extension StaffMember: @retroactive Identifiable {}
 
 #Preview {
     StaffListView()

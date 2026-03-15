@@ -63,7 +63,7 @@ struct VehicleListView: View {
             .background(SierraTheme.Colors.appBackground.ignoresSafeArea())
             .navigationTitle("Vehicles")
             .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $searchText, prompt: "Search vehicles…")
+            .searchable(text: $searchText, prompt: "Search vehicles\u{2026}")
             .navigationDestination(for: UUID.self) { id in
                 VehicleDetailView(vehicleId: id)
             }
@@ -75,12 +75,8 @@ struct VehicleListView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showAddSheet) {
-                AddVehicleView()
-            }
-            .sheet(item: $editingVehicle) { vehicle in
-                AddVehicleView(editingVehicle: vehicle)
-            }
+            .sheet(isPresented: $showAddSheet) { AddVehicleView() }
+            .sheet(item: $editingVehicle) { vehicle in AddVehicleView(editingVehicle: vehicle) }
             .confirmationDialog("Delete Vehicle?", isPresented: .init(
                 get: { deleteTarget != nil },
                 set: { if !$0 { deleteTarget = nil } }
@@ -103,9 +99,7 @@ struct VehicleListView: View {
     private var filterChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: Spacing.sm) {
-                filterChip("All", isSelected: selectedFilter == nil) {
-                    selectedFilter = nil
-                }
+                filterChip("All", isSelected: selectedFilter == nil) { selectedFilter = nil }
                 ForEach(VehicleStatus.allCases, id: \.self) { status in
                     filterChip(status.rawValue, isSelected: selectedFilter == status) {
                         selectedFilter = status
@@ -123,14 +117,8 @@ struct VehicleListView: View {
                 .foregroundStyle(isSelected ? .white : SierraTheme.Colors.primaryText)
                 .padding(.horizontal, Spacing.md)
                 .padding(.vertical, 7)
-                .background(
-                    isSelected ? SierraTheme.Colors.ember : .clear,
-                    in: Capsule()
-                )
-                .overlay(
-                    Capsule()
-                        .strokeBorder(isSelected ? .clear : SierraTheme.Colors.mist, lineWidth: 1)
-                )
+                .background(isSelected ? SierraTheme.Colors.ember : .clear, in: Capsule())
+                .overlay(Capsule().strokeBorder(isSelected ? .clear : SierraTheme.Colors.mist, lineWidth: 1))
         }
         .buttonStyle(.plain)
     }
@@ -138,18 +126,50 @@ struct VehicleListView: View {
     // MARK: - Vehicle Row
 
     private func vehicleRow(_ vehicle: Vehicle) -> some View {
-        HStack(spacing: Spacing.md) {
+        // Look up assigned driver from store
+        let driver: StaffMember? = vehicle.assignedDriverId
+            .flatMap { UUID(uuidString: $0) }
+            .flatMap { store.staffMember(for: $0) }
+
+        return HStack(spacing: Spacing.md) {
+            // Vehicle icon
             Image(systemName: "car.fill")
                 .font(.system(size: 20))
                 .foregroundStyle(SierraTheme.Colors.sierraBlue.opacity(0.7))
                 .frame(width: 44, height: 44)
-                .background(SierraTheme.Colors.sierraBlue.opacity(0.06), in: RoundedRectangle(cornerRadius: Radius.avatar, style: .continuous))
+                .background(SierraTheme.Colors.sierraBlue.opacity(0.06),
+                            in: RoundedRectangle(cornerRadius: Radius.avatar, style: .continuous))
 
-            VStack(alignment: .leading, spacing: Spacing.xxs) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(vehicle.name)
                     .sierraStyle(.cardTitle)
-                Text("\(vehicle.model) · \(vehicle.licensePlate)")
+                Text("\(vehicle.model) \u{00B7} \(vehicle.licensePlate)")
                     .sierraStyle(.caption)
+
+                // Assigned driver + their availability
+                if let driver {
+                    HStack(spacing: 4) {
+                        Image(systemName: "person.fill")
+                            .font(.system(size: 9))
+                            .foregroundStyle(SierraTheme.Colors.granite)
+                        Text(driver.displayName)
+                            .font(SierraFont.body(11, weight: .medium))
+                            .foregroundStyle(SierraTheme.Colors.granite)
+                        availabilityDot(driver.availability)
+                        Text(driver.availability.rawValue)
+                            .font(SierraFont.body(11, weight: .medium))
+                            .foregroundStyle(availabilityColor(driver.availability))
+                    }
+                } else if vehicle.assignedDriverId != nil {
+                    // Driver ID exists but not in store
+                    Text("Driver loading\u{2026}")
+                        .font(SierraFont.body(11, weight: .medium))
+                        .foregroundStyle(SierraTheme.Colors.granite)
+                } else {
+                    Text("No driver assigned")
+                        .font(SierraFont.body(11, weight: .medium))
+                        .foregroundStyle(SierraTheme.Colors.granite.opacity(0.6))
+                }
             }
 
             Spacer()
@@ -159,6 +179,23 @@ struct VehicleListView: View {
         .padding(Spacing.md)
         .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
         .sierraShadow(SierraTheme.Shadow.card)
+    }
+
+    // MARK: - Availability helpers
+
+    private func availabilityDot(_ availability: StaffAvailability) -> some View {
+        Circle()
+            .fill(availabilityColor(availability))
+            .frame(width: 6, height: 6)
+    }
+
+    private func availabilityColor(_ availability: StaffAvailability) -> Color {
+        switch availability {
+        case .available:   return SierraTheme.Colors.alpineMint
+        case .onTrip:      return SierraTheme.Colors.sierraBlue
+        case .onTask:      return SierraTheme.Colors.warning
+        case .unavailable: return SierraTheme.Colors.danger
+        }
     }
 
     // MARK: - Empty State
@@ -184,7 +221,6 @@ struct VehicleListView: View {
     }
 }
 
-// Make Vehicle conform to Identifiable for .sheet(item:)
 extension Vehicle: Hashable {
     static func == (lhs: Vehicle, rhs: Vehicle) -> Bool { lhs.id == rhs.id }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
