@@ -131,34 +131,48 @@ final class LoginViewModel {
     }
 
     // MARK: - Biometric Sign In
+    //
+    // FIX: The original implementation called AuthManager.restoreSession() which sets
+    // isAuthenticated = true immediately, then set authState = .authenticated on the
+    // next tick. This caused two competing navigation systems to fire in rapid succession:
+    //   1. ContentView observed isAuthenticated = true → started transitioning LoginView out
+    //   2. LoginView.onChange observed .authenticated → tried to present fullScreenCover
+    // The fullScreenCover’s parent (LoginView) was already being removed, so it briefly
+    // appeared and then collapsed — producing the “flash to dashboard then back to login”.
+    //
+    // Fix: call completeAuthentication() directly (which sets isAuthenticated = true and
+    // starts the data load), then reset authState to .idle. ContentView is the single
+    // authority on routing — it sees isAuthenticated = true and transitions cleanly.
+    // LoginView never sees .authenticated so it never attempts a competing fullScreenCover.
 
     @MainActor
     func biometricSignIn() async {
         authState = .loading
-        if let existingUser = AuthManager.shared.currentUser {
-            Task.detached {
-                switch existingUser.role {
-                case .fleetManager:
-                    await AppDataStore.shared.loadAll()
-                case .driver:
-                    await AppDataStore.shared.loadDriverData(driverId: existingUser.id)
-                case .maintenancePersonnel:
-                    await AppDataStore.shared.loadMaintenanceData(staffId: existingUser.id)
-                }
-            }
-        }
         do {
             try await BiometricManager.shared.authenticate()
-            if let _ = AuthManager.shared.restoreSession(),
-               let user = AuthManager.shared.currentUser {
-                authState = .authenticated(destination: AuthManager.shared.destination(for: user))
-            } else {
+
+            // Verify a valid persisted session and user exist.
+            // currentUser is already populated by restoreSessionSilently() at AuthManager init.
+            guard AuthManager.shared.hasSessionToken(),
+                  AuthManager.shared.currentUser != nil else {
                 authState = .error("Session expired. Please sign in with your password.")
                 AuthManager.shared.signOut()
+                return
             }
+
+            // completeAuthentication() sets isAuthenticated = true and kicks off the
+            // role-appropriate data load. ContentView observes isAuthenticated and routes
+            // directly to the dashboard — no fullScreenCover race condition.
+            AuthManager.shared.completeAuthentication()
+
+            // Reset to idle so LoginView’s onChange does nothing further.
+            authState = .idle
+
         } catch {
             if let bioError = error as? BiometricError {
-                authState = bioError == .userCancelled ? .idle : .error(bioError.errorDescription ?? "Biometric authentication failed.")
+                authState = bioError == .userCancelled
+                    ? .idle
+                    : .error(bioError.errorDescription ?? "Biometric authentication failed.")
             } else {
                 authState = .error("Biometric authentication failed.")
             }
