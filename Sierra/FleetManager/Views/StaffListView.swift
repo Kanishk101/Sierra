@@ -151,6 +151,7 @@ struct StaffListView: View {
     private func availabilityColor(_ a: StaffAvailability) -> Color {
         switch a {
         case .available:   return SierraTheme.Colors.alpineMint
+        case .busy:        return SierraTheme.Colors.ember
         case .onTrip:      return SierraTheme.Colors.sierraBlue
         case .onTask:      return SierraTheme.Colors.warning
         case .unavailable: return SierraTheme.Colors.danger
@@ -364,6 +365,7 @@ struct StaffDetailSheet: View {
     private func availabilityColor(_ a: StaffAvailability) -> Color {
         switch a {
         case .available:   return SierraTheme.Colors.alpineMint
+        case .busy:        return SierraTheme.Colors.ember
         case .onTrip:      return SierraTheme.Colors.sierraBlue
         case .onTask:      return SierraTheme.Colors.warning
         case .unavailable: return SierraTheme.Colors.danger

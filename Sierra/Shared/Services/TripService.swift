@@ -177,4 +177,91 @@ struct TripService {
         let suffix = String(format: "%04d", Int.random(in: 1...9999))
         return "TRP-\(datePart)-\(suffix)"
     }
+
+    // MARK: - Busy Status Helpers
+
+    /// Calls the `check-resource-overlap` Edge Function to detect double-booking.
+    static func checkOverlap(
+        driverId: UUID,
+        vehicleId: UUID,
+        start: Date,
+        end: Date,
+        excludingTripId: UUID? = nil
+    ) async throws -> (driverConflict: Bool, vehicleConflict: Bool) {
+
+        struct OverlapRequest: Encodable {
+            let driver_id: String
+            let vehicle_id: String
+            let start: String
+            let end: String
+            let exclude_trip_id: String?
+        }
+
+        struct OverlapResult: Decodable {
+            let driverConflict: Bool
+            let vehicleConflict: Bool
+            enum CodingKeys: String, CodingKey {
+                case driverConflict  = "driver_conflict"
+                case vehicleConflict = "vehicle_conflict"
+            }
+        }
+
+        let body = OverlapRequest(
+            driver_id:        driverId.uuidString.lowercased(),
+            vehicle_id:       vehicleId.uuidString.lowercased(),
+            start:            iso.string(from: start),
+            end:              iso.string(from: end),
+            exclude_trip_id:  excludingTripId?.uuidString.lowercased()
+        )
+        let bodyData = try JSONEncoder().encode(body)
+        let result: OverlapResult = try await supabase.functions.invoke(
+            "check-resource-overlap",
+            options: .init(body: bodyData)
+        )
+        return (result.driverConflict, result.vehicleConflict)
+    }
+
+    /// Sets driver availability → "Busy" and vehicle status → "Busy" at the DB level.
+    static func markResourcesBusy(driverId: UUID, vehicleId: UUID) async throws {
+        struct AvailabilityPayload: Encodable { let availability: String }
+        struct VehicleStatusPayload: Encodable { let status: String }
+
+        try await supabase
+            .from("staff_members")
+            .update(AvailabilityPayload(availability: "Busy"))
+            .eq("id", value: driverId.uuidString.lowercased())
+            .execute()
+
+        try await supabase
+            .from("vehicles")
+            .update(VehicleStatusPayload(status: "Busy"))
+            .eq("id", value: vehicleId.uuidString.lowercased())
+            .execute()
+    }
+
+    /// Releases resources after trip completion or cancellation:
+    /// driver → "Available", vehicle → "Idle", assignedDriverId → nil.
+    static func releaseResources(driverId: UUID, vehicleId: UUID) async throws {
+        struct AvailabilityPayload: Encodable { let availability: String }
+        struct VehicleReleasePayload: Encodable {
+            let status: String
+            let assignedDriverId: String?
+            enum CodingKeys: String, CodingKey {
+                case status
+                case assignedDriverId = "assigned_driver_id"
+            }
+        }
+
+        try await supabase
+            .from("staff_members")
+            .update(AvailabilityPayload(availability: "Available"))
+            .eq("id", value: driverId.uuidString.lowercased())
+            .execute()
+
+        try await supabase
+            .from("vehicles")
+            .update(VehicleReleasePayload(status: "Idle", assignedDriverId: nil))
+            .eq("id", value: vehicleId.uuidString.lowercased())
+            .execute()
+    }
 }

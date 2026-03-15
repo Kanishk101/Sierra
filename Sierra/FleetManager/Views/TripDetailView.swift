@@ -292,15 +292,21 @@ struct TripDetailView: View {
     private func cancelTrip() async {
         guard var t = trip else { return }
 
-        // Free driver availability
+        // 1. Release at DB level first
+        if let dIdStr = t.driverId,
+           let dUUID  = UUID(uuidString: dIdStr),
+           let vIdStr = t.vehicleId,
+           let vUUID  = UUID(uuidString: vIdStr) {
+            try? await TripService.releaseResources(driverId: dUUID, vehicleId: vUUID)
+        }
+
+        // 2. Sync local in-memory cache
         if let dIdStr = t.driverId,
            let dUUID = UUID(uuidString: dIdStr),
            var driver = store.staffMember(for: dUUID) {
             driver.availability = .available
             try? await store.updateStaffMember(driver)
         }
-
-        // Free vehicle
         if let vIdStr = t.vehicleId,
            let vUUID = UUID(uuidString: vIdStr),
            var vehicle = store.vehicle(for: vUUID) {
@@ -309,7 +315,7 @@ struct TripDetailView: View {
             try? await store.updateVehicle(vehicle)
         }
 
-        // Cancel the trip
+        // 3. Cancel the trip record
         t.status = .cancelled
         do {
             try await store.updateTrip(t)

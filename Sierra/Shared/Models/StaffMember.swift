@@ -38,8 +38,9 @@ enum StaffStatus: String, Codable, CaseIterable {
 
 enum StaffAvailability: String, Codable, CaseIterable {
     case available   = "Available"
+    case busy        = "Busy"
     case unavailable = "Unavailable"
-    case onTrip      = "On Trip"
+    case onTrip      = "On Trip"   // legacy — read-only, never written by new code
     case onTask      = "On Task"
 }
 

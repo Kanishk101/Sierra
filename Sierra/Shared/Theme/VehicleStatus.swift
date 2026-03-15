@@ -7,6 +7,7 @@ import SwiftUI
 enum VehicleStatus: String, SierraStatus, CaseIterable, Codable {
     case active          = "Active"
     case idle            = "Idle"
+    case busy            = "Busy"
     case inMaintenance   = "In Maintenance"
     case outOfService    = "Out of Service"
     case decommissioned  = "Decommissioned"
@@ -19,6 +20,7 @@ enum VehicleStatus: String, SierraStatus, CaseIterable, Codable {
         switch self {
         case .active:         SierraTheme.Colors.alpineMint
         case .idle:           SierraTheme.Colors.granite
+        case .busy:           SierraTheme.Colors.ember
         case .inMaintenance:  SierraTheme.Colors.warning
         case .outOfService:   SierraTheme.Colors.danger
         case .decommissioned: SierraTheme.Colors.danger
@@ -33,6 +35,7 @@ enum VehicleStatus: String, SierraStatus, CaseIterable, Codable {
         switch self {
         case .active:         SierraTheme.Colors.alpineDark
         case .idle:           SierraTheme.Colors.granite
+        case .busy:           SierraTheme.Colors.emberDark
         case .inMaintenance:  SierraTheme.Colors.warning
         case .outOfService:   SierraTheme.Colors.danger
         case .decommissioned: SierraTheme.Colors.danger
@@ -43,6 +46,7 @@ enum VehicleStatus: String, SierraStatus, CaseIterable, Codable {
         switch self {
         case .active:         "truck.box.fill"
         case .idle:           "parkingsign.circle"
+        case .busy:           "road.lanes"
         case .inMaintenance:  "wrench.fill"
         case .outOfService:   "xmark.octagon.fill"
         case .decommissioned: "archivebox.fill"

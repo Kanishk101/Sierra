@@ -110,6 +110,8 @@ struct DriverHomeView: View {
                 Toggle("", isOn: Binding(
                     get: { isAvailable },
                     set: { newValue in
+                        // Guard: driver is busy on a trip — availability cannot be changed manually
+                        guard driverMember?.availability != .busy else { return }
                         guard let id = driverMember?.id else {
                             print("[DriverHomeView] toggleAvailability: driverMember is nil — store.staff.count=\(store.staff.count)")
                             return

@@ -198,6 +198,7 @@ struct VehicleListView: View {
     private func availabilityColor(_ availability: StaffAvailability) -> Color {
         switch availability {
         case .available:   return SierraTheme.Colors.alpineMint
+        case .busy:        return SierraTheme.Colors.ember
         case .onTrip:      return SierraTheme.Colors.sierraBlue
         case .onTask:      return SierraTheme.Colors.warning
         case .unavailable: return SierraTheme.Colors.danger
@@ -218,8 +219,9 @@ struct VehicleListView: View {
         if !searchText.isEmpty { return "Try a different search term." }
         switch selectedFilter {
         case .active:         return "No active vehicles at the moment."
-        case .inMaintenance:  return "No vehicles currently in maintenance."
         case .idle:           return "No idle vehicles available."
+        case .busy:           return "No busy vehicles at the moment."
+        case .inMaintenance:  return "No vehicles currently in maintenance."
         case .outOfService:   return "No out-of-service vehicles."
         case .decommissioned: return "No decommissioned vehicles."
         case .none:           return "Add your first vehicle to get started."

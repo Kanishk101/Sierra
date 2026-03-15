@@ -15,6 +15,7 @@ struct CreateTripView: View {
     @State private var origin = ""
     @State private var destination = ""
     @State private var scheduledDate = Date()
+    @State private var scheduledEndDate: Date = Date().addingTimeInterval(3600 * 8) // silent, not shown in UI
     @State private var priority: TripPriority = .normal
     @State private var notes = ""
 
@@ -149,6 +150,9 @@ struct CreateTripView: View {
                 }
             }
             .scrollContentBackground(.hidden)
+            .onChange(of: scheduledDate) { _, newDate in
+                scheduledEndDate = newDate.addingTimeInterval(3600 * 8)
+            }
 
             // Next button
             Button {
@@ -404,41 +408,71 @@ struct CreateTripView: View {
         guard let driverId = selectedDriverId,
               let vehicleId = selectedVehicleId else { return }
 
-        let adminId = AuthManager.shared.currentUser?.id ?? UUID()
-        let now = Date()
-        let trip = Trip(
-            id: UUID(),
-            taskId: TripService.newTaskId(),
-            driverId: driverId.uuidString,
-            vehicleId: vehicleId.uuidString,
-            createdByAdminId: adminId.uuidString,
-            origin: origin.trimmingCharacters(in: .whitespaces),
-            destination: destination.trimmingCharacters(in: .whitespaces),
-            deliveryInstructions: "",
-            scheduledDate: scheduledDate,
-            scheduledEndDate: nil,
-            actualStartDate: nil,
-            actualEndDate: nil,
-            startMileage: nil,
-            endMileage: nil,
-            notes: notes,
-            status: .scheduled,
-            priority: priority,
-            proofOfDeliveryId: nil,
-            preInspectionId: nil,
-            postInspectionId: nil,
-            createdAt: now,
-            updatedAt: now
-        )
-
         isCreating = true
         do {
+            // 1. Overlap check — must pass before inserting
+            let conflict = try await TripService.checkOverlap(
+                driverId: driverId,
+                vehicleId: vehicleId,
+                start: scheduledDate,
+                end: scheduledEndDate
+            )
+            if conflict.driverConflict {
+                errorMessage = "This driver already has a trip assigned in that time slot."
+                showError = true
+                isCreating = false
+                return
+            }
+            if conflict.vehicleConflict {
+                errorMessage = "This vehicle is already assigned to another trip in that time slot."
+                showError = true
+                isCreating = false
+                return
+            }
+
+            // 2. Build trip record (includes scheduledEndDate)
+            let adminId = AuthManager.shared.currentUser?.id ?? UUID()
+            let now = Date()
+            let trip = Trip(
+                id: UUID(),
+                taskId: TripService.newTaskId(),
+                driverId: driverId.uuidString,
+                vehicleId: vehicleId.uuidString,
+                createdByAdminId: adminId.uuidString,
+                origin: origin.trimmingCharacters(in: .whitespaces),
+                destination: destination.trimmingCharacters(in: .whitespaces),
+                deliveryInstructions: "",
+                scheduledDate: scheduledDate,
+                scheduledEndDate: scheduledEndDate,
+                actualStartDate: nil,
+                actualEndDate: nil,
+                startMileage: nil,
+                endMileage: nil,
+                notes: notes,
+                status: .scheduled,
+                priority: priority,
+                proofOfDeliveryId: nil,
+                preInspectionId: nil,
+                postInspectionId: nil,
+                createdAt: now,
+                updatedAt: now
+            )
+
+            // 3. Insert trip
             try await store.addTrip(trip)
 
-            // Update vehicle assignment (assignedDriverId is String?)
+            // 4. Mark driver + vehicle as busy at DB level
+            try await TripService.markResourcesBusy(driverId: driverId, vehicleId: vehicleId)
+
+            // 5. Patch local in-memory cache (non-fatal if it fails)
             if var v = store.vehicle(for: vehicleId) {
+                v.status = .busy
                 v.assignedDriverId = driverId.uuidString
-                try await store.updateVehicle(v)
+                try? await store.updateVehicle(v)
+            }
+            if var driver = store.staffMember(for: driverId) {
+                driver.availability = .busy
+                try? await store.updateStaffMember(driver)
             }
 
             createdTrip = trip
