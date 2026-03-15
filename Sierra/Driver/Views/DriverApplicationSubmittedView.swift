@@ -5,12 +5,9 @@ struct DriverApplicationSubmittedView: View {
     @State private var checkmarkProgress: CGFloat = 0
     @State private var contentAppeared = false
     @State private var isRefreshing = false
-    @State private var isApproved = false
     @State private var isRejected = false
     @State private var rejectionReason: String?
-
-    // Simulate polling
-    private let store = AppDataStore.shared
+    @State private var pollingTask: Task<Void, Never>?
 
     var body: some View {
         ZStack {
@@ -21,12 +18,7 @@ struct DriverApplicationSubmittedView: View {
             )
             .ignoresSafeArea()
 
-            if isApproved {
-                approvedOverlay
-                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
-            } else {
-                mainContent
-            }
+            mainContent
         }
         .interactiveDismissDisabled()
         .navigationBarBackButtonHidden(true)
@@ -37,14 +29,56 @@ struct DriverApplicationSubmittedView: View {
             withAnimation(.spring(duration: 0.6, bounce: 0.2).delay(0.8)) {
                 contentAppeared = true
             }
+            startPolling()
         }
-        .animation(.spring(duration: 0.5), value: isApproved)
+        .onDisappear {
+            stopPolling()
+        }
         .animation(.spring(duration: 0.4), value: isRejected)
     }
 
-    // ─────────────────────────────────
+    // MARK: - Polling
+    // Polls AuthManager.refreshCurrentUser() every 15 seconds.
+    // When the admin approves, is_approved becomes true → ContentView
+    // automatically re-routes to the driver dashboard (no manual navigation needed).
+    // When rejected, is_approved stays false and rejection_reason is set.
+
+    private func startPolling() {
+        pollingTask = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(15))
+                guard !Task.isCancelled else { return }
+                await pollStatus()
+            }
+        }
+    }
+
+    private func stopPolling() {
+        pollingTask?.cancel()
+        pollingTask = nil
+    }
+
+    @MainActor
+    private func pollStatus() async {
+        do {
+            try await AuthManager.shared.refreshCurrentUser()
+        } catch {
+            return
+        }
+        // refreshCurrentUser() updates AuthManager.currentUser in place.
+        // If is_approved becomes true, ContentView observes the change and
+        // re-routes automatically — no manual navigation needed here.
+        //
+        // If rejected: show the rejection card in this view.
+        if let user = AuthManager.shared.currentUser,
+           !user.isApproved,
+           let reason = user.rejectionReason, !reason.isEmpty {
+            isRejected = true
+            rejectionReason = reason
+        }
+    }
+
     // MARK: - Main Content
-    // ─────────────────────────────────
 
     private var mainContent: some View {
         VStack(spacing: 0) {
@@ -52,17 +86,15 @@ struct DriverApplicationSubmittedView: View {
                 VStack(spacing: 28) {
                     Spacer(minLength: 40)
 
-                    // Animated checkmark
                     animatedCheckmark
                         .frame(width: 100, height: 100)
 
-                    // Title
                     VStack(spacing: 10) {
                         Text("Application Submitted!")
                             .font(SierraFont.title2)
                             .foregroundStyle(.white)
 
-                        Text("Your profile has been sent to your Fleet Manager\nfor review. You'll be notified once approved.")
+                        Text("Your profile has been sent to your Fleet Manager\nfor review. You\u{2019}ll be notified once approved.")
                             .font(SierraFont.subheadline)
                             .foregroundStyle(.white.opacity(0.55))
                             .multilineTextAlignment(.center)
@@ -72,18 +104,15 @@ struct DriverApplicationSubmittedView: View {
                     .opacity(contentAppeared ? 1 : 0)
                     .offset(y: contentAppeared ? 0 : 20)
 
-                    // Status card
                     statusCard
                         .opacity(contentAppeared ? 1 : 0)
                         .offset(y: contentAppeared ? 0 : 30)
 
-                    // Rejected card (if applicable)
                     if isRejected, let reason = rejectionReason {
                         rejectedCard(reason: reason)
                             .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
 
-                    // Refresh button
                     refreshButton
                         .opacity(contentAppeared ? 1 : 0)
 
@@ -91,15 +120,12 @@ struct DriverApplicationSubmittedView: View {
                 }
             }
 
-            // Sign out
             signOutButton
                 .opacity(contentAppeared ? 1 : 0)
         }
     }
 
-    // ─────────────────────────────────
     // MARK: - Animated Checkmark
-    // ─────────────────────────────────
 
     private var animatedCheckmark: some View {
         ZStack {
@@ -118,9 +144,7 @@ struct DriverApplicationSubmittedView: View {
         }
     }
 
-    // ─────────────────────────────────
     // MARK: - Status Card
-    // ─────────────────────────────────
 
     private var statusCard: some View {
         HStack(spacing: 12) {
@@ -139,7 +163,6 @@ struct DriverApplicationSubmittedView: View {
 
             Spacer()
 
-            // Amber/red badge
             Text(isRejected ? "Rejected" : "Pending")
                 .font(SierraFont.body(12, weight: .bold))
                 .foregroundStyle(isRejected ? .red : SierraTheme.Colors.warning)
@@ -156,9 +179,7 @@ struct DriverApplicationSubmittedView: View {
         .padding(.horizontal, 24)
     }
 
-    // ─────────────────────────────────
     // MARK: - Rejected Card
-    // ─────────────────────────────────
 
     private func rejectedCard(reason: String) -> some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -176,22 +197,21 @@ struct DriverApplicationSubmittedView: View {
                 .foregroundStyle(.white.opacity(0.7))
                 .lineSpacing(3)
 
-            Button {
-                // Simulated contact action
-                print("📞 Contact Admin tapped")
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "envelope.fill")
-                        .font(SierraFont.caption1)
-                    Text("Contact Admin")
-                        .font(SierraFont.caption1)
+            if let url = URL(string: "mailto:fleet.manager.system.infosys@gmail.com") {
+                Link(destination: url) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "envelope.fill")
+                            .font(SierraFont.caption1)
+                        Text("Contact Admin")
+                            .font(SierraFont.caption1)
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(SierraTheme.Colors.danger.opacity(0.7), in: Capsule())
                 }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(SierraTheme.Colors.danger.opacity(0.7), in: Capsule())
+                .padding(.top, 4)
             }
-            .padding(.top, 4)
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -203,9 +223,7 @@ struct DriverApplicationSubmittedView: View {
         .padding(.horizontal, 24)
     }
 
-    // ─────────────────────────────────
     // MARK: - Refresh Button
-    // ─────────────────────────────────
 
     private var refreshButton: some View {
         Button {
@@ -220,7 +238,7 @@ struct DriverApplicationSubmittedView: View {
                     Image(systemName: "arrow.clockwise")
                         .font(SierraFont.subheadline)
                 }
-                Text(isRefreshing ? "Checking…" : "Refresh Status")
+                Text(isRefreshing ? "Checking\u{2026}" : "Refresh Status")
                     .font(SierraFont.subheadline)
             }
             .foregroundStyle(.white.opacity(0.7))
@@ -236,9 +254,7 @@ struct DriverApplicationSubmittedView: View {
         .padding(.horizontal, 24)
     }
 
-    // ─────────────────────────────────
     // MARK: - Sign Out
-    // ─────────────────────────────────
 
     private var signOutButton: some View {
         Button {
@@ -257,86 +273,6 @@ struct DriverApplicationSubmittedView: View {
         }
         .padding(.horizontal, 24)
         .padding(.bottom, 20)
-    }
-
-    // ─────────────────────────────────
-    // MARK: - Approved Overlay
-    // ─────────────────────────────────
-
-    private var approvedOverlay: some View {
-        VStack(spacing: 24) {
-            Spacer()
-
-            ZStack {
-                Circle()
-                    .fill(.green.opacity(0.15))
-                    .frame(width: 120, height: 120)
-
-                Image(systemName: "checkmark.seal.fill")
-                    .font(.system(size: 60))
-                    .foregroundStyle(SierraTheme.Colors.alpineMint)
-                    .symbolRenderingMode(.hierarchical)
-            }
-
-            VStack(spacing: 10) {
-                Text("You're Approved!")
-                    .font(SierraFont.title1)
-                    .foregroundStyle(.white)
-
-                Text("Welcome to FleetOS. You can now access all driver features.")
-                    .font(SierraFont.subheadline)
-                    .foregroundStyle(.white.opacity(0.6))
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 40)
-            }
-
-            Spacer()
-
-            Button {
-                // Navigate to DriverDashboard
-                if var user = AuthManager.shared.currentUser {
-                    user.isApproved = true
-                    AuthManager.shared.currentUser = user
-                    _ = KeychainService.save(user, forKey: "com.fleetOS.currentUser")
-                    AuthManager.shared.isAuthenticated = true
-                }
-            } label: {
-                Text("Get Started")
-                    .font(SierraFont.body(17, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 54)
-                    .background(.green, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 32)
-        }
-    }
-
-    // ─────────────────────────────────
-    // MARK: - Poll
-    // ─────────────────────────────────
-
-    @MainActor
-    private func pollStatus() async {
-        isRefreshing = true
-        // Refresh from Supabase to get latest status
-        await store.loadAll()
-
-        if let userId = AuthManager.shared.currentUser?.id,
-           let app = store.application(for: userId) {
-            switch app.status {
-            case .approved:
-                isApproved = true
-            case .rejected:
-                isRejected = true
-                rejectionReason = app.rejectionReason ?? "No reason provided."
-            case .pending:
-                break
-            }
-        }
-
-        isRefreshing = false
     }
 }
 

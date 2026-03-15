@@ -1,14 +1,11 @@
 import SwiftUI
 
-
 struct ForcePasswordChangeView: View {
-    @State private var viewModel       = ForcePasswordChangeViewModel()
-    @State private var appeared        = false
-    @State private var showDestination = false
+    @State private var viewModel = ForcePasswordChangeViewModel()
+    @State private var appeared = false
 
     var body: some View {
         ZStack {
-            // Background — matches ForgotPasswordView / LoginView exactly
             LinearGradient(
                 colors: [SierraTheme.Colors.summitNavy, SierraTheme.Colors.sierraBlue],
                 startPoint: .topLeading,
@@ -21,7 +18,6 @@ struct ForcePasswordChangeView: View {
                     VStack(spacing: 24) {
                         Spacer(minLength: 60)
 
-                        // ── Header ──
                         Image(systemName: "lock.rotation.fill")
                             .font(.system(size: 50, weight: .light))
                             .foregroundStyle(SierraTheme.Colors.ember)
@@ -32,14 +28,13 @@ struct ForcePasswordChangeView: View {
                                 .font(SierraFont.title2)
                                 .foregroundStyle(.white)
 
-                            Text("Create a strong password — you'll use it to sign in going forward.")
+                            Text("Create a strong password \u{2014} you\u{2019}ll use it to sign in going forward.")
                                 .font(SierraFont.subheadline)
                                 .foregroundStyle(.white.opacity(0.55))
                                 .multilineTextAlignment(.center)
                                 .lineSpacing(3)
                         }
 
-                        // ── Form card ──
                         formCard
                             .scaleEffect(appeared ? 1 : 0.95)
                             .opacity(appeared ? 1 : 0)
@@ -58,7 +53,7 @@ struct ForcePasswordChangeView: View {
         .onAppear {
             withAnimation(.spring(duration: 0.5, bounce: 0.25)) { appeared = true }
         }
-        // 2FA OTP screen — shown after password change succeeds
+        // 2FA OTP screen — shown after password change succeeds.
         .fullScreenCover(isPresented: $viewModel.awaitingOTP) {
             TwoFactorView(
                 viewModel: TwoFactorViewModel(
@@ -66,9 +61,13 @@ struct ForcePasswordChangeView: View {
                     maskedEmail: AuthManager.shared.maskedEmail,
                     onVerified: {
                         viewModel.awaitingOTP = false
-                        AuthManager.shared.completeAuthentication()
+                        // Do NOT call completeAuthentication() here.
+                        // completeAuthentication() was already called by LoginViewModel.signIn()
+                        // for first-login users, so isAuthenticated is already true.
+                        // updatePasswordAndFirstLogin() already set currentUser.isFirstLogin = false.
+                        // ContentView observes currentUser changes and automatically re-routes
+                        // to .driverOnboarding or .maintenanceOnboarding without any extra push.
                         AuthManager.shared.saveSessionToken()
-                        showDestination = true
                     },
                     onCancelled: {
                         viewModel.awaitingOTP = false
@@ -76,25 +75,13 @@ struct ForcePasswordChangeView: View {
                 )
             )
         }
-        // Navigate to role-specific destination after 2FA completes
-        .fullScreenCover(isPresented: $showDestination) {
-            ZStack {
-                SierraTheme.Colors.appBackground.ignoresSafeArea()
-                if let dest = viewModel.nextDestination {
-                    destinationView(for: dest)
-                }
-            }
-        }
     }
 
-    // ─────────────────────────────────────
     // MARK: - Form Card
-    // ─────────────────────────────────────
 
     private var formCard: some View {
         VStack(spacing: 16) {
 
-            // Current Password
             VStack(alignment: .leading, spacing: 6) {
                 passwordField("Current Password",
                               text: $viewModel.currentPassword,
@@ -106,7 +93,6 @@ struct ForcePasswordChangeView: View {
 
             Divider().background(.white.opacity(0.08))
 
-            // New Password + strength
             VStack(alignment: .leading, spacing: 8) {
                 passwordField("New Password",
                               text: $viewModel.newPassword,
@@ -117,7 +103,6 @@ struct ForcePasswordChangeView: View {
                 }
             }
 
-            // Confirm Password
             VStack(alignment: .leading, spacing: 6) {
                 passwordField("Confirm New Password",
                               text: $viewModel.confirmPassword,
@@ -127,7 +112,6 @@ struct ForcePasswordChangeView: View {
                 }
             }
 
-            // General error (e.g. same-as-old)
             if let err = viewModel.errorMessage {
                 Text(err)
                     .font(SierraFont.caption1)
@@ -136,7 +120,6 @@ struct ForcePasswordChangeView: View {
                     .transition(.opacity)
             }
 
-            // Submit button
             Button {
                 Task { await viewModel.setNewPassword() }
             } label: {
@@ -162,9 +145,7 @@ struct ForcePasswordChangeView: View {
         .padding(.horizontal, 20)
     }
 
-    // ─────────────────────────────────────
-    // MARK: - Password Field (matches ForgotPasswordView style)
-    // ─────────────────────────────────────
+    // MARK: - Password Field
 
     private func passwordField(
         _ placeholder: String,
@@ -207,9 +188,7 @@ struct ForcePasswordChangeView: View {
         )
     }
 
-    // ─────────────────────────────────────
     // MARK: - Error Label
-    // ─────────────────────────────────────
 
     private func errorLabel(_ text: String) -> some View {
         Text(text)
@@ -219,9 +198,7 @@ struct ForcePasswordChangeView: View {
             .transition(.opacity)
     }
 
-    // ─────────────────────────────────────
     // MARK: - Loading Overlay
-    // ─────────────────────────────────────
 
     private var loadingOverlay: some View {
         ZStack {
@@ -230,7 +207,7 @@ struct ForcePasswordChangeView: View {
                 ProgressView()
                     .scaleEffect(1.3)
                     .tint(.white)
-                Text("Updating password…")
+                Text("Updating password\u{2026}")
                     .font(SierraFont.caption1)
                     .foregroundStyle(.white.opacity(0.8))
             }
@@ -238,24 +215,6 @@ struct ForcePasswordChangeView: View {
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
         .transition(.opacity)
-    }
-
-    // ─────────────────────────────────────
-    // MARK: - Routing
-    // ─────────────────────────────────────
-
-    @ViewBuilder
-    private func destinationView(for destination: AuthDestination) -> some View {
-        switch destination {
-        case .fleetManagerDashboard:  AdminDashboardView()
-        case .driverOnboarding:       DriverProfileSetupView()
-        case .maintenanceOnboarding:  MaintenanceProfileSetupView()
-        case .driverDashboard:        DriverTabView()
-        case .maintenanceDashboard:   MaintenanceDashboardView()
-        case .pendingApproval:        PendingApprovalView()
-        case .rejected:               RejectedView()
-        case .changePassword:         EmptyView()
-        }
     }
 }
 
