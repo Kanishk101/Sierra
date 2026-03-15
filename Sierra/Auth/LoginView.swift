@@ -37,10 +37,11 @@ struct LoginView: View {
             }
         }
         // ── Dashboard (fullScreenCover) ──
-        // Only shown after 2FA success OR biometric success
         .fullScreenCover(isPresented: $showDestination) {
             if let dest = resolvedDestination {
                 destinationView(for: dest)
+                    .environment(AppDataStore.shared)
+                    .environment(AuthManager.shared)
             }
         }
         // ── Forgot Password (sheet) ──
@@ -54,50 +55,37 @@ struct LoginView: View {
             #endif
             switch newState {
             case .requiresTwoFactor(let ctx):
-                // Credential login succeeded → show 2FA screen
-                // Do NOT show dashboard — 2FA must complete first
                 twoFactorContext = ctx
-                // Create the VM once and store it — never recreate inline
                 twoFactorVM = TwoFactorViewModel(
                     context: ctx,
-                    service: viewModel.otpService,   // injects AuthManagerOTPVerificationService
+                    service: viewModel.otpService,
                     onVerified: { [self] in
                         #if DEBUG
                         print("🔐 [LoginView.onVerified] 2FA verified — completing auth")
                         #endif
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            // Dismiss 2FA overlay
                             showTwoFactor = false
                             twoFactorVM = nil
-
-                            // Complete authentication (saves session token)
                             AuthManager.shared.completeAuthentication()
-
-                            // Set destination and navigate
                             resolvedDestination = ctx.authDestination
                             showDestination = true
                         }
                     },
                     onCancelled: {
-                        // User cancelled 2FA — return to login
                         showTwoFactor = false
                         twoFactorContext = nil
                         twoFactorVM = nil
                         viewModel.twoFactorCancelled()
                     }
                 )
-                // Dismiss keyboard, then show 2FA overlay
                 UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                 showTwoFactor = true
 
             case .authenticated(let destination):
-                // Biometric login / first-login succeeded — navigate directly.
-                // ContentView handles the Face ID enrollment prompt on the dashboard.
                 resolvedDestination = destination
                 showDestination = true
 
             case .error:
-                // Error is displayed via errorMessage computed property
                 break
 
             case .idle, .loading:
@@ -110,7 +98,6 @@ struct LoginView: View {
 
     private var loginContentLayer: some View {
         ZStack {
-            // Dark navy → deep blue gradient
             LinearGradient(
                 colors: [SierraTheme.Colors.summitNavy, SierraTheme.Colors.sierraBlue],
                 startPoint: .topLeading,
@@ -118,7 +105,6 @@ struct LoginView: View {
             )
             .ignoresSafeArea()
 
-            // Error banner — slides in from top
             VStack {
                 if let error = viewModel.errorMessage {
                     errorBanner(message: error)
@@ -129,7 +115,6 @@ struct LoginView: View {
             .animation(.spring(duration: 0.4, bounce: 0.2), value: viewModel.errorMessage)
             .zIndex(10)
 
-            // Loading overlay
             if viewModel.isLoading {
                 loadingOverlay
                     .zIndex(20)
@@ -182,7 +167,6 @@ struct LoginView: View {
 
     private var loginCard: some View {
         VStack(spacing: Spacing.lg) {
-            // Email field
             VStack(alignment: .leading, spacing: Spacing.xxs) {
                 HStack(spacing: Spacing.sm) {
                     Image(systemName: "envelope.fill")
@@ -218,7 +202,6 @@ struct LoginView: View {
                 }
             }
 
-            // Password field
             VStack(alignment: .leading, spacing: Spacing.xxs) {
                 HStack(spacing: Spacing.sm) {
                     Image(systemName: "lock.fill")
@@ -267,7 +250,6 @@ struct LoginView: View {
                 }
             }
 
-            // Sign In button
             Button {
                 Task { await viewModel.signIn() }
             } label: {
@@ -284,7 +266,6 @@ struct LoginView: View {
             .disabled(viewModel.isLoading)
             .padding(.top, Spacing.xxs)
 
-            // Biometric button — requires: device supports it + user opted in + valid session
             if viewModel.showBiometricButton {
                 Button {
                     Task { await viewModel.biometricSignIn() }
@@ -311,7 +292,6 @@ struct LoginView: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.95)))
             }
 
-            // Forgot Password link
             Button {
                 showForgotPassword = true
             } label: {
@@ -381,7 +361,7 @@ struct LoginView: View {
                 ProgressView()
                     .scaleEffect(1.3)
                     .tint(.white)
-                Text("Authenticating…")
+                Text("Authenticating\u{2026}")
                     .font(SierraFont.caption1)
                     .foregroundStyle(.white.opacity(0.8))
             }
@@ -398,12 +378,13 @@ struct LoginView: View {
     private func destinationView(for destination: AuthDestination) -> some View {
         switch destination {
         case .fleetManagerDashboard:  AdminDashboardView()
-        case .changePassword:        ForcePasswordChangeView()
-        case .driverOnboarding:      DriverProfileSetupView()
-        case .maintenanceOnboarding: MaintenanceProfileSetupView()
-        case .pendingApproval:       PendingApprovalView()
-        case .driverDashboard:       DriverTabView()
-        case .maintenanceDashboard:  MaintenanceDashboardView()
+        case .changePassword:         ForcePasswordChangeView()
+        case .driverOnboarding:       DriverProfileSetupView()
+        case .maintenanceOnboarding:  MaintenanceProfileSetupView()
+        case .pendingApproval:        PendingApprovalView()
+        case .rejected:               RejectedView()
+        case .driverDashboard:        DriverTabView()
+        case .maintenanceDashboard:   MaintenanceDashboardView()
         }
     }
 }

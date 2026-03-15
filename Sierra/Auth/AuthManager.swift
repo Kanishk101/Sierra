@@ -9,6 +9,7 @@ enum AuthDestination: Equatable {
     case driverOnboarding
     case maintenanceOnboarding
     case pendingApproval
+    case rejected
     case driverDashboard
     case maintenanceDashboard
 }
@@ -180,15 +181,28 @@ final class AuthManager {
         switch user.role {
         case .fleetManager:
             return .fleetManagerDashboard
+
         case .driver:
-            if user.isFirstLogin       { return .changePassword }
+            if user.isFirstLogin        { return .changePassword }
             if !user.isProfileComplete  { return .driverOnboarding }
-            if !user.isApproved        { return .pendingApproval }
+            // Rejected: profile complete, not approved, has a rejection reason
+            if !user.isApproved {
+                if let reason = user.rejectionReason, !reason.isEmpty {
+                    return .rejected
+                }
+                return .pendingApproval
+            }
             return .driverDashboard
+
         case .maintenancePersonnel:
-            if user.isFirstLogin       { return .changePassword }
+            if user.isFirstLogin        { return .changePassword }
             if !user.isProfileComplete  { return .maintenanceOnboarding }
-            if !user.isApproved        { return .pendingApproval }
+            if !user.isApproved {
+                if let reason = user.rejectionReason, !reason.isEmpty {
+                    return .rejected
+                }
+                return .pendingApproval
+            }
             return .maintenanceDashboard
         }
     }
