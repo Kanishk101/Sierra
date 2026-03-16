@@ -15,7 +15,7 @@ struct CreateTripView: View {
     @State private var origin = ""
     @State private var destination = ""
     @State private var scheduledDate = Date()
-    @State private var scheduledEndDate: Date = Date().addingTimeInterval(3600 * 8) // silent, not shown in UI
+    @State private var scheduledEndDate: Date = Date().addingTimeInterval(3600 * 8)
     @State private var priority: TripPriority = .normal
     @State private var notes = ""
 
@@ -45,7 +45,7 @@ struct CreateTripView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                SierraTheme.Colors.appBackground.ignoresSafeArea()
+                Color(.systemGroupedBackground).ignoresSafeArea()
 
                 VStack(spacing: 0) {
                     // Step indicator
@@ -81,7 +81,7 @@ struct CreateTripView: View {
                         } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: "chevron.left")
-                                    .font(SierraFont.caption1)
+                                    .font(.caption)
                                 Text("Back")
                             }
                         }
@@ -102,7 +102,7 @@ struct CreateTripView: View {
         HStack(spacing: 0) {
             ForEach(1...3, id: \.self) { step in
                 Circle()
-                    .fill(step <= currentStep ? SierraTheme.Colors.ember : Color.gray.opacity(0.3))
+                    .fill(step <= currentStep ? Color.orange : Color.gray.opacity(0.3))
                     .frame(width: 12, height: 12)
                     .overlay {
                         if step < currentStep {
@@ -113,7 +113,7 @@ struct CreateTripView: View {
                     }
                 if step < 3 {
                     Rectangle()
-                        .fill(step < currentStep ? SierraTheme.Colors.ember : Color.gray.opacity(0.2))
+                        .fill(step < currentStep ? Color.orange : Color.gray.opacity(0.2))
                         .frame(height: 2)
                         .frame(maxWidth: 60)
                 }
@@ -122,9 +122,7 @@ struct CreateTripView: View {
         .padding(.horizontal, 60)
     }
 
-    // ─────────────────────────────────
     // MARK: - Step 1: Trip Details
-    // ─────────────────────────────────
 
     private var step1View: some View {
         VStack(spacing: 0) {
@@ -162,11 +160,11 @@ struct CreateTripView: View {
                     Text("Next: Assign Driver")
                     Image(systemName: "arrow.right")
                 }
-                .font(SierraFont.body(16, weight: .semibold))
+                .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
                 .frame(height: 50)
-                .background(SierraTheme.Colors.ember, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .background(Color.orange, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
             .disabled(!step1Valid)
             .opacity(step1Valid ? 1 : 0.5)
@@ -175,9 +173,7 @@ struct CreateTripView: View {
         }
     }
 
-    // ─────────────────────────────────
     // MARK: - Step 2: Assign Driver
-    // ─────────────────────────────────
 
     private var step2View: some View {
         VStack(spacing: 0) {
@@ -194,10 +190,10 @@ struct CreateTripView: View {
                         .font(.system(size: 36))
                         .foregroundStyle(.gray.opacity(0.4))
                     Text("No available drivers")
-                        .font(SierraFont.body(16, weight: .semibold))
+                        .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(.secondary)
                     Text("Ensure drivers are approved and set to Available.")
-                        .font(SierraFont.caption1)
+                        .font(.caption)
                         .foregroundStyle(.tertiary)
                         .multilineTextAlignment(.center)
                     Spacer()
@@ -205,8 +201,8 @@ struct CreateTripView: View {
                 .padding(.horizontal, 30)
             } else {
                 Text("Select Driver")
-                    .font(SierraFont.body(18, weight: .bold))
-                    .foregroundStyle(SierraTheme.Colors.primaryText)
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(.primary)
                     .padding(.top, 4)
 
                 List {
@@ -220,16 +216,16 @@ struct CreateTripView: View {
                                     .frame(width: 40, height: 40)
                                     .overlay(
                                         Text(driver.initials)
-                                            .font(SierraFont.body(14, weight: .bold))
+                                            .font(.system(size: 14, weight: .bold))
                                             .foregroundStyle(.blue)
                                     )
 
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(driver.displayName)
-                                        .font(SierraFont.subheadline)
-                                        .foregroundStyle(SierraTheme.Colors.primaryText)
+                                        .font(.subheadline)
+                                        .foregroundStyle(.primary)
                                     Text(driver.phone ?? "No phone")
-                                        .font(SierraFont.caption1)
+                                        .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
 
@@ -238,13 +234,13 @@ struct CreateTripView: View {
                                 if selectedDriverId == driver.id {
                                     Image(systemName: "checkmark.circle.fill")
                                         .font(.system(size: 20))
-                                        .foregroundStyle(SierraTheme.Colors.ember)
+                                        .foregroundStyle(.orange)
                                 }
                             }
                         }
                         .listRowBackground(
                             selectedDriverId == driver.id
-                            ? SierraTheme.Colors.ember.opacity(0.06)
+                            ? Color.orange.opacity(0.06)
                             : Color.clear
                         )
                     }
@@ -261,11 +257,11 @@ struct CreateTripView: View {
                     Text("Next: Assign Vehicle")
                     Image(systemName: "arrow.right")
                 }
-                .font(SierraFont.body(16, weight: .semibold))
+                .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
                 .frame(height: 50)
-                .background(SierraTheme.Colors.ember, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .background(Color.orange, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
             .disabled(!step2Valid)
             .opacity(step2Valid ? 1 : 0.5)
@@ -274,9 +270,7 @@ struct CreateTripView: View {
         }
     }
 
-    // ─────────────────────────────────
     // MARK: - Step 3: Assign Vehicle
-    // ─────────────────────────────────
 
     private var step3View: some View {
         VStack(spacing: 0) {
@@ -291,10 +285,10 @@ struct CreateTripView: View {
                         .font(.system(size: 36))
                         .foregroundStyle(.gray.opacity(0.4))
                     Text("No available vehicles")
-                        .font(SierraFont.body(16, weight: .semibold))
+                        .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(.secondary)
                     Text("Ensure vehicles are active and not assigned.")
-                        .font(SierraFont.caption1)
+                        .font(.caption)
                         .foregroundStyle(.tertiary)
                         .multilineTextAlignment(.center)
                     Spacer()
@@ -302,8 +296,8 @@ struct CreateTripView: View {
                 .padding(.horizontal, 30)
             } else {
                 Text("Select Vehicle")
-                    .font(SierraFont.body(18, weight: .bold))
-                    .foregroundStyle(SierraTheme.Colors.primaryText)
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(.primary)
                     .padding(.top, 4)
 
                 List {
@@ -319,8 +313,8 @@ struct CreateTripView: View {
 
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text("\(vehicle.name) \(vehicle.model)")
-                                        .font(SierraFont.subheadline)
-                                        .foregroundStyle(SierraTheme.Colors.primaryText)
+                                        .font(.subheadline)
+                                        .foregroundStyle(.primary)
 
                                     HStack(spacing: 8) {
                                         Text(vehicle.licensePlate)
@@ -331,11 +325,11 @@ struct CreateTripView: View {
                                             .background(Color.gray.opacity(0.1), in: Capsule())
 
                                         Text(vehicle.fuelType.description)
-                                            .font(SierraFont.caption2)
+                                            .font(.caption2)
                                             .foregroundStyle(.secondary)
 
                                         Text("· \(vehicle.seatingCapacity) seats")
-                                            .font(SierraFont.caption2)
+                                            .font(.caption2)
                                             .foregroundStyle(.secondary)
                                     }
                                 }
@@ -345,13 +339,13 @@ struct CreateTripView: View {
                                 if selectedVehicleId == vehicle.id {
                                     Image(systemName: "checkmark.circle.fill")
                                         .font(.system(size: 20))
-                                        .foregroundStyle(SierraTheme.Colors.ember)
+                                        .foregroundStyle(.orange)
                                 }
                             }
                         }
                         .listRowBackground(
                             selectedVehicleId == vehicle.id
-                            ? SierraTheme.Colors.ember.opacity(0.06)
+                            ? Color.orange.opacity(0.06)
                             : Color.clear
                         )
                     }
@@ -372,7 +366,7 @@ struct CreateTripView: View {
                         Image(systemName: "checkmark")
                     }
                 }
-                .font(SierraFont.body(16, weight: .semibold))
+                .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
                 .frame(height: 50)
@@ -410,7 +404,6 @@ struct CreateTripView: View {
 
         isCreating = true
         do {
-            // 1. Overlap check — must pass before inserting
             let conflict = try await TripService.checkOverlap(
                 driverId: driverId,
                 vehicleId: vehicleId,
@@ -430,7 +423,6 @@ struct CreateTripView: View {
                 return
             }
 
-            // 2. Build trip record (includes scheduledEndDate)
             let adminId = AuthManager.shared.currentUser?.id ?? UUID()
             let now = Date()
             let trip = Trip(
@@ -458,13 +450,9 @@ struct CreateTripView: View {
                 updatedAt: now
             )
 
-            // 3. Insert trip
             try await store.addTrip(trip)
-
-            // 4. Mark driver + vehicle as busy at DB level
             try await TripService.markResourcesBusy(driverId: driverId, vehicleId: vehicleId)
 
-            // 5. Patch local in-memory cache (non-fatal if it fails)
             if var v = store.vehicle(for: vehicleId) {
                 v.status = .busy
                 v.assignedDriverId = driverId.uuidString
@@ -494,8 +482,8 @@ struct CreateTripView: View {
                 .padding(.bottom, 8)
 
             Text("Trip Created!")
-                .font(SierraFont.title2)
-                .foregroundStyle(SierraTheme.Colors.primaryText)
+                .font(.title2.weight(.bold))
+                .foregroundStyle(.primary)
 
             if let trip = createdTrip {
                 VStack(spacing: 10) {
@@ -522,11 +510,11 @@ struct CreateTripView: View {
                 dismiss()
             } label: {
                 Text("Done")
-                    .font(SierraFont.body(17, weight: .semibold))
+                    .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .frame(height: 50)
-                    .background(SierraTheme.Colors.ember, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .background(Color.orange, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
             .padding(.horizontal, 20)
             .padding(.bottom, 20)
@@ -537,12 +525,12 @@ struct CreateTripView: View {
     private func infoPill(_ label: String, value: String) -> some View {
         HStack {
             Text(label)
-                .font(SierraFont.caption1)
+                .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(width: 70, alignment: .trailing)
             Text(value)
-                .font(SierraFont.subheadline)
-                .foregroundStyle(SierraTheme.Colors.primaryText)
+                .font(.subheadline)
+                .foregroundStyle(.primary)
             Spacer()
         }
     }

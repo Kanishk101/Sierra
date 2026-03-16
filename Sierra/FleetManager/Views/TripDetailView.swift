@@ -1,13 +1,5 @@
 import SwiftUI
 
-// CHANGES (Phase 1 restore):
-// - Restored native List/Section layout from current branch (removed ScrollView card layout)
-// - Fixed store.staffMember(forId:) → store.staffMember(for: UUID)
-// - Fixed store.vehicle(forId:) → store.vehicle(for: UUID)
-// - Fixed cancelTrip() to use async store methods wrapped in Task
-// - Fixed driver.name → driver.displayName, driver.phone → driver.phone ?? ""
-// - Replaced Trip.mockData preview with UUID()
-
 struct TripDetailView: View {
 
     @Environment(AppDataStore.self) private var store
@@ -32,7 +24,8 @@ struct TripDetailView: View {
             }
         }
         .navigationTitle(trip?.taskId ?? "Trip")
-        .navigationBarTitleDisplayMode(.inline)
+        .toolbarTitleDisplayMode(.inlineLarge)
+        .toolbarBackground(.hidden, for: .navigationBar)
         .confirmationDialog("Cancel Trip?", isPresented: $showCancelConfirm, titleVisibility: .visible) {
             Button("Cancel Trip", role: .destructive) {
                 Task { await cancelTrip() }
@@ -52,7 +45,7 @@ struct TripDetailView: View {
                 VStack(alignment: .center, spacing: 8) {
                     Text(t.taskId)
                         .font(.system(size: 20, weight: .bold, design: .monospaced))
-                        .foregroundStyle(SierraTheme.Colors.primaryText)
+                        .foregroundStyle(.primary)
 
                     statusBadge(t.status)
                 }
@@ -72,17 +65,17 @@ struct TripDetailView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("From")
-                                .font(SierraFont.caption2)
+                                .font(.caption2)
                                 .foregroundStyle(.secondary)
                             Text(t.origin)
-                                .font(SierraFont.subheadline)
+                                .font(.subheadline)
                         }
                         VStack(alignment: .leading, spacing: 2) {
                             Text("To")
-                                .font(SierraFont.caption2)
+                                .font(.caption2)
                                 .foregroundStyle(.secondary)
                             Text(t.destination)
-                                .font(SierraFont.subheadline)
+                                .font(.subheadline)
                         }
                     }
                 }
@@ -91,7 +84,7 @@ struct TripDetailView: View {
                     Image(systemName: "calendar")
                         .foregroundStyle(.secondary)
                     Text(t.scheduledDate.formatted(.dateTime.month(.abbreviated).day().year().hour().minute()))
-                        .font(SierraFont.caption1)
+                        .font(.caption)
                 }
             }
 
@@ -107,15 +100,15 @@ struct TripDetailView: View {
                             .frame(width: 40, height: 40)
                             .overlay(
                                 Text(driver.initials)
-                                    .font(SierraFont.body(14, weight: .bold))
+                                    .font(.system(size: 14, weight: .bold))
                                     .foregroundStyle(.blue)
                             )
                         VStack(alignment: .leading, spacing: 2) {
                             Text(driver.displayName)
-                                .font(SierraFont.subheadline)
+                                .font(.subheadline)
                             if let phone = driver.phone {
                                 Text(phone)
-                                    .font(SierraFont.caption1)
+                                    .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
                         }
@@ -134,18 +127,18 @@ struct TripDetailView: View {
                     HStack(spacing: 12) {
                         Image(systemName: "car.fill")
                             .font(.system(size: 18))
-                            .foregroundStyle(SierraTheme.Colors.granite)
+                            .foregroundStyle(.secondary)
                             .frame(width: 40, height: 40)
-                            .background(SierraTheme.Colors.sierraBlue.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+                            .background(Color.blue.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
                         VStack(alignment: .leading, spacing: 2) {
                             Text("\(vehicle.name) \(vehicle.model)")
-                                .font(SierraFont.subheadline)
+                                .font(.subheadline)
                             HStack(spacing: 6) {
                                 Text(vehicle.licensePlate)
                                     .font(.system(size: 12, design: .monospaced))
                                     .foregroundStyle(.secondary)
                                 Text("· \(vehicle.fuelType.rawValue)")
-                                    .font(SierraFont.caption2)
+                                    .font(.caption2)
                                     .foregroundStyle(.secondary)
                             }
                         }
@@ -170,20 +163,20 @@ struct TripDetailView: View {
                 if !t.deliveryInstructions.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Delivery Instructions")
-                            .font(SierraFont.caption1)
+                            .font(.caption)
                             .foregroundStyle(.secondary)
                         Text(t.deliveryInstructions)
-                            .font(SierraFont.caption1)
+                            .font(.caption)
                     }
                 }
 
                 if !t.notes.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Notes")
-                            .font(SierraFont.caption1)
+                            .font(.caption)
                             .foregroundStyle(.secondary)
                         Text(t.notes)
-                            .font(SierraFont.caption1)
+                            .font(.caption)
                     }
                 }
 
@@ -203,12 +196,12 @@ struct TripDetailView: View {
                     if let start = t.actualStartDate {
                         HStack {
                             Image(systemName: "play.circle.fill")
-                                .foregroundStyle(SierraTheme.Colors.alpineMint)
+                                .foregroundStyle(.green)
                             Text("Started")
                                 .foregroundStyle(.secondary)
                             Spacer()
                             Text(start.formatted(.dateTime.month(.abbreviated).day().hour().minute()))
-                                .font(SierraFont.caption1)
+                                .font(.caption)
                         }
                     }
                     if let end = t.actualEndDate {
@@ -219,7 +212,7 @@ struct TripDetailView: View {
                                 .foregroundStyle(.secondary)
                             Spacer()
                             Text(end.formatted(.dateTime.month(.abbreviated).day().hour().minute()))
-                                .font(SierraFont.caption1)
+                                .font(.caption)
                         }
                     }
                     if let dur = t.durationString {
@@ -230,7 +223,7 @@ struct TripDetailView: View {
                                 .foregroundStyle(.secondary)
                             Spacer()
                             Text(dur)
-                                .font(SierraFont.caption1)
+                                .font(.caption)
                         }
                     }
                 }
@@ -245,7 +238,7 @@ struct TripDetailView: View {
                         HStack {
                             Spacer()
                             Label("Cancel Trip", systemImage: "xmark.circle.fill")
-                                .font(SierraFont.body(16, weight: .semibold))
+                                .font(.system(size: 16, weight: .semibold))
                             Spacer()
                         }
                     }
@@ -260,11 +253,11 @@ struct TripDetailView: View {
         let (text, color): (String, Color) = switch status {
         case .scheduled: ("Scheduled", .blue)
         case .active:    ("Active",    .green)
-        case .completed: ("Completed", .gray)
+        case .completed: ("Completed", Color.secondary)
         case .cancelled: ("Cancelled", .red)
         }
         return Text(text)
-            .font(SierraFont.caption1)
+            .font(.caption)
             .foregroundStyle(color)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
@@ -275,11 +268,11 @@ struct TripDetailView: View {
         let color: Color = switch priority {
         case .low:    .gray
         case .normal: .blue
-        case .high:   SierraTheme.Colors.warning
+        case .high:   .orange
         case .urgent: .red
         }
         return Text(priority.rawValue)
-            .font(SierraFont.caption2)
+            .font(.caption2)
             .foregroundStyle(color)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)

@@ -132,7 +132,7 @@ struct SierraIconButton: View {
 
 // MARK: - SierraFAB
 
-/// Floating Action Button — ember fill, white icon, modal shadow.
+/// Floating Action Button - ember fill, white icon, modal shadow.
 ///
 ///     SierraFAB { createTrip() }                          // icon-only circular
 ///     SierraFAB(label: "New Trip") { createTrip() }       // extended with label

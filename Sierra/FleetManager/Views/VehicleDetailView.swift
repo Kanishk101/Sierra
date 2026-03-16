@@ -1,13 +1,5 @@
 import SwiftUI
 
-// CHANGES (Phase 1 restore):
-// - Restored native List/Section layout from current branch (removed ScrollView card layout)
-// - Document Status section now uses store.vehicleDocuments(forVehicle:) instead of removed fields
-// - All store mutations are async (wrapped in Task)
-// - Inline Edit/Save mode preserved exactly from current branch
-// - Delete button + confirmationDialog preserved exactly from current branch
-// - driver.name → driver.displayName
-
 struct VehicleDetailView: View {
 
     @Environment(AppDataStore.self) private var store
@@ -37,7 +29,8 @@ struct VehicleDetailView: View {
             }
         }
         .navigationTitle(vehicle?.name ?? "Vehicle")
-        .navigationBarTitleDisplayMode(.inline)
+        .toolbarTitleDisplayMode(.inlineLarge)
+        .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button(isEditing ? "Save" : "Edit") {
@@ -45,6 +38,7 @@ struct VehicleDetailView: View {
                     else { startEditing() }
                 }
                 .fontWeight(.semibold)
+                .foregroundStyle(isEditing ? .orange : .orange)
             }
         }
         .confirmationDialog("Delete Vehicle", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
@@ -112,19 +106,19 @@ struct VehicleDetailView: View {
                    let driver = store.staffMember(for: driverUUID) {
                     HStack(spacing: 12) {
                         Circle()
-                            .fill(SierraTheme.Colors.ember.opacity(0.15))
+                            .fill(Color.orange.opacity(0.15))
                             .frame(width: 36, height: 36)
                             .overlay(
                                 Text(driver.initials)
                                     .font(.system(size: 13, weight: .bold))
-                                    .foregroundStyle(SierraTheme.Colors.ember)
+                                    .foregroundStyle(.orange)
                             )
                         VStack(alignment: .leading, spacing: 2) {
                             Text(driver.displayName)
-                                .font(SierraFont.subheadline)
+                                .font(.subheadline)
                             if let phone = driver.phone {
                                 Text(phone)
-                                    .font(SierraFont.caption1)
+                                    .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
                         }
@@ -145,7 +139,7 @@ struct VehicleDetailView: View {
                     HStack {
                         Spacer()
                         Label("Delete Vehicle", systemImage: "trash.fill")
-                            .font(SierraFont.body(16, weight: .semibold))
+                            .font(.system(size: 16, weight: .semibold))
                         Spacer()
                     }
                 }
@@ -168,31 +162,31 @@ struct VehicleDetailView: View {
     private func documentRow(_ doc: VehicleDocument) -> some View {
         let daysLeft = Calendar.current.dateComponents([.day], from: Date(), to: doc.expiryDate).day ?? 0
         let (statusText, statusColor, showWarning): (String, Color, Bool) = {
-            if daysLeft < 0   { return ("Expired",        .red,                       true)  }
-            if daysLeft < 8   { return ("Critical",       .red,                       true)  }
-            if daysLeft <= 30 { return ("Expiring Soon",  SierraTheme.Colors.warning, true)  }
-            return               ("Valid",            .green,                    false)
+            if daysLeft < 0   { return ("Expired",        .red,    true)  }
+            if daysLeft < 8   { return ("Critical",       .red,    true)  }
+            if daysLeft <= 30 { return ("Expiring Soon",  .orange, true)  }
+            return               ("Valid",            .green,  false)
         }()
 
         return HStack {
             if showWarning {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .font(SierraFont.caption1)
+                    .font(.caption)
                     .foregroundStyle(statusColor)
             }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(doc.documentType.rawValue)
-                    .font(SierraFont.subheadline)
+                    .font(.subheadline)
                 Text(doc.expiryDate.formatted(date: .abbreviated, time: .omitted))
-                    .font(SierraFont.caption1)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
             Spacer()
 
             Text(statusText)
-                .font(SierraFont.caption2)
+                .font(.caption2)
                 .foregroundStyle(statusColor)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)

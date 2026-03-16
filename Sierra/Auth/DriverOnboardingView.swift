@@ -7,12 +7,8 @@ struct DriverOnboardingView: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [SierraTheme.Colors.summitNavy, SierraTheme.Colors.sierraBlue],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            Color(.systemGroupedBackground)
+                .ignoresSafeArea()
 
             ScrollView {
                 VStack(spacing: 24) {
@@ -20,15 +16,15 @@ struct DriverOnboardingView: View {
 
                     Image(systemName: "person.text.rectangle.fill")
                         .font(.system(size: 56, weight: .light))
-                        .foregroundStyle(.white.opacity(0.7))
+                        .foregroundStyle(.orange)
 
                     Text("Complete Your Profile")
-                        .font(SierraFont.title1)
-                        .foregroundStyle(.white)
+                        .font(.title.weight(.bold))
+                        .foregroundStyle(.primary)
 
                     Text("Fill in your details to get started.")
-                        .font(SierraFont.subheadline)
-                        .foregroundStyle(.white.opacity(0.6))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
 
                     VStack(spacing: 16) {
                         formField(placeholder: "Full Name", text: $fullName, icon: "person.fill")
@@ -39,20 +35,17 @@ struct DriverOnboardingView: View {
                             // Profile submission to be implemented with backend
                         } label: {
                             Text("Submit Profile")
-                                .font(SierraFont.body(17, weight: .semibold))
-                                .foregroundStyle(SierraTheme.Colors.primaryText)
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(.white)
                                 .frame(maxWidth: .infinity)
                                 .frame(height: 54)
-                                .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                .background(Color.orange, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                         }
                         .padding(.top, 8)
                     }
                     .padding(24)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .strokeBorder(.white.opacity(0.1), lineWidth: 1)
-                    )
+                    .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
                     .padding(.horizontal, 24)
 
                     Spacer(minLength: 60)
@@ -65,21 +58,21 @@ struct DriverOnboardingView: View {
     private func formField(placeholder: String, text: Binding<String>, icon: String) -> some View {
         HStack(spacing: 10) {
             Image(systemName: icon)
-                .font(SierraFont.subheadline)
-                .foregroundStyle(.white.opacity(0.5))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
                 .frame(width: 20)
 
             TextField(placeholder, text: text)
                 .textFieldStyle(.plain)
-                .font(SierraFont.bodyText)
-                .foregroundStyle(.white)
+                .font(.body)
+                .foregroundStyle(.primary)
         }
         .padding(.horizontal, 16)
         .frame(height: 52)
-        .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(.white.opacity(0.12), lineWidth: 1)
+                .strokeBorder(Color(.separator), lineWidth: 1)
         )
     }
 }

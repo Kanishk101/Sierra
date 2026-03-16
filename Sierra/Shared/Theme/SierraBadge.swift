@@ -6,7 +6,7 @@ import SwiftUI
 enum SierraBadgeSize {
     /// 11pt caption2, compact padding (3v × 8h)
     case compact
-    /// 12pt caption1, standard padding (5v × 12h) — **default**
+    /// 12pt caption1, standard padding (5v × 12h) - **default**
     case regular
     /// 13pt footnote, spacious padding (6v × 14h)
     case large

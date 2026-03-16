@@ -2,7 +2,7 @@ import SwiftUI
 
 // MARK: - SierraPickerRow
 
-/// Tappable row that opens a picker/sheet — chevron affordance on the right.
+/// Tappable row that opens a picker/sheet - chevron affordance on the right.
 ///
 ///     SierraPickerRow(label: "Fuel Type", value: "Diesel") { showFuelPicker = true }
 struct SierraPickerRow: View {

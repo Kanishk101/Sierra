@@ -1,19 +1,15 @@
 import SwiftUI
 
 /// 2FA OTP verification screen.
-/// Supabase is configured to send 6-digit tokens (Auth → Settings → OTP length = 6).
+/// Supabase is configured to send 6-digit tokens (Auth > Settings > OTP length = 6).
 struct TwoFactorView: View {
 
     @Bindable var viewModel: TwoFactorViewModel
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [SierraTheme.Colors.summitNavy, SierraTheme.Colors.sierraBlue],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            Color(.systemGroupedBackground)
+                .ignoresSafeArea()
 
             GeometryReader { geo in
                 ScrollView {
@@ -23,11 +19,11 @@ struct TwoFactorView: View {
 
                         if viewModel.isLockedOut {
                             lockedCard
-                                .padding(.horizontal, Spacing.xl)
+                                .padding(.horizontal, 24)
                                 .transition(.opacity.combined(with: .scale(scale: 0.95)))
                         } else {
                             otpCard
-                                .padding(.horizontal, Spacing.xl)
+                                .padding(.horizontal, 24)
                                 .transition(.opacity.combined(with: .scale(scale: 0.95)))
                         }
 
@@ -44,8 +40,8 @@ struct TwoFactorView: View {
             VStack {
                 if let banner = viewModel.banner {
                     SierraAlertBanner(alertType: banner)
-                        .padding(.horizontal, Spacing.lg)
-                        .padding(.top, Spacing.sm)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 8)
                         .transition(.move(edge: .top).combined(with: .opacity))
                         .onTapGesture { viewModel.banner = nil }
                 }
@@ -67,33 +63,33 @@ struct TwoFactorView: View {
     // MARK: - Header
 
     private var headerSection: some View {
-        VStack(spacing: Spacing.md) {
+        VStack(spacing: 16) {
             Image(systemName: "envelope.badge.shield.half.filled")
                 .font(.system(size: 50, weight: .light))
-                .foregroundStyle(SierraTheme.Colors.ember)
+                .foregroundStyle(.orange)
                 .symbolRenderingMode(.hierarchical)
 
             Text("VERIFICATION")
-                .font(SierraFont.caption2)
-                .foregroundStyle(.white.opacity(0.5))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
                 .tracking(1.5)
 
             Text("Two-Factor Auth")
-                .font(SierraFont.title2)
-                .foregroundStyle(.white)
+                .font(.title2.weight(.bold))
+                .foregroundStyle(.primary)
 
-            HStack(spacing: Spacing.xs) {
+            HStack(spacing: 6) {
                 Image(systemName: viewModel.methodIcon)
-                    .font(SierraFont.caption1)
-                    .foregroundStyle(SierraTheme.Colors.ember)
+                    .font(.caption)
+                    .foregroundStyle(.orange)
                 Text("Code sent to \(viewModel.maskedEmail)")
-                    .font(SierraFont.caption1)
-                    .foregroundStyle(SierraTheme.Colors.ember.opacity(0.8))
+                    .font(.caption)
+                    .foregroundStyle(.orange.opacity(0.8))
             }
 
             Text("Enter the 6-digit code sent to your email address.\nThe code expires in 10 minutes.")
-                .font(SierraFont.subheadline)
-                .foregroundStyle(.white.opacity(0.55))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .lineSpacing(3)
                 .padding(.horizontal, 32)
@@ -103,21 +99,21 @@ struct TwoFactorView: View {
     // MARK: - OTP Card
 
     private var otpCard: some View {
-        VStack(spacing: Spacing.lg) {
+        VStack(spacing: 20) {
             SixDigitInputView(
                 digits: $viewModel.digits,
                 focusedIndex: $viewModel.focusedIndex,
                 shakeCount: viewModel.shakeCount,
                 onComplete: { viewModel.verifyCode() }
             )
-            .padding(.vertical, Spacing.xs)
+            .padding(.vertical, 8)
 
             expiryRow
 
             if case .failed(let remaining) = viewModel.state {
                 Text("Incorrect code. \(remaining) attempt\(remaining == 1 ? "" : "s") remaining.")
-                    .font(SierraFont.caption1)
-                    .foregroundStyle(SierraTheme.Colors.danger)
+                    .font(.caption)
+                    .foregroundStyle(.red)
                     .multilineTextAlignment(.center)
                     .transition(.opacity)
             }
@@ -125,31 +121,28 @@ struct TwoFactorView: View {
             Button {
                 viewModel.verifyCode()
             } label: {
-                HStack(spacing: Spacing.sm) {
+                HStack(spacing: 8) {
                     if viewModel.state == .verifying {
                         ProgressView().tint(.white).scaleEffect(0.9)
                     }
                     Text("Verify Code")
-                        .font(SierraFont.body(17, weight: .semibold))
+                        .font(.system(size: 17, weight: .semibold))
                 }
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
                 .frame(height: 54)
                 .background(
-                    verifyButtonEnabled ? SierraTheme.Colors.ember : Color.gray.opacity(0.3),
-                    in: RoundedRectangle(cornerRadius: Radius.button, style: .continuous)
+                    verifyButtonEnabled ? Color.orange : Color.gray.opacity(0.3),
+                    in: RoundedRectangle(cornerRadius: 14, style: .continuous)
                 )
             }
             .disabled(!verifyButtonEnabled)
 
             resendSection
         }
-        .padding(Spacing.xl)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: Radius.xxl, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.xxl, style: .continuous)
-                .strokeBorder(.white.opacity(0.08), lineWidth: 1)
-        )
+        .padding(24)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
         .animation(.easeInOut(duration: 0.25), value: viewModel.state)
     }
 
@@ -162,23 +155,23 @@ struct TwoFactorView: View {
     private var expiryRow: some View {
         Group {
             if case .expired = viewModel.state {
-                HStack(spacing: Spacing.xs) {
+                HStack(spacing: 6) {
                     Image(systemName: "clock.badge.exclamationmark")
-                        .foregroundStyle(SierraTheme.Colors.danger)
+                        .foregroundStyle(.red)
                     Text("Code expired. Please request a new one.")
-                        .font(SierraFont.caption1)
-                        .foregroundStyle(SierraTheme.Colors.danger)
+                        .font(.caption)
+                        .foregroundStyle(.red)
                 }
             } else {
-                HStack(spacing: Spacing.xs) {
+                HStack(spacing: 6) {
                     Image(systemName: "clock")
-                        .font(SierraFont.caption2)
+                        .font(.caption2)
                         .foregroundStyle(viewModel.expiryCountdown < 60
-                                         ? SierraTheme.Colors.danger : .white.opacity(0.4))
+                                         ? .red : .secondary)
                     Text("Expires in \(viewModel.expiryDisplayText)")
-                        .font(SierraFont.caption1)
+                        .font(.caption)
                         .foregroundStyle(viewModel.expiryCountdown < 60
-                                         ? SierraTheme.Colors.danger : .white.opacity(0.4))
+                                         ? .red : .secondary)
                 }
             }
         }
@@ -187,49 +180,50 @@ struct TwoFactorView: View {
     // MARK: - Locked Card
 
     private var lockedCard: some View {
-        VStack(spacing: Spacing.lg) {
-            VStack(spacing: Spacing.md) {
+        VStack(spacing: 20) {
+            VStack(spacing: 16) {
                 ZStack {
                     Circle()
-                        .fill(SierraTheme.Colors.danger.opacity(0.12))
+                        .fill(Color.red.opacity(0.12))
                         .frame(width: 72, height: 72)
                     Image(systemName: "lock.fill")
                         .font(.system(size: 28, weight: .semibold))
-                        .foregroundStyle(SierraTheme.Colors.danger)
+                        .foregroundStyle(.red)
                 }
                 Text("Account Temporarily Locked")
-                    .font(SierraFont.headline).foregroundStyle(.white)
+                    .font(.headline).foregroundStyle(.primary)
                 Text("Too many incorrect attempts.\nPlease wait before trying again.")
-                    .font(SierraFont.subheadline)
-                    .foregroundStyle(.white.opacity(0.55))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .lineSpacing(3)
             }
         }
-        .padding(Spacing.xl)
+        .padding(24)
         .frame(maxWidth: .infinity)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: Radius.xxl, style: .continuous))
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: Radius.xxl, style: .continuous)
-                .strokeBorder(SierraTheme.Colors.danger.opacity(0.2), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .strokeBorder(Color.red.opacity(0.2), lineWidth: 1)
         )
+        .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
     }
 
     // MARK: - Resend
 
     private var resendSection: some View {
-        HStack(spacing: Spacing.xxs) {
-            Text("Didn't receive a code?")
-                .font(SierraFont.caption1)
-                .foregroundStyle(.white.opacity(0.4))
+        HStack(spacing: 4) {
+            Text("Didn\u{2019}t receive a code?")
+                .font(.caption)
+                .foregroundStyle(.secondary)
             if viewModel.canResend {
                 Button("Resend") { viewModel.resendCode() }
-                    .font(SierraFont.caption1)
-                    .foregroundStyle(SierraTheme.Colors.ember)
+                    .font(.caption)
+                    .foregroundStyle(.orange)
             } else {
                 Text("Resend in \(viewModel.resendSecondsRemaining)s")
-                    .font(SierraFont.caption1)
-                    .foregroundStyle(.white.opacity(0.3))
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
             }
         }
     }
@@ -238,11 +232,11 @@ struct TwoFactorView: View {
 
     private var cancelButton: some View {
         Button { viewModel.cancelAndGoBack() } label: {
-            HStack(spacing: Spacing.xxs) {
-                Image(systemName: "arrow.left").font(SierraFont.caption1)
-                Text("Back to Sign In").font(SierraFont.subheadline)
+            HStack(spacing: 4) {
+                Image(systemName: "arrow.left").font(.caption)
+                Text("Back to Sign In").font(.subheadline)
             }
-            .foregroundStyle(.white.opacity(0.5))
+            .foregroundStyle(.secondary)
         }
     }
 
@@ -251,14 +245,14 @@ struct TwoFactorView: View {
     private var loadingOverlay: some View {
         ZStack {
             Color.black.opacity(0.35).ignoresSafeArea()
-            VStack(spacing: Spacing.md) {
-                ProgressView().scaleEffect(1.3).tint(.white)
-                Text("Verifying…")
-                    .font(SierraFont.caption1)
-                    .foregroundStyle(.white.opacity(0.8))
+            VStack(spacing: 16) {
+                ProgressView().scaleEffect(1.3).tint(.orange)
+                Text("Verifying\u{2026}")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            .padding(Spacing.xxl)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+            .padding(32)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
         .transition(.opacity)
     }

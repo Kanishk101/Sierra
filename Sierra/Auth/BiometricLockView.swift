@@ -16,12 +16,8 @@ struct BiometricLockView: View {
     var body: some View {
         ZStack {
             // Background
-            LinearGradient(
-                colors: [SierraTheme.Colors.summitNavy, SierraTheme.Colors.sierraBlue],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            Color(.systemBackground)
+                .ignoresSafeArea()
 
             VStack(spacing: 0) {
                 Spacer()
@@ -29,19 +25,19 @@ struct BiometricLockView: View {
                 // App logo
                 Image(systemName: "truck.box.fill")
                     .font(.system(size: 44, weight: .light))
-                    .foregroundStyle(SierraTheme.Colors.ember)
+                    .foregroundStyle(.orange)
                     .padding(.bottom, 6)
 
                 Text("FleetOS")
                     .font(.system(size: 24, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                     .padding(.bottom, 30)
 
                 // Welcome message
                 if let user = AuthManager.shared.currentUser {
                     Text("Welcome back, \(user.name ?? "User")")
-                        .font(SierraFont.body(18, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.8))
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(.secondary)
                         .padding(.bottom, 40)
                 }
 
@@ -53,8 +49,8 @@ struct BiometricLockView: View {
                 // Error message
                 if let error = errorMessage {
                     Text(error)
-                        .font(SierraFont.caption1)
-                        .foregroundStyle(SierraTheme.Colors.danger.opacity(0.9))
+                        .font(.caption)
+                        .foregroundStyle(.red)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 40)
                         .padding(.top, 16)
@@ -67,12 +63,12 @@ struct BiometricLockView: View {
                         Task { await attemptBiometric() }
                     } label: {
                         Text("Try Again")
-                            .font(SierraFont.subheadline)
+                            .font(.subheadline.weight(.medium))
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
                             .frame(height: 48)
                             .background(
-                                SierraTheme.Colors.ember,
+                                Color.orange,
                                 in: RoundedRectangle(cornerRadius: 12, style: .continuous)
                             )
                     }
@@ -103,9 +99,7 @@ struct BiometricLockView: View {
         }
     }
 
-    // ─────────────────────────────────
     // MARK: - Biometric Button
-    // ─────────────────────────────────
 
     private var biometricButton: some View {
         Button {
@@ -114,33 +108,31 @@ struct BiometricLockView: View {
             VStack(spacing: 16) {
                 ZStack {
                     Circle()
-                        .fill(.white.opacity(0.06))
+                        .fill(Color.orange.opacity(0.08))
                         .frame(width: 100, height: 100)
 
                     if isAuthenticating {
                         ProgressView()
                             .scaleEffect(1.3)
-                            .tint(.white)
+                            .tint(.orange)
                     } else {
                         Image(systemName: biometric.biometricIconName)
                             .font(.system(size: 60))
-                            .foregroundStyle(SierraTheme.Colors.ember)
+                            .foregroundStyle(.orange)
                             .symbolEffect(.pulse, isActive: appeared && !showTryAgain)
                     }
                 }
 
                 Text("Sign in with \(biometric.biometricDisplayName)")
-                    .font(SierraFont.body(16, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.7))
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.secondary)
             }
         }
         .buttonStyle(.plain)
         .disabled(isAuthenticating)
     }
 
-    // ─────────────────────────────────
     // MARK: - Password Fallback
-    // ─────────────────────────────────
 
     private var passwordFallbackButton: some View {
         Button {
@@ -150,29 +142,27 @@ struct BiometricLockView: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "lock.fill")
-                    .font(SierraFont.caption1)
+                    .font(.caption)
                 Text("Use Password Instead")
-                    .font(SierraFont.subheadline)
+                    .font(.subheadline)
             }
-            .foregroundStyle(.white.opacity(0.5))
+            .foregroundStyle(.orange)
             .frame(maxWidth: .infinity)
             .frame(height: 48)
             .background(
-                .white.opacity(0.06),
+                Color.orange.opacity(0.06),
                 in: RoundedRectangle(cornerRadius: 12, style: .continuous)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(.white.opacity(0.08), lineWidth: 1)
+                    .strokeBorder(Color.orange.opacity(0.15), lineWidth: 1)
             )
         }
         .padding(.horizontal, 24)
         .padding(.bottom, 32)
     }
 
-    // ─────────────────────────────────
     // MARK: - Auth Logic
-    // ─────────────────────────────────
 
     @MainActor
     private func attemptBiometric() async {

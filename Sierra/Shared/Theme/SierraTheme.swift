@@ -13,47 +13,47 @@ public enum SierraTheme {
 
         // ── Brand Core ──
 
-        /// #0D1F3C — NavigationBar, primary text, headers
+        /// #0D1F3C - NavigationBar, primary text, headers
         public static let summitNavy   = Color("SummitNavy")
-        /// #1A3A6B — card surfaces, tab bar dark bg
+        /// #1A3A6B - card surfaces, tab bar dark bg
         public static let sierraBlue   = Color("SierraBlue")
-        /// #F07B35 — ALL primary CTAs, active states, progress, FAB, links
+        /// #F07B35 - ALL primary CTAs, active states, progress, FAB, links
         public static let ember        = Color("Ember")
-        /// #F9A872 — ember tint on dark backgrounds
+        /// #F9A872 - ember tint on dark backgrounds
         public static let emberLight   = Color("EmberLight")
-        /// #C45E1A — pressed states, destructive ember contexts
+        /// #C45E1A - pressed states, destructive ember contexts
         public static let emberDark    = Color("EmberDark")
-        /// #0AB891 — success, available driver, completed, checkmarks
+        /// #0AB891 - success, available driver, completed, checkmarks
         public static let alpineMint   = Color("AlpineMint")
-        /// #4DCFB3 — mint tint on dark bg
+        /// #4DCFB3 - mint tint on dark bg
         public static let alpineLight  = Color("AlpineLight")
-        /// #078A6C — mint pressed / dark mode text
+        /// #078A6C - mint pressed / dark mode text
         public static let alpineDark   = Color("AlpineDark")
 
         // ── Neutrals ──
 
-        /// #F4F7FB — app background, table bg, grouped list bg (NOT card surface)
+        /// #F4F7FB - app background, table bg, grouped list bg (NOT card surface)
         public static let snowfield    = Color("Snowfield")
-        /// #E2E8F0 — dividers, inactive borders, disabled states
+        /// #E2E8F0 - dividers, inactive borders, disabled states
         public static let cloud        = Color("Cloud")
-        /// #CBD5E1 — secondary borders, outline button border
+        /// #CBD5E1 - secondary borders, outline button border
         public static let mist         = Color("Mist")
-        /// #64748B — secondary labels, captions, placeholders, timestamps
+        /// #64748B - secondary labels, captions, placeholders, timestamps
         public static let granite      = Color("Granite")
-        /// #334155 — primary body text
+        /// #334155 - primary body text
         public static let slate        = Color("Slate")
-        /// #0A0F1E — dark mode base background
+        /// #0A0F1E - dark mode base background
         public static let obsidian     = Color("Obsidian")
 
         // ── Semantic / Status ──
 
-        /// Success — alias for alpineMint
+        /// Success - alias for alpineMint
         public static let success      = Color("AlpineMint")
-        /// #F59E0B — expiring docs, pending approval, in-maintenance
+        /// #F59E0B - expiring docs, pending approval, in-maintenance
         public static let warning      = Color("Warning")
-        /// #EF4444 — destructive buttons, expired docs, cancelled, failed inspection
+        /// #EF4444 - destructive buttons, expired docs, cancelled, failed inspection
         public static let danger       = Color("Danger")
-        /// #3B82F6 — informational states, scheduled/pending trip
+        /// #3B82F6 - informational states, scheduled/pending trip
         public static let info         = Color("Info")
 
         // ── Adaptive (Light / Dark) ──
@@ -104,7 +104,7 @@ public enum SierraTheme {
     // MARK: - Shadow
 
     public enum Shadow {
-        /// Card-level elevation — subtle drop
+        /// Card-level elevation - subtle drop
         public static let card  = SierraShadow(color: .black.opacity(0.06), radius: 3, x: 0, y: 1)
         /// Modal / sheet elevation
         public static let modal = SierraShadow(color: .black.opacity(0.12), radius: 8, x: 0, y: 4)
@@ -114,7 +114,7 @@ public enum SierraTheme {
 
     // MARK: - Typography
 
-    // TODO: See SierraFont.swift — full type scale defined in Phase 2.
+    // TODO: See SierraFont.swift - full type scale defined in Phase 2.
 }
 
 // MARK: - SierraShadow

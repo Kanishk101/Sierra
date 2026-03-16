@@ -42,14 +42,14 @@ struct PasswordStrengthView: View {
                 ForEach(0..<3) { index in
                     RoundedRectangle(cornerRadius: 3)
                         .fill(index <= strength.rawValue
-                              ? strength.color : .white.opacity(0.1))
+                              ? strength.color : Color(.separator).opacity(0.3))
                         .frame(height: 5)
                 }
             }
 
             HStack {
                 Text(strength.label)
-                    .font(SierraFont.caption2)
+                    .font(.caption2)
                     .foregroundStyle(strength.color)
                 Spacer()
             }
@@ -66,18 +66,18 @@ struct PasswordStrengthView: View {
             requirementRow("One special character", met: hasSpecialChar)
         }
         .padding(14)
-        .background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private func requirementRow(_ text: String, met: Bool) -> some View {
         HStack(spacing: 8) {
             Image(systemName: met ? "checkmark.circle.fill" : "xmark.circle")
-                .font(SierraFont.caption1)
-                .foregroundStyle(met ? .green : .white.opacity(0.3))
+                .font(.caption)
+                .foregroundStyle(met ? .green : .secondary)
 
             Text(text)
-                .font(SierraFont.caption1)
-                .foregroundStyle(met ? .white.opacity(0.9) : .white.opacity(0.4))
+                .font(.caption)
+                .foregroundStyle(met ? .primary : .secondary)
         }
         .animation(.easeInOut(duration: 0.15), value: met)
     }
@@ -85,7 +85,7 @@ struct PasswordStrengthView: View {
 
 #Preview {
     ZStack {
-        SierraTheme.Colors.summitNavy.ignoresSafeArea()
+        Color(.systemGroupedBackground).ignoresSafeArea()
         PasswordStrengthView(password: "Test@12")
             .padding()
     }

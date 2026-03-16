@@ -8,9 +8,6 @@ struct StaffListView: View {
     @State private var selectedMember: StaffMember?
 
     private var filteredStaff: [StaffMember] {
-        // Only show staff who are fully active & approved.
-        // Pending-approval and suspended members are handled
-        // in PendingApprovalsView, not here.
         let byRole = store.staff.filter {
             $0.role != .fleetManager
             && $0.role == selectedSegment
@@ -33,22 +30,22 @@ struct StaffListView: View {
                         Text("Maintenance").tag(UserRole.maintenancePersonnel)
                     }
                     .pickerStyle(.segmented)
-                    .padding(.horizontal, Spacing.lg)
-                    .padding(.vertical, Spacing.sm)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 8)
 
                     if filteredStaff.isEmpty {
                         Spacer()
-                        VStack(spacing: Spacing.md) {
+                        VStack(spacing: 16) {
                             Image(systemName: selectedSegment == .driver ? "person.fill" : "wrench.fill")
                                 .font(.system(size: 40, weight: .light))
-                                .foregroundStyle(SierraTheme.Colors.granite)
+                                .foregroundStyle(.secondary)
                             Text(
                                 searchText.isEmpty
                                     ? "No \(selectedSegment == .driver ? "drivers" : "maintenance staff") yet"
                                     : "No results for \"\(searchText)\""
                             )
-                            .font(SierraFont.bodyText)
-                            .foregroundStyle(SierraTheme.Colors.secondaryText)
+                            .font(.body)
+                            .foregroundStyle(.secondary)
                         }
                         Spacer()
                     } else {
@@ -60,7 +57,7 @@ struct StaffListView: View {
                                     staffRow(member)
                                 }
                                 .buttonStyle(.plain)
-                                .listRowInsets(EdgeInsets(top: 6, leading: Spacing.md, bottom: 6, trailing: Spacing.md))
+                                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                                 .listRowSeparator(.hidden)
                                 .listRowBackground(Color.clear)
                             }
@@ -70,14 +67,15 @@ struct StaffListView: View {
                         .refreshable { await store.loadAll() }
                     }
                 }
-                .background(SierraTheme.Colors.appBackground.ignoresSafeArea())
+                .background(Color(.systemGroupedBackground).ignoresSafeArea())
 
                 SierraFAB { showAddSheet = true }
-                    .padding(.trailing, Spacing.xl)
-                    .padding(.bottom, Spacing.xl)
+                    .padding(.trailing, 24)
+                    .padding(.bottom, 24)
             }
             .navigationTitle("Staff")
-            .navigationBarTitleDisplayMode(.inline)
+            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .searchable(text: $searchText, prompt: "Search by name or email\u{2026}")
             .animation(.easeInOut(duration: 0.25), value: selectedSegment)
             .sheet(isPresented: $showAddSheet) {
@@ -99,33 +97,38 @@ struct StaffListView: View {
     // MARK: - Staff Row
 
     private func staffRow(_ member: StaffMember) -> some View {
-        HStack(spacing: Spacing.md) {
-            SierraAvatarView(
-                initials: member.initials,
-                size: 44,
-                gradient: avatarGradient(for: member)
-            )
+        HStack(spacing: 14) {
+            // Simple initials circle instead of SierraAvatarView
+            Circle()
+                .fill(Color(.systemGray5))
+                .frame(width: 44, height: 44)
+                .overlay(
+                    Text(member.initials)
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .foregroundStyle(.primary)
+                )
 
-            VStack(alignment: .leading, spacing: Spacing.xxs) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(member.displayName)
-                    .sierraStyle(.cardTitle)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.primary)
                 Text(member.email)
-                    .sierraStyle(.caption)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Spacer()
 
             VStack(alignment: .trailing, spacing: 4) {
-                // Availability is the primary status shown in the list
                 availabilityBadge(member.availability)
                 Image(systemName: "chevron.right")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(SierraTheme.Colors.granite.opacity(0.4))
+                    .foregroundStyle(.tertiary)
             }
         }
-        .padding(Spacing.md)
-        .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-        .sierraShadow(SierraTheme.Shadow.card)
+        .padding(16)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
     }
 
     // MARK: - Availability Badge
@@ -133,15 +136,15 @@ struct StaffListView: View {
     private func availabilityBadge(_ availability: StaffAvailability) -> some View {
         let (text, dot, bg, fg): (String, Color, Color, Color) = switch availability {
         case .available:
-            ("Available",   SierraTheme.Colors.alpineMint,  SierraTheme.Colors.alpineMint.opacity(0.12),  SierraTheme.Colors.alpineDark)
+            ("Available",   .green,  .green.opacity(0.12),  Color(.systemGreen))
         case .unavailable:
-            ("Unavailable", SierraTheme.Colors.danger,      SierraTheme.Colors.danger.opacity(0.12),      SierraTheme.Colors.danger)
+            ("Unavailable", .red,    .red.opacity(0.12),    .red)
         case .busy:
-            ("Busy",        SierraTheme.Colors.ember,       SierraTheme.Colors.ember.opacity(0.12),       SierraTheme.Colors.emberDark)
+            ("Busy",        .orange, .orange.opacity(0.12), Color(.systemOrange))
         case .onTrip:
-            ("On Trip",     SierraTheme.Colors.sierraBlue,  SierraTheme.Colors.sierraBlue.opacity(0.12),  SierraTheme.Colors.sierraBlue)
+            ("On Trip",     .blue,   .blue.opacity(0.12),   .blue)
         case .onTask:
-            ("On Task",     SierraTheme.Colors.warning,     SierraTheme.Colors.warning.opacity(0.12),     SierraTheme.Colors.warning)
+            ("On Task",     Color(.systemOrange), Color(.systemOrange).opacity(0.12), Color(.systemOrange))
         }
         return SierraBadge(label: text, dotColor: dot, backgroundColor: bg, foregroundColor: fg, size: .compact)
     }
@@ -183,23 +186,23 @@ struct StaffDetailSheet: View {
                     heroSection
 
                     statusRow
-                        .padding(.horizontal, Spacing.lg)
+                        .padding(.horizontal, 20)
 
                     if let vehicle = assignedVehicle {
-                        infoCard(title: "Assigned Vehicle", icon: "car.fill", color: SierraTheme.Colors.sierraBlue) {
+                        infoCard(title: "Assigned Vehicle", icon: "car.fill", color: .blue) {
                             labeledRow("Name", vehicle.name)
                             labeledRow("Plate", vehicle.licensePlate)
                             labeledRow("Model", vehicle.model)
                             labeledRow("Status", vehicle.status.rawValue)
                         }
-                        .padding(.horizontal, Spacing.lg)
+                        .padding(.horizontal, 20)
                     } else if member.role == .driver {
-                        infoCard(title: "Assigned Vehicle", icon: "car.fill", color: SierraTheme.Colors.granite) {
+                        infoCard(title: "Assigned Vehicle", icon: "car.fill", color: .secondary) {
                             Text("No vehicle assigned")
-                                .font(SierraFont.bodyText)
-                                .foregroundStyle(SierraTheme.Colors.secondaryText)
+                                .font(.body)
+                                .foregroundStyle(.secondary)
                         }
-                        .padding(.horizontal, Spacing.lg)
+                        .padding(.horizontal, 20)
                     }
 
                     if let trip = activeTrip {
@@ -208,10 +211,10 @@ struct StaffDetailSheet: View {
                             labeledRow("Status", trip.status.rawValue)
                             labeledRow("Task ID", trip.taskId)
                         }
-                        .padding(.horizontal, Spacing.lg)
+                        .padding(.horizontal, 20)
                     }
 
-                    infoCard(title: "Contact", icon: "person.crop.circle", color: SierraTheme.Colors.ember) {
+                    infoCard(title: "Contact", icon: "person.crop.circle", color: .orange) {
                         labeledRow("Email", member.email)
                         if let phone = member.phone { labeledRow("Phone", phone) }
                         if let emergency = member.emergencyContactName {
@@ -221,38 +224,38 @@ struct StaffDetailSheet: View {
                             labeledRow("Emergency Phone", emergencyPhone)
                         }
                     }
-                    .padding(.horizontal, Spacing.lg)
+                    .padding(.horizontal, 20)
 
                     if member.isProfileComplete {
-                        infoCard(title: "Profile", icon: "doc.text", color: SierraTheme.Colors.alpineMint) {
+                        infoCard(title: "Profile", icon: "doc.text", color: .green) {
                             if let dob = member.dateOfBirth { labeledRow("Date of Birth", dob) }
                             if let gender = member.gender { labeledRow("Gender", gender) }
                             if let address = member.address { labeledRow("Address", address) }
                             if let aadhaar = member.aadhaarNumber { labeledRow("Aadhaar", aadhaar) }
                         }
-                        .padding(.horizontal, Spacing.lg)
+                        .padding(.horizontal, 20)
                     }
 
-                    infoCard(title: "Activity", icon: "chart.bar.fill", color: SierraTheme.Colors.warning) {
+                    infoCard(title: "Activity", icon: "chart.bar.fill", color: Color(.systemOrange)) {
                         labeledRow("Total Trips", "\(tripCount)")
                         labeledRow("Profile", member.isProfileComplete ? "Complete" : "Incomplete")
                         if let joined = member.joinedDate {
                             labeledRow("Joined", joined.formatted(.dateTime.day().month(.abbreviated).year()))
                         }
                     }
-                    .padding(.horizontal, Spacing.lg)
+                    .padding(.horizontal, 20)
 
                     Spacer(minLength: 32)
                 }
             }
-            .background(SierraTheme.Colors.appBackground.ignoresSafeArea())
+            .background(Color(.systemGroupedBackground).ignoresSafeArea())
             .navigationTitle(member.displayName)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
-                        .font(SierraFont.body(17, weight: .semibold))
-                        .foregroundStyle(SierraTheme.Colors.ember)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.orange)
                 }
             }
         }
@@ -262,17 +265,20 @@ struct StaffDetailSheet: View {
 
     private var heroSection: some View {
         VStack(spacing: 12) {
-            SierraAvatarView(
-                initials: member.initials,
-                size: 80,
-                gradient: member.role == .driver ? SierraAvatarView.driver() : SierraAvatarView.maintenance()
-            )
+            Circle()
+                .fill(Color(.systemGray5))
+                .frame(width: 80, height: 80)
+                .overlay(
+                    Text(member.initials)
+                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .foregroundStyle(.primary)
+                )
             Text(member.displayName)
-                .font(SierraFont.title2)
-                .foregroundStyle(SierraTheme.Colors.primaryText)
+                .font(.title2.weight(.bold))
+                .foregroundStyle(.primary)
             Text(member.displayRole)
-                .font(SierraFont.subheadline)
-                .foregroundStyle(SierraTheme.Colors.secondaryText)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 24)
@@ -280,28 +286,25 @@ struct StaffDetailSheet: View {
     }
 
     // MARK: - Status Row
-    // Shows availability as the primary status. Account-level status
-    // (active/suspended) is not surfaced here since the list is already
-    // filtered to active+approved staff only.
 
     private var statusRow: some View {
         HStack(spacing: 12) {
             miniStatusCard("Availability", member.availability.rawValue, availabilityColor(member.availability))
             miniStatusCard("Approved", member.isApproved ? "Yes" : "No",
-                           member.isApproved ? SierraTheme.Colors.alpineMint : SierraTheme.Colors.danger)
+                           member.isApproved ? .green : .red)
             miniStatusCard("Profile", member.isProfileComplete ? "Complete" : "Incomplete",
-                           member.isProfileComplete ? SierraTheme.Colors.alpineMint : SierraTheme.Colors.warning)
+                           member.isProfileComplete ? .green : .orange)
         }
     }
 
     private func miniStatusCard(_ label: String, _ value: String, _ color: Color) -> some View {
         VStack(spacing: 4) {
             Text(value)
-                .font(SierraFont.body(13, weight: .bold))
+                .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(color)
             Text(label)
-                .font(SierraFont.caption2)
-                .foregroundStyle(SierraTheme.Colors.secondaryText)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
@@ -314,29 +317,29 @@ struct StaffDetailSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 6) {
                 Image(systemName: icon)
-                    .font(SierraFont.caption1)
+                    .font(.caption)
                     .foregroundStyle(color)
                 Text(title)
-                    .font(SierraFont.headline)
-                    .foregroundStyle(SierraTheme.Colors.primaryText)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
             }
             content()
         }
-        .padding(Spacing.md)
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-        .sierraShadow(SierraTheme.Shadow.card)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
     }
 
     private func labeledRow(_ label: String, _ value: String) -> some View {
         HStack {
             Text(label)
-                .font(SierraFont.caption1)
-                .foregroundStyle(SierraTheme.Colors.secondaryText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
                 .frame(width: 130, alignment: .leading)
             Text(value)
-                .font(SierraFont.body(14, weight: .medium))
-                .foregroundStyle(SierraTheme.Colors.primaryText)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.primary)
             Spacer()
         }
     }
@@ -345,11 +348,11 @@ struct StaffDetailSheet: View {
 
     private func availabilityColor(_ a: StaffAvailability) -> Color {
         switch a {
-        case .available:   return SierraTheme.Colors.alpineMint
-        case .unavailable: return SierraTheme.Colors.danger
-        case .busy:        return SierraTheme.Colors.ember
-        case .onTrip:      return SierraTheme.Colors.sierraBlue
-        case .onTask:      return SierraTheme.Colors.warning
+        case .available:   return .green
+        case .unavailable: return .red
+        case .busy:        return .orange
+        case .onTrip:      return .blue
+        case .onTask:      return Color(.systemOrange)
         }
     }
 }

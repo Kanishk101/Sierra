@@ -27,8 +27,8 @@ struct VehicleListView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 filterChips
-                    .padding(.vertical, Spacing.sm)
-                    .background(SierraTheme.Colors.appBackground)
+                    .padding(.vertical, 8)
+                    .background(Color(.systemGroupedBackground))
 
                 if filteredVehicles.isEmpty {
                     emptyState
@@ -38,7 +38,7 @@ struct VehicleListView: View {
                             NavigationLink(value: vehicle.id) {
                                 vehicleRow(vehicle)
                             }
-                            .listRowInsets(EdgeInsets(top: 6, leading: Spacing.md, bottom: 6, trailing: Spacing.md))
+                            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                             .listRowSeparator(.hidden)
                             .listRowBackground(Color.clear)
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -52,7 +52,7 @@ struct VehicleListView: View {
                                 } label: {
                                     Label("Edit", systemImage: "pencil")
                                 }
-                                .tint(SierraTheme.Colors.ember)
+                                .tint(.orange)
                             }
                         }
                     }
@@ -60,9 +60,10 @@ struct VehicleListView: View {
                     .scrollContentBackground(.hidden)
                 }
             }
-            .background(SierraTheme.Colors.appBackground.ignoresSafeArea())
+            .background(Color(.systemGroupedBackground).ignoresSafeArea())
             .navigationTitle("Vehicles")
-            .navigationBarTitleDisplayMode(.inline)
+            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .searchable(text: $searchText, prompt: "Search vehicles\u{2026}")
             .navigationDestination(for: UUID.self) { id in
                 VehicleDetailView(vehicleId: id)
@@ -77,7 +78,8 @@ struct VehicleListView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showAddSheet = true } label: {
                         Image(systemName: "plus")
-                            .font(SierraFont.body(17, weight: .semibold))
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(.orange)
                     }
                 }
             }
@@ -104,7 +106,7 @@ struct VehicleListView: View {
 
     private var filterChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: Spacing.sm) {
+            HStack(spacing: 8) {
                 filterChip("All", isSelected: selectedFilter == nil) { selectedFilter = nil }
                 ForEach(VehicleStatus.allCases, id: \.self) { status in
                     filterChip(status.rawValue, isSelected: selectedFilter == status) {
@@ -112,19 +114,19 @@ struct VehicleListView: View {
                     }
                 }
             }
-            .padding(.horizontal, Spacing.md)
+            .padding(.horizontal, 16)
         }
     }
 
     private func filterChip(_ label: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
-                .font(SierraFont.caption1)
-                .foregroundStyle(isSelected ? .white : SierraTheme.Colors.primaryText)
-                .padding(.horizontal, Spacing.md)
+                .font(.caption)
+                .foregroundStyle(isSelected ? .white : .primary)
+                .padding(.horizontal, 16)
                 .padding(.vertical, 7)
-                .background(isSelected ? SierraTheme.Colors.ember : .clear, in: Capsule())
-                .overlay(Capsule().strokeBorder(isSelected ? .clear : SierraTheme.Colors.mist, lineWidth: 1))
+                .background(isSelected ? Color.orange : .clear, in: Capsule())
+                .overlay(Capsule().strokeBorder(isSelected ? .clear : Color(.separator), lineWidth: 1))
         }
         .buttonStyle(.plain)
     }
@@ -137,44 +139,46 @@ struct VehicleListView: View {
             .flatMap { UUID(uuidString: $0) }
             .flatMap { store.staffMember(for: $0) }
 
-        return HStack(spacing: Spacing.md) {
+        return HStack(spacing: 14) {
             // Vehicle icon
             Image(systemName: "car.fill")
                 .font(.system(size: 20))
-                .foregroundStyle(SierraTheme.Colors.sierraBlue.opacity(0.7))
+                .foregroundStyle(.blue)
                 .frame(width: 44, height: 44)
-                .background(SierraTheme.Colors.sierraBlue.opacity(0.06),
-                            in: RoundedRectangle(cornerRadius: Radius.avatar, style: .continuous))
+                .background(Color.blue.opacity(0.06),
+                            in: RoundedRectangle(cornerRadius: 12, style: .continuous))
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(vehicle.name)
-                    .sierraStyle(.cardTitle)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.primary)
                 Text("\(vehicle.model) \u{00B7} \(vehicle.licensePlate)")
-                    .sierraStyle(.caption)
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.secondary)
 
                 // Assigned driver + their availability
                 if let driver {
                     HStack(spacing: 4) {
                         Image(systemName: "person.fill")
                             .font(.system(size: 9))
-                            .foregroundStyle(SierraTheme.Colors.granite)
+                            .foregroundStyle(.secondary)
                         Text(driver.displayName)
-                            .font(SierraFont.body(11, weight: .medium))
-                            .foregroundStyle(SierraTheme.Colors.granite)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.secondary)
                         availabilityDot(driver.availability)
                         Text(driver.availability.rawValue)
-                            .font(SierraFont.body(11, weight: .medium))
+                            .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(availabilityColor(driver.availability))
                     }
                 } else if vehicle.assignedDriverId != nil {
                     // Driver ID exists but not in store
                     Text("Driver loading\u{2026}")
-                        .font(SierraFont.body(11, weight: .medium))
-                        .foregroundStyle(SierraTheme.Colors.granite)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
                 } else {
                     Text("No driver assigned")
-                        .font(SierraFont.body(11, weight: .medium))
-                        .foregroundStyle(SierraTheme.Colors.granite.opacity(0.6))
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.tertiary)
                 }
             }
 
@@ -182,9 +186,9 @@ struct VehicleListView: View {
 
             SierraBadge(vehicle.status, size: .compact)
         }
-        .padding(Spacing.md)
-        .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-        .sierraShadow(SierraTheme.Shadow.card)
+        .padding(16)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
     }
 
     // MARK: - Availability helpers
@@ -197,11 +201,11 @@ struct VehicleListView: View {
 
     private func availabilityColor(_ availability: StaffAvailability) -> Color {
         switch availability {
-        case .available:   return SierraTheme.Colors.alpineMint
-        case .busy:        return SierraTheme.Colors.ember
-        case .onTrip:      return SierraTheme.Colors.sierraBlue
-        case .onTask:      return SierraTheme.Colors.warning
-        case .unavailable: return SierraTheme.Colors.danger
+        case .available:   return .green
+        case .busy:        return .orange
+        case .onTrip:      return .blue
+        case .onTask:      return Color(.systemOrange)
+        case .unavailable: return .red
         }
     }
 

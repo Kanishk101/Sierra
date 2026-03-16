@@ -16,7 +16,7 @@ struct ShakeEffect: GeometryEffect {
 // MARK: - Six Digit Input
 
 /// Reusable 6-digit OTP input used by TwoFactorView.
-/// Supabase is configured to send 6-digit OTP tokens (set in Auth → Settings → OTP length).
+/// Supabase is configured to send 6-digit OTP tokens (set in Auth > Settings > OTP length).
 struct SixDigitInputView: View {
 
     @Binding var digits: [String] // must have exactly 6 elements
@@ -105,20 +105,20 @@ struct SingleDigitField: View {
         .frame(width: 42, height: 56)
         .multilineTextAlignment(.center)
         .font(.system(size: 22, weight: .bold, design: .rounded))
-        .foregroundStyle(SierraTheme.Colors.primaryText)
+        .foregroundStyle(.primary)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(.white)
+                .fill(Color(.tertiarySystemGroupedBackground))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(
-                    isFocused ? SierraTheme.Colors.ember : Color.gray.opacity(0.25),
+                    isFocused ? Color.orange : Color(.separator),
                     lineWidth: isFocused ? 2 : 1
                 )
         )
         .shadow(
-            color: isFocused ? SierraTheme.Colors.ember.opacity(0.15) : .clear,
+            color: isFocused ? Color.orange.opacity(0.15) : .clear,
             radius: 6, y: 2
         )
         .contentShape(Rectangle())
@@ -142,8 +142,8 @@ struct BackspaceDetectingTextField: UIViewRepresentable {
         tf.font = .systemFont(ofSize: 22, weight: .bold)
         tf.delegate = context.coordinator
         tf.onBackspace = onBackspace
-        tf.textColor = UIColor(SierraTheme.Colors.primaryText)
-        tf.tintColor = UIColor(SierraTheme.Colors.ember)
+        tf.textColor = UIColor.label
+        tf.tintColor = UIColor.systemOrange
         return tf
     }
 

@@ -18,7 +18,7 @@ struct DriverTabView: View {
                 placeholderTab(title: "My Trips", icon: "location.fill", color: .green)
             }
             Tab("Vehicle", systemImage: "car.fill") {
-                placeholderTab(title: "Inspection", icon: "checklist", color: SierraTheme.Colors.warning)
+                placeholderTab(title: "Inspection", icon: "checklist", color: .orange)
             }
             Tab("Profile", systemImage: "person.fill") {
                 settingsTab()
@@ -29,25 +29,21 @@ struct DriverTabView: View {
 
     private func placeholderTab(title: String, icon: String, color: Color) -> some View {
         ZStack {
-            LinearGradient(
-                colors: [SierraTheme.Colors.summitNavy, SierraTheme.Colors.sierraBlue],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            Color(.secondarySystemGroupedBackground)
+                .ignoresSafeArea()
 
             VStack(spacing: 16) {
                 Image(systemName: icon)
                     .font(.system(size: 48, weight: .light))
-                    .foregroundStyle(color.opacity(0.8))
+                    .foregroundStyle(color)
 
                 Text(title)
-                    .font(SierraFont.title2)
-                    .foregroundStyle(.white)
+                    .font(.title2)
+                    .foregroundStyle(.orange)
 
                 Text("Coming Soon")
-                    .font(SierraFont.subheadline)
-                    .foregroundStyle(.white.opacity(0.5))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -68,15 +64,15 @@ struct DriverTabView: View {
                     .foregroundStyle(.white.opacity(0.6))
 
                 Text("Profile")
-                    .font(SierraFont.title2)
+                    .font(.title2)
                     .foregroundStyle(.white)
 
                 Button {
                     AuthManager.shared.signOut()
                 } label: {
                     Text("Sign Out")
-                        .font(SierraFont.body(17, weight: .semibold))
-                        .foregroundStyle(SierraTheme.Colors.danger)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.red)
                         .frame(maxWidth: .infinity)
                         .frame(height: 50)
                         .background(.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))

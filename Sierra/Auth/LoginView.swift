@@ -19,10 +19,10 @@ struct LoginView: View {
 
     var body: some View {
         ZStack {
-            // ── Login content layer ──
+            // Login content layer
             loginContentLayer
 
-            // ── 2FA overlay layer — covers everything when active ──
+            // 2FA overlay layer — covers everything when active
             if showTwoFactor, let vm = twoFactorVM {
                 TwoFactorView(viewModel: vm)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -36,7 +36,7 @@ struct LoginView: View {
                 cardAppeared = true
             }
         }
-        // ── Dashboard (fullScreenCover) ──
+        // Dashboard (fullScreenCover)
         .fullScreenCover(isPresented: $showDestination) {
             if let dest = resolvedDestination {
                 destinationView(for: dest)
@@ -44,14 +44,14 @@ struct LoginView: View {
                     .environment(AuthManager.shared)
             }
         }
-        // ── Forgot Password (sheet) ──
+        // Forgot Password (sheet)
         .sheet(isPresented: $showForgotPassword) {
             ForgotPasswordView()
         }
-        // ── React to authState changes ──
+        // React to authState changes
         .onChange(of: viewModel.authState) { _, newState in
             #if DEBUG
-            print("👁 [LoginView.onChange] authState fired: \(newState)")
+            print("\u{1F441} [LoginView.onChange] authState fired: \(newState)")
             #endif
             switch newState {
             case .requiresTwoFactor(let ctx):
@@ -61,7 +61,7 @@ struct LoginView: View {
                     service: viewModel.otpService,
                     onVerified: { [self] in
                         #if DEBUG
-                        print("🔐 [LoginView.onVerified] 2FA verified — completing auth")
+                        print("\u{1F510} [LoginView.onVerified] 2FA verified — completing auth")
                         #endif
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                             showTwoFactor = false
@@ -98,12 +98,8 @@ struct LoginView: View {
 
     private var loginContentLayer: some View {
         ZStack {
-            LinearGradient(
-                colors: [SierraTheme.Colors.summitNavy, SierraTheme.Colors.sierraBlue],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            Color(.systemGroupedBackground)
+                .ignoresSafeArea()
 
             VStack {
                 if let error = viewModel.errorMessage {
@@ -141,58 +137,54 @@ struct LoginView: View {
     // MARK: - Header
 
     private var headerSection: some View {
-        VStack(spacing: Spacing.sm) {
+        VStack(spacing: 8) {
             ZStack {
                 Circle()
-                    .fill(.ultraThinMaterial)
+                    .fill(Color.orange.opacity(0.1))
                     .frame(width: 100, height: 100)
-                    .shadow(color: SierraTheme.Colors.ember.opacity(0.15), radius: 24, y: 8)
 
                 Image(systemName: "truck.box.fill")
                     .font(.system(size: 60, weight: .light))
-                    .foregroundStyle(SierraTheme.Colors.ember)
+                    .foregroundStyle(.orange)
                     .symbolRenderingMode(.hierarchical)
             }
 
             Text("FleetOS")
-                .font(SierraFont.title1)
-                .foregroundStyle(SierraTheme.Colors.primaryText)
-                .padding(.horizontal, Spacing.lg)
-                .padding(.vertical, Spacing.xxs)
-                .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+                .font(.largeTitle.weight(.bold))
+                .foregroundStyle(.primary)
         }
     }
 
     // MARK: - Login Card
 
     private var loginCard: some View {
-        VStack(spacing: Spacing.lg) {
-            VStack(alignment: .leading, spacing: Spacing.xxs) {
-                HStack(spacing: Spacing.sm) {
+        VStack(spacing: 20) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 10) {
                     Image(systemName: "envelope.fill")
-                        .font(SierraFont.subheadline)
-                        .foregroundStyle(.white.opacity(0.45))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                         .frame(width: 20)
 
                     TextField("Email", text: $viewModel.email)
                         .textFieldStyle(.plain)
-                        .font(SierraFont.bodyText)
-                        .foregroundStyle(.white)
+                        .font(.body)
+                        .foregroundStyle(.primary)
                         .keyboardType(.emailAddress)
                         .textContentType(.emailAddress)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                 }
-                .padding(.horizontal, Spacing.md)
+                .padding(.horizontal, 16)
                 .frame(height: 52)
                 .background(
-                    .white.opacity(0.08),
-                    in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    Color(.tertiarySystemGroupedBackground),
+                    in: RoundedRectangle(cornerRadius: 12, style: .continuous)
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .strokeBorder(
-                            viewModel.emailError != nil ? SierraTheme.Colors.danger.opacity(0.7) : .white.opacity(0.1),
+                            viewModel.emailError != nil ? Color.red.opacity(0.7) : Color(.separator),
                             lineWidth: 1
                         )
                 )
@@ -202,11 +194,11 @@ struct LoginView: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: Spacing.xxs) {
-                HStack(spacing: Spacing.sm) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 10) {
                     Image(systemName: "lock.fill")
-                        .font(SierraFont.subheadline)
-                        .foregroundStyle(.white.opacity(0.45))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                         .frame(width: 20)
 
                     Group {
@@ -217,8 +209,8 @@ struct LoginView: View {
                         }
                     }
                     .textFieldStyle(.plain)
-                    .font(SierraFont.bodyText)
-                    .foregroundStyle(.white)
+                    .font(.body)
+                    .foregroundStyle(.primary)
                     .textContentType(.password)
 
                     Button {
@@ -227,20 +219,20 @@ struct LoginView: View {
                         }
                     } label: {
                         Image(systemName: viewModel.isPasswordVisible ? "eye.slash.fill" : "eye.fill")
-                            .font(SierraFont.subheadline)
-                            .foregroundStyle(.white.opacity(0.35))
+                            .font(.subheadline)
+                            .foregroundStyle(.tertiary)
                     }
                 }
-                .padding(.horizontal, Spacing.md)
+                .padding(.horizontal, 16)
                 .frame(height: 52)
                 .background(
-                    .white.opacity(0.08),
-                    in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    Color(.tertiarySystemGroupedBackground),
+                    in: RoundedRectangle(cornerRadius: 12, style: .continuous)
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .strokeBorder(
-                            viewModel.passwordError != nil ? SierraTheme.Colors.danger.opacity(0.7) : .white.opacity(0.1),
+                            viewModel.passwordError != nil ? Color.red.opacity(0.7) : Color(.separator),
                             lineWidth: 1
                         )
                 )
@@ -254,38 +246,38 @@ struct LoginView: View {
                 Task { await viewModel.signIn() }
             } label: {
                 Text("Sign In")
-                    .font(SierraFont.body(17, weight: .semibold))
+                    .font(.headline)
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .frame(height: 54)
                     .background(
-                        SierraTheme.Colors.ember,
-                        in: RoundedRectangle(cornerRadius: Radius.button, style: .continuous)
+                        Color.orange,
+                        in: RoundedRectangle(cornerRadius: 14, style: .continuous)
                     )
             }
             .disabled(viewModel.isLoading)
-            .padding(.top, Spacing.xxs)
+            .padding(.top, 4)
 
             if viewModel.showBiometricButton {
                 Button {
                     Task { await viewModel.biometricSignIn() }
                 } label: {
-                    HStack(spacing: Spacing.xs) {
+                    HStack(spacing: 8) {
                         Image(systemName: viewModel.biometricIcon)
                             .font(.system(size: 20))
                         Text(viewModel.biometricLabel)
-                            .font(SierraFont.subheadline)
+                            .font(.subheadline)
                     }
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundStyle(.orange)
                     .frame(maxWidth: .infinity)
                     .frame(height: 48)
                     .background(
-                        .white.opacity(0.06),
-                        in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        Color.orange.opacity(0.08),
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
                     )
                     .overlay(
-                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                            .strokeBorder(.white.opacity(0.1), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(Color.orange.opacity(0.2), lineWidth: 1)
                     )
                 }
                 .disabled(viewModel.isLoading)
@@ -296,18 +288,15 @@ struct LoginView: View {
                 showForgotPassword = true
             } label: {
                 Text("Forgot Password?")
-                    .font(SierraFont.caption1)
-                    .foregroundStyle(SierraTheme.Colors.ember.opacity(0.8))
+                    .font(.caption)
+                    .foregroundStyle(.orange)
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
-        .padding(Spacing.xl)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: Radius.xxl, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.xxl, style: .continuous)
-                .strokeBorder(.white.opacity(0.08), lineWidth: 1)
-        )
-        .padding(.horizontal, Spacing.xl)
+        .padding(24)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
+        .padding(.horizontal, 24)
         .animation(.easeInOut(duration: 0.2), value: viewModel.emailError)
         .animation(.easeInOut(duration: 0.2), value: viewModel.passwordError)
     }
@@ -315,38 +304,38 @@ struct LoginView: View {
     // MARK: - Error Banner
 
     private func errorBanner(message: String) -> some View {
-        HStack(spacing: Spacing.sm) {
+        HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(SierraFont.bodyText)
+                .font(.body)
             Text(message)
-                .font(SierraFont.caption1)
+                .font(.caption)
             Spacer()
             Button {
                 viewModel.dismissError()
             } label: {
                 Image(systemName: "xmark")
-                    .font(SierraFont.body(12, weight: .bold))
+                    .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(.white.opacity(0.7))
             }
         }
         .foregroundStyle(.white)
-        .padding(.horizontal, Spacing.md)
-        .padding(.vertical, Spacing.md)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
         .background(
-            SierraTheme.Colors.danger.opacity(0.9),
-            in: RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+            Color.red.opacity(0.9),
+            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
         )
-        .padding(.horizontal, Spacing.lg)
-        .padding(.top, Spacing.xs)
+        .padding(.horizontal, 20)
+        .padding(.top, 8)
     }
 
     // MARK: - Inline Error
 
     private func inlineError(_ text: String) -> some View {
         Text(text)
-            .font(SierraFont.caption1)
-            .foregroundStyle(SierraTheme.Colors.danger.opacity(0.9))
-            .padding(.leading, Spacing.xxs)
+            .font(.caption2)
+            .foregroundStyle(.red.opacity(0.9))
+            .padding(.leading, 4)
             .transition(.opacity)
     }
 
@@ -357,16 +346,16 @@ struct LoginView: View {
             Color.black.opacity(0.35)
                 .ignoresSafeArea()
 
-            VStack(spacing: Spacing.md) {
+            VStack(spacing: 16) {
                 ProgressView()
                     .scaleEffect(1.3)
-                    .tint(.white)
+                    .tint(.orange)
                 Text("Authenticating\u{2026}")
-                    .font(SierraFont.caption1)
-                    .foregroundStyle(.white.opacity(0.8))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            .padding(Spacing.xxl)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+            .padding(32)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
         .transition(.opacity)
         .animation(.easeInOut(duration: 0.2), value: viewModel.isLoading)

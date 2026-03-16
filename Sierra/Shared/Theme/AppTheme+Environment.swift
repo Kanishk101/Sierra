@@ -31,16 +31,14 @@ extension EnvironmentValues {
 struct SierraAppThemeModifier: ViewModifier {
 
     init() {
-        // ── Navigation Bar ──
-        // Use UIColor(named:) for proper dynamic trait resolution
+        // Navigation Bar
         let navBg = UIColor(named: "NavBarBg") ?? .systemBackground
         let titleCol = UIColor(named: "PrimaryText") ?? .label
-        let shadowCol = UIColor(named: "Cloud") ?? .separator
 
         let navAppearance = UINavigationBarAppearance()
         navAppearance.configureWithOpaqueBackground()
         navAppearance.backgroundColor = navBg
-        navAppearance.shadowColor = shadowCol
+        navAppearance.shadowColor = UIColor.separator
         navAppearance.titleTextAttributes = [
             .foregroundColor: titleCol,
             .font: UIFont.systemFont(ofSize: 20, weight: .semibold)
@@ -53,49 +51,48 @@ struct SierraAppThemeModifier: ViewModifier {
             .foregroundColor: UIColor.clear
         ]
 
-        // Use the SAME opaque appearance for all scroll states — prevents flicker
         let scrollAppearance = navAppearance.copy() as UINavigationBarAppearance
-        UINavigationBar.appearance().standardAppearance = navAppearance
-        UINavigationBar.appearance().compactAppearance = navAppearance
+        UINavigationBar.appearance().standardAppearance   = navAppearance
+        UINavigationBar.appearance().compactAppearance    = navAppearance
         UINavigationBar.appearance().scrollEdgeAppearance = scrollAppearance
-        UINavigationBar.appearance().tintColor = UIColor(named: "Ember") ?? .tintColor
+        UINavigationBar.appearance().tintColor = UIColor.systemOrange
 
-        // ── Tab Bar ──
+        // Tab Bar
         let tabAppearance = UITabBarAppearance()
         tabAppearance.configureWithOpaqueBackground()
         tabAppearance.backgroundColor = .systemBackground
-        tabAppearance.shadowColor = UIColor(SierraTheme.Colors.cloud)
+        tabAppearance.shadowColor = UIColor.separator
 
         let selectedAttrs: [NSAttributedString.Key: Any] = [
-            .foregroundColor: UIColor(SierraTheme.Colors.ember),
+            .foregroundColor: UIColor.systemOrange,
             .font: UIFont.systemFont(ofSize: 10, weight: .bold)
         ]
         let normalAttrs: [NSAttributedString.Key: Any] = [
-            .foregroundColor: UIColor(SierraTheme.Colors.granite),
+            .foregroundColor: UIColor.secondaryLabel,
             .font: UIFont.systemFont(ofSize: 10, weight: .medium)
         ]
 
         let itemAppearance = UITabBarItemAppearance()
         itemAppearance.selected.titleTextAttributes = selectedAttrs
-        itemAppearance.selected.iconColor = UIColor(SierraTheme.Colors.ember)
-        itemAppearance.normal.titleTextAttributes = normalAttrs
-        itemAppearance.normal.iconColor = UIColor(SierraTheme.Colors.granite)
+        itemAppearance.selected.iconColor           = UIColor.systemOrange
+        itemAppearance.normal.titleTextAttributes   = normalAttrs
+        itemAppearance.normal.iconColor             = UIColor.secondaryLabel
 
-        tabAppearance.stackedLayoutAppearance = itemAppearance
-        tabAppearance.inlineLayoutAppearance = itemAppearance
+        tabAppearance.stackedLayoutAppearance       = itemAppearance
+        tabAppearance.inlineLayoutAppearance        = itemAppearance
         tabAppearance.compactInlineLayoutAppearance = itemAppearance
 
-        UITabBar.appearance().standardAppearance = tabAppearance
-        UITabBar.appearance().scrollEdgeAppearance = tabAppearance
+        UITabBar.appearance().standardAppearance    = tabAppearance
+        UITabBar.appearance().scrollEdgeAppearance  = tabAppearance
 
-        // ── Table / Collection View backgrounds ──
-        UITableView.appearance().backgroundColor = UIColor(SierraTheme.Colors.appBackground)
-        UICollectionView.appearance().backgroundColor = UIColor(SierraTheme.Colors.appBackground)
+        // Table / Collection backgrounds
+        UITableView.appearance().backgroundColor      = UIColor.systemGroupedBackground
+        UICollectionView.appearance().backgroundColor = UIColor.systemGroupedBackground
     }
 
     func body(content: Content) -> some View {
         content
-            .tint(SierraTheme.Colors.ember)
+            .tint(.orange)
             .environment(\.sierraTheme, .system)
     }
 }

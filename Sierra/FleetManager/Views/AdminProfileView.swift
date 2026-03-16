@@ -13,19 +13,26 @@ struct AdminProfileView: View {
                 .padding(.top, 10)
 
             // Avatar
-            initialsCircle("FA", size: 72, bg: SierraTheme.Colors.ember)
+            Circle()
+                .fill(Color(.systemGray5))
+                .frame(width: 72, height: 72)
+                .overlay(
+                    Text("FA")
+                        .font(.system(size: 24, weight: .bold, design: .rounded))
+                        .foregroundStyle(.primary)
+                )
 
             VStack(spacing: 4) {
                 Text("Fleet Admin")
-                    .font(SierraFont.title3)
-                    .foregroundStyle(SierraTheme.Colors.primaryText)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.primary)
 
                 Text("admin@fleeeos.com")
-                    .font(SierraFont.subheadline)
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
 
                 Text("Fleet Manager")
-                    .font(SierraFont.caption1)
+                    .font(.caption)
                     .foregroundStyle(.blue)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 4)
@@ -41,11 +48,11 @@ struct AdminProfileView: View {
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "rectangle.portrait.and.arrow.right")
-                        .font(SierraFont.bodyText)
+                        .font(.body)
                     Text("Log Out")
-                        .font(SierraFont.body(17, weight: .semibold))
+                        .font(.system(size: 17, weight: .semibold))
                 }
-                .foregroundStyle(SierraTheme.Colors.danger)
+                .foregroundStyle(.red)
                 .frame(maxWidth: .infinity)
                 .frame(height: 50)
                 .background(.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -57,7 +64,7 @@ struct AdminProfileView: View {
             .padding(.horizontal, 24)
             .padding(.bottom, 16)
         }
-        .background(SierraTheme.Colors.appBackground.ignoresSafeArea())
+        .background(Color(.systemGroupedBackground).ignoresSafeArea())
     }
 }
 

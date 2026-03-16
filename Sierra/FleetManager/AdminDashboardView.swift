@@ -1,68 +1,78 @@
 import SwiftUI
 
 struct AdminDashboardView: View {
-    @State private var selectedTab: Int = 0
-    @State private var showQuickActions = false
     @Environment(AppDataStore.self) private var store
+    @State private var searchText = ""
+    @State private var selectedTab = 0
+    @State private var lastContentTab = 0
+    @State private var showQuickActions = false
 
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            TabView(selection: $selectedTab) {
-                // Tab 1: Dashboard
+        TabView(selection: $selectedTab) {
+            Tab("Dashboard", systemImage: "square.grid.2x2.fill", value: 0) {
                 DashboardHomeView()
-                    .tabItem {
-                        Label("Dashboard", systemImage: "square.grid.2x2.fill")
-                    }
-                    .tag(0)
+            }
 
-                // Tab 2: Vehicles
+            Tab("Vehicles", systemImage: "car.fill", value: 1) {
                 NavigationStack {
                     VehicleListView()
                 }
-                .tabItem {
-                    Label("Vehicles", systemImage: "car.fill")
-                }
-                .tag(1)
+            }
 
-                // Tab 3: Staff
+            Tab("Staff", systemImage: "person.2.fill", value: 2) {
                 StaffTabView()
-                    .tabItem {
-                        Label("Staff", systemImage: "person.2.fill")
-                    }
-                    .tag(2)
-                    .badge(store.staffApplications.filter { $0.status == .pending }.count)
+            }
+            .badge(store.pendingCount)
 
-                // Tab 4: Trips
+            Tab("Trips", systemImage: "arrow.triangle.swap", value: 3) {
                 NavigationStack {
                     TripsListView()
                 }
-                .tabItem {
-                    Label("Trips", systemImage: "arrow.triangle.swap")
-                }
-                .tag(3)
             }
-            .tint(SierraTheme.Colors.ember)
 
-            // Floating Action Button — bottom right, above tab bar
-            Button {
-                showQuickActions = true
+            Tab(value: 4, role: .search) {
+                switch lastContentTab {
+                case 1:
+                    NavigationStack {
+                        VehicleListView()
+                    }
+                    .searchable(text: $searchText, prompt: "Search vehicles\u{2026}")
+                case 2:
+                    StaffTabView()
+                        .searchable(text: $searchText, prompt: "Search staff\u{2026}")
+                case 3:
+                    NavigationStack {
+                        TripsListView()
+                    }
+                    .searchable(text: $searchText, prompt: "Search trips\u{2026}")
+                default:
+                    NavigationStack {
+                        VehicleListView()
+                    }
+                    .searchable(text: $searchText, prompt: "Search\u{2026}")
+                }
             } label: {
-                Image(systemName: "plus")
-                    .font(SierraFont.title3)
-                    .foregroundStyle(.white)
-                    .frame(width: 56, height: 56)
-                    .background(
-                        SierraTheme.Colors.ember,
-                        in: Circle()
-                    )
-                    .shadow(color: SierraTheme.Colors.ember.opacity(0.35), radius: 10, y: 5)
+                if lastContentTab == 0 {
+                    Label("Add", systemImage: "plus")
+                } else {
+                    Label("Search", systemImage: "magnifyingglass")
+                }
             }
-            .padding(.trailing, Spacing.lg)
-            .padding(.bottom, 72) // above the tab bar
+        }
+        .tint(.orange)
+        .onChange(of: selectedTab) { _, newValue in
+            if newValue == 4 && lastContentTab == 0 {
+                showQuickActions = true
+                selectedTab = 0
+            } else if newValue != 4 {
+                lastContentTab = newValue
+                searchText = ""
+            }
         }
         .sheet(isPresented: $showQuickActions) {
             QuickActionsSheet()
                 .presentationDetents([.fraction(0.45)])
+                .presentationDragIndicator(.visible)
         }
     }
 }

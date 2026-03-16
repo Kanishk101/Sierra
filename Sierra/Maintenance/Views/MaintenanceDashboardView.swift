@@ -38,7 +38,7 @@ struct MaintenanceDashboardView: View {
                     Text("Profile")
                 }
         }
-        .tint(SierraTheme.Colors.ember)
+        .tint(.orange)
     }
 
     // MARK: - Coming Soon
@@ -50,31 +50,32 @@ struct MaintenanceDashboardView: View {
 
                 Image(systemName: icon)
                     .font(.system(size: 48, weight: .light))
-                    .foregroundStyle(SierraTheme.Colors.ember.opacity(0.5))
+                    .foregroundStyle(.orange.opacity(0.5))
 
                 Text(title)
-                    .font(SierraFont.title3)
-                    .foregroundStyle(SierraTheme.Colors.primaryText)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.primary)
 
                 Text(subtitle)
-                    .font(SierraFont.subheadline)
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 48)
 
                 Text("Coming Soon")
                     .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(SierraTheme.Colors.ember)
+                    .foregroundStyle(.orange)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 7)
-                    .background(SierraTheme.Colors.ember.opacity(0.1), in: Capsule())
+                    .background(Color.orange.opacity(0.1), in: Capsule())
 
                 Spacer()
             }
             .frame(maxWidth: .infinity)
-            .background(SierraTheme.Colors.appBackground.ignoresSafeArea())
+            .background(Color(.systemGroupedBackground).ignoresSafeArea())
             .navigationTitle(title)
-            .navigationBarTitleDisplayMode(.inline)
+            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarBackground(.hidden, for: .navigationBar)
         }
     }
 
@@ -89,49 +90,49 @@ struct MaintenanceDashboardView: View {
                 let user = AuthManager.shared.currentUser
                 let initials = (user?.name ?? "M").prefix(2).uppercased()
 
-                ZStack {
-                    Circle()
-                        .fill(SierraTheme.Colors.summitNavy)
-                        .frame(width: 80, height: 80)
-                    Text(initials)
-                        .font(SierraFont.title1)
-                        .foregroundStyle(.white)
-                }
+                Circle()
+                    .fill(Color(.systemGray5))
+                    .frame(width: 80, height: 80)
+                    .overlay(
+                        Text(initials)
+                            .font(.system(size: 28, weight: .bold, design: .rounded))
+                            .foregroundStyle(.primary)
+                    )
 
                 VStack(spacing: 6) {
                     Text(user?.name ?? "Maintenance Staff")
-                        .font(SierraFont.title3)
-                        .foregroundStyle(SierraTheme.Colors.primaryText)
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.primary)
 
                     Text(user?.email ?? "")
-                        .font(SierraFont.caption1)
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
 
                 // Role badge
                 HStack(spacing: 6) {
                     Image(systemName: "wrench.fill")
-                        .font(SierraFont.caption2)
+                        .font(.caption2)
                     Text("Maintenance Personnel")
-                        .font(SierraFont.caption1)
+                        .font(.caption)
                 }
-                .foregroundStyle(SierraTheme.Colors.granite)
+                .foregroundStyle(.secondary)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 7)
-                .background(SierraTheme.Colors.sierraBlue.opacity(0.06), in: Capsule())
+                .background(Color.blue.opacity(0.06), in: Capsule())
 
                 // Approval status
                 HStack(spacing: 8) {
                     Image(systemName: user?.isApproved == true ? "checkmark.seal.fill" : "clock.fill")
-                        .font(SierraFont.bodyText)
-                        .foregroundStyle(user?.isApproved == true ? .green : SierraTheme.Colors.warning)
+                        .font(.body)
+                        .foregroundStyle(user?.isApproved == true ? .green : .orange)
                     Text(user?.isApproved == true ? "Approved" : "Pending Approval")
-                        .font(SierraFont.subheadline)
-                        .foregroundStyle(SierraTheme.Colors.primaryText)
+                        .font(.subheadline)
+                        .foregroundStyle(.primary)
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity)
-                .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .shadow(color: .black.opacity(0.03), radius: 4, y: 2)
                 .padding(.horizontal, 24)
 
@@ -143,11 +144,11 @@ struct MaintenanceDashboardView: View {
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "rectangle.portrait.and.arrow.right")
-                            .font(SierraFont.caption1)
+                            .font(.caption)
                         Text("Sign Out")
-                            .font(SierraFont.subheadline)
+                            .font(.subheadline)
                     }
-                    .foregroundStyle(SierraTheme.Colors.danger.opacity(0.7))
+                    .foregroundStyle(.red.opacity(0.7))
                     .frame(maxWidth: .infinity)
                     .frame(height: 48)
                     .background(.red.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -156,9 +157,10 @@ struct MaintenanceDashboardView: View {
                 .padding(.bottom, 24)
             }
             .frame(maxWidth: .infinity)
-            .background(SierraTheme.Colors.appBackground.ignoresSafeArea())
+            .background(Color(.systemGroupedBackground).ignoresSafeArea())
             .navigationTitle("Profile")
-            .navigationBarTitleDisplayMode(.inline)
+            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarBackground(.hidden, for: .navigationBar)
         }
     }
 }

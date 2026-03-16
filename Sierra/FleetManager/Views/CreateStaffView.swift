@@ -25,9 +25,7 @@ struct CreateStaffView: View {
         }
     }
 
-    // ─────────────────────────────────────
     // MARK: - Step 1: Role Selection
-    // ─────────────────────────────────────
 
     private var roleSelectionStep: some View {
         VStack(spacing: 0) {
@@ -36,10 +34,10 @@ struct CreateStaffView: View {
                     // Header
                     VStack(spacing: 6) {
                         Text("Select a Role")
-                            .font(SierraFont.title3)
-                            .foregroundStyle(SierraTheme.Colors.primaryText)
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(.primary)
                         Text("Choose the role for the new staff member")
-                            .font(SierraFont.subheadline)
+                            .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
                     .padding(.top, 8)
@@ -80,7 +78,7 @@ struct CreateStaffView: View {
                 continueButton
             }
         }
-        .background(SierraTheme.Colors.appBackground.ignoresSafeArea())
+        .background(Color(.systemGroupedBackground).ignoresSafeArea())
         .overlay {
             if viewModel.isLoading {
                 loadingOverlay
@@ -89,9 +87,7 @@ struct CreateStaffView: View {
         .animation(.easeInOut(duration: 0.25), value: viewModel.isLoading)
     }
 
-    // ─────────────────────────────────────
     // MARK: - Role Card
-    // ─────────────────────────────────────
 
     private func roleCard(role: UserRole, icon: String, title: String, description: String) -> some View {
         let isSelected = viewModel.selectedRole == role
@@ -105,28 +101,28 @@ struct CreateStaffView: View {
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: icon)
                         .font(.system(size: 32, weight: .light))
-                        .foregroundStyle(isSelected ? SierraTheme.Colors.ember : SierraTheme.Colors.granite)
+                        .foregroundStyle(isSelected ? .orange : .secondary)
                         .frame(width: 60, height: 60)
                         .background(
-                            (isSelected ? SierraTheme.Colors.ember : SierraTheme.Colors.primaryText).opacity(0.08),
+                            (isSelected ? Color.orange : Color.primary).opacity(0.08),
                             in: RoundedRectangle(cornerRadius: 16, style: .continuous)
                         )
 
                     if isSelected {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 20))
-                            .foregroundStyle(SierraTheme.Colors.ember)
+                            .foregroundStyle(.orange)
                             .offset(x: 6, y: -6)
                             .transition(.scale.combined(with: .opacity))
                     }
                 }
 
                 Text(title)
-                    .font(SierraFont.body(16, weight: .bold))
-                    .foregroundStyle(SierraTheme.Colors.primaryText)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(.primary)
 
                 Text(description)
-                    .font(SierraFont.caption2)
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .lineLimit(3)
@@ -134,11 +130,11 @@ struct CreateStaffView: View {
             }
             .padding(16)
             .frame(maxWidth: .infinity)
-            .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .strokeBorder(
-                        isSelected ? SierraTheme.Colors.ember : .clear,
+                        isSelected ? Color.orange : .clear,
                         lineWidth: 2
                     )
             )
@@ -147,20 +143,18 @@ struct CreateStaffView: View {
         .buttonStyle(.plain)
     }
 
-    // ─────────────────────────────────────
     // MARK: - Step 2: Details Form
-    // ─────────────────────────────────────
 
     private var detailsForm: some View {
         VStack(spacing: 20) {
             // Section header
             HStack(spacing: 6) {
                 Image(systemName: "person.text.rectangle.fill")
-                    .font(SierraFont.caption1)
-                    .foregroundStyle(SierraTheme.Colors.granite)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Text("Staff Details")
-                    .font(SierraFont.body(16, weight: .bold))
-                    .foregroundStyle(SierraTheme.Colors.primaryText)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(.primary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 20)
@@ -204,9 +198,9 @@ struct CreateStaffView: View {
             if let error = viewModel.errorMessage {
                 HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .font(SierraFont.caption1)
+                        .font(.caption)
                     Text(error)
-                        .font(SierraFont.caption1)
+                        .font(.caption)
                 }
                 .foregroundStyle(.white)
                 .padding(12)
@@ -221,43 +215,39 @@ struct CreateStaffView: View {
         .animation(.spring(duration: 0.3), value: viewModel.errorMessage)
     }
 
-    // ─────────────────────────────────────
     // MARK: - Credential Preview
-    // ─────────────────────────────────────
 
     private var credentialPreviewCard: some View {
         HStack(spacing: 12) {
             Image(systemName: "envelope.badge.shield.half.filled.fill")
                 .font(.system(size: 24))
-                .foregroundStyle(SierraTheme.Colors.ember)
+                .foregroundStyle(.orange)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("Credential Notification")
-                    .font(SierraFont.caption1)
-                    .foregroundStyle(SierraTheme.Colors.primaryText)
+                    .font(.caption)
+                    .foregroundStyle(.primary)
                 Text("An account will be created and login credentials will be emailed to **\(viewModel.email.trimmingCharacters(in: .whitespacesAndNewlines))**")
-                    .font(SierraFont.caption2)
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(3)
             }
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(SierraTheme.Colors.ember.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(Color.orange.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(SierraTheme.Colors.ember.opacity(0.15), lineWidth: 1)
+                .strokeBorder(Color.orange.opacity(0.15), lineWidth: 1)
         )
     }
 
-    // ─────────────────────────────────────
     // MARK: - Buttons
-    // ─────────────────────────────────────
 
     private var continueButton: some View {
         Button {} label: {
             Text("Continue")
-                .font(SierraFont.body(17, weight: .semibold))
+                .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.5))
                 .frame(maxWidth: .infinity)
                 .frame(height: 54)
@@ -273,12 +263,12 @@ struct CreateStaffView: View {
             Task { await viewModel.createStaff() }
         } label: {
             Text("Create & Send Credentials")
-                .font(SierraFont.body(17, weight: .semibold))
+                .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
                 .frame(height: 54)
                 .background(
-                    viewModel.canSubmit ? SierraTheme.Colors.ember : Color.gray.opacity(0.3),
+                    viewModel.canSubmit ? Color.orange : Color.gray.opacity(0.3),
                     in: RoundedRectangle(cornerRadius: 14, style: .continuous)
                 )
         }
@@ -288,9 +278,7 @@ struct CreateStaffView: View {
         .animation(.easeInOut(duration: 0.2), value: viewModel.canSubmit)
     }
 
-    // ─────────────────────────────────────
     // MARK: - Success View
-    // ─────────────────────────────────────
 
     private var successView: some View {
         VStack(spacing: 24) {
@@ -303,30 +291,30 @@ struct CreateStaffView: View {
 
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 56))
-                    .foregroundStyle(SierraTheme.Colors.alpineMint)
+                    .foregroundStyle(.green)
                     .symbolRenderingMode(.hierarchical)
             }
 
             VStack(spacing: 8) {
                 Text("Staff Created!")
-                    .font(SierraFont.title2)
-                    .foregroundStyle(SierraTheme.Colors.primaryText)
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(.primary)
 
                 Text("An invitation has been sent to")
-                    .font(SierraFont.subheadline)
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
 
                 Text(viewModel.createdStaffName)
-                    .font(SierraFont.body(17, weight: .semibold))
-                    .foregroundStyle(SierraTheme.Colors.primaryText)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(.primary)
 
                 if let role = viewModel.selectedRole {
                     Text(role.displayName)
-                        .font(SierraFont.caption1)
-                        .foregroundStyle(SierraTheme.Colors.ember)
+                        .font(.caption)
+                        .foregroundStyle(.orange)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 5)
-                        .background(SierraTheme.Colors.ember.opacity(0.1), in: Capsule())
+                        .background(Color.orange.opacity(0.1), in: Capsule())
                         .padding(.top, 4)
                 }
             }
@@ -337,22 +325,20 @@ struct CreateStaffView: View {
                 dismiss()
             } label: {
                 Text("Done")
-                    .font(SierraFont.body(17, weight: .semibold))
+                    .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .frame(height: 54)
-                    .background(SierraTheme.Colors.ember, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .background(Color.orange, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
             .padding(.horizontal, 20)
             .padding(.bottom, 16)
         }
-        .background(SierraTheme.Colors.appBackground.ignoresSafeArea())
+        .background(Color(.systemGroupedBackground).ignoresSafeArea())
         .transition(.opacity.combined(with: .scale(scale: 0.95)))
     }
 
-    // ─────────────────────────────────────
     // MARK: - Shared Components
-    // ─────────────────────────────────────
 
     private func formField(
         icon: String,
@@ -362,27 +348,27 @@ struct CreateStaffView: View {
     ) -> some View {
         HStack(spacing: 10) {
             Image(systemName: icon)
-                .font(SierraFont.subheadline)
+                .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .frame(width: 20)
 
             TextField(placeholder, text: text)
                 .textFieldStyle(.plain)
-                .font(SierraFont.bodyText)
-                .foregroundStyle(SierraTheme.Colors.primaryText)
+                .font(.body)
+                .foregroundStyle(.primary)
                 .keyboardType(keyboard)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(keyboard == .emailAddress ? .never : .words)
         }
         .padding(.horizontal, 16)
         .frame(height: 52)
-        .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .shadow(color: .black.opacity(0.03), radius: 4, y: 2)
     }
 
     private func inlineError(_ text: String) -> some View {
         Text(text)
-            .font(SierraFont.caption2)
+            .font(.caption2)
             .foregroundStyle(.red.opacity(0.85))
             .padding(.leading, 4)
             .transition(.opacity)
@@ -396,9 +382,9 @@ struct CreateStaffView: View {
             VStack(spacing: 16) {
                 ProgressView()
                     .scaleEffect(1.3)
-                    .tint(SierraTheme.Colors.ember)
+                    .tint(.orange)
                 Text("Creating account…")
-                    .font(SierraFont.caption1)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
             .padding(32)

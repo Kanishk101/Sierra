@@ -5,13 +5,8 @@ struct OnboardingView: View {
 
     var body: some View {
         ZStack {
-            // Full-bleed gradient background
-            LinearGradient(
-                colors: [SierraTheme.Colors.summitNavy, SierraTheme.Colors.sierraBlue],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            Color(.systemGroupedBackground)
+                .ignoresSafeArea()
 
             VStack(spacing: 0) {
                 // Top bar — Skip button
@@ -23,7 +18,7 @@ struct OnboardingView: View {
                         } label: {
                             Text("Skip")
                                 .font(.system(size: 17, weight: .medium))
-                                .foregroundStyle(.white.opacity(0.7))
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -47,7 +42,7 @@ struct OnboardingView: View {
                     HStack(spacing: 8) {
                         ForEach(viewModel.pages) { page in
                             Capsule()
-                                .fill(.white.opacity(page.id == viewModel.currentPage ? 1.0 : 0.3))
+                                .fill(page.id == viewModel.currentPage ? Color.orange : Color(.separator))
                                 .frame(
                                     width: page.id == viewModel.currentPage ? 24 : 8,
                                     height: 8
@@ -62,11 +57,11 @@ struct OnboardingView: View {
                             viewModel.getStarted()
                         } label: {
                             Text("Get Started")
-                                .font(SierraFont.body(17, weight: .semibold))
-                                .foregroundStyle(SierraTheme.Colors.primaryText)
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(.white)
                                 .frame(maxWidth: .infinity)
                                 .frame(height: 56)
-                                .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                .background(Color.orange, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                         }
                         .padding(.horizontal, 24)
                         .transition(.opacity.combined(with: .scale(scale: 0.95)))
@@ -78,15 +73,14 @@ struct OnboardingView: View {
                             } label: {
                                 HStack(spacing: 6) {
                                     Text("Next")
-                                        .font(SierraFont.body(17, weight: .semibold))
+                                        .font(.system(size: 17, weight: .semibold))
                                     Image(systemName: "arrow.right")
-                                        .font(SierraFont.subheadline)
+                                        .font(.subheadline)
                                 }
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 28)
                                 .frame(height: 50)
-                                .background(.white.opacity(0.15), in: Capsule())
-                                .overlay(Capsule().strokeBorder(.white.opacity(0.25), lineWidth: 1))
+                                .background(Color.orange, in: Capsule())
                             }
                         }
                         .padding(.horizontal, 24)

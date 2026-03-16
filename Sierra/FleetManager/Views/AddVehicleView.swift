@@ -1,13 +1,5 @@
 import SwiftUI
 
-// CHANGES IN THIS FILE (Phase 5):
-// - Removed registrationExpiry, insuranceExpiry fields (moved to VehicleDocument)
-// - Removed Vehicle(registrationExpiry:insuranceExpiry:insuranceId:) init params (no longer on model)
-// - Fixed Vehicle init to match current model (manufacturer, odometer, totalTrips, totalDistanceKm)
-// - Added optional "Add Documents" section to create initial VehicleDocument records post-creation
-// - submitForm() is now async — calls async throws store.addVehicle/updateVehicle inside Task
-// - Added error state for failed submissions
-
 /// Form to add or edit a vehicle. Presented as .sheet.
 struct AddVehicleView: View {
 
@@ -70,7 +62,7 @@ struct AddVehicleView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                SierraTheme.Colors.appBackground.ignoresSafeArea()
+                Color(.systemGroupedBackground).ignoresSafeArea()
 
                 Form {
                     // Basic Info
@@ -92,8 +84,8 @@ struct AddVehicleView: View {
                                 }
                             if let err = vinError {
                                 Text(err)
-                                    .font(SierraFont.caption2)
-                                    .foregroundStyle(SierraTheme.Colors.danger)
+                                    .font(.caption2)
+                                    .foregroundStyle(.red)
                             }
                         }
                         TextField("License Plate *", text: $licensePlate)
@@ -160,6 +152,7 @@ struct AddVehicleView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .foregroundStyle(.secondary)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if isSubmitting {
@@ -170,6 +163,7 @@ struct AddVehicleView: View {
                         }
                         .disabled(!isFormValid || isSubmitting)
                         .fontWeight(.semibold)
+                        .foregroundStyle(.orange)
                     }
                 }
             }
@@ -189,7 +183,7 @@ struct AddVehicleView: View {
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(.white)
             Text(isEditing ? "Vehicle updated!" : "Vehicle added!")
-                .font(SierraFont.subheadline)
+                .font(.subheadline)
                 .foregroundStyle(.white)
         }
         .padding(.horizontal, 20)

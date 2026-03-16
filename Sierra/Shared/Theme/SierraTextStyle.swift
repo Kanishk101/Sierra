@@ -6,29 +6,29 @@ import SwiftUI
 /// Every `Text()` in the app should use `.sierraStyle(.token)` instead
 /// of raw `.font()` / `.foregroundColor()` calls.
 public enum SierraTextStyleToken {
-    /// Large title — 34pt bold, summitNavy/white adaptive, tight tracking
+    /// Large title - 34pt bold, summitNavy/white adaptive, tight tracking
     case screenTitle
-    /// Section header — 22pt semibold, summitNavy adaptive
+    /// Section header - 22pt semibold, summitNavy adaptive
     case sectionHeader
-    /// Card title — 17pt semibold, summitNavy adaptive
+    /// Card title - 17pt semibold, summitNavy adaptive
     case cardTitle
-    /// Body copy — 15pt regular, slate adaptive
+    /// Body copy - 15pt regular, slate adaptive
     case primaryBody
-    /// Secondary text — 15pt medium, granite
+    /// Secondary text - 15pt medium, granite
     case secondaryBody
-    /// Captions, timestamps — 12pt medium, granite
+    /// Captions, timestamps - 12pt medium, granite
     case caption
-    /// Uppercase section dividers — 11pt semibold, granite, wide tracking
+    /// Uppercase section dividers - 11pt semibold, granite, wide tracking
     case eyebrow
-    /// SF Mono data — 13pt medium, summitNavy adaptive (VINs, plates, IDs)
+    /// SF Mono data - 13pt medium, summitNavy adaptive (VINs, plates, IDs)
     case monoData
-    /// SF Mono hero numeric — 20pt medium, ember (OTP, large data)
+    /// SF Mono hero numeric - 20pt medium, ember (OTP, large data)
     case monoDataLarge
-    /// Badge labels — 11pt semibold, tracking 0.3 (color set per badge variant)
+    /// Badge labels - 11pt semibold, tracking 0.3 (color set per badge variant)
     case badgeLabel
-    /// Destructive text — 15pt medium, danger red
+    /// Destructive text - 15pt medium, danger red
     case destructive
-    /// Link / tappable text — 15pt medium, ember
+    /// Link / tappable text - 15pt medium, ember
     case link
 }
 

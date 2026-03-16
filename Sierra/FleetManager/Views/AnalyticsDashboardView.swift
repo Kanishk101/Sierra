@@ -59,7 +59,7 @@ struct AnalyticsDashboardView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: Spacing.lg) {
+                VStack(spacing: 20) {
                     // 1. Fleet Status Donut
                     sectionCard(title: "Fleet Status",
                                 subtitle: "Vehicle distribution by operational state") {
@@ -92,12 +92,13 @@ struct AnalyticsDashboardView: View {
 
                     Spacer(minLength: 32)
                 }
-                .padding(.horizontal, Spacing.lg)
-                .padding(.top, Spacing.md)
+                .padding(.horizontal, 20)
+                .padding(.top, 16)
             }
-            .background(SierraTheme.Colors.appBackground.ignoresSafeArea())
+            .background(Color(.systemGroupedBackground).ignoresSafeArea())
             .navigationTitle("Fleet Analytics")
-            .navigationBarTitleDisplayMode(.inline)
+            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -105,7 +106,7 @@ struct AnalyticsDashboardView: View {
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 22))
-                            .foregroundStyle(SierraTheme.Colors.granite)
+                            .foregroundStyle(.secondary)
                             .symbolRenderingMode(.hierarchical)
                     }
                 }
@@ -118,17 +119,15 @@ struct AnalyticsDashboardView: View {
         }
     }
 
-    // ─────────────────────────────────────────────────────────────
     // MARK: - Computed Data
-    // ─────────────────────────────────────────────────────────────
 
     private var fleetSlices: [FleetStatusSlice] {
         let statuses: [(VehicleStatus, Color)] = [
-            (.active,          SierraTheme.Colors.alpineMint),
-            (.idle,            SierraTheme.Colors.sierraBlue),
-            (.inMaintenance,   SierraTheme.Colors.warning),
-            (.outOfService,    SierraTheme.Colors.danger),
-            (.decommissioned,  SierraTheme.Colors.granite),
+            (.active,          .green),
+            (.idle,            .blue),
+            (.inMaintenance,   .orange),
+            (.outOfService,    .red),
+            (.decommissioned,  .gray),
         ]
         return statuses.compactMap { (status, color) in
             let count = store.vehicles.filter { $0.status == status }.count
@@ -140,9 +139,9 @@ struct AnalyticsDashboardView: View {
     private var tripSlices: [TripStatusSlice] {
         let statuses: [(TripStatus, Color)] = [
             (.active,    .green),
-            (.scheduled, SierraTheme.Colors.sierraBlue),
-            (.completed, SierraTheme.Colors.granite),
-            (.cancelled, SierraTheme.Colors.danger),
+            (.scheduled, .blue),
+            (.completed, .gray),
+            (.cancelled, .red),
         ]
         return statuses.compactMap { (status, color) in
             let count = store.trips.filter { $0.status == status }.count
@@ -153,10 +152,10 @@ struct AnalyticsDashboardView: View {
 
     private var staffSlices: [StaffSlice] {
         [
-            StaffSlice(label: "Drivers",     count: store.staff.filter { $0.role == .driver && $0.status == .active }.count,              color: SierraTheme.Colors.sierraBlue),
-            StaffSlice(label: "Maintenance", count: store.staff.filter { $0.role == .maintenancePersonnel && $0.status == .active }.count, color: SierraTheme.Colors.ember),
-            StaffSlice(label: "Pending",     count: store.staff.filter { $0.status == .pendingApproval }.count,                           color: SierraTheme.Colors.warning),
-            StaffSlice(label: "Suspended",   count: store.staff.filter { $0.status == .suspended }.count,                                 color: SierraTheme.Colors.danger),
+            StaffSlice(label: "Drivers",     count: store.staff.filter { $0.role == .driver && $0.status == .active }.count,              color: .blue),
+            StaffSlice(label: "Maintenance", count: store.staff.filter { $0.role == .maintenancePersonnel && $0.status == .active }.count, color: .orange),
+            StaffSlice(label: "Pending",     count: store.staff.filter { $0.status == .pendingApproval }.count,                           color: Color(.systemOrange)),
+            StaffSlice(label: "Suspended",   count: store.staff.filter { $0.status == .suspended }.count,                                 color: .red),
         ].filter { $0.count > 0 }
     }
 
@@ -178,12 +177,10 @@ struct AnalyticsDashboardView: View {
         }
     }
 
-    // ─────────────────────────────────────────────────────────────
     // MARK: - Chart 1: Fleet Status
-    // ─────────────────────────────────────────────────────────────
 
     private var fleetStatusChart: some View {
-        VStack(spacing: Spacing.md) {
+        VStack(spacing: 16) {
             if fleetSlices.isEmpty {
                 ContentUnavailableView("No Vehicle Data", systemImage: "car.fill",
                                        description: Text("Add vehicles to see fleet status."))
@@ -203,7 +200,7 @@ struct AnalyticsDashboardView: View {
                             let isLargest  = viewModel.selectedFleetStatus == nil && slice.count == fleetSlices.max(by: { $0.count < $1.count })?.count
                             if isSelected || isLargest {
                                 Text("\(slice.count)")
-                                    .font(SierraFont.body(13, weight: .bold))
+                                    .font(.system(size: 13, weight: .bold))
                                     .foregroundStyle(.white)
                             }
                         }
@@ -218,20 +215,20 @@ struct AnalyticsDashboardView: View {
                     VStack(spacing: 2) {
                         if let selected = viewModel.selectedFleetStatus {
                             Text("\(fleetSlices.first(where: { $0.status == selected })?.count ?? 0)")
-                                .font(SierraFont.body(28, weight: .bold))
-                                .foregroundStyle(SierraTheme.Colors.primaryText)
+                                .font(.system(size: 28, weight: .bold))
+                                .foregroundStyle(.primary)
                             Text(selected.rawValue)
-                                .font(SierraFont.caption2)
-                                .foregroundStyle(SierraTheme.Colors.secondaryText)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
                                 .multilineTextAlignment(.center)
                                 .frame(maxWidth: 80)
                         } else {
                             Text("\(store.vehicles.count)")
-                                .font(SierraFont.body(28, weight: .bold))
-                                .foregroundStyle(SierraTheme.Colors.primaryText)
+                                .font(.system(size: 28, weight: .bold))
+                                .foregroundStyle(.primary)
                             Text("Vehicles")
-                                .font(SierraFont.caption2)
-                                .foregroundStyle(SierraTheme.Colors.secondaryText)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
                         }
                     }
                     .allowsHitTesting(false)
@@ -252,8 +249,8 @@ struct AnalyticsDashboardView: View {
                             }
                         }
                     }
-                    .padding(.horizontal, Spacing.xxs)
-                    .padding(.vertical, Spacing.xxs)
+                    .padding(.horizontal, 2)
+                    .padding(.vertical, 2)
                 }
             }
         }
@@ -281,12 +278,10 @@ struct AnalyticsDashboardView: View {
         }
     }
 
-    // ─────────────────────────────────────────────────────────────
     // MARK: - Chart 2: Trip Status
-    // ─────────────────────────────────────────────────────────────
 
     private var tripStatusChart: some View {
-        VStack(spacing: Spacing.md) {
+        VStack(spacing: 16) {
             if tripSlices.isEmpty {
                 ContentUnavailableView("No Trip Data", systemImage: "arrow.triangle.swap",
                                        description: Text("Create trips to see the distribution."))
@@ -306,7 +301,7 @@ struct AnalyticsDashboardView: View {
                             let isLargest  = viewModel.selectedTripStatus == nil && slice.count == tripSlices.max(by: { $0.count < $1.count })?.count
                             if isSelected || isLargest {
                                 Text("\(slice.count)")
-                                    .font(SierraFont.body(13, weight: .bold))
+                                    .font(.system(size: 13, weight: .bold))
                                     .foregroundStyle(.white)
                             }
                         }
@@ -321,20 +316,20 @@ struct AnalyticsDashboardView: View {
                     VStack(spacing: 2) {
                         if let selected = viewModel.selectedTripStatus {
                             Text("\(tripSlices.first(where: { $0.status == selected })?.count ?? 0)")
-                                .font(SierraFont.body(28, weight: .bold))
-                                .foregroundStyle(SierraTheme.Colors.primaryText)
+                                .font(.system(size: 28, weight: .bold))
+                                .foregroundStyle(.primary)
                             Text(selected.rawValue)
-                                .font(SierraFont.caption2)
-                                .foregroundStyle(SierraTheme.Colors.secondaryText)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
                                 .multilineTextAlignment(.center)
                                 .frame(maxWidth: 80)
                         } else {
                             Text("\(store.trips.count)")
-                                .font(SierraFont.body(28, weight: .bold))
-                                .foregroundStyle(SierraTheme.Colors.primaryText)
+                                .font(.system(size: 28, weight: .bold))
+                                .foregroundStyle(.primary)
                             Text("Trips")
-                                .font(SierraFont.caption2)
-                                .foregroundStyle(SierraTheme.Colors.secondaryText)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
                         }
                     }
                     .allowsHitTesting(false)
@@ -354,8 +349,8 @@ struct AnalyticsDashboardView: View {
                             }
                         }
                     }
-                    .padding(.horizontal, Spacing.xxs)
-                    .padding(.vertical, Spacing.xxs)
+                    .padding(.horizontal, 2)
+                    .padding(.vertical, 2)
                 }
             }
         }
@@ -383,12 +378,10 @@ struct AnalyticsDashboardView: View {
         }
     }
 
-    // ─────────────────────────────────────────────────────────────
     // MARK: - Chart 3: Staff Distribution
-    // ─────────────────────────────────────────────────────────────
 
     private var staffDistributionChart: some View {
-        VStack(spacing: Spacing.md) {
+        VStack(spacing: 16) {
             if staffSlices.isEmpty {
                 ContentUnavailableView("No Staff Data", systemImage: "person.2.fill",
                                        description: Text("No active staff members yet."))
@@ -408,7 +401,7 @@ struct AnalyticsDashboardView: View {
                             let isLargest  = viewModel.selectedStaffLabel == nil && slice.count == staffSlices.max(by: { $0.count < $1.count })?.count
                             if isSelected || isLargest {
                                 Text("\(slice.count)")
-                                    .font(SierraFont.body(13, weight: .bold))
+                                    .font(.system(size: 13, weight: .bold))
                                     .foregroundStyle(.white)
                             }
                         }
@@ -423,20 +416,20 @@ struct AnalyticsDashboardView: View {
                     VStack(spacing: 2) {
                         if let selected = viewModel.selectedStaffLabel {
                             Text("\(staffSlices.first(where: { $0.label == selected })?.count ?? 0)")
-                                .font(SierraFont.body(28, weight: .bold))
-                                .foregroundStyle(SierraTheme.Colors.primaryText)
+                                .font(.system(size: 28, weight: .bold))
+                                .foregroundStyle(.primary)
                             Text(selected)
-                                .font(SierraFont.caption2)
-                                .foregroundStyle(SierraTheme.Colors.secondaryText)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
                                 .multilineTextAlignment(.center)
                                 .frame(maxWidth: 80)
                         } else {
                             Text("\(store.staff.count)")
-                                .font(SierraFont.body(28, weight: .bold))
-                                .foregroundStyle(SierraTheme.Colors.primaryText)
+                                .font(.system(size: 28, weight: .bold))
+                                .foregroundStyle(.primary)
                             Text("Staff")
-                                .font(SierraFont.caption2)
-                                .foregroundStyle(SierraTheme.Colors.secondaryText)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
                         }
                     }
                     .allowsHitTesting(false)
@@ -456,8 +449,8 @@ struct AnalyticsDashboardView: View {
                             }
                         }
                     }
-                    .padding(.horizontal, Spacing.xxs)
-                    .padding(.vertical, Spacing.xxs)
+                    .padding(.horizontal, 2)
+                    .padding(.vertical, 2)
                 }
             }
         }
@@ -485,9 +478,7 @@ struct AnalyticsDashboardView: View {
         }
     }
 
-    // ─────────────────────────────────────────────────────────────
     // MARK: - Chart 4: Monthly Trip Volume Bar Chart
-    // ─────────────────────────────────────────────────────────────
 
     private var monthlyTripBarChart: some View {
         Group {
@@ -501,30 +492,30 @@ struct AnalyticsDashboardView: View {
                         x: .value("Month", item.month),
                         y: .value("Trips", item.count)
                     )
-                    .foregroundStyle(SierraTheme.Colors.ember.gradient)
+                    .foregroundStyle(Color.orange.gradient)
                     .cornerRadius(6)
                     .annotation(position: .top, alignment: .center) {
                         if item.count > 0 {
                             Text("\(item.count)")
-                                .font(SierraFont.caption2)
-                                .foregroundStyle(SierraTheme.Colors.secondaryText)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }
                 .chartYAxis {
                     AxisMarks(values: .automatic(desiredCount: 4)) { _ in
                         AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [4]))
-                            .foregroundStyle(SierraTheme.Colors.mist)
+                            .foregroundStyle(Color(.separator))
                         AxisValueLabel()
-                            .font(SierraFont.caption2)
-                            .foregroundStyle(SierraTheme.Colors.granite)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
                     }
                 }
                 .chartXAxis {
                     AxisMarks { _ in
                         AxisValueLabel()
-                            .font(SierraFont.caption1)
-                            .foregroundStyle(SierraTheme.Colors.secondaryText)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
                 .frame(height: 180)
@@ -532,9 +523,7 @@ struct AnalyticsDashboardView: View {
         }
     }
 
-    // ─────────────────────────────────────────────────────────────
     // MARK: - Chart 5: Document Health
-    // ─────────────────────────────────────────────────────────────
 
     private var documentHealthSection: some View {
         let allDocs  = store.vehicleDocuments
@@ -548,10 +537,10 @@ struct AnalyticsDashboardView: View {
                                        description: Text("Upload vehicle documents to track their health."))
                     .frame(height: 100)
             } else {
-                HStack(spacing: Spacing.sm) {
+                HStack(spacing: 8) {
                     docHealthCell(icon: "checkmark.shield.fill", count: valid,    label: "Valid",    color: .green)
-                    docHealthCell(icon: "clock.badge.exclamationmark", count: expiring, label: "Expiring", color: SierraTheme.Colors.warning)
-                    docHealthCell(icon: "xmark.shield.fill", count: expired,  label: "Expired",  color: SierraTheme.Colors.danger)
+                    docHealthCell(icon: "clock.badge.exclamationmark", count: expiring, label: "Expiring", color: .orange)
+                    docHealthCell(icon: "xmark.shield.fill", count: expired,  label: "Expired",  color: .red)
                 }
             }
         }
@@ -565,25 +554,23 @@ struct AnalyticsDashboardView: View {
                 .symbolRenderingMode(.hierarchical)
 
             Text("\(count)")
-                .font(SierraFont.body(28, weight: .bold))
-                .foregroundStyle(SierraTheme.Colors.primaryText)
+                .font(.system(size: 28, weight: .bold))
+                .foregroundStyle(.primary)
 
             Text(label)
-                .font(SierraFont.caption2)
-                .foregroundStyle(SierraTheme.Colors.secondaryText)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, Spacing.md)
-        .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+        .padding(.vertical, 16)
+        .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .strokeBorder(color.opacity(0.2), lineWidth: 1)
         )
     }
 
-    // ─────────────────────────────────────────────────────────────
     // MARK: - Shared Helpers
-    // ─────────────────────────────────────────────────────────────
 
     private func sectionCard<Content: View>(
         title: String,
@@ -593,17 +580,17 @@ struct AnalyticsDashboardView: View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(SierraFont.headline)
-                    .foregroundStyle(SierraTheme.Colors.primaryText)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
                 Text(subtitle)
-                    .font(SierraFont.caption1)
-                    .foregroundStyle(SierraTheme.Colors.secondaryText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             content()
         }
-        .padding(Spacing.md)
-        .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-        .sierraShadow(SierraTheme.Shadow.card)
+        .padding(16)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
     }
 
     private func legendChip(color: Color, label: String, count: Int, isSelected: Bool) -> some View {
@@ -612,16 +599,16 @@ struct AnalyticsDashboardView: View {
                 .fill(color)
                 .frame(width: 8, height: 8)
             Text(label)
-                .font(SierraFont.caption1)
-                .foregroundStyle(isSelected ? SierraTheme.Colors.primaryText : SierraTheme.Colors.secondaryText)
+                .font(.caption)
+                .foregroundStyle(isSelected ? .primary : .secondary)
             Text("(\(count))")
-                .font(SierraFont.caption2)
-                .foregroundStyle(isSelected ? color : SierraTheme.Colors.granite)
+                .font(.caption2)
+                .foregroundStyle(isSelected ? color : Color(.tertiaryLabel))
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .background(
-            isSelected ? color.opacity(0.12) : SierraTheme.Colors.cardSurface,
+            isSelected ? color.opacity(0.12) : Color(.secondarySystemGroupedBackground),
             in: Capsule()
         )
         .overlay(

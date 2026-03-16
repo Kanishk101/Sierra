@@ -6,12 +6,8 @@ struct ForcePasswordChangeView: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [SierraTheme.Colors.summitNavy, SierraTheme.Colors.sierraBlue],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            Color(.systemGroupedBackground)
+                .ignoresSafeArea()
 
             GeometryReader { geo in
                 ScrollView {
@@ -20,17 +16,17 @@ struct ForcePasswordChangeView: View {
 
                         Image(systemName: "lock.rotation.fill")
                             .font(.system(size: 50, weight: .light))
-                            .foregroundStyle(SierraTheme.Colors.ember)
+                            .foregroundStyle(.orange)
                             .symbolRenderingMode(.hierarchical)
 
                         VStack(spacing: 8) {
                             Text("Set Your Password")
-                                .font(SierraFont.title2)
-                                .foregroundStyle(.white)
+                                .font(.title2.weight(.bold))
+                                .foregroundStyle(.primary)
 
                             Text("Create a strong password \u{2014} you\u{2019}ll use it to sign in going forward.")
-                                .font(SierraFont.subheadline)
-                                .foregroundStyle(.white.opacity(0.55))
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
                                 .multilineTextAlignment(.center)
                                 .lineSpacing(3)
                         }
@@ -61,12 +57,6 @@ struct ForcePasswordChangeView: View {
                     maskedEmail: AuthManager.shared.maskedEmail,
                     onVerified: {
                         viewModel.awaitingOTP = false
-                        // Do NOT call completeAuthentication() here.
-                        // completeAuthentication() was already called by LoginViewModel.signIn()
-                        // for first-login users, so isAuthenticated is already true.
-                        // updatePasswordAndFirstLogin() already set currentUser.isFirstLogin = false.
-                        // ContentView observes currentUser changes and automatically re-routes
-                        // to .driverOnboarding or .maintenanceOnboarding without any extra push.
                         AuthManager.shared.saveSessionToken()
                     },
                     onCancelled: {
@@ -91,7 +81,7 @@ struct ForcePasswordChangeView: View {
                 }
             }
 
-            Divider().background(.white.opacity(0.08))
+            Divider()
 
             VStack(alignment: .leading, spacing: 8) {
                 passwordField("New Password",
@@ -114,8 +104,8 @@ struct ForcePasswordChangeView: View {
 
             if let err = viewModel.errorMessage {
                 Text(err)
-                    .font(SierraFont.caption1)
-                    .foregroundStyle(SierraTheme.Colors.danger)
+                    .font(.caption)
+                    .foregroundStyle(.red)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .transition(.opacity)
             }
@@ -124,12 +114,12 @@ struct ForcePasswordChangeView: View {
                 Task { await viewModel.setNewPassword() }
             } label: {
                 Text("Update Password")
-                    .font(SierraFont.body(17, weight: .semibold))
+                    .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(viewModel.canSubmit ? .white : .white.opacity(0.4))
                     .frame(maxWidth: .infinity)
                     .frame(height: 54)
                     .background(
-                        viewModel.canSubmit ? SierraTheme.Colors.ember : Color.gray.opacity(0.25),
+                        viewModel.canSubmit ? Color.orange : Color.gray.opacity(0.25),
                         in: RoundedRectangle(cornerRadius: 14, style: .continuous)
                     )
             }
@@ -137,11 +127,8 @@ struct ForcePasswordChangeView: View {
             .animation(.easeInOut(duration: 0.2), value: viewModel.canSubmit)
         }
         .padding(24)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .strokeBorder(.white.opacity(0.08), lineWidth: 1)
-        )
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
         .padding(.horizontal, 20)
     }
 
@@ -154,8 +141,8 @@ struct ForcePasswordChangeView: View {
     ) -> some View {
         HStack(spacing: 10) {
             Image(systemName: "lock.fill")
-                .font(SierraFont.caption1)
-                .foregroundStyle(.white.opacity(0.4))
+                .font(.caption)
+                .foregroundStyle(.secondary)
                 .frame(width: 20)
 
             Group {
@@ -166,8 +153,8 @@ struct ForcePasswordChangeView: View {
                 }
             }
             .textFieldStyle(.plain)
-            .font(SierraFont.bodyText)
-            .foregroundStyle(.white)
+            .font(.body)
+            .foregroundStyle(.primary)
             .autocorrectionDisabled()
             .textInputAutocapitalization(.never)
 
@@ -176,15 +163,15 @@ struct ForcePasswordChangeView: View {
             } label: {
                 Image(systemName: isVisible.wrappedValue ? "eye.slash" : "eye")
                     .font(.system(size: 15))
-                    .foregroundStyle(.white.opacity(0.4))
+                    .foregroundStyle(.tertiary)
             }
         }
         .padding(.horizontal, 16)
         .frame(height: 52)
-        .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(.white.opacity(0.1), lineWidth: 1)
+                .strokeBorder(Color(.separator), lineWidth: 1)
         )
     }
 
@@ -192,8 +179,8 @@ struct ForcePasswordChangeView: View {
 
     private func errorLabel(_ text: String) -> some View {
         Text(text)
-            .font(SierraFont.caption2)
-            .foregroundStyle(SierraTheme.Colors.danger.opacity(0.9))
+            .font(.caption2)
+            .foregroundStyle(.red.opacity(0.9))
             .padding(.leading, 4)
             .transition(.opacity)
     }
@@ -206,13 +193,13 @@ struct ForcePasswordChangeView: View {
             VStack(spacing: 16) {
                 ProgressView()
                     .scaleEffect(1.3)
-                    .tint(.white)
+                    .tint(.orange)
                 Text("Updating password\u{2026}")
-                    .font(SierraFont.caption1)
-                    .foregroundStyle(.white.opacity(0.8))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             .padding(32)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
         .transition(.opacity)
     }

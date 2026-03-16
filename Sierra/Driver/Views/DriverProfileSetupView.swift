@@ -1,6 +1,5 @@
 import SwiftUI
 
-
 struct DriverProfileSetupView: View {
     @State private var viewModel = DriverProfileViewModel()
 
@@ -27,7 +26,7 @@ struct DriverProfileSetupView: View {
             }
             .animation(.easeInOut(duration: 0.3), value: viewModel.currentStep)
         }
-        .background(SierraTheme.Colors.appBackground.ignoresSafeArea())
+        .background(Color(.systemGroupedBackground).ignoresSafeArea())
         .interactiveDismissDisabled()
         .navigationBarBackButtonHidden(true)
         .fullScreenCover(isPresented: $viewModel.profileSubmitted) {
@@ -40,17 +39,17 @@ struct DriverProfileSetupView: View {
     private var stepIndicator: some View {
         VStack(spacing: 10) {
             Text("Step \(viewModel.currentStep) of 2")
-                .font(SierraFont.caption1)
-                .foregroundStyle(SierraTheme.Colors.primaryText)
+                .font(.caption)
+                .foregroundStyle(.primary)
 
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(SierraTheme.Colors.sierraBlue.opacity(0.08))
+                        .fill(Color(.separator).opacity(0.3))
                         .frame(height: 6)
 
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(SierraTheme.Colors.ember)
+                        .fill(Color.orange)
                         .frame(
                             width: geo.size.width * (CGFloat(viewModel.currentStep) / 2.0),
                             height: 6
@@ -63,7 +62,7 @@ struct DriverProfileSetupView: View {
         .padding(.horizontal, 24)
         .padding(.top, 16)
         .padding(.bottom, 8)
-        .background(.white)
+        .background(Color(.systemBackground))
     }
 }
 

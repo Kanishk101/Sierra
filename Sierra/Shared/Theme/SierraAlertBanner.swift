@@ -2,7 +2,7 @@ import SwiftUI
 
 // MARK: - SierraAlertType
 
-/// Alert banner severity — each carries its message.
+/// Alert banner severity - each carries its message.
 enum SierraAlertType: Equatable {
     case success(String)
     case warning(String)
@@ -36,7 +36,7 @@ enum SierraAlertType: Equatable {
 
 // MARK: - SierraAlertBanner
 
-/// In-app toast banner — overlaid at the top of a screen.
+/// In-app toast banner - overlaid at the top of a screen.
 ///
 ///     .sierraAlert($banner)
 struct SierraAlertBanner: View {

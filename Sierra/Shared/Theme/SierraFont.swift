@@ -4,9 +4,9 @@ import SwiftUI
 
 /// Complete typography scale for the Sierra Fleet Management System.
 ///
-/// - **Display** — SF Pro Display: screen titles, hero numbers, modal headers
-/// - **Body**    — SF Pro Text: body copy, labels, descriptions
-/// - **Mono**    — SF Mono: VIN, license plates, task IDs, OTP codes, odometers
+/// - **Display** - SF Pro Display: screen titles, hero numbers, modal headers
+/// - **Body**    - SF Pro Text: body copy, labels, descriptions
+/// - **Mono**    - SF Mono: VIN, license plates, task IDs, OTP codes, odometers
 ///
 /// Usage: `.font(SierraFont.title1)` or `.font(SierraFont.display(28, weight: .bold))`
 public enum SierraFont {
@@ -15,12 +15,12 @@ public enum SierraFont {
     // MARK: - Display Scale (SF Pro Display)
     // ─────────────────────────────────────────
 
-    /// Dynamic display font — large, bold, headers.
+    /// Dynamic display font - large, bold, headers.
     static func display(_ size: CGFloat, weight: Font.Weight = .bold) -> Font {
         .system(size: size, weight: weight, design: .default)
     }
 
-    /// Screen titles — NavigationBar large title (34pt bold)
+    /// Screen titles - NavigationBar large title (34pt bold)
     static let largeTitle  = display(34, weight: .bold)
     /// Section headers, modal titles (28pt bold)
     static let title1      = display(28, weight: .bold)
@@ -33,7 +33,7 @@ public enum SierraFont {
     // MARK: - Body Scale (SF Pro Text)
     // ─────────────────────────────────────────
 
-    /// Dynamic body font — standard text.
+    /// Dynamic body font - standard text.
     static func body(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
         .system(size: size, weight: weight, design: .default)
     }
@@ -57,7 +57,7 @@ public enum SierraFont {
     // MARK: - Monospaced Scale (SF Mono)
     // ─────────────────────────────────────────
 
-    /// Dynamic mono font — data identifiers.
+    /// Dynamic mono font - data identifiers.
     static func mono(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
         .system(size: size, weight: weight, design: .monospaced)
     }

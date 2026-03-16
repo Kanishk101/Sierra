@@ -28,8 +28,8 @@ struct TripsListView: View {
     var body: some View {
         VStack(spacing: 0) {
             filterChips
-                .padding(.vertical, Spacing.sm)
-                .background(SierraTheme.Colors.appBackground)
+                .padding(.vertical, 8)
+                .background(Color(.systemGroupedBackground))
 
             if filtered.isEmpty {
                 emptyState
@@ -39,7 +39,7 @@ struct TripsListView: View {
                         NavigationLink(value: trip.id) {
                             tripRow(trip)
                         }
-                        .listRowInsets(EdgeInsets(top: 6, leading: Spacing.md, bottom: 6, trailing: Spacing.md))
+                        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                     }
@@ -48,9 +48,10 @@ struct TripsListView: View {
                 .scrollContentBackground(.hidden)
             }
         }
-        .background(SierraTheme.Colors.appBackground.ignoresSafeArea())
+        .background(Color(.systemGroupedBackground).ignoresSafeArea())
         .navigationTitle("Trips")
-        .navigationBarTitleDisplayMode(.inline)
+        .toolbarTitleDisplayMode(.inlineLarge)
+        .toolbarBackground(.hidden, for: .navigationBar)
         .searchable(text: $searchText, prompt: "Search task ID, origin…")
         .navigationDestination(for: UUID.self) { id in
             TripDetailView(tripId: id)
@@ -59,7 +60,8 @@ struct TripsListView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showCreateSheet = true } label: {
                     Image(systemName: "plus")
-                        .font(SierraFont.body(17, weight: .semibold))
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.orange)
                 }
             }
         }
@@ -77,13 +79,11 @@ struct TripsListView: View {
         }
     }
 
-    // ─────────────────────────────────────────────────────────────
     // MARK: - Filter Chips
-    // ─────────────────────────────────────────────────────────────
 
     private var filterChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: Spacing.sm) {
+            HStack(spacing: 8) {
                 chip("All", isSelected: selectedStatus == nil) { selectedStatus = nil }
                 ForEach(TripStatus.allCases, id: \.self) { status in
                     chip(status.rawValue, isSelected: selectedStatus == status) {
@@ -91,29 +91,27 @@ struct TripsListView: View {
                     }
                 }
             }
-            .padding(.horizontal, Spacing.md)
+            .padding(.horizontal, 16)
         }
     }
 
     private func chip(_ label: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
-                .font(SierraFont.caption1)
-                .foregroundStyle(isSelected ? .white : SierraTheme.Colors.primaryText)
-                .padding(.horizontal, Spacing.md)
+                .font(.caption)
+                .foregroundStyle(isSelected ? .white : .primary)
+                .padding(.horizontal, 16)
                 .padding(.vertical, 7)
-                .background(isSelected ? SierraTheme.Colors.ember : .clear, in: Capsule())
-                .overlay(Capsule().strokeBorder(isSelected ? .clear : SierraTheme.Colors.mist, lineWidth: 1))
+                .background(isSelected ? Color.orange : .clear, in: Capsule())
+                .overlay(Capsule().strokeBorder(isSelected ? .clear : Color(.separator), lineWidth: 1))
         }
         .buttonStyle(.plain)
     }
 
-    // ─────────────────────────────────────────────────────────────
     // MARK: - Trip Row
-    // ─────────────────────────────────────────────────────────────
 
     private func tripRow(_ trip: Trip) -> some View {
-        HStack(spacing: Spacing.md) {
+        HStack(spacing: 14) {
             // Status dot
             Circle()
                 .fill(statusColor(trip.status))
@@ -121,23 +119,23 @@ struct TripsListView: View {
                 .padding(13)
                 .background(statusColor(trip.status).opacity(0.1), in: Circle())
 
-            VStack(alignment: .leading, spacing: Spacing.xxs) {
-                Text("\(trip.origin) → \(trip.destination)")
-                    .font(SierraFont.body(15, weight: .semibold))
-                    .foregroundStyle(SierraTheme.Colors.primaryText)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(trip.origin) \u{2192} \(trip.destination)")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
 
                 HStack(spacing: 6) {
                     Text(trip.taskId)
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundStyle(SierraTheme.Colors.granite)
+                        .foregroundStyle(.tertiary)
 
                     Text("·")
-                        .foregroundStyle(SierraTheme.Colors.granite)
+                        .foregroundStyle(.tertiary)
 
                     Text(trip.scheduledDate.formatted(.dateTime.month(.abbreviated).day().hour().minute()))
-                        .font(SierraFont.caption2)
-                        .foregroundStyle(SierraTheme.Colors.secondaryText)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
 
                 driverVehicleLine(trip)
@@ -147,25 +145,23 @@ struct TripsListView: View {
 
             VStack(alignment: .trailing, spacing: 4) {
                 Text(trip.status.rawValue)
-                    .font(SierraFont.body(11, weight: .bold))
+                    .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(statusColor(trip.status))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
                     .background(statusColor(trip.status).opacity(0.1), in: Capsule())
 
                 Text(trip.priority.rawValue)
-                    .font(SierraFont.body(10, weight: .medium))
-                    .foregroundStyle(SierraTheme.Colors.secondaryText)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary)
             }
         }
-        .padding(Spacing.md)
-        .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-        .sierraShadow(SierraTheme.Shadow.card)
+        .padding(16)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
     }
 
-    // ─────────────────────────────────────────────────────────────
     // MARK: - Driver / Vehicle inline line
-    // ─────────────────────────────────────────────────────────────
 
     @ViewBuilder
     private func driverVehicleLine(_ trip: Trip) -> some View {
@@ -186,24 +182,22 @@ struct TripsListView: View {
             HStack(spacing: 4) {
                 Image(systemName: "person.fill")
                     .font(.system(size: 9))
-                    .foregroundStyle(SierraTheme.Colors.granite)
+                    .foregroundStyle(.secondary)
                 if let name = driverName {
                     Text(name)
-                        .font(SierraFont.caption2)
-                        .foregroundStyle(SierraTheme.Colors.secondaryText)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
                 if let p = plate {
                     Text("· \(p)")
-                        .font(SierraFont.caption2)
-                        .foregroundStyle(SierraTheme.Colors.secondaryText)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
             }
         }
     }
 
-    // ─────────────────────────────────────────────────────────────
     // MARK: - Empty State
-    // ─────────────────────────────────────────────────────────────
 
     private var emptyState: some View {
         SierraEmptyState(
@@ -216,8 +210,8 @@ struct TripsListView: View {
     private func statusColor(_ status: TripStatus) -> Color {
         switch status {
         case .active:    return .green
-        case .scheduled: return SierraTheme.Colors.sierraBlue
-        case .completed: return .gray
+        case .scheduled: return .blue
+        case .completed: return Color.secondary
         case .cancelled: return .red
         }
     }
