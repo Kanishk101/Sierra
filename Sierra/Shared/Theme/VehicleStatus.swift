@@ -6,8 +6,8 @@ import SwiftUI
 
 enum VehicleStatus: String, SierraStatus, CaseIterable, Codable {
     case active          = "Active"
-    case busy            = "Busy"
     case idle            = "Idle"
+    case busy            = "Busy"
     case inMaintenance   = "In Maintenance"
     case outOfService    = "Out of Service"
     case decommissioned  = "Decommissioned"
@@ -19,8 +19,8 @@ enum VehicleStatus: String, SierraStatus, CaseIterable, Codable {
     var dotColor: Color {
         switch self {
         case .active:         SierraTheme.Colors.alpineMint
-        case .busy:           SierraTheme.Colors.warning
         case .idle:           SierraTheme.Colors.granite
+        case .busy:           SierraTheme.Colors.ember
         case .inMaintenance:  SierraTheme.Colors.warning
         case .outOfService:   SierraTheme.Colors.danger
         case .decommissioned: SierraTheme.Colors.danger
@@ -34,8 +34,8 @@ enum VehicleStatus: String, SierraStatus, CaseIterable, Codable {
     var foregroundColor: Color {
         switch self {
         case .active:         SierraTheme.Colors.alpineDark
-        case .busy:           SierraTheme.Colors.warning
         case .idle:           SierraTheme.Colors.granite
+        case .busy:           SierraTheme.Colors.emberDark
         case .inMaintenance:  SierraTheme.Colors.warning
         case .outOfService:   SierraTheme.Colors.danger
         case .decommissioned: SierraTheme.Colors.danger
@@ -45,8 +45,8 @@ enum VehicleStatus: String, SierraStatus, CaseIterable, Codable {
     var icon: String? {
         switch self {
         case .active:         "truck.box.fill"
-        case .busy:           "bolt.fill"
         case .idle:           "parkingsign.circle"
+        case .busy:           "road.lanes"
         case .inMaintenance:  "wrench.fill"
         case .outOfService:   "xmark.octagon.fill"
         case .decommissioned: "archivebox.fill"

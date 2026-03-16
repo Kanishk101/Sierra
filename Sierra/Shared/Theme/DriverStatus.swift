@@ -4,8 +4,8 @@ import SwiftUI
 
 enum DriverStatus: String, SierraStatus, CaseIterable, Codable {
     case available     = "Available"
-    case onTrip        = "On Trip"
     case busy          = "Busy"
+    case unavailable   = "Unavailable"
     case offDuty       = "Off Duty"
     case pendingReview = "Pending Review"
     case rejected      = "Rejected"
@@ -18,8 +18,8 @@ enum DriverStatus: String, SierraStatus, CaseIterable, Codable {
     var dotColor: Color {
         switch self {
         case .available:     SierraTheme.Colors.alpineMint
-        case .onTrip:        SierraTheme.Colors.ember
         case .busy:          SierraTheme.Colors.ember
+        case .unavailable:   SierraTheme.Colors.granite
         case .offDuty:       SierraTheme.Colors.granite
         case .pendingReview: SierraTheme.Colors.info
         case .rejected:      SierraTheme.Colors.danger
@@ -34,8 +34,8 @@ enum DriverStatus: String, SierraStatus, CaseIterable, Codable {
     var foregroundColor: Color {
         switch self {
         case .available:     SierraTheme.Colors.alpineDark
-        case .onTrip:        SierraTheme.Colors.emberDark
         case .busy:          SierraTheme.Colors.emberDark
+        case .unavailable:   SierraTheme.Colors.granite
         case .offDuty:       SierraTheme.Colors.granite
         case .pendingReview: SierraTheme.Colors.info
         case .rejected:      SierraTheme.Colors.danger
@@ -47,3 +47,4 @@ enum DriverStatus: String, SierraStatus, CaseIterable, Codable {
 
     var icon: String? { nil }
 }
+

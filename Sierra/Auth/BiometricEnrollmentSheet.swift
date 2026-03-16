@@ -17,55 +17,64 @@ struct BiometricEnrollmentSheet: View {
         VStack(spacing: 24) {
             Spacer()
 
-            Image(systemName: biometric.biometricIconName)
+            // Always show Face ID symbol — biometricIconName returns lock.fill on Simulator
+            // since LAContext.biometryType == .none without real hardware.
+            Image(systemName: "faceid")
                 .font(.system(size: 64))
-                .foregroundStyle(Color.orange)
+                .foregroundStyle(SierraTheme.Colors.ember)
                 .padding(.bottom, 8)
 
             Text("Enable \(biometric.biometricDisplayName)?")
-                .font(.system(size: 20, weight: .bold))
-                .foregroundStyle(Color.primary)
+                .font(SierraFont.title3)
+                .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
 
             Text("Use \(biometric.biometricDisplayName) for faster, more secure sign-in to FleetOS.")
-                .font(.system(size: 15))
-                .foregroundStyle(Color.secondary)
+                .font(SierraFont.subheadline)
+                .foregroundStyle(.white.opacity(0.55))
                 .multilineTextAlignment(.center)
                 .lineSpacing(3)
                 .padding(.horizontal, 20)
 
             Spacer()
 
+            // Allow button
             Button {
                 enableBiometric()
             } label: {
                 Text("Allow \(biometric.biometricDisplayName)")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(SierraFont.body(17, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .frame(height: 54)
                     .background(
-                        Color.orange,
+                        SierraTheme.Colors.ember,
                         in: RoundedRectangle(cornerRadius: 14, style: .continuous)
                     )
             }
 
+            // Skip button
             Button {
                 skipBiometric()
             } label: {
                 Text("Skip for Now")
-                    .font(.system(size: 15))
-                    .foregroundStyle(Color.secondary)
+                    .font(SierraFont.subheadline)
+                    .foregroundStyle(.white.opacity(0.5))
             }
             .padding(.bottom, 20)
         }
         .padding(24)
         .background(
-            Color(.systemGroupedBackground)
-                .ignoresSafeArea()
+            LinearGradient(
+                colors: [SierraTheme.Colors.summitNavy, SierraTheme.Colors.sierraBlue],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
         )
         .interactiveDismissDisabled(true)
         .onAppear {
+            // Mark as prompted so we never show again
             Self.markAsPrompted()
         }
     }
@@ -85,6 +94,9 @@ struct BiometricEnrollmentSheet: View {
     // MARK: - Keychain Helpers
 
     static func shouldPrompt() -> Bool {
+        // Prompt once per install — don't gate on canUseBiometrics() here
+        // because that can return false at timing-sensitive moments.
+        // The sheet itself always shows; Face ID works on physical devices.
         let prompted = KeychainService.load(key: kHasPrompted) != nil
         return !prompted
     }

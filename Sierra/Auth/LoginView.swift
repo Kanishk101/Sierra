@@ -5,64 +5,91 @@ struct LoginView: View {
     @State private var cardAppeared = false
     @State private var showForgotPassword = false
 
+    // 2FA overlay
     @State private var twoFactorContext: TwoFactorContext?
     @State private var twoFactorVM: TwoFactorViewModel?
+    @State private var showTwoFactor = false
+
+    // Dashboard
+    @State private var resolvedDestination: AuthDestination?
+    @State private var showDestination = false
+
+    // Returning user — used to conditionally show Face ID button
     @State private var lastProfile: SecureSessionStore.StoredProfile?
-    @State private var navPath: [String] = []
 
     var body: some View {
-        NavigationStack(path: $navPath) {
-            ZStack {
-                loginContentLayer
-            }
-            .navigationDestination(
-                isPresented: Binding(
-                    get: { twoFactorVM != nil },
-                    set: { if !$0 { twoFactorVM = nil } }
-                )
-            ) {
-                if let vm = twoFactorVM {
-                    TwoFactorView(viewModel: vm)
-                }
-            }
-            .sheet(isPresented: $showForgotPassword) {
-                ForgotPasswordView()
-            }
-            .onAppear {
-                lastProfile = SecureSessionStore.shared.loadLastProfile()
-                withAnimation(.spring(duration: 0.6, bounce: 0.3)) {
-                    cardAppeared = true
-                }
-            }
-            .onChange(of: viewModel.authState) { _, newState in
-                switch newState {
-                case .requiresTwoFactor(let ctx):
-                    twoFactorContext = ctx
-                    twoFactorVM = TwoFactorViewModel(
-                        context: ctx,
-                        service: viewModel.otpService,
-                        onVerified: { [self] in
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                twoFactorVM = nil
-                                AuthManager.shared.completeAuthentication()
-                            }
-                        },
-                        onCancelled: {
-                            twoFactorContext = nil
-                            twoFactorVM = nil
-                            viewModel.twoFactorCancelled()
-                        }
-                    )
-                    UIApplication.shared.sendAction(
-                        #selector(UIResponder.resignFirstResponder),
-                        to: nil, from: nil, for: nil
-                    )
-                case .authenticated:
-                    break // Handled by ContentView observing AuthManager
+        ZStack {
+            // ── Login content layer ──
+            loginContentLayer
 
-                case .error, .idle, .loading:
-                    break
-                }
+            // ── 2FA overlay layer — covers everything when active ──
+            if showTwoFactor, let vm = twoFactorVM {
+                TwoFactorView(viewModel: vm)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .zIndex(100)
+            }
+        }
+        .animation(.easeInOut(duration: 0.35), value: showTwoFactor)
+        .onAppear {
+            lastProfile = SecureSessionStore.shared.loadLastProfile()
+            withAnimation(.spring(duration: 0.6, bounce: 0.3)) {
+                cardAppeared = true
+            }
+        }
+        // ── Dashboard (fullScreenCover) ──
+        .fullScreenCover(isPresented: $showDestination) {
+            if let dest = resolvedDestination {
+                destinationView(for: dest)
+                    .environment(AppDataStore.shared)
+                    .environment(AuthManager.shared)
+            }
+        }
+        // ── Forgot Password (sheet) ──
+        .sheet(isPresented: $showForgotPassword) {
+            ForgotPasswordView()
+        }
+        // ── React to authState changes ──
+        .onChange(of: viewModel.authState) { _, newState in
+            #if DEBUG
+            print("👁 [LoginView.onChange] authState fired: \(newState)")
+            #endif
+            switch newState {
+            case .requiresTwoFactor(let ctx):
+                twoFactorContext = ctx
+                twoFactorVM = TwoFactorViewModel(
+                    context: ctx,
+                    service: viewModel.otpService,
+                    onVerified: { [self] in
+                        #if DEBUG
+                        print("🔐 [LoginView.onVerified] 2FA verified — completing auth")
+                        #endif
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            showTwoFactor = false
+                            twoFactorVM = nil
+                            AuthManager.shared.completeAuthentication()
+                            resolvedDestination = ctx.authDestination
+                            showDestination = true
+                        }
+                    },
+                    onCancelled: {
+                        showTwoFactor = false
+                        twoFactorContext = nil
+                        twoFactorVM = nil
+                        viewModel.twoFactorCancelled()
+                    }
+                )
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                showTwoFactor = true
+
+            case .authenticated(let destination):
+                resolvedDestination = destination
+                showDestination = true
+
+            case .error:
+                break
+
+            case .idle, .loading:
+                break
             }
         }
     }
@@ -71,23 +98,38 @@ struct LoginView: View {
 
     private var loginContentLayer: some View {
         ZStack {
-            Color(.systemGroupedBackground)
-                .ignoresSafeArea()
+            LinearGradient(
+                colors: [SierraTheme.Colors.summitNavy, SierraTheme.Colors.sierraBlue],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+
+            VStack {
+                if let error = viewModel.errorMessage {
+                    errorBanner(message: error)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+                Spacer()
+            }
+            .animation(.spring(duration: 0.4, bounce: 0.2), value: viewModel.errorMessage)
+            .zIndex(10)
 
             if viewModel.isLoading {
-                loadingOverlay.zIndex(20)
+                loadingOverlay
+                    .zIndex(20)
             }
 
             GeometryReader { geo in
                 ScrollView {
                     VStack(spacing: 0) {
-                        Spacer(minLength: 72)
+                        Spacer(minLength: 80)
                         headerSection
-                            .padding(.bottom, 32)
+                            .padding(.bottom, 40)
                         loginCard
-                            .scaleEffect(cardAppeared ? 1 : 0.94)
+                            .scaleEffect(cardAppeared ? 1 : 0.92)
                             .opacity(cardAppeared ? 1 : 0)
-                        Spacer(minLength: 48)
+                        Spacer(minLength: 80)
                     }
                     .frame(minHeight: geo.size.height)
                 }
@@ -99,215 +141,251 @@ struct LoginView: View {
     // MARK: - Header
 
     private var headerSection: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "car.fill")
-                .font(.system(size: 40, weight: .medium))
-                .foregroundStyle(Color(.systemOrange))
-                .symbolRenderingMode(.hierarchical)
+        VStack(spacing: Spacing.sm) {
+            ZStack {
+                Circle()
+                    .fill(.ultraThinMaterial)
+                    .frame(width: 100, height: 100)
+                    .shadow(color: SierraTheme.Colors.ember.opacity(0.15), radius: 24, y: 8)
 
-            VStack(spacing: 4) {
-                Text("FleetOS")
-                    .font(.system(size: 28, weight: .bold))
-                    .foregroundStyle(Color.primary)
-
-                Text("Fleet Management Platform")
-                    .font(.system(size: 15))
-                    .foregroundStyle(Color.secondary)
+                Image(systemName: "truck.box.fill")
+                    .font(.system(size: 60, weight: .light))
+                    .foregroundStyle(SierraTheme.Colors.ember)
+                    .symbolRenderingMode(.hierarchical)
             }
+
+            Text("FleetOS")
+                .font(SierraFont.title1)
+                .foregroundStyle(SierraTheme.Colors.primaryText)
+                .padding(.horizontal, Spacing.lg)
+                .padding(.vertical, Spacing.xxs)
+                .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
         }
     }
 
     // MARK: - Login Card
 
     private var loginCard: some View {
-        VStack(spacing: 12) {
-            VStack(spacing: 0) {
-                // Error banner inline
-                if let error = viewModel.errorMessage {
-                    HStack(spacing: 10) {
-                        Image(systemName: "exclamationmark.circle.fill")
-                            .foregroundStyle(.red)
-                            .font(.system(size: 15))
-                        Text(error)
-                            .font(.system(size: 14))
-                            .foregroundStyle(.primary)
-                        Spacer()
-                        Button {
-                            viewModel.dismissError()
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .background(Color(.secondarySystemGroupedBackground))
-                    Divider()
-                }
+        VStack(spacing: Spacing.lg) {
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                HStack(spacing: Spacing.sm) {
+                    Image(systemName: "envelope.fill")
+                        .font(SierraFont.subheadline)
+                        .foregroundStyle(.white.opacity(0.45))
+                        .frame(width: 20)
 
-                // Email field
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 12) {
-                        Image(systemName: "envelope")
-                            .font(.system(size: 15))
-                            .foregroundStyle(Color(.label))
-                            .frame(width: 20)
-                        TextField("Email", text: $viewModel.email)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 17))
-                            .foregroundStyle(Color(.label))
-                            .keyboardType(.emailAddress)
-                            .textContentType(.emailAddress)
-                            .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
-                    }
-                    .padding(.horizontal, 16)
-                    .frame(height: 52)
-                    if let error = viewModel.emailError {
-                        Text(error)
-                            .font(.system(size: 12))
-                            .foregroundStyle(.red)
-                            .padding(.horizontal, 16)
-                            .padding(.bottom, 8)
-                    }
-                }
-
-                Divider().padding(.leading, 52)
-
-                // Password field
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 12) {
-                        Image(systemName: "lock")
-                            .font(.system(size: 15))
-                            .foregroundStyle(Color(.label))
-                            .frame(width: 20)
-                        Group {
-                            if viewModel.isPasswordVisible {
-                                TextField("Password", text: $viewModel.password)
-                            } else {
-                                SecureField("Password", text: $viewModel.password)
-                            }
-                        }
+                    TextField("Email", text: $viewModel.email)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 17))
-                        .foregroundStyle(Color(.label))
-                        .textContentType(.password)
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.15)) {
-                                viewModel.isPasswordVisible.toggle()
-                            }
-                        } label: {
-                            Image(systemName: viewModel.isPasswordVisible
-                                  ? "eye.slash" : "eye")
-                                .font(.system(size: 15))
-                                .foregroundStyle(Color(.label))
-                        }
-                        .padding(.trailing, 4)
-                    }
-                    .padding(.horizontal, 16)
-                    .frame(height: 52)
-                    if let error = viewModel.passwordError {
-                        Text(error)
-                            .font(.system(size: 12))
-                            .foregroundStyle(.red)
-                            .padding(.horizontal, 16)
-                            .padding(.bottom, 8)
-                    }
-                }
-            }
-            .background(
-                Color(.systemBackground),
-                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(Color(.separator).opacity(0.3), lineWidth: 0.5)
-            )
-            .padding(.horizontal, 20)
-
-            // Forgot Password link
-            HStack {
-                Button {
-                    showForgotPassword = true
-                } label: {
-                    Text("Forgot Password?")
-                        .font(.system(size: 14))
-                        .foregroundStyle(Color.secondary)
-                }
-                Spacer()
-            }
-            .padding(.horizontal, 28)
-            .padding(.top, 2)
-
-            // Buttons
-            VStack(spacing: 12) {
-                Button {
-                    Task { await viewModel.signIn() }
-                } label: {
-                    Text("Sign In")
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(SierraFont.bodyText)
                         .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 50)
-                        .background(
-                            Color(.systemOrange),
-                            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .keyboardType(.emailAddress)
+                        .textContentType(.emailAddress)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                }
+                .padding(.horizontal, Spacing.md)
+                .frame(height: 52)
+                .background(
+                    .white.opacity(0.08),
+                    in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(
+                            viewModel.emailError != nil ? SierraTheme.Colors.danger.opacity(0.7) : .white.opacity(0.1),
+                            lineWidth: 1
                         )
+                )
+
+                if let error = viewModel.emailError {
+                    inlineError(error)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                HStack(spacing: Spacing.sm) {
+                    Image(systemName: "lock.fill")
+                        .font(SierraFont.subheadline)
+                        .foregroundStyle(.white.opacity(0.45))
+                        .frame(width: 20)
+
+                    Group {
+                        if viewModel.isPasswordVisible {
+                            TextField("Password", text: $viewModel.password)
+                        } else {
+                            SecureField("Password", text: $viewModel.password)
+                        }
+                    }
+                    .textFieldStyle(.plain)
+                    .font(SierraFont.bodyText)
+                    .foregroundStyle(.white)
+                    .textContentType(.password)
+
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            viewModel.isPasswordVisible.toggle()
+                        }
+                    } label: {
+                        Image(systemName: viewModel.isPasswordVisible ? "eye.slash.fill" : "eye.fill")
+                            .font(SierraFont.subheadline)
+                            .foregroundStyle(.white.opacity(0.35))
+                    }
+                }
+                .padding(.horizontal, Spacing.md)
+                .frame(height: 52)
+                .background(
+                    .white.opacity(0.08),
+                    in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(
+                            viewModel.passwordError != nil ? SierraTheme.Colors.danger.opacity(0.7) : .white.opacity(0.1),
+                            lineWidth: 1
+                        )
+                )
+
+                if let error = viewModel.passwordError {
+                    inlineError(error)
+                }
+            }
+
+            Button {
+                Task { await viewModel.signIn() }
+            } label: {
+                Text("Sign In")
+                    .font(SierraFont.body(17, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 54)
+                    .background(
+                        SierraTheme.Colors.ember,
+                        in: RoundedRectangle(cornerRadius: Radius.button, style: .continuous)
+                    )
+            }
+            .disabled(viewModel.isLoading)
+            .padding(.top, Spacing.xxs)
+
+            if viewModel.showBiometricButton {
+                Button {
+                    Task { await viewModel.biometricSignIn() }
+                } label: {
+                    HStack(spacing: Spacing.xs) {
+                        Image(systemName: viewModel.biometricIcon)
+                            .font(.system(size: 20))
+                        Text(viewModel.biometricLabel)
+                            .font(SierraFont.subheadline)
+                    }
+                    .foregroundStyle(.white.opacity(0.7))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 48)
+                    .background(
+                        .white.opacity(0.06),
+                        in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .strokeBorder(.white.opacity(0.1), lineWidth: 1)
+                    )
                 }
                 .disabled(viewModel.isLoading)
-                .padding(.horizontal, 20)
-
-                if viewModel.showBiometricButton {
-                    Button {
-                        Task { await viewModel.biometricSignIn() }
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: viewModel.biometricIcon)
-                                .font(.system(size: 18))
-                            Text(viewModel.biometricLabel)
-                                .font(.system(size: 15, weight: .medium))
-                        }
-                        .foregroundStyle(Color(.systemOrange))
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 50)
-                        .background(
-                            Color(.systemOrange).opacity(0.08),
-                            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        )
-                    }
-                    .disabled(viewModel.isLoading)
-                    .padding(.horizontal, 20)
-                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
-                }
+                .transition(.opacity.combined(with: .scale(scale: 0.95)))
             }
-            .padding(.top, 20)
+
+            Button {
+                showForgotPassword = true
+            } label: {
+                Text("Forgot Password?")
+                    .font(SierraFont.caption1)
+                    .foregroundStyle(SierraTheme.Colors.ember.opacity(0.8))
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
         }
+        .padding(Spacing.xl)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: Radius.xxl, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.xxl, style: .continuous)
+                .strokeBorder(.white.opacity(0.08), lineWidth: 1)
+        )
+        .padding(.horizontal, Spacing.xl)
+        .animation(.easeInOut(duration: 0.2), value: viewModel.emailError)
+        .animation(.easeInOut(duration: 0.2), value: viewModel.passwordError)
+    }
+
+    // MARK: - Error Banner
+
+    private func errorBanner(message: String) -> some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(SierraFont.bodyText)
+            Text(message)
+                .font(SierraFont.caption1)
+            Spacer()
+            Button {
+                viewModel.dismissError()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(SierraFont.body(12, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.7))
+            }
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.md)
+        .background(
+            SierraTheme.Colors.danger.opacity(0.9),
+            in: RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+        )
+        .padding(.horizontal, Spacing.lg)
+        .padding(.top, Spacing.xs)
+    }
+
+    // MARK: - Inline Error
+
+    private func inlineError(_ text: String) -> some View {
+        Text(text)
+            .font(SierraFont.caption1)
+            .foregroundStyle(SierraTheme.Colors.danger.opacity(0.9))
+            .padding(.leading, Spacing.xxs)
+            .transition(.opacity)
     }
 
     // MARK: - Loading Overlay
 
-    var loadingOverlay: some View {
+    private var loadingOverlay: some View {
         ZStack {
-            Color.black.opacity(0.3)
+            Color.black.opacity(0.35)
                 .ignoresSafeArea()
 
-            VStack(spacing: 16) {
+            VStack(spacing: Spacing.md) {
                 ProgressView()
-                    .scaleEffect(1.2)
-                    .tint(Color(.systemOrange))
-                Text("Signing in…")
-                    .font(.system(size: 14))
-                    .foregroundStyle(Color.primary)
+                    .scaleEffect(1.3)
+                    .tint(.white)
+                Text("Authenticating\u{2026}")
+                    .font(SierraFont.caption1)
+                    .foregroundStyle(.white.opacity(0.8))
             }
-            .padding(28)
-            .background(
-                Color(.secondarySystemGroupedBackground),
-                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
-            )
+            .padding(Spacing.xxl)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
         }
         .transition(.opacity)
         .animation(.easeInOut(duration: 0.2), value: viewModel.isLoading)
+    }
+
+    // MARK: - Routing
+
+    @ViewBuilder
+    private func destinationView(for destination: AuthDestination) -> some View {
+        switch destination {
+        case .fleetManagerDashboard:  AdminDashboardView()
+        case .changePassword:         ForcePasswordChangeView()
+        case .driverOnboarding:       DriverProfileSetupView()
+        case .maintenanceOnboarding:  MaintenanceProfileSetupView()
+        case .pendingApproval:        PendingApprovalView()
+        case .rejected:               RejectedView()
+        case .driverDashboard:        DriverTabView()
+        case .maintenanceDashboard:   MaintenanceDashboardView()
+        }
     }
 }
 
