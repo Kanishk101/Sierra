@@ -1,59 +1,43 @@
 import SwiftUI
 
+
 struct ForcePasswordChangeView: View {
-    @State private var viewModel = ForcePasswordChangeViewModel()
-    @State private var appeared = false
+    @State private var viewModel       = ForcePasswordChangeViewModel()
+    @State private var appeared        = false
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [SierraTheme.Colors.summitNavy, SierraTheme.Colors.sierraBlue],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            Color(.systemGroupedBackground)
+                .ignoresSafeArea()
+
+            if viewModel.isLoading { loadingOverlay.zIndex(20) }
 
             GeometryReader { geo in
                 ScrollView {
-                    VStack(spacing: 24) {
-                        Spacer(minLength: 60)
+                    VStack(spacing: 0) {
+                        Spacer(minLength: 72)
 
-                        Image(systemName: "lock.rotation.fill")
-                            .font(.system(size: 50, weight: .light))
-                            .foregroundStyle(SierraTheme.Colors.ember)
-                            .symbolRenderingMode(.hierarchical)
+                        // ── Header ──
+                        headerSection
+                            .padding(.bottom, 32)
 
-                        VStack(spacing: 8) {
-                            Text("Set Your Password")
-                                .font(SierraFont.title2)
-                                .foregroundStyle(.white)
-
-                            Text("Create a strong password \u{2014} you\u{2019}ll use it to sign in going forward.")
-                                .font(SierraFont.subheadline)
-                                .foregroundStyle(.white.opacity(0.55))
-                                .multilineTextAlignment(.center)
-                                .lineSpacing(3)
-                        }
-
+                        // ── Form card ──
                         formCard
-                            .scaleEffect(appeared ? 1 : 0.95)
+                            .scaleEffect(appeared ? 1 : 0.94)
                             .opacity(appeared ? 1 : 0)
 
-                        Spacer(minLength: 40)
+                        Spacer(minLength: 48)
                     }
                     .frame(minHeight: geo.size.height)
                 }
                 .scrollDismissesKeyboard(.interactively)
             }
-
-            if viewModel.isLoading { loadingOverlay }
         }
         .interactiveDismissDisabled()
         .navigationBarBackButtonHidden(true)
         .onAppear {
-            withAnimation(.spring(duration: 0.5, bounce: 0.25)) { appeared = true }
+            withAnimation(.spring(duration: 0.6, bounce: 0.3)) { appeared = true }
         }
-        // 2FA OTP screen — shown after password change succeeds.
         .fullScreenCover(isPresented: $viewModel.awaitingOTP) {
             TwoFactorView(
                 viewModel: TwoFactorViewModel(
@@ -61,13 +45,7 @@ struct ForcePasswordChangeView: View {
                     maskedEmail: AuthManager.shared.maskedEmail,
                     onVerified: {
                         viewModel.awaitingOTP = false
-                        // Do NOT call completeAuthentication() here.
-                        // completeAuthentication() was already called by LoginViewModel.signIn()
-                        // for first-login users, so isAuthenticated is already true.
-                        // updatePasswordAndFirstLogin() already set currentUser.isFirstLogin = false.
-                        // ContentView observes currentUser changes and automatically re-routes
-                        // to .driverOnboarding or .maintenanceOnboarding without any extra push.
-                        AuthManager.shared.saveSessionToken()
+                        AuthManager.shared.confirmFirstLoginComplete()
                     },
                     onCancelled: {
                         viewModel.awaitingOTP = false
@@ -77,72 +55,125 @@ struct ForcePasswordChangeView: View {
         }
     }
 
+    // MARK: - Header
+
+    private var headerSection: some View {
+        VStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(.thinMaterial)
+                    .frame(width: 88, height: 88)
+
+                Image(systemName: "lock.rotation.fill")
+                    .font(.system(size: 38, weight: .medium))
+                    .foregroundStyle(Color.orange)
+                    .symbolRenderingMode(.hierarchical)
+            }
+
+            VStack(spacing: 4) {
+                Text("Set Your Password")
+                    .font(.system(size: 28, weight: .bold))
+                    .foregroundStyle(Color.primary)
+
+                Text("Create a strong password - you'll use it\nto sign in going forward.")
+                    .font(.system(size: 15))
+                    .foregroundStyle(Color.secondary)
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(3)
+            }
+        }
+    }
+
     // MARK: - Form Card
 
     private var formCard: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 0) {
 
-            VStack(alignment: .leading, spacing: 6) {
-                passwordField("Current Password",
-                              text: $viewModel.currentPassword,
-                              isVisible: $viewModel.isCurrentPasswordVisible)
-                if let err = viewModel.currentPasswordError {
-                    errorLabel(err)
+            VStack(spacing: 0) {
+
+                // Current Password
+                VStack(alignment: .leading, spacing: 0) {
+                    passwordField("Current Password",
+                                  text: $viewModel.currentPassword,
+                                  isVisible: $viewModel.isCurrentPasswordVisible)
+                    if let err = viewModel.currentPasswordError {
+                        errorLabel(err)
+                    }
                 }
-            }
 
-            Divider().background(.white.opacity(0.08))
+                Divider().padding(.leading, 52)
 
-            VStack(alignment: .leading, spacing: 8) {
-                passwordField("New Password",
-                              text: $viewModel.newPassword,
-                              isVisible: $viewModel.isNewPasswordVisible)
+                // New Password + strength
+                VStack(alignment: .leading, spacing: 0) {
+                    passwordField("New Password",
+                                  text: $viewModel.newPassword,
+                                  isVisible: $viewModel.isNewPasswordVisible)
 
-                if !viewModel.newPassword.isEmpty {
-                    PasswordStrengthView(password: viewModel.newPassword)
+                    if !viewModel.newPassword.isEmpty {
+                        PasswordStrengthView(password: viewModel.newPassword)
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 8)
+                    }
                 }
-            }
 
-            VStack(alignment: .leading, spacing: 6) {
-                passwordField("Confirm New Password",
-                              text: $viewModel.confirmPassword,
-                              isVisible: $viewModel.isConfirmPasswordVisible)
-                if let err = viewModel.confirmPasswordError {
-                    errorLabel(err)
+                Divider().padding(.leading, 52)
+
+                // Confirm Password
+                VStack(alignment: .leading, spacing: 0) {
+                    passwordField("Confirm New Password",
+                                  text: $viewModel.confirmPassword,
+                                  isVisible: $viewModel.isConfirmPasswordVisible)
+                    if let err = viewModel.confirmPasswordError {
+                        errorLabel(err)
+                    }
                 }
-            }
 
-            if let err = viewModel.errorMessage {
-                Text(err)
-                    .font(SierraFont.caption1)
-                    .foregroundStyle(SierraTheme.Colors.danger)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                // General error (inline banner)
+                if let err = viewModel.errorMessage {
+                    Divider()
+                    HStack(spacing: 10) {
+                        Image(systemName: "exclamationmark.circle.fill")
+                            .foregroundStyle(.red)
+                            .font(.system(size: 15))
+                        Text(err)
+                            .font(.system(size: 14))
+                            .foregroundStyle(Color.primary)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
                     .transition(.opacity)
-            }
+                }
 
+            }
+            .background(
+                Color(.secondarySystemGroupedBackground),
+                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(Color(.separator).opacity(0.3), lineWidth: 0.5)
+            )
+            .padding(.horizontal, 20)
+
+            // Submit button
             Button {
                 Task { await viewModel.setNewPassword() }
             } label: {
                 Text("Update Password")
-                    .font(SierraFont.body(17, weight: .semibold))
-                    .foregroundStyle(viewModel.canSubmit ? .white : .white.opacity(0.4))
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 54)
+                    .frame(height: 50)
                     .background(
-                        viewModel.canSubmit ? SierraTheme.Colors.ember : Color.gray.opacity(0.25),
-                        in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        viewModel.canSubmit ? Color.orange : Color(.systemFill),
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
                     )
             }
             .disabled(!viewModel.canSubmit)
-            .animation(.easeInOut(duration: 0.2), value: viewModel.canSubmit)
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
         }
-        .padding(24)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .strokeBorder(.white.opacity(0.08), lineWidth: 1)
-        )
-        .padding(.horizontal, 20)
     }
 
     // MARK: - Password Field
@@ -152,10 +183,10 @@ struct ForcePasswordChangeView: View {
         text: Binding<String>,
         isVisible: Binding<Bool>
     ) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: "lock.fill")
-                .font(SierraFont.caption1)
-                .foregroundStyle(.white.opacity(0.4))
+        HStack(spacing: 12) {
+            Image(systemName: "lock")
+                .font(.system(size: 15))
+                .foregroundStyle(Color.secondary)
                 .frame(width: 20)
 
             Group {
@@ -166,35 +197,33 @@ struct ForcePasswordChangeView: View {
                 }
             }
             .textFieldStyle(.plain)
-            .font(SierraFont.bodyText)
-            .foregroundStyle(.white)
+            .font(.system(size: 17))
             .autocorrectionDisabled()
             .textInputAutocapitalization(.never)
 
             Button {
-                isVisible.wrappedValue.toggle()
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    isVisible.wrappedValue.toggle()
+                }
             } label: {
                 Image(systemName: isVisible.wrappedValue ? "eye.slash" : "eye")
                     .font(.system(size: 15))
-                    .foregroundStyle(.white.opacity(0.4))
+                    .foregroundStyle(Color.secondary)
             }
+            .padding(.trailing, 4)
         }
         .padding(.horizontal, 16)
         .frame(height: 52)
-        .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(.white.opacity(0.1), lineWidth: 1)
-        )
     }
 
     // MARK: - Error Label
 
     private func errorLabel(_ text: String) -> some View {
         Text(text)
-            .font(SierraFont.caption2)
-            .foregroundStyle(SierraTheme.Colors.danger.opacity(0.9))
-            .padding(.leading, 4)
+            .font(.system(size: 12))
+            .foregroundStyle(.red)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
             .transition(.opacity)
     }
 
@@ -202,17 +231,22 @@ struct ForcePasswordChangeView: View {
 
     private var loadingOverlay: some View {
         ZStack {
-            Color.black.opacity(0.35).ignoresSafeArea()
+            Color.black.opacity(0.3)
+                .ignoresSafeArea()
+
             VStack(spacing: 16) {
                 ProgressView()
-                    .scaleEffect(1.3)
-                    .tint(.white)
-                Text("Updating password\u{2026}")
-                    .font(SierraFont.caption1)
-                    .foregroundStyle(.white.opacity(0.8))
+                    .scaleEffect(1.2)
+                    .tint(Color(.systemOrange))
+                Text("Updating password…")
+                    .font(.system(size: 14))
+                    .foregroundStyle(Color.primary)
             }
-            .padding(32)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .padding(28)
+            .background(
+                Color(.secondarySystemGroupedBackground),
+                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+            )
         }
         .transition(.opacity)
     }
