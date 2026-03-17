@@ -42,3 +42,4 @@ Secrets.xcconfig
 
 # Crash logs
 *.crash
+.idea
