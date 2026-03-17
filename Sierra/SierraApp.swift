@@ -35,7 +35,7 @@ struct SierraApp: App {
             ContentView()
                 .applySierraTheme()
 
-                // Biometric lock overlay — covers all roles
+                // Biometric lock overlay - covers all roles
                 if lifecycle.showBiometricLock {
                     BiometricLockView()
                         .transition(.opacity)

@@ -163,7 +163,7 @@ final class AppDataStore {
         staffApplications.removeAll   { $0.staffMemberId == id }
     }
 
-    // Targeted availability update — routes through StaffMemberService.updateAvailability
+    // Targeted availability update - routes through StaffMemberService.updateAvailability
     // which adds .select() to verify the DB write and logs the result.
 
     func updateDriverAvailability(staffId: UUID, available: Bool) async throws {
@@ -563,7 +563,7 @@ final class AppDataStore {
     var vehiclesInMaintenance: [Vehicle] { vehicles.filter { $0.status == .inMaintenance } }
     var overdueTrips: [Trip] { trips.filter { $0.isOverdue } }
 
-    // MARK: - Realtime — Emergency Alerts
+    // MARK: - Realtime - Emergency Alerts
 
     private func subscribeToEmergencyAlerts() {
         let channel = supabase.channel("emergency_alerts_channel")
@@ -582,7 +582,7 @@ final class AppDataStore {
         }
     }
 
-    // MARK: - Realtime — Staff Members UPDATE
+    // MARK: - Realtime - Staff Members UPDATE
 
     private func subscribeToStaffMemberUpdates() {
         let channel = supabase.channel("staff_members_updates_channel")
@@ -604,7 +604,7 @@ final class AppDataStore {
         }
     }
 
-    // MARK: - Realtime — Vehicles UPDATE
+    // MARK: - Realtime - Vehicles UPDATE
 
     private var vehiclesChannel: RealtimeChannelV2?
 
@@ -628,7 +628,7 @@ final class AppDataStore {
         }
     }
 
-    // MARK: - Realtime — Trips UPDATE
+    // MARK: - Realtime - Trips UPDATE
 
     private var tripsChannel: RealtimeChannelV2?
 

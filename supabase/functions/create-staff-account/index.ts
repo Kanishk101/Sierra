@@ -39,7 +39,7 @@ serve(async (req: Request) => {
       });
     }
 
-    // Admin client — only used server-side, never sent to iOS
+    // Admin client - only used server-side, never sent to iOS
     const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
       auth: { autoRefreshToken: false, persistSession: false },
     });

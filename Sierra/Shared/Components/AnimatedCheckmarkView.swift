@@ -46,7 +46,7 @@ struct AnimatedCheckmarkView: View {
     }
 }
 
-/// Checkmark path shape — three points forming a check.
+/// Checkmark path shape - three points forming a check.
 struct CheckmarkShape: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()

@@ -174,7 +174,7 @@ struct BiometricLockView: View {
 
         do {
             try await biometric.authenticate(reason: "Unlock FleetOS")
-            // Success — dismiss lock screen
+            // Success - dismiss lock screen
             lifecycle.biometricUnlocked()
         } catch let error as BiometricError {
             switch error {

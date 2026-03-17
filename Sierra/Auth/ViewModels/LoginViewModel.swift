@@ -93,7 +93,7 @@ final class LoginViewModel {
             }
 
             if !needsTwoFactor {
-                // Complete auth immediately — ContentView routes via destination(for:)
+                // Complete auth immediately - ContentView routes via destination(for:)
                 AuthManager.shared.completeAuthentication()
                 return
             }
@@ -135,7 +135,7 @@ final class LoginViewModel {
     // Navigation architecture:
     //   ContentView is the single routing authority via authManager.isAuthenticated.
     //   LoginView’s fullScreenCover (triggered by authState = .authenticated) must NEVER
-    //   fire during biometric login — that causes a race where LoginView tries to present
+    //   fire during biometric login - that causes a race where LoginView tries to present
     //   a cover while ContentView is already animating it out, producing the flash-to-
     //   dashboard-then-back-to-login bug.
     //
@@ -143,7 +143,7 @@ final class LoginViewModel {
     //   currentUser is already populated by restoreSessionSilently() at AuthManager.init(),
     //   so we know the user’s role before the Face ID prompt appears. We kick the data load
     //   as a Task.detached BEFORE calling BiometricManager.authenticate(). The Face ID scan
-    //   takes ~0.5–1 second — that’s free prefetch time. By the time auth resolves and the
+    //   takes ~0.5–1 second - that’s free prefetch time. By the time auth resolves and the
     //   dashboard animates in, most or all data is already loaded.
     //
     //   completeAuthentication() will fire a second load after success. That’s intentional:
@@ -154,7 +154,7 @@ final class LoginViewModel {
     func biometricSignIn() async {
         authState = .loading
 
-        // Snapshot the user now — currentUser is set by restoreSessionSilently() at init.
+        // Snapshot the user now - currentUser is set by restoreSessionSilently() at init.
         // Start the data prefetch concurrently with the Face ID prompt so the dashboard
         // has data ready the moment the user authenticates.
         if let user = AuthManager.shared.currentUser {
@@ -171,7 +171,7 @@ final class LoginViewModel {
         }
 
         do {
-            // Face ID / Touch ID prompt — data is loading in parallel during this await.
+            // Face ID / Touch ID prompt - data is loading in parallel during this await.
             try await BiometricManager.shared.authenticate()
 
             // Verify session is still valid after biometric success.
@@ -183,12 +183,12 @@ final class LoginViewModel {
             }
 
             // Sets isAuthenticated = true and saves the session token.
-            // Also fires a second data load — this guarantees fresh data and is
+            // Also fires a second data load - this guarantees fresh data and is
             // imperceptible since the prefetch above already populated the store.
             // ContentView observes isAuthenticated and routes to the dashboard cleanly.
             AuthManager.shared.completeAuthentication()
 
-            // Stay .idle — LoginView’s onChange must NOT see .authenticated,
+            // Stay .idle - LoginView’s onChange must NOT see .authenticated,
             // which would trigger a competing fullScreenCover navigation.
             authState = .idle
 

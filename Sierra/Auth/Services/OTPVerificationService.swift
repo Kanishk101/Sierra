@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - OTP Verification Protocol
 
-/// Protocol for OTP send/verify — add SMS or TOTP conformances without changing UI.
+/// Protocol for OTP send/verify - add SMS or TOTP conformances without changing UI.
 protocol OTPVerificationServiceProtocol {
     func sendOTP(context: TwoFactorContext) async throws -> OTPSendResult
     func verifyOTP(code: String, context: TwoFactorContext) async throws -> OTPVerifyResult

@@ -107,7 +107,7 @@ final class AuthManager {
 
         currentUser = user
         pendingOTPEmail = user.email
-        // NOTE: Do NOT set isAuthenticated here — 2FA must complete first
+        // NOTE: Do NOT set isAuthenticated here - 2FA must complete first
         return user.role
     }
 
@@ -232,7 +232,7 @@ final class AuthManager {
     func generateOTP() -> String {
         // Rate-limit: ignore if an OTP was already sent within the cooldown window.
         if let last = otpLastSentAt, Date().timeIntervalSince(last) < otpCooldownSeconds {
-            print("[AuthManager] generateOTP skipped — cooldown active (\(Int(otpCooldownSeconds - Date().timeIntervalSince(last)))s remaining)")
+            print("[AuthManager] generateOTP skipped - cooldown active (\(Int(otpCooldownSeconds - Date().timeIntervalSince(last)))s remaining)")
             return currentOTP
         }
         let otp = String(format: "%06d", Int.random(in: 100000...999999))
@@ -351,7 +351,7 @@ final class AuthManager {
     func requestPasswordReset(email: String) async -> Bool {
         // Rate-limit: ignore duplicate requests within the cooldown window.
         if let last = resetOTPLastSentAt, Date().timeIntervalSince(last) < otpCooldownSeconds {
-            print("[AuthManager] requestPasswordReset skipped — cooldown active")
+            print("[AuthManager] requestPasswordReset skipped - cooldown active")
             return true  // return true so UI advances normally (OTP was already sent)
         }
         do {

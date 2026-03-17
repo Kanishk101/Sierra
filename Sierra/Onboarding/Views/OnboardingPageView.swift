@@ -3,46 +3,73 @@ import SwiftUI
 struct OnboardingPageView: View {
     let page: OnboardingPage
 
+    // Trigger token - flipped to true on appear to fire one-shot animations.
+    @State private var appeared = false
+
     var body: some View {
-        VStack(spacing: 32) {
+        VStack(spacing: 0) {
             Spacer()
 
-            // Frosted glass card with SF Symbol icon
+            // ── Icon card ──
             ZStack {
-                RoundedRectangle(cornerRadius: 32, style: .continuous)
-                    .fill(Color.orange.opacity(0.08))
-                    .frame(width: 180, height: 180)
-                    .shadow(color: Color.orange.opacity(0.08), radius: 24, y: 8)
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(Color.orange.opacity(0.10))
+                    .frame(width: 160, height: 160)
 
-                Image(systemName: page.icon)
-                    .font(.system(size: 80, weight: .light))
-                    .foregroundStyle(.orange)
-                    .symbolRenderingMode(.hierarchical)
+                // Make all icons the same size and alignment
+                if page.id == 0 {
+                    Image(page.icon)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 72, height: 72)
+                        .padding(12)
+                } else {
+                    Image(systemName: page.icon)
+                        .font(.system(size: 72, weight: .regular))
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(Color.orange)
+                }
             }
+            .padding(.bottom, 40)
 
-            VStack(spacing: 16) {
+            // ── Text ──
+            VStack(spacing: 12) {
                 Text(page.title)
-                    .font(.system(size: 34, weight: .bold, design: .default))
-                    .foregroundStyle(.primary)
+                    .font(.system(size: 34, weight: .bold))
+                    .foregroundStyle(Color(.label))
                     .multilineTextAlignment(.center)
-                    .kerning(-0.4)
+                    .tracking(-0.5)
+                    .minimumScaleFactor(0.75)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 32)
 
                 Text(page.subtitle)
-                    .font(.system(size: 17, weight: .regular, design: .default))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 17, weight: .regular))
+                    .foregroundStyle(Color(.secondaryLabel))
                     .multilineTextAlignment(.center)
-                    .lineSpacing(4)
-                    .padding(.horizontal, 40)
+                    .lineSpacing(3)
+                    .padding(.horizontal, 36)
             }
 
             Spacer()
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                appeared = true
+            }
+        }
+        .onDisappear {
+            appeared = false
+        }
     }
+
+    // iconView and iconAnimation removed; all icons are static
 }
 
 #Preview {
-    OnboardingPageView(page: OnboardingPage.pages[0])
+    OnboardingPageView(page: OnboardingPage.pages[1])
         .background(Color(.systemGroupedBackground))
 }

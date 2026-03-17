@@ -13,14 +13,14 @@ ALTER TYPE vehicle_status ADD VALUE IF NOT EXISTS 'Busy';
 -- STEP 2: Extend staff_availability enum with 'Busy'
 ALTER TYPE staff_availability ADD VALUE IF NOT EXISTS 'Busy';
 
--- STEP 3: Back-fill — migrate any existing 'On Trip' rows
+-- STEP 3: Back-fill - migrate any existing 'On Trip' rows
 -- to the new unified 'Busy' value.
 -- (Safe to re-run; does nothing if no rows match.)
 UPDATE staff_members
    SET availability = 'Busy'
  WHERE availability = 'On Trip';
 
--- STEP 4: Back-fill — any vehicle that has an assigned driver
+-- STEP 4: Back-fill - any vehicle that has an assigned driver
 -- AND a currently active/scheduled trip should be marked Busy.
 -- This handles data that existed before this migration.
 UPDATE vehicles v

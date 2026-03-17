@@ -8,14 +8,14 @@
 import Foundation
 
 // OTP is pre-generated in LoginViewModel.signIn() before the 2FA screen appears.
-// sendOTP() returns instantly — no SMTP wait on screen appear.
+// sendOTP() returns instantly - no SMTP wait on screen appear.
 // resendOTP() generates a fresh OTP and fires a new email.
 
 final class AuthManagerOTPVerificationService: OTPVerificationServiceProtocol {
 
     func sendOTP(context: TwoFactorContext) async throws -> OTPSendResult {
         // OTP was pre-generated in LoginViewModel.signIn() before screen appeared.
-        // Do NOT call generateOTP() again — it would overwrite the already-sent OTP.
+        // Do NOT call generateOTP() again - it would overwrite the already-sent OTP.
         guard AuthManager.shared.currentUser != nil else { throw AuthError.userNotFound }
         return OTPSendResult(
             success: true,

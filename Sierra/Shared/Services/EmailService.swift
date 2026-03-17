@@ -64,7 +64,7 @@ struct EmailService {
             text:    body
         )
 
-        // SwiftSMTP.send is callback-based — wrap in async continuation
+        // SwiftSMTP.send is callback-based - wrap in async continuation
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             smtp.send(mail) { error in
                 if let error = error {
@@ -78,7 +78,7 @@ struct EmailService {
         }
     }
 
-    // MARK: - Send OTP (legacy helper — kept for reference; real 2FA now uses Supabase)
+    // MARK: - Send OTP (legacy helper - kept for reference; real 2FA now uses Supabase)
 
     static func sendOTP(to email: String, otp: String) {
         let smtp = SMTP(

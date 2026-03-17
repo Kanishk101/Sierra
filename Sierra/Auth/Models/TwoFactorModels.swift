@@ -4,10 +4,10 @@ import Foundation
 
 /// Supported 2FA verification methods.
 /// v1 implements `.email` only. `.sms` and `.authenticator` are architected
-/// but not wired — adding them requires only a new `OTPVerificationServiceProtocol`
+/// but not wired - adding them requires only a new `OTPVerificationServiceProtocol`
 /// conformance and no UI changes.
 enum TwoFactorMethod: String, Codable, CaseIterable {
-    case email         // v1 — implemented
+    case email         // v1 - implemented
     case sms           // future
     case authenticator // future (TOTP)
 

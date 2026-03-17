@@ -4,29 +4,35 @@ struct OnboardingView: View {
     @State private var viewModel = OnboardingViewModel()
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .top) {
+            // Apple grouped background - adapts to light/dark automatically
             Color(.systemGroupedBackground)
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                // Top bar — Skip button
+
+                // ── Skip button ────────────────────────────────────────────
                 HStack {
                     Spacer()
                     if !viewModel.isLastPage {
                         Button {
-                            viewModel.skip()
+                            withAnimation(.easeInOut(duration: 0.3)) {
+                                viewModel.skip()
+                            }
                         } label: {
                             Text("Skip")
-                                .font(.system(size: 17, weight: .medium))
-                                .foregroundStyle(.secondary)
+                                .font(.system(size: 17, weight: .regular))
+                                .foregroundStyle(Color(.tertiaryLabel))
                         }
+                        .transition(.opacity)
                     }
                 }
                 .padding(.horizontal, 24)
-                .padding(.top, 12)
+                .padding(.top, 8)
                 .frame(height: 44)
+                .animation(.easeInOut(duration: 0.25), value: viewModel.isLastPage)
 
-                // Paged content
+                // ── Paged slides ───────────────────────────────────────────
                 TabView(selection: $viewModel.currentPage) {
                     ForEach(viewModel.pages) { page in
                         OnboardingPageView(page: page)
@@ -34,61 +40,66 @@ struct OnboardingView: View {
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
-                .animation(.easeInOut(duration: 0.35), value: viewModel.currentPage)
 
-                // Bottom area — page dots + button
-                VStack(spacing: 28) {
-                    // Custom page indicator
-                    HStack(spacing: 8) {
+                // ── Bottom chrome ──────────────────────────────────────────
+                VStack(spacing: 24) {
+
+                    // Page indicator dots
+                    HStack(spacing: 7) {
                         ForEach(viewModel.pages) { page in
                             Capsule()
-                                .fill(page.id == viewModel.currentPage ? Color.orange : Color(.separator))
-                                .frame(
-                                    width: page.id == viewModel.currentPage ? 24 : 8,
-                                    height: 8
+                                .fill(
+                                    page.id == viewModel.currentPage
+                                        ? Color.orange
+                                        : Color(.systemFill)          // Apple semantic
                                 )
-                                .animation(.easeInOut(duration: 0.3), value: viewModel.currentPage)
+                                .frame(
+                                    width: page.id == viewModel.currentPage ? 22 : 7,
+                                    height: 7
+                                )
+                                .animation(
+                                    .spring(response: 0.3, dampingFraction: 0.7),
+                                    value: viewModel.currentPage
+                                )
                         }
                     }
 
-                    // Action button
-                    if viewModel.isLastPage {
-                        Button {
+                    // CTA button - full-width on last slide, pill trailing on others
+                    // Consistent full-width button for all screens
+                    // Apple-style: 'Continue' for all but last, 'Get Started' on last
+                    Button {
+                        if viewModel.isLastPage {
                             viewModel.getStarted()
-                        } label: {
-                            Text("Get Started")
-                                .font(.system(size: 17, weight: .semibold))
-                                .foregroundStyle(.white)
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 56)
-                                .background(Color.orange, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        }
-                        .padding(.horizontal, 24)
-                        .transition(.opacity.combined(with: .scale(scale: 0.95)))
-                    } else {
-                        HStack {
-                            Spacer()
-                            Button {
+                        } else {
+                            withAnimation(.easeInOut(duration: 0.3)) {
                                 viewModel.nextPage()
-                            } label: {
-                                HStack(spacing: 6) {
-                                    Text("Next")
-                                        .font(.system(size: 17, weight: .semibold))
-                                    Image(systemName: "arrow.right")
-                                        .font(.subheadline)
-                                }
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 28)
-                                .frame(height: 50)
-                                .background(Color.orange, in: Capsule())
                             }
                         }
-                        .padding(.horizontal, 24)
-                        .transition(.opacity)
+                    } label: {
+                        HStack {
+                            Spacer(minLength: 0)
+                            Text(viewModel.isLastPage ? "Get Started" : "Continue")
+                                .font(.system(size: 17, weight: .semibold))
+                            Spacer(minLength: 0)
+                        }
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 54)
+                            .background(Color.orange)
+                            .clipShape(Capsule())
                     }
+                    .padding(.horizontal, 20)
+                    .transition(
+                        viewModel.isLastPage
+                        ? .asymmetric(
+                            insertion: .opacity.combined(with: .offset(y: 8)),
+                            removal: .opacity
+                        )
+                        : .opacity
+                    )
+                    .animation(.easeInOut(duration: 0.3), value: viewModel.isLastPage)
                 }
-                .padding(.bottom, 48)
-                .animation(.easeInOut(duration: 0.35), value: viewModel.isLastPage)
+                .padding(.bottom, 52)         // clears home indicator on all iPhones
             }
         }
     }

@@ -24,7 +24,7 @@ serve(async (req: Request) => {
     const { applicantName, applicantEmail, role, submittedAt } = payload;
 
     const roleDisplay = role === "driver" ? "Driver" : "Maintenance Personnel";
-    const subject     = `New Staff Application — ${roleDisplay}`;
+    const subject     = `New Staff Application - ${roleDisplay}`;
     const html        = `
       <h2>New Staff Application Received</h2>
       <p>A new staff member has submitted their application on Sierra Fleet.</p>
@@ -39,7 +39,7 @@ serve(async (req: Request) => {
 
     // If no Resend key, skip silently (dev mode)
     if (!RESEND_API_KEY) {
-      console.log("RESEND_API_KEY not set — skipping email notification");
+      console.log("RESEND_API_KEY not set - skipping email notification");
       return new Response(JSON.stringify({ sent: false, reason: "no_api_key" }), {
         headers: { "Content-Type": "application/json" },
       });

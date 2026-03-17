@@ -10,7 +10,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 //   vehicle_id:      string  (UUID)
 //   start:           string  (ISO-8601 datetime)
 //   end:             string  (ISO-8601 datetime)
-//   exclude_trip_id: string? (UUID, optional — for edits)
+//   exclude_trip_id: string? (UUID, optional - for edits)
 // }
 //
 // Response (JSON):

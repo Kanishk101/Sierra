@@ -120,7 +120,7 @@ final class TwoFactorViewModel {
             isLoading = false
             switch authErr {
             case .networkError(let msg) where msg.lowercased().contains("invalid"):
-                banner = .error("Could not send code — email address is not valid. Contact your fleet manager.")
+                banner = .error("Could not send code - email address is not valid. Contact your fleet manager.")
             case .networkError(let msg):
                 banner = .error("Could not send code: \(msg)")
             case .userNotFound:
@@ -186,7 +186,7 @@ final class TwoFactorViewModel {
                     banner = .error("Session expired. Please sign in again.")
                 default:
                     state = .awaitingEntry
-                    banner = .error("Verification failed — \(authErr.localizedDescription)")
+                    banner = .error("Verification failed - \(authErr.localizedDescription)")
                 }
             } catch {
                 state = .awaitingEntry

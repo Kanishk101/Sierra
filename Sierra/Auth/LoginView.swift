@@ -14,7 +14,7 @@ struct LoginView: View {
     @State private var resolvedDestination: AuthDestination?
     @State private var showDestination = false
 
-    // Returning user — used to conditionally show Face ID button
+    // Returning user - used to conditionally show Face ID button
     @State private var lastProfile: SecureSessionStore.StoredProfile?
 
     var body: some View {
@@ -22,7 +22,7 @@ struct LoginView: View {
             // Login content layer
             loginContentLayer
 
-            // 2FA overlay layer — covers everything when active
+            // 2FA overlay layer - covers everything when active
             if showTwoFactor, let vm = twoFactorVM {
                 TwoFactorView(viewModel: vm)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -61,7 +61,7 @@ struct LoginView: View {
                     service: viewModel.otpService,
                     onVerified: { [self] in
                         #if DEBUG
-                        print("\u{1F510} [LoginView.onVerified] 2FA verified — completing auth")
+                        print("\u{1F510} [LoginView.onVerified] 2FA verified - completing auth")
                         #endif
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                             showTwoFactor = false
