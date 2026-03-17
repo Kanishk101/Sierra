@@ -76,6 +76,10 @@ struct StaffMember: Identifiable, Codable {
     var isApproved: Bool
     var rejectionReason: String?
 
+    // MARK: Security
+    var failedLoginAttempts: Int = 0      // failed_login_attempts (default 0)
+    var accountLockedUntil: Date?         // account_locked_until
+
     // MARK: Timestamps
     var joinedDate: Date?
     var createdAt: Date
@@ -95,6 +99,8 @@ struct StaffMember: Identifiable, Codable {
         case isProfileComplete        = "is_profile_complete"
         case isApproved               = "is_approved"
         case rejectionReason          = "rejection_reason"
+        case failedLoginAttempts      = "failed_login_attempts"
+        case accountLockedUntil       = "account_locked_until"
         case joinedDate               = "joined_date"
         case createdAt                = "created_at"
         case updatedAt                = "updated_at"
@@ -141,6 +147,8 @@ struct StaffMember: Identifiable, Codable {
             isProfileComplete: true,
             isApproved: true,
             rejectionReason: nil,
+            failedLoginAttempts: 0,
+            accountLockedUntil: nil,
             joinedDate: Date().addingTimeInterval(-86400 * 120),
             createdAt: Date().addingTimeInterval(-86400 * 120),
             updatedAt: Date().addingTimeInterval(-86400 * 1)
@@ -164,6 +172,8 @@ struct StaffMember: Identifiable, Codable {
             isProfileComplete: true,
             isApproved: true,
             rejectionReason: nil,
+            failedLoginAttempts: 0,
+            accountLockedUntil: nil,
             joinedDate: Date().addingTimeInterval(-86400 * 90),
             createdAt: Date().addingTimeInterval(-86400 * 90),
             updatedAt: Date().addingTimeInterval(-86400 * 1)
@@ -187,6 +197,8 @@ struct StaffMember: Identifiable, Codable {
             isProfileComplete: false,
             isApproved: false,
             rejectionReason: nil,
+            failedLoginAttempts: 0,
+            accountLockedUntil: nil,
             joinedDate: Date().addingTimeInterval(-86400 * 3),
             createdAt: Date().addingTimeInterval(-86400 * 3),
             updatedAt: Date().addingTimeInterval(-86400 * 3)
@@ -210,6 +222,8 @@ struct StaffMember: Identifiable, Codable {
             isProfileComplete: true,
             isApproved: true,
             rejectionReason: nil,
+            failedLoginAttempts: 0,
+            accountLockedUntil: nil,
             joinedDate: Date().addingTimeInterval(-86400 * 200),
             createdAt: Date().addingTimeInterval(-86400 * 200),
             updatedAt: Date().addingTimeInterval(-86400 * 2)
@@ -233,6 +247,8 @@ struct StaffMember: Identifiable, Codable {
             isProfileComplete: true,
             isApproved: true,
             rejectionReason: nil,
+            failedLoginAttempts: 0,
+            accountLockedUntil: nil,
             joinedDate: Date().addingTimeInterval(-86400 * 60),
             createdAt: Date().addingTimeInterval(-86400 * 60),
             updatedAt: Date().addingTimeInterval(-86400 * 1)
@@ -256,6 +272,8 @@ struct StaffMember: Identifiable, Codable {
             isProfileComplete: true,
             isApproved: false,
             rejectionReason: "Policy violation",
+            failedLoginAttempts: 0,
+            accountLockedUntil: nil,
             joinedDate: Date().addingTimeInterval(-86400 * 180),
             createdAt: Date().addingTimeInterval(-86400 * 180),
             updatedAt: Date().addingTimeInterval(-86400 * 30)
@@ -279,6 +297,8 @@ struct StaffMember: Identifiable, Codable {
             isProfileComplete: false,
             isApproved: false,
             rejectionReason: nil,
+            failedLoginAttempts: 0,
+            accountLockedUntil: nil,
             joinedDate: Date().addingTimeInterval(-86400 * 5),
             createdAt: Date().addingTimeInterval(-86400 * 5),
             updatedAt: Date().addingTimeInterval(-86400 * 5)

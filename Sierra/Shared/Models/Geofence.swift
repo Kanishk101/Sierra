@@ -1,5 +1,15 @@
 import Foundation
 
+// MARK: - Geofence Type
+// Maps to PostgreSQL enum: geofence_type
+
+enum GeofenceType: String, Codable, CaseIterable {
+    case warehouse      = "Warehouse"
+    case deliveryPoint  = "Delivery Point"
+    case restrictedZone = "Restricted Zone"
+    case custom         = "Custom"
+}
+
 // MARK: - Geofence
 // Maps to table: geofences
 
@@ -20,6 +30,9 @@ struct Geofence: Identifiable, Codable {
     var alertOnEntry: Bool               // alert_on_entry
     var alertOnExit: Bool                // alert_on_exit
 
+    // MARK: Type
+    var geofenceType: GeofenceType = .custom  // geofence_type (default 'Custom')
+
     // MARK: Timestamps
     var createdAt: Date                  // created_at
     var updatedAt: Date                  // updated_at
@@ -37,6 +50,7 @@ struct Geofence: Identifiable, Codable {
         case createdByAdminId    = "created_by_admin_id"
         case alertOnEntry        = "alert_on_entry"
         case alertOnExit         = "alert_on_exit"
+        case geofenceType        = "geofence_type"
         case createdAt           = "created_at"
         case updatedAt           = "updated_at"
     }
@@ -55,6 +69,7 @@ struct Geofence: Identifiable, Codable {
             createdByAdminId: UUID(uuidString: "F0000000-0000-0000-0000-000000000001")!,
             alertOnEntry: true,
             alertOnExit: true,
+            geofenceType: .warehouse,
             createdAt: Date().addingTimeInterval(-86400 * 30),
             updatedAt: Date().addingTimeInterval(-86400 * 30)
         ),
@@ -69,6 +84,7 @@ struct Geofence: Identifiable, Codable {
             createdByAdminId: UUID(uuidString: "F0000000-0000-0000-0000-000000000001")!,
             alertOnEntry: true,
             alertOnExit: true,
+            geofenceType: .deliveryPoint,
             createdAt: Date().addingTimeInterval(-86400 * 20),
             updatedAt: Date().addingTimeInterval(-86400 * 20)
         ),
@@ -83,6 +99,7 @@ struct Geofence: Identifiable, Codable {
             createdByAdminId: UUID(uuidString: "F0000000-0000-0000-0000-000000000001")!,
             alertOnEntry: true,
             alertOnExit: false,
+            geofenceType: .custom,
             createdAt: Date().addingTimeInterval(-86400 * 10),
             updatedAt: Date().addingTimeInterval(-86400 * 10)
         ),

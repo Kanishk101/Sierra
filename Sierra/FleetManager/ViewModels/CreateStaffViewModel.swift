@@ -82,6 +82,8 @@ final class CreateStaffViewModel {
                 isProfileComplete:     false,
                 isApproved:            false,
                 rejectionReason:       nil,
+                failedLoginAttempts:   0,
+                accountLockedUntil:    nil,
                 joinedDate:            now,
                 createdAt:             now,
                 updatedAt:             now

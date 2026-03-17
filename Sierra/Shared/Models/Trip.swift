@@ -47,6 +47,11 @@ struct Trip: Identifiable, Codable {
     // MARK: Route
     var origin: String
     var destination: String
+    var originLatitude: Double?           // origin_latitude
+    var originLongitude: Double?          // origin_longitude
+    var destinationLatitude: Double?      // destination_latitude
+    var destinationLongitude: Double?     // destination_longitude
+    var routePolyline: String?            // route_polyline
     var deliveryInstructions: String      // delivery_instructions (default '')
 
     // MARK: Scheduling
@@ -69,6 +74,12 @@ struct Trip: Identifiable, Codable {
     var preInspectionId: UUID?
     var postInspectionId: UUID?
 
+    // MARK: Rating
+    var driverRating: Int?               // driver_rating
+    var driverRatingNote: String?        // driver_rating_note
+    var ratedById: UUID?                 // rated_by_id (FK → staff_members.id)
+    var ratedAt: Date?                   // rated_at
+
     // MARK: Timestamps
     var createdAt: Date
     var updatedAt: Date
@@ -82,6 +93,11 @@ struct Trip: Identifiable, Codable {
         case vehicleId            = "vehicle_id"
         case createdByAdminId     = "created_by_admin_id"
         case origin, destination
+        case originLatitude       = "origin_latitude"
+        case originLongitude      = "origin_longitude"
+        case destinationLatitude  = "destination_latitude"
+        case destinationLongitude = "destination_longitude"
+        case routePolyline        = "route_polyline"
         case deliveryInstructions = "delivery_instructions"
         case scheduledDate        = "scheduled_date"
         case scheduledEndDate     = "scheduled_end_date"
@@ -93,6 +109,10 @@ struct Trip: Identifiable, Codable {
         case proofOfDeliveryId    = "proof_of_delivery_id"
         case preInspectionId      = "pre_inspection_id"
         case postInspectionId     = "post_inspection_id"
+        case driverRating         = "driver_rating"
+        case driverRatingNote     = "driver_rating_note"
+        case ratedById            = "rated_by_id"
+        case ratedAt              = "rated_at"
         case createdAt            = "created_at"
         case updatedAt            = "updated_at"
     }
@@ -150,6 +170,11 @@ struct Trip: Identifiable, Codable {
                 createdByAdminId: adminId,
                 origin: "Mumbai Warehouse",
                 destination: "Pune Distribution Center",
+                originLatitude: nil,
+                originLongitude: nil,
+                destinationLatitude: nil,
+                destinationLongitude: nil,
+                routePolyline: nil,
                 deliveryInstructions: "Handle with care — electronics",
                 scheduledDate: cal.date(byAdding: .hour, value: -2, to: now) ?? now,
                 scheduledEndDate: cal.date(byAdding: .hour, value: 4, to: now),
@@ -163,6 +188,10 @@ struct Trip: Identifiable, Codable {
                 proofOfDeliveryId: nil,
                 preInspectionId: nil,
                 postInspectionId: nil,
+                driverRating: nil,
+                driverRatingNote: nil,
+                ratedById: nil,
+                ratedAt: nil,
                 createdAt: cal.date(byAdding: .hour, value: -3, to: now) ?? now,
                 updatedAt: cal.date(byAdding: .hour, value: -1, to: now) ?? now
             ),
@@ -174,6 +203,11 @@ struct Trip: Identifiable, Codable {
                 createdByAdminId: adminId,
                 origin: "Delhi Hub",
                 destination: "Jaipur Depot",
+                originLatitude: nil,
+                originLongitude: nil,
+                destinationLatitude: nil,
+                destinationLongitude: nil,
+                routePolyline: nil,
                 deliveryInstructions: "",
                 scheduledDate: cal.date(byAdding: .day, value: 1, to: now) ?? now,
                 scheduledEndDate: nil,
@@ -187,6 +221,10 @@ struct Trip: Identifiable, Codable {
                 proofOfDeliveryId: nil,
                 preInspectionId: nil,
                 postInspectionId: nil,
+                driverRating: nil,
+                driverRatingNote: nil,
+                ratedById: nil,
+                ratedAt: nil,
                 createdAt: cal.date(byAdding: .hour, value: -6, to: now) ?? now,
                 updatedAt: cal.date(byAdding: .hour, value: -6, to: now) ?? now
             ),
@@ -198,6 +236,11 @@ struct Trip: Identifiable, Codable {
                 createdByAdminId: adminId,
                 origin: "Chennai Port",
                 destination: "Bangalore Warehouse",
+                originLatitude: nil,
+                originLongitude: nil,
+                destinationLatitude: nil,
+                destinationLongitude: nil,
+                routePolyline: nil,
                 deliveryInstructions: "",
                 scheduledDate: cal.date(byAdding: .day, value: -1, to: now) ?? now,
                 scheduledEndDate: cal.date(byAdding: .hour, value: -22, to: now),
@@ -211,6 +254,10 @@ struct Trip: Identifiable, Codable {
                 proofOfDeliveryId: nil,
                 preInspectionId: nil,
                 postInspectionId: nil,
+                driverRating: nil,
+                driverRatingNote: nil,
+                ratedById: nil,
+                ratedAt: nil,
                 createdAt: cal.date(byAdding: .day, value: -1, to: now) ?? now,
                 updatedAt: cal.date(byAdding: .hour, value: -22, to: now) ?? now
             ),
@@ -222,6 +269,11 @@ struct Trip: Identifiable, Codable {
                 createdByAdminId: adminId,
                 origin: "Hyderabad Yard",
                 destination: "Vizag Terminal",
+                originLatitude: nil,
+                originLongitude: nil,
+                destinationLatitude: nil,
+                destinationLongitude: nil,
+                routePolyline: nil,
                 deliveryInstructions: "",
                 scheduledDate: cal.date(byAdding: .day, value: -2, to: now) ?? now,
                 scheduledEndDate: nil,
@@ -235,6 +287,10 @@ struct Trip: Identifiable, Codable {
                 proofOfDeliveryId: nil,
                 preInspectionId: nil,
                 postInspectionId: nil,
+                driverRating: nil,
+                driverRatingNote: nil,
+                ratedById: nil,
+                ratedAt: nil,
                 createdAt: cal.date(byAdding: .day, value: -2, to: now) ?? now,
                 updatedAt: cal.date(byAdding: .day, value: -2, to: now) ?? now
             ),

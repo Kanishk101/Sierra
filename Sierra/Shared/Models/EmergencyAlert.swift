@@ -8,6 +8,7 @@ enum EmergencyAlertType: String, Codable, CaseIterable {
     case accident   = "Accident"
     case breakdown  = "Breakdown"
     case medical    = "Medical"
+    case defect     = "Defect"
 }
 
 // MARK: - Emergency Alert Status

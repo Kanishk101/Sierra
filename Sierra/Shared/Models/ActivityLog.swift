@@ -18,6 +18,7 @@ enum ActivityType: String, Codable, CaseIterable {
     case documentExpiringSoon  = "Document Expiring Soon"
     case documentExpired       = "Document Expired"
     case fuelLogged            = "Fuel Logged"
+    case routeDeviation        = "Route Deviation"
 }
 
 // MARK: - Activity Severity

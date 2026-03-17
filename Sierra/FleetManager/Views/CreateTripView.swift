@@ -433,6 +433,11 @@ struct CreateTripView: View {
                 createdByAdminId: adminId.uuidString,
                 origin: origin.trimmingCharacters(in: .whitespaces),
                 destination: destination.trimmingCharacters(in: .whitespaces),
+                originLatitude: nil,
+                originLongitude: nil,
+                destinationLatitude: nil,
+                destinationLongitude: nil,
+                routePolyline: nil,
                 deliveryInstructions: "",
                 scheduledDate: scheduledDate,
                 scheduledEndDate: scheduledEndDate,
@@ -446,6 +451,10 @@ struct CreateTripView: View {
                 proofOfDeliveryId: nil,
                 preInspectionId: nil,
                 postInspectionId: nil,
+                driverRating: nil,
+                driverRatingNote: nil,
+                ratedById: nil,
+                ratedAt: nil,
                 createdAt: now,
                 updatedAt: now
             )

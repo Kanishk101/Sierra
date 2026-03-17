@@ -38,6 +38,10 @@ struct WorkOrder: Identifiable, Codable {
     var technicianNotes: String?         // technician_notes
     var vinScanned: Bool                 // vin_scanned (default false)
 
+    // MARK: Images & estimates
+    var repairImageUrls: [String] = []   // repair_image_urls (default '{}')
+    var estimatedCompletionAt: Date?     // estimated_completion_at
+
     // MARK: Timestamps
     var createdAt: Date                  // created_at
     var updatedAt: Date                  // updated_at
@@ -58,6 +62,8 @@ struct WorkOrder: Identifiable, Codable {
         case completedAt         = "completed_at"
         case technicianNotes     = "technician_notes"
         case vinScanned          = "vin_scanned"
+        case repairImageUrls     = "repair_image_urls"
+        case estimatedCompletionAt = "estimated_completion_at"
         case createdAt           = "created_at"
         case updatedAt           = "updated_at"
     }

@@ -146,6 +146,8 @@ extension StaffMemberDB {
             isProfileComplete: is_profile_complete ?? false,
             isApproved: is_approved ?? false,
             rejectionReason: rejection_reason,
+            failedLoginAttempts: 0,
+            accountLockedUntil: nil,
             joinedDate: joined_date.flatMap { iso.date(from: $0) },
             createdAt: created_at.flatMap { iso.date(from: $0) } ?? Date(),
             updatedAt: updated_at.flatMap { iso.date(from: $0) } ?? Date()

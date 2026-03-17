@@ -66,6 +66,11 @@ struct VehicleInspection: Identifiable, Codable {
     var additionalNotes: String?
     var driverSignatureUrl: String?
 
+    // MARK: Defect tracking
+    var photoUrls: [String] = []         // photo_urls (default '{}')
+    var isDefectRaised: Bool = false      // is_defect_raised (default false)
+    var raisedTaskId: UUID?              // raised_task_id (FK → maintenance_tasks.id)
+
     // MARK: Timestamps
     var inspectedAt: Date
     var createdAt: Date
@@ -83,6 +88,9 @@ struct VehicleInspection: Identifiable, Codable {
         case defectsReported    = "defects_reported"
         case additionalNotes    = "additional_notes"
         case driverSignatureUrl = "driver_signature_url"
+        case photoUrls          = "photo_urls"
+        case isDefectRaised     = "is_defect_raised"
+        case raisedTaskId       = "raised_task_id"
         case inspectedAt        = "inspected_at"
         case createdAt          = "created_at"
     }

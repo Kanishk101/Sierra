@@ -58,6 +58,11 @@ struct MaintenanceTask: Identifiable, Codable {
     var dueDate: Date                        // due_date
     var completedAt: Date?                   // completed_at
 
+    // MARK: Approval
+    var approvedById: UUID?                  // approved_by_id (FK → staff_members.id)
+    var approvedAt: Date?                    // approved_at
+    var rejectionReason: String?             // rejection_reason
+
     // MARK: Timestamps
     var createdAt: Date                      // created_at
     var updatedAt: Date                      // updated_at
@@ -78,6 +83,9 @@ struct MaintenanceTask: Identifiable, Codable {
         case sourceInspectionId  = "source_inspection_id"
         case dueDate             = "due_date"
         case completedAt         = "completed_at"
+        case approvedById        = "approved_by_id"
+        case approvedAt          = "approved_at"
+        case rejectionReason     = "rejection_reason"
         case createdAt           = "created_at"
         case updatedAt           = "updated_at"
     }

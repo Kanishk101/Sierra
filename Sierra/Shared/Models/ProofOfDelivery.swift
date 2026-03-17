@@ -29,6 +29,11 @@ struct ProofOfDelivery: Identifiable, Codable {
     var deliveryLatitude: Double?        // delivery_latitude
     var deliveryLongitude: Double?       // delivery_longitude
 
+    // MARK: OTP & notes
+    var deliveryOtpHash: String?         // delivery_otp_hash
+    var deliveryOtpExpiresAt: Date?      // delivery_otp_expires_at
+    var notes: String?                   // notes
+
     // MARK: Timestamps
     var capturedAt: Date                 // captured_at
     var createdAt: Date                  // created_at
@@ -46,6 +51,9 @@ struct ProofOfDelivery: Identifiable, Codable {
         case recipientName      = "recipient_name"
         case deliveryLatitude   = "delivery_latitude"
         case deliveryLongitude  = "delivery_longitude"
+        case deliveryOtpHash    = "delivery_otp_hash"
+        case deliveryOtpExpiresAt = "delivery_otp_expires_at"
+        case notes
         case capturedAt         = "captured_at"
         case createdAt          = "created_at"
     }
