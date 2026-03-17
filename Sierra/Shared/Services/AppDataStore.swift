@@ -48,48 +48,52 @@ final class AppDataStore {
     func loadAll() async {
         isLoading = true
         loadError = nil
-        do {
-            async let staffTask        = StaffMemberService.fetchAllStaffMembers()
-            async let driverProfsTask  = DriverProfileService.fetchAllDriverProfiles()
-            async let maintProfsTask   = MaintenanceProfileService.fetchAllMaintenanceProfiles()
-            async let appsTask         = StaffApplicationService.fetchAllStaffApplications()
-            async let vehiclesTask     = VehicleService.fetchAllVehicles()
-            async let vehicleDocsTask  = VehicleDocumentService.fetchAllVehicleDocuments()
-            async let tripsTask        = TripService.fetchAllTrips()
-            async let fuelLogsTask     = FuelLogService.fetchAllFuelLogs()
-            async let inspectionsTask  = VehicleInspectionService.fetchAllInspections()
-            async let podsTask         = ProofOfDeliveryService.fetchAllProofsOfDelivery()
-            async let alertsTask       = EmergencyAlertService.fetchAllEmergencyAlerts()
-            async let maintTasksTask   = MaintenanceTaskService.fetchAllMaintenanceTasks()
-            async let workOrdersTask   = WorkOrderService.fetchAllWorkOrders()
-            async let maintRecsTask    = MaintenanceRecordService.fetchAllMaintenanceRecords()
-            async let partsTask        = PartUsedService.fetchAllPartsUsed()
-            async let geofencesTask    = GeofenceService.fetchAllGeofences()
-            async let geoEventsTask    = GeofenceEventService.fetchAllGeofenceEvents()
-            async let activityTask     = ActivityLogService.fetchRecentLogs(limit: 100)
 
-            staff               = try await staffTask
-            driverProfiles      = try await driverProfsTask
-            maintenanceProfiles = try await maintProfsTask
-            staffApplications   = try await appsTask
-            vehicles            = try await vehiclesTask
-            vehicleDocuments    = try await vehicleDocsTask
-            trips               = try await tripsTask
-            fuelLogs            = try await fuelLogsTask
-            vehicleInspections  = try await inspectionsTask
-            proofOfDeliveries   = try await podsTask
-            emergencyAlerts     = try await alertsTask
-            maintenanceTasks    = try await maintTasksTask
-            workOrders          = try await workOrdersTask
-            maintenanceRecords  = try await maintRecsTask
-            partsUsed           = try await partsTask
-            geofences           = try await geofencesTask
-            geofenceEvents      = try await geoEventsTask
-            activityLogs        = try await activityTask
-        } catch {
-            loadError = error.localizedDescription
-            print("[AppDataStore.loadAll] Error: \(error)")
+        async let staffTask        = StaffMemberService.fetchAllStaffMembers()
+        async let driverProfsTask  = DriverProfileService.fetchAllDriverProfiles()
+        async let maintProfsTask   = MaintenanceProfileService.fetchAllMaintenanceProfiles()
+        async let appsTask         = StaffApplicationService.fetchAllStaffApplications()
+        async let vehiclesTask     = VehicleService.fetchAllVehicles()
+        async let vehicleDocsTask  = VehicleDocumentService.fetchAllVehicleDocuments()
+        async let tripsTask        = TripService.fetchAllTrips()
+        async let fuelLogsTask     = FuelLogService.fetchAllFuelLogs()
+        async let inspectionsTask  = VehicleInspectionService.fetchAllInspections()
+        async let podsTask         = ProofOfDeliveryService.fetchAllProofsOfDelivery()
+        async let alertsTask       = EmergencyAlertService.fetchAllEmergencyAlerts()
+        async let maintTasksTask   = MaintenanceTaskService.fetchAllMaintenanceTasks()
+        async let workOrdersTask   = WorkOrderService.fetchAllWorkOrders()
+        async let maintRecsTask    = MaintenanceRecordService.fetchAllMaintenanceRecords()
+        async let partsTask        = PartUsedService.fetchAllPartsUsed()
+        async let geofencesTask    = GeofenceService.fetchAllGeofences()
+        async let geoEventsTask    = GeofenceEventService.fetchAllGeofenceEvents()
+        async let activityTask     = ActivityLogService.fetchRecentLogs(limit: 100)
+
+        var errors: [String] = []
+
+        do { staff               = try await staffTask }        catch { errors.append("staff: \(error.localizedDescription)"); print("[AppDataStore] ⚠️ staff load failed: \(error)") }
+        do { driverProfiles      = try await driverProfsTask }  catch { errors.append("driverProfiles: \(error.localizedDescription)"); print("[AppDataStore] ⚠️ driverProfiles load failed: \(error)") }
+        do { maintenanceProfiles = try await maintProfsTask }   catch { errors.append("maintenanceProfiles: \(error.localizedDescription)"); print("[AppDataStore] ⚠️ maintenanceProfiles load failed: \(error)") }
+        do { staffApplications   = try await appsTask }         catch { errors.append("staffApplications: \(error.localizedDescription)"); print("[AppDataStore] ⚠️ staffApplications load failed: \(error)") }
+        do { vehicles            = try await vehiclesTask }     catch { errors.append("vehicles: \(error.localizedDescription)"); print("[AppDataStore] ⚠️ vehicles load failed: \(error)") }
+        do { vehicleDocuments    = try await vehicleDocsTask }  catch { errors.append("vehicleDocuments: \(error.localizedDescription)"); print("[AppDataStore] ⚠️ vehicleDocuments load failed: \(error)") }
+        do { trips               = try await tripsTask }        catch { errors.append("trips: \(error.localizedDescription)"); print("[AppDataStore] ⚠️ trips load failed: \(error)") }
+        do { fuelLogs            = try await fuelLogsTask }     catch { errors.append("fuelLogs: \(error.localizedDescription)"); print("[AppDataStore] ⚠️ fuelLogs load failed: \(error)") }
+        do { vehicleInspections  = try await inspectionsTask }  catch { errors.append("vehicleInspections: \(error.localizedDescription)"); print("[AppDataStore] ⚠️ vehicleInspections load failed: \(error)") }
+        do { proofOfDeliveries   = try await podsTask }         catch { errors.append("proofOfDeliveries: \(error.localizedDescription)"); print("[AppDataStore] ⚠️ proofOfDeliveries load failed: \(error)") }
+        do { emergencyAlerts     = try await alertsTask }       catch { errors.append("emergencyAlerts: \(error.localizedDescription)"); print("[AppDataStore] ⚠️ emergencyAlerts load failed: \(error)") }
+        do { maintenanceTasks    = try await maintTasksTask }   catch { errors.append("maintenanceTasks: \(error.localizedDescription)"); print("[AppDataStore] ⚠️ maintenanceTasks load failed: \(error)") }
+        do { workOrders          = try await workOrdersTask }   catch { errors.append("workOrders: \(error.localizedDescription)"); print("[AppDataStore] ⚠️ workOrders load failed: \(error)") }
+        do { maintenanceRecords  = try await maintRecsTask }    catch { errors.append("maintenanceRecords: \(error.localizedDescription)"); print("[AppDataStore] ⚠️ maintenanceRecords load failed: \(error)") }
+        do { partsUsed           = try await partsTask }        catch { errors.append("partsUsed: \(error.localizedDescription)"); print("[AppDataStore] ⚠️ partsUsed load failed: \(error)") }
+        do { geofences           = try await geofencesTask }    catch { errors.append("geofences: \(error.localizedDescription)"); print("[AppDataStore] ⚠️ geofences load failed: \(error)") }
+        do { geofenceEvents      = try await geoEventsTask }    catch { errors.append("geofenceEvents: \(error.localizedDescription)"); print("[AppDataStore] ⚠️ geofenceEvents load failed: \(error)") }
+        do { activityLogs        = try await activityTask }     catch { errors.append("activityLogs: \(error.localizedDescription)"); print("[AppDataStore] ⚠️ activityLogs load failed: \(error)") }
+
+        if !errors.isEmpty {
+            loadError = "Partial load failure: \(errors.joined(separator: "; "))"
+            print("[AppDataStore.loadAll] Partial errors: \(errors)")
         }
+
         isLoading = false
     }
 
@@ -529,7 +533,7 @@ final class AppDataStore {
     func driverProfile(for staffId: UUID) -> DriverProfile? { driverProfiles.first { $0.staffMemberId == staffId } }
     func maintenanceProfile(for staffId: UUID) -> MaintenanceProfile? { maintenanceProfiles.first { $0.staffMemberId == staffId } }
     func vehicleDocuments(forVehicle vehicleId: UUID) -> [VehicleDocument] { vehicleDocuments.filter { $0.vehicleId == vehicleId } }
-    func trips(forDriver driverId: UUID) -> [Trip] { trips.filter { $0.driverId == driverId.uuidString } }
+    func trips(forDriver driverId: UUID) -> [Trip] { trips.filter { $0.driverId?.lowercased() == driverId.uuidString.lowercased() } }
     func fuelLogs(forDriver driverId: UUID) -> [FuelLog] { fuelLogs.filter { $0.driverId == driverId } }
     func fuelLogs(forVehicle vehicleId: UUID) -> [FuelLog] { fuelLogs.filter { $0.vehicleId == vehicleId } }
     func workOrders(forStaff staffId: UUID) -> [WorkOrder] { workOrders.filter { $0.assignedToId == staffId } }
@@ -552,7 +556,7 @@ final class AppDataStore {
     func availableDrivers() -> [StaffMember] { staff.filter { $0.role == .driver && $0.status == .active && $0.availability == .available } }
     func availableVehicles() -> [Vehicle] { vehicles.filter { $0.status == .idle && $0.assignedDriverId == nil } }
     func activeTrip(forDriverId driverId: UUID) -> Trip? {
-        trips.first { $0.driverId == driverId.uuidString && ($0.status == .active || $0.status == .scheduled) }
+        trips.first { $0.driverId?.lowercased() == driverId.uuidString.lowercased() && ($0.status == .active || $0.status == .scheduled) }
     }
     func workOrder(forMaintenanceTask taskId: UUID) -> WorkOrder? { workOrders.first { $0.maintenanceTaskId == taskId } }
 
@@ -643,6 +647,19 @@ final class AppDataStore {
                 if let fresh = try? await TripService.fetchTrip(id: updatedId),
                    let idx = self.trips.firstIndex(where: { $0.id == updatedId }) {
                     self.trips[idx] = fresh
+                }
+            }
+        }
+        _ = channel.onPostgresChange(InsertAction.self, schema: "public", table: "trips") { [weak self] action in
+            guard let self else { return }
+            Task { @MainActor in
+                guard let idValue = action.record["id"],
+                      case let .string(idString) = idValue,
+                      let newId = UUID(uuidString: idString) else { return }
+                // Only add if not already in the local store
+                guard !self.trips.contains(where: { $0.id == newId }) else { return }
+                if let fresh = try? await TripService.fetchTrip(id: newId) {
+                    self.trips.insert(fresh, at: 0)
                 }
             }
         }

@@ -102,7 +102,7 @@ struct TripService {
         try await supabase
             .from("trips")
             .select()
-            .eq("driver_id", value: driverId.uuidString)
+            .eq("driver_id", value: driverId.uuidString.lowercased())
             .order("scheduled_date", ascending: false)
             .execute()
             .value
