@@ -1,0 +1,1 @@
+Phase 5 addendum - see conversation for full updated prompt details covering SDK v3, @Observable coordinator, SierraApp init update, and all safeguards.
