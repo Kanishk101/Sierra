@@ -264,4 +264,103 @@ struct TripService {
             .eq("id", value: vehicleId.uuidString.lowercased())
             .execute()
     }
+
+    // MARK: - Trip Lifecycle
+
+    /// Sets trip to Active with start date and mileage.
+    /// Does NOT update vehicles or staff_members — DB triggers handle that.
+    static func startTrip(tripId: UUID, startMileage: Double) async throws {
+        struct Payload: Encodable {
+            let status: String
+            let actual_start_date: String
+            let start_mileage: Double
+        }
+        try await supabase
+            .from("trips")
+            .update(Payload(
+                status: TripStatus.active.rawValue,
+                actual_start_date: iso.string(from: Date()),
+                start_mileage: startMileage
+            ))
+            .eq("id", value: tripId.uuidString)
+            .execute()
+    }
+
+    /// Sets trip to Completed with end date and mileage.
+    /// Does NOT update vehicles or staff_members — DB triggers handle that.
+    static func completeTrip(tripId: UUID, endMileage: Double) async throws {
+        struct Payload: Encodable {
+            let status: String
+            let actual_end_date: String
+            let end_mileage: Double
+        }
+        try await supabase
+            .from("trips")
+            .update(Payload(
+                status: TripStatus.completed.rawValue,
+                actual_end_date: iso.string(from: Date()),
+                end_mileage: endMileage
+            ))
+            .eq("id", value: tripId.uuidString)
+            .execute()
+    }
+
+    /// Sets trip to Cancelled. Does NOT update vehicles or staff_members.
+    static func cancelTrip(tripId: UUID) async throws {
+        struct Payload: Encodable { let status: String }
+        try await supabase
+            .from("trips")
+            .update(Payload(status: TripStatus.cancelled.rawValue))
+            .eq("id", value: tripId.uuidString)
+            .execute()
+    }
+
+    // MARK: - Coordinates & Rating
+
+    static func updateTripCoordinates(
+        tripId: UUID,
+        originLat: Double,
+        originLng: Double,
+        destLat: Double,
+        destLng: Double,
+        routePolyline: String
+    ) async throws {
+        struct Payload: Encodable {
+            let origin_latitude: Double
+            let origin_longitude: Double
+            let destination_latitude: Double
+            let destination_longitude: Double
+            let route_polyline: String
+        }
+        try await supabase
+            .from("trips")
+            .update(Payload(
+                origin_latitude: originLat,
+                origin_longitude: originLng,
+                destination_latitude: destLat,
+                destination_longitude: destLng,
+                route_polyline: routePolyline
+            ))
+            .eq("id", value: tripId.uuidString)
+            .execute()
+    }
+
+    static func rateDriver(tripId: UUID, rating: Int, note: String?, ratedById: UUID) async throws {
+        struct Payload: Encodable {
+            let driver_rating: Int
+            let driver_rating_note: String?
+            let rated_by_id: String
+            let rated_at: String
+        }
+        try await supabase
+            .from("trips")
+            .update(Payload(
+                driver_rating: rating,
+                driver_rating_note: note,
+                rated_by_id: ratedById.uuidString,
+                rated_at: iso.string(from: Date())
+            ))
+            .eq("id", value: tripId.uuidString)
+            .execute()
+    }
 }

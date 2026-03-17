@@ -158,4 +158,25 @@ struct WorkOrderService {
             .eq("id", value: id.uuidString)
             .execute()
     }
+
+    // MARK: - Repair Images & Estimated Completion
+
+    /// Updates repair_image_urls. Passes Swift array directly — SDK handles serialisation.
+    static func updateRepairImages(workOrderId: UUID, imageUrls: [String]) async throws {
+        struct Payload: Encodable { let repair_image_urls: [String] }
+        try await supabase
+            .from("work_orders")
+            .update(Payload(repair_image_urls: imageUrls))
+            .eq("id", value: workOrderId.uuidString)
+            .execute()
+    }
+
+    static func setEstimatedCompletion(workOrderId: UUID, estimatedAt: Date) async throws {
+        struct Payload: Encodable { let estimated_completion_at: String }
+        try await supabase
+            .from("work_orders")
+            .update(Payload(estimated_completion_at: iso.string(from: estimatedAt)))
+            .eq("id", value: workOrderId.uuidString)
+            .execute()
+    }
 }

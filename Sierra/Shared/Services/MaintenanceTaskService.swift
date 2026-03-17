@@ -182,4 +182,46 @@ struct MaintenanceTaskService {
             .eq("id", value: id.uuidString)
             .execute()
     }
+
+    // MARK: - Approval (single atomic update per safeguard)
+
+    /// Approves a task: sets status, approved_by_id, approved_at, assigned_to_id in one call.
+    static func approveTask(taskId: UUID, approvedById: UUID, assignedToId: UUID) async throws {
+        struct Payload: Encodable {
+            let status: String
+            let approved_by_id: String
+            let approved_at: String
+            let assigned_to_id: String
+        }
+        try await supabase
+            .from("maintenance_tasks")
+            .update(Payload(
+                status: MaintenanceTaskStatus.assigned.rawValue,
+                approved_by_id: approvedById.uuidString,
+                approved_at: iso.string(from: Date()),
+                assigned_to_id: assignedToId.uuidString
+            ))
+            .eq("id", value: taskId.uuidString)
+            .execute()
+    }
+
+    /// Rejects a task: sets status, approved_by_id, approved_at, rejection_reason in one call.
+    static func rejectTask(taskId: UUID, approvedById: UUID, reason: String) async throws {
+        struct Payload: Encodable {
+            let status: String
+            let approved_by_id: String
+            let approved_at: String
+            let rejection_reason: String
+        }
+        try await supabase
+            .from("maintenance_tasks")
+            .update(Payload(
+                status: MaintenanceTaskStatus.cancelled.rawValue,
+                approved_by_id: approvedById.uuidString,
+                approved_at: iso.string(from: Date()),
+                rejection_reason: reason
+            ))
+            .eq("id", value: taskId.uuidString)
+            .execute()
+    }
 }

@@ -121,4 +121,70 @@ struct VehicleInspectionService {
             .eq("id", value: id.uuidString)
             .execute()
     }
+
+    // MARK: - Submit With Photos
+
+    static func submitInspectionWithPhotos(
+        tripId: UUID,
+        vehicleId: UUID,
+        driverId: UUID,
+        type: InspectionType,
+        overallResult: InspectionResult,
+        items: [InspectionItem],
+        defectsReported: String?,
+        additionalNotes: String?,
+        driverSignatureUrl: String?,
+        photoUrls: [String],
+        isDefectRaised: Bool,
+        raisedTaskId: UUID?
+    ) async throws -> VehicleInspection {
+        struct Payload: Encodable {
+            let trip_id: String
+            let vehicle_id: String
+            let driver_id: String
+            let type: String
+            let overall_result: String
+            let items: String           // JSON-encoded [InspectionItem]
+            let defects_reported: String?
+            let additional_notes: String?
+            let driver_signature_url: String?
+            let photo_urls: [String]    // Swift array — SDK handles serialisation
+            let is_defect_raised: Bool
+            let raised_task_id: String?
+            let inspected_at: String
+        }
+
+        let itemsData = try JSONEncoder().encode(items)
+        let itemsString = String(data: itemsData, encoding: .utf8) ?? "[]"
+        let now = Date()
+
+        let payload = Payload(
+            trip_id: tripId.uuidString,
+            vehicle_id: vehicleId.uuidString,
+            driver_id: driverId.uuidString,
+            type: type.rawValue,
+            overall_result: overallResult.rawValue,
+            items: itemsString,
+            defects_reported: defectsReported,
+            additional_notes: additionalNotes,
+            driver_signature_url: driverSignatureUrl,
+            photo_urls: photoUrls,
+            is_defect_raised: isDefectRaised,
+            raised_task_id: raisedTaskId?.uuidString,
+            inspected_at: iso.string(from: now)
+        )
+
+        let rows: [VehicleInspection] = try await supabase
+            .from("vehicle_inspections")
+            .insert(payload)
+            .select()
+            .execute()
+            .value
+
+        guard let inspection = rows.first else {
+            throw NSError(domain: "VehicleInspectionService", code: -1,
+                          userInfo: [NSLocalizedDescriptionKey: "Insert returned no rows"])
+        }
+        return inspection
+    }
 }
