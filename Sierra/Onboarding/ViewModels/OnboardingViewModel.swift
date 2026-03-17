@@ -20,6 +20,7 @@ final class OnboardingViewModel {
     }
 
     func getStarted() {
-        // Transition to main app - e.g., post a notification or update AppState
+        // Mark onboarding as complete so ContentView transitions to login
+        OnboardingService.completeOnboarding()
     }
 }
