@@ -1,25 +1,53 @@
 import SwiftUI
 
 struct FleetManagerTabView: View {
+    // Safeguard 1: ViewModel persisted at TabView level so map survives tab switches
+    @State private var mapViewModel = FleetLiveMapViewModel()
+    @State private var showNotifications = false
+    @Environment(AppDataStore.self) private var store
+
     var body: some View {
         TabView {
             Tab("Dashboard", systemImage: "square.grid.2x2.fill") {
                 placeholderTab(title: "Fleet Dashboard", icon: "chart.bar.fill", color: .orange)
             }
+            Tab("Live Map", systemImage: "map.fill") {
+                NavigationStack {
+                    FleetLiveMapView(viewModel: mapViewModel)
+                }
+            }
+            Tab("Alerts", systemImage: "bell.badge.fill") {
+                NavigationStack {
+                    AlertsInboxView()
+                }
+            }
             Tab("Vehicles", systemImage: "car.fill") {
-                placeholderTab(title: "Vehicles", icon: "car.2.fill", color: .green)
+                NavigationStack {
+                    VehicleStatusView()
+                }
             }
             Tab("Drivers", systemImage: "person.2.fill") {
                 placeholderTab(title: "Drivers", icon: "person.2.fill", color: .orange)
             }
+            Tab("Maintenance", systemImage: "wrench.and.screwdriver.fill") {
+                NavigationStack {
+                    MaintenanceRequestsView()
+                }
+            }
             Tab("Reports", systemImage: "doc.text.fill") {
-                placeholderTab(title: "Reports", icon: "chart.pie.fill", color: .purple)
+                ReportsView()
             }
             Tab("Settings", systemImage: "gearshape.fill") {
                 settingsTab()
             }
         }
         .tint(.white)
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            Task { await store.checkOverdueMaintenance() }
+        }
+        .sheet(isPresented: $showNotifications) {
+            NotificationCentreView()
+        }
     }
 
     private func placeholderTab(title: String, icon: String, color: Color) -> some View {

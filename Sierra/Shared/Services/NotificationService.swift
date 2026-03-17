@@ -105,10 +105,16 @@ final class NotificationService {
             schema: "public",
             table: "notifications"
         ) { action in
-            if let data = try? JSONEncoder().encode(action.record),
-               let notification = try? JSONDecoder().decode(SierraNotification.self, from: data),
-               notification.recipientId == recipientId {
-                onNew(notification)
+            // Decode off main-actor by encoding action.record to JSON bytes first,
+            // then decoding SierraNotification in a detached Task to avoid
+            // main-actor conformance being used from nonisolated context.
+            let rawRecord = action.record
+            Task.detached {
+                if let data = try? JSONEncoder().encode(rawRecord),
+                   let notification = try? JSONDecoder().decode(SierraNotification.self, from: data),
+                   notification.recipientId == recipientId {
+                    await MainActor.run { onNew(notification) }
+                }
             }
         }
         Task {

@@ -19,6 +19,8 @@ final class AppDataStore {
     private var emergencyAlertsChannel: RealtimeChannelV2?
     private var staffMembersChannel: RealtimeChannelV2?
     // vehiclesChannel and tripsChannel declared alongside their subscribe methods below
+    private var notificationsChannel: RealtimeChannelV2?
+    private var isSubscribedToNotifications = false
 
     // MARK: - Data Arrays
 
@@ -40,6 +42,11 @@ final class AppDataStore {
     var geofences: [Geofence] = []
     var geofenceEvents: [GeofenceEvent] = []
     var activityLogs: [ActivityLog] = []
+    var notifications: [SierraNotification] = []
+    var activeTripLocationHistory: [VehicleLocationHistory] = []
+    var currentTripDeviations: [RouteDeviationEvent] = []
+    var activeTripExpenses: [TripExpense] = []
+    var sparePartsRequests: [SparePartsRequest] = []
     var isLoading: Bool = false
     var loadError: String?
 
@@ -95,6 +102,11 @@ final class AppDataStore {
         }
 
         isLoading = false
+
+        // Wire notifications for fleet managers
+        if let userId = AuthManager.shared.currentUser?.id {
+            Task { await loadAndSubscribeNotifications(for: userId) }
+        }
     }
 
     func loadDriverData(driverId: UUID) async {
@@ -120,6 +132,8 @@ final class AppDataStore {
             print("[AppDataStore.loadDriverData] Error: \(error)")
         }
         isLoading = false
+
+        Task { await loadAndSubscribeNotifications(for: driverId) }
     }
 
     func loadMaintenanceData(staffId: UUID) async {
@@ -145,6 +159,8 @@ final class AppDataStore {
             print("[AppDataStore.loadMaintenanceData] Error: \(error)")
         }
         isLoading = false
+
+        Task { await loadAndSubscribeNotifications(for: staffId) }
     }
 
     // MARK: - Staff CRUD
@@ -527,6 +543,7 @@ final class AppDataStore {
     }
 
     var unreadActivityCount: Int { activityLogs.filter { !$0.isRead }.count }
+    var unreadNotificationCount: Int { notifications.filter { !$0.isRead }.count }
 
     // MARK: - Lookup Helpers
 
@@ -667,5 +684,123 @@ final class AppDataStore {
             do { try await channel.subscribeWithError() } catch { print("[AppDataStore] Trips channel error: \(error)") }
             await MainActor.run { self.tripsChannel = channel }
         }
+    }
+
+    // MARK: - Sprint 2: Notifications
+
+    func loadAndSubscribeNotifications(for userId: UUID) async {
+        guard !isSubscribedToNotifications else { return }
+        isSubscribedToNotifications = true
+        do {
+            notifications = try await NotificationService.fetchNotifications(for: userId)
+        } catch {
+            print("[AppDataStore] Failed to fetch notifications: \(error)")
+        }
+        NotificationService.shared.subscribeToNotifications(for: userId) { [weak self] newNotification in
+            guard let self else { return }
+            Task { @MainActor in
+                self.notifications.insert(newNotification, at: 0)
+            }
+        }
+    }
+
+    // MARK: - Sprint 2: Location Publishing (non-throwing)
+
+    func publishDriverLocation(vehicleId: UUID, tripId: UUID, latitude: Double, longitude: Double, speedKmh: Double?) async {
+        do {
+            try await VehicleLocationService.shared.publishLocation(
+                vehicleId: vehicleId,
+                tripId: tripId,
+                driverId: AuthManager.shared.currentUser?.id ?? UUID(),
+                latitude: latitude,
+                longitude: longitude,
+                speedKmh: speedKmh
+            )
+            let entry = VehicleLocationHistory(
+                id: UUID(),
+                vehicleId: vehicleId,
+                tripId: tripId,
+                driverId: AuthManager.shared.currentUser?.id,
+                latitude: latitude,
+                longitude: longitude,
+                speedKmh: speedKmh,
+                recordedAt: Date(),
+                createdAt: Date()
+            )
+            activeTripLocationHistory.append(entry)
+        } catch {
+            print("[AppDataStore] Location publish failed (non-fatal): \(error)")
+        }
+    }
+
+    // MARK: - Sprint 2: Trip Lifecycle
+
+    func startActiveTrip(tripId: UUID, startMileage: Double) async throws {
+        try await TripService.startTrip(tripId: tripId, startMileage: startMileage)
+        if let idx = trips.firstIndex(where: { $0.id == tripId }) {
+            trips[idx].status = .active
+            trips[idx].actualStartDate = Date()
+            trips[idx].startMileage = startMileage
+        }
+    }
+
+    func endTrip(tripId: UUID, endMileage: Double) async throws {
+        try await TripService.completeTrip(tripId: tripId, endMileage: endMileage)
+        if let idx = trips.firstIndex(where: { $0.id == tripId }) {
+            trips[idx].status = .completed
+            trips[idx].actualEndDate = Date()
+            trips[idx].endMileage = endMileage
+        }
+        activeTripLocationHistory = []
+        currentTripDeviations = []
+        activeTripExpenses = []
+    }
+
+    func abortTrip(tripId: UUID) async throws {
+        try await TripService.cancelTrip(tripId: tripId)
+        if let idx = trips.firstIndex(where: { $0.id == tripId }) {
+            trips[idx].status = .cancelled
+        }
+        activeTripLocationHistory = []
+        currentTripDeviations = []
+        activeTripExpenses = []
+    }
+
+    // MARK: - Sprint 2: Overdue Maintenance Check (idempotent)
+
+    func checkOverdueMaintenance() async {
+        let overdueTasks = maintenanceTasks.filter {
+            $0.status == .pending && $0.dueDate < Date()
+        }
+        for task in overdueTasks {
+            let alreadyNotified = notifications.contains {
+                $0.type == .maintenanceOverdue && $0.entityId == task.id
+            }
+            guard !alreadyNotified else { continue }
+            do {
+                try await NotificationService.insertNotification(
+                    recipientId: task.createdByAdminId,
+                    type: .maintenanceOverdue,
+                    title: "Maintenance Overdue",
+                    body: "Task \"\(task.title)\" is past its due date.",
+                    entityType: "maintenance_task",
+                    entityId: task.id
+                )
+            } catch {
+                print("[AppDataStore] Non-fatal: overdue notification failed: \(error)")
+            }
+        }
+    }
+
+    // MARK: - Sprint 2: Cleanup
+
+    func unsubscribeAll() {
+        isSubscribedToNotifications = false
+        NotificationService.shared.unsubscribeFromNotifications()
+        notificationsChannel = nil
+        activeTripLocationHistory = []
+        currentTripDeviations = []
+        activeTripExpenses = []
+        notifications = []
     }
 }

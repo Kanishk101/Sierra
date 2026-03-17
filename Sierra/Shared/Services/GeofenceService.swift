@@ -93,4 +93,47 @@ struct GeofenceService {
             .eq("id", value: id.uuidString)
             .execute()
     }
+
+    // MARK: Create (with geofence_type)
+
+    static func createGeofence(
+        name: String,
+        description: String,
+        latitude: Double,
+        longitude: Double,
+        radiusMeters: Double,
+        geofenceType: GeofenceType,
+        alertOnEntry: Bool,
+        alertOnExit: Bool,
+        createdByAdminId: UUID
+    ) async throws {
+        struct CreatePayload: Encodable {
+            let name: String
+            let description: String
+            let latitude: Double
+            let longitude: Double
+            let radius_meters: Double
+            let geofence_type: String
+            let is_active: Bool
+            let alert_on_entry: Bool
+            let alert_on_exit: Bool
+            let created_by_admin_id: String
+        }
+
+        try await supabase
+            .from("geofences")
+            .insert(CreatePayload(
+                name: name,
+                description: description,
+                latitude: latitude,
+                longitude: longitude,
+                radius_meters: radiusMeters,
+                geofence_type: geofenceType.rawValue,
+                is_active: true,
+                alert_on_entry: alertOnEntry,
+                alert_on_exit: alertOnExit,
+                created_by_admin_id: createdByAdminId.uuidString
+            ))
+            .execute()
+    }
 }

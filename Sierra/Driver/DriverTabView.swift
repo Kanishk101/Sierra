@@ -3,6 +3,7 @@ import SwiftUI
 struct DriverTabView: View {
 
     @Environment(AppDataStore.self) private var store
+    @State private var showNotifications = false
 
     var body: some View {
         TabView {
@@ -10,12 +11,19 @@ struct DriverTabView: View {
                 NavigationStack {
                     DriverHomeView()
                         .navigationDestination(for: UUID.self) { id in
-                            TripDetailView(tripId: id)
+                            TripDetailDriverView(tripId: id)
+                        }
+                        .toolbar {
+                            ToolbarItem(placement: .topBarTrailing) {
+                                notificationBell
+                            }
                         }
                 }
             }
             Tab("Trips", systemImage: "map.fill") {
-                placeholderTab(title: "My Trips", icon: "location.fill", color: .green)
+                NavigationStack {
+                    DriverTripHistoryView()
+                }
             }
             Tab("Vehicle", systemImage: "car.fill") {
                 placeholderTab(title: "Inspection", icon: "checklist", color: .orange)
@@ -25,6 +33,27 @@ struct DriverTabView: View {
             }
         }
         .tint(.white)
+        .sheet(isPresented: $showNotifications) {
+            NotificationCentreView()
+        }
+    }
+
+    private var notificationBell: some View {
+        Button { showNotifications = true } label: {
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: "bell.fill")
+                    .font(.body)
+                    .foregroundStyle(.white)
+                if store.unreadNotificationCount > 0 {
+                    Text("\(store.unreadNotificationCount)")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.white)
+                        .padding(3)
+                        .background(.red, in: Circle())
+                        .offset(x: 6, y: -6)
+                }
+            }
+        }
     }
 
     private func placeholderTab(title: String, icon: String, color: Color) -> some View {
