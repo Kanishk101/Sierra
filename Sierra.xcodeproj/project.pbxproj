@@ -11,6 +11,9 @@
 		3E432BDA2F6405A5008CE2B3 /* PostgREST in Frameworks */ = {isa = PBXBuildFile; productRef = 3E432BD92F6405A5008CE2B3 /* PostgREST */; };
 		3E432BDD2F6405C9008CE2B3 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 3E432BDC2F6405C9008CE2B3 /* Supabase */; };
 		3EB769722F64054000374218 /* SwiftSMTP in Frameworks */ = {isa = PBXBuildFile; productRef = 3EB769712F64054000374218 /* SwiftSMTP */; };
+		3EFD6A452F695C5700D685D5 /* MapboxDirections in Frameworks */ = {isa = PBXBuildFile; productRef = 3EFD6A442F695C5700D685D5 /* MapboxDirections */; };
+		3EFD6A472F695C5700D685D5 /* MapboxNavigationCore in Frameworks */ = {isa = PBXBuildFile; productRef = 3EFD6A462F695C5700D685D5 /* MapboxNavigationCore */; };
+		3EFD6A492F695C5700D685D5 /* MapboxNavigationUIKit in Frameworks */ = {isa = PBXBuildFile; productRef = 3EFD6A482F695C5700D685D5 /* MapboxNavigationUIKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -43,9 +46,12 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				3EFD6A472F695C5700D685D5 /* MapboxNavigationCore in Frameworks */,
+				3EFD6A452F695C5700D685D5 /* MapboxDirections in Frameworks */,
 				3E432BDD2F6405C9008CE2B3 /* Supabase in Frameworks */,
 				3E432BDA2F6405A5008CE2B3 /* PostgREST in Frameworks */,
 				3E432BD82F6405A5008CE2B3 /* Auth in Frameworks */,
+				3EFD6A492F695C5700D685D5 /* MapboxNavigationUIKit in Frameworks */,
 				3EB769722F64054000374218 /* SwiftSMTP in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -101,6 +107,9 @@
 				3E432BD72F6405A5008CE2B3 /* Auth */,
 				3E432BD92F6405A5008CE2B3 /* PostgREST */,
 				3E432BDC2F6405C9008CE2B3 /* Supabase */,
+				3EFD6A442F695C5700D685D5 /* MapboxDirections */,
+				3EFD6A462F695C5700D685D5 /* MapboxNavigationCore */,
+				3EFD6A482F695C5700D685D5 /* MapboxNavigationUIKit */,
 			);
 			productName = Sierra;
 			productReference = 3E9600752F5F0CEE0040F55E /* Sierra.app */;
@@ -133,6 +142,7 @@
 			packageReferences = (
 				3EB769702F64054000374218 /* XCRemoteSwiftPackageReference "Swift-SMTP" */,
 				3E432BD62F6405A5008CE2B3 /* XCRemoteSwiftPackageReference "supabase-swift" */,
+				3EFD6A432F695C5700D685D5 /* XCRemoteSwiftPackageReference "mapbox-navigation-ios" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 3E9600762F5F0CEE0040F55E /* Products */;
@@ -392,6 +402,14 @@
 				minimumVersion = 6.0.0;
 			};
 		};
+		3EFD6A432F695C5700D685D5 /* XCRemoteSwiftPackageReference "mapbox-navigation-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/mapbox/mapbox-navigation-ios";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -414,6 +432,21 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 3EB769702F64054000374218 /* XCRemoteSwiftPackageReference "Swift-SMTP" */;
 			productName = SwiftSMTP;
+		};
+		3EFD6A442F695C5700D685D5 /* MapboxDirections */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3EFD6A432F695C5700D685D5 /* XCRemoteSwiftPackageReference "mapbox-navigation-ios" */;
+			productName = MapboxDirections;
+		};
+		3EFD6A462F695C5700D685D5 /* MapboxNavigationCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3EFD6A432F695C5700D685D5 /* XCRemoteSwiftPackageReference "mapbox-navigation-ios" */;
+			productName = MapboxNavigationCore;
+		};
+		3EFD6A482F695C5700D685D5 /* MapboxNavigationUIKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3EFD6A432F695C5700D685D5 /* XCRemoteSwiftPackageReference "mapbox-navigation-ios" */;
+			productName = MapboxNavigationUIKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
