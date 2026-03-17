@@ -1,22 +1,35 @@
-# Phase 2 — Sprint 2 Services
+# Phase 2 — Sprint 2 Services (UPDATED — matches actual codebase)
 
 ## Context
 Sierra iOS app, SwiftUI + MVVM + Swift Concurrency, Supabase backend.
 Repo: Kanishk101/Sierra, main branch.
 Supabase project ID: ldqcdngdlbbiojlnbnjg.
 
-All services live in Sierra/Shared/Services/. They use SupabaseManager.shared.client (a Supabase Swift SDK client) to perform database operations using async/await. The pattern is:
+## CRITICAL — Read existing services before writing anything
+Before writing any code, read these files to understand the exact patterns used:
+- Sierra/Shared/Services/TripService.swift
+- Sierra/Shared/Services/VehicleService.swift
+- Sierra/Shared/Services/EmergencyAlertService.swift
+- Sierra/Shared/Services/ActivityLogService.swift
 
-  try await SupabaseManager.shared.client
+## Actual code patterns in this codebase (NOT generic assumptions)
+
+Services use the global `supabase` Supabase client directly — NOT `SupabaseManager.shared.client`.
+The `supabase` global is defined in SupabaseManager.swift. Read that file to confirm the exact variable name.
+
+The pattern used throughout all existing services is:
+  try await supabase
       .from("table_name")
       .select()
       .eq("column", value: someValue)
       .execute()
       .value
 
-Inserts use .insert(encodable). Updates use .update(encodable).eq(). Realtime uses .channel().onPostgresChanges().subscribe().
+Realtime uses `RealtimeChannelV2` and `.subscribeWithError()` — read AppDataStore.swift to see the exact pattern used in subscribeToEmergencyAlerts() and subscribeToVehicleUpdates() and match it exactly.
 
-No RLS policies exist. All tables are accessible without auth filtering. Do not add any auth.uid() filtering.
+No RLS policies exist. No auth.uid() filtering anywhere.
+
+Auth lives in AuthManager.shared — NOT AppDataStore. If you need the current user's ID in a service, it comes from the call site, never looked up internally.
 
 ## Task 1 — Create NEW service files
 
@@ -26,19 +39,28 @@ Methods:
 - markAsRead(notificationId: UUID) async throws
 - markAllAsRead(for recipientId: UUID) async throws
 - insertNotification(recipientId: UUID, type: NotificationType, title: String, body: String, entityType: String?, entityId: UUID?) async throws
-- subscribeToNotifications(for recipientId: UUID, onNew: @escaping (SierraNotification) -> Void) — sets up Supabase Realtime channel listening for INSERT on notifications table filtered by recipient_id
+- subscribeToNotifications(for recipientId: UUID, onNew: @escaping (SierraNotification) -> Void)
+  — creates a RealtimeChannelV2 for INSERT on notifications table
+  — stores channel as private var notificationChannel: RealtimeChannelV2?
+  — guards: if notificationChannel != nil { return }
+  — uses .subscribeWithError() pattern matching AppDataStore.subscribeToEmergencyAlerts exactly
+- unsubscribeFromNotifications() — calls channel.unsubscribe() and sets notificationChannel = nil
 
 ### VehicleLocationService.swift (Sierra/Shared/Services/VehicleLocationService.swift)
 Methods:
 - publishLocation(vehicleId: UUID, tripId: UUID, driverId: UUID, latitude: Double, longitude: Double, speedKmh: Double?) async throws
-  — writes to vehicle_location_history AND updates vehicles.current_latitude, vehicles.current_longitude
+  — inserts into vehicle_location_history
+  — updates vehicles SET current_latitude = latitude, current_longitude = longitude WHERE id = vehicleId
+  — internal throttle: private var lastPublishTime: Date = .distantPast, minimum 5 seconds between calls
 - fetchLocationHistory(vehicleId: UUID, tripId: UUID) async throws -> [VehicleLocationHistory]
-- subscribeToVehicleLocations(onUpdate: @escaping ([Vehicle]) -> Void) — Supabase Realtime on vehicles table UPDATE, returns updated vehicle array
+- unsubscribe() for cleanup
 
 ### RouteDeviationService.swift (Sierra/Shared/Services/RouteDeviationService.swift)
 Methods:
 - recordDeviation(tripId: UUID, driverId: UUID, vehicleId: UUID, latitude: Double, longitude: Double, deviationMetres: Double) async throws
-  — inserts into route_deviation_events AND inserts activity_log of type "Route Deviation" AND inserts notification for all fleet managers
+  — inserts into route_deviation_events
+  — inserts into activity_logs type "Route Deviation"
+  — calls NotificationService.insertNotification for fleet managers (wrap in non-fatal try/catch)
 - fetchDeviations(for tripId: UUID) async throws -> [RouteDeviationEvent]
 - acknowledgeDeviation(id: UUID, by adminId: UUID) async throws
 
@@ -57,33 +79,35 @@ Methods:
 
 ## Task 2 — Update EXISTING service files
 
-### TripService.swift — add these methods:
+Read each file fully before modifying. Add only the new methods listed — do not touch existing methods.
+
+### TripService.swift — add:
 - startTrip(tripId: UUID, startMileage: Double) async throws
-  — updates trips.status to "Active", sets actual_start_date = now(), start_mileage
-  — the DB trigger handles vehicle/driver status automatically
+  — updates trips SET status = "Active", actual_start_date = now(), start_mileage WHERE id = tripId
+  — DB triggers handle vehicle + driver status automatically — do NOT update vehicles or staff_members here
 - completeTrip(tripId: UUID, endMileage: Double) async throws
-  — updates trips.status to "Completed", sets actual_end_date = now(), end_mileage
+  — updates trips SET status = "Completed", actual_end_date = now(), end_mileage WHERE id = tripId
+  — DB triggers handle all stat updates — do NOT update vehicles or staff_members here
 - cancelTrip(tripId: UUID) async throws
-  — updates trips.status to "Cancelled"
+  — updates trips SET status = "Cancelled" WHERE id = tripId only
 - updateTripCoordinates(tripId: UUID, originLat: Double, originLng: Double, destLat: Double, destLng: Double, routePolyline: String) async throws
-  — updates the four coordinate columns and route_polyline on the trips row
 - rateDriver(tripId: UUID, rating: Int, note: String?, ratedById: UUID) async throws
-  — updates driver_rating, driver_rating_note, rated_by_id, rated_at on the trips row
+  — updates driver_rating, driver_rating_note, rated_by_id, rated_at in single .update() call
 
 ### VehicleInspectionService.swift — add:
-- submitInspectionWithPhotos(tripId: UUID, vehicleId: UUID, driverId: UUID, type: String, result: String, items: [[String:String]], photoUrls: [String], defectsReported: String?, notes: String?) async throws -> VehicleInspection
-  — inserts inspection row with photo_urls array
+- submitInspectionWithPhotos(..., photoUrls: [String], ...) async throws -> VehicleInspection
+  — adds photo_urls, is_defect_raised, raised_task_id to the insert payload
+  — photo_urls passed as Swift [String] array directly, not JSON-encoded
 
 ### MaintenanceTaskService.swift — add:
 - approveTask(taskId: UUID, approvedById: UUID, assignedToId: UUID) async throws
-  — updates status to "Assigned", sets approved_by_id, approved_at, assigned_to_id
+  — single .update() call: status="Assigned", approved_by_id, approved_at=now(), assigned_to_id
 - rejectTask(taskId: UUID, approvedById: UUID, reason: String) async throws
-  — updates status to "Cancelled", sets approved_by_id, approved_at, rejection_reason
+  — single .update() call: status="Cancelled", approved_by_id, approved_at=now(), rejection_reason
 
 ### WorkOrderService.swift — add:
 - updateRepairImages(workOrderId: UUID, imageUrls: [String]) async throws
-  — updates repair_image_urls array column
 - setEstimatedCompletion(workOrderId: UUID, estimatedAt: Date) async throws
 
 ## Output
-Write complete, compilable Swift files for all new services and the updated sections of existing services. Commit all to main branch. Follow the exact code style of existing service files in the repo.
+Complete compilable Swift files. Match the exact supabase client access pattern from existing files. Commit all to main branch.
