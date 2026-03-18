@@ -14,28 +14,6 @@ enum AuthDestination: Equatable {
     case maintenanceDashboard
 }
 
-// MARK: - StaffLoginRow  (decoded from sign-in edge function response)
-
-private struct StaffLoginRow: Decodable {
-    let id: String
-    let email: String
-    let role: String
-    let name: String?
-    let phone: String?
-    let is_first_login: Bool?
-    let is_profile_complete: Bool?
-    let is_approved: Bool?
-    let rejection_reason: String?
-    let created_at: String?
-}
-
-// MARK: - SignInPayload
-
-private struct SignInPayload: Encodable {
-    let email: String
-    let password: String
-}
-
 // MARK: - AuthManager
 
 @MainActor
@@ -60,6 +38,7 @@ final class AuthManager {
     var needsReauth: Bool = false
     private var currentOTP: String = ""
     var pendingOTPEmail: String?
+    private var pendingResetToken: String = ""
     private var resetOTP: String = ""
     private let autoLockSeconds: TimeInterval = 300
     /// Cooldown to prevent 2FA OTP spam (30 s window)
@@ -71,38 +50,13 @@ final class AuthManager {
     private init() { restoreSessionSilently() }
 
     // MARK: - Sign In
-    //
-    // Two-step login:
-    //   1. Call the `sign-in` edge function (verify_jwt: false, service-role on server).
-    //      - Verifies email+password against staff_members.password, bypassing RLS.
-    //      - Syncs the Supabase Auth password so step 2 always succeeds, even for
-    //        users whose password was previously changed only in staff_members.
-    //   2. Call supabase.auth.signInWithPassword() so auth.uid() is set for RLS.
 
     func signIn(email: String, password: String) async throws -> UserRole {
-        // Reset OTP cooldown for each fresh login attempt.
         otpLastSentAt = nil
 
-        // Step 1 — Verify credentials + sync Auth password via edge function
-        let row: StaffLoginRow
+        // Step 1 — Authenticate with Supabase Auth (bcrypt, server-side)
         do {
-            row = try await supabase.functions.invoke(
-                "sign-in",
-                options: FunctionInvokeOptions(body: SignInPayload(email: email, password: password))
-            )
-        } catch {
-            throw AuthError.invalidCredentials
-        }
-
-        guard let userId = UUID(uuidString: row.id) else {
-            throw AuthError.invalidCredentials
-        }
-
-        // Step 2 — Establish a real Supabase Auth session so auth.uid() != null.
-        // The edge function already synced the Auth password, so this succeeds
-        // even for users who previously changed their password (fixing drift).
-        do {
-            try await supabase.auth.signInWithPassword(
+            try await supabase.auth.signIn(
                 email: email,
                 password: password
             )
@@ -110,19 +64,51 @@ final class AuthManager {
             throw AuthError.invalidCredentials
         }
 
+        // Step 2 — Fetch staff profile via edge function (JWT now live)
+        struct StaffProfile: Decodable {
+            let id: String
+            let email: String
+            let name: String?
+            let role: String
+            let is_first_login: Bool?
+            let is_profile_complete: Bool?
+            let is_approved: Bool?
+            let rejection_reason: String?
+            let phone: String?
+            let created_at: String?
+        }
+
+        let profile: StaffProfile
+        do {
+            profile = try await supabase.functions.invoke(
+                "sign-in",
+                options: FunctionInvokeOptions()
+            )
+        } catch {
+            // Auth succeeded but profile fetch failed — roll back
+            try? await supabase.auth.signOut()
+            throw AuthError.invalidCredentials
+        }
+
+        guard let userId = UUID(uuidString: profile.id) else {
+            try? await supabase.auth.signOut()
+            throw AuthError.invalidCredentials
+        }
+
         let user = AuthUser(
             id: userId,
-            email: row.email,
-            role: UserRole(rawValue: row.role) ?? .driver,
-            isFirstLogin: row.is_first_login ?? true,
-            isProfileComplete: row.is_profile_complete ?? false,
-            isApproved: row.is_approved ?? false,
-            name: row.name,
-            rejectionReason: row.rejection_reason,
-            phone: row.phone,
-            createdAt: ISO8601DateFormatter().date(from: row.created_at ?? "") ?? Date()
+            email: profile.email,
+            role: UserRole(rawValue: profile.role) ?? .driver,
+            isFirstLogin: profile.is_first_login ?? true,
+            isProfileComplete: profile.is_profile_complete ?? false,
+            isApproved: profile.is_approved ?? false,
+            name: profile.name,
+            rejectionReason: profile.rejection_reason,
+            phone: profile.phone,
+            createdAt: ISO8601DateFormatter().date(from: profile.created_at ?? "") ?? Date()
         )
 
+        // Hash is kept for biometric reauth caching only — NOT used for Supabase Auth
         let hashed = CryptoService.hash(password: password)
         _ = KeychainService.save(hashed, forKey: Keys.hashedCred)
         _ = KeychainService.save(user, forKey: Keys.currentUser)
@@ -167,6 +153,7 @@ final class AuthManager {
         isAuthenticated = false
         needsReauth = false
         pendingOTPEmail = nil
+        pendingResetToken = ""
         otpLastSentAt = nil
         resetOTPLastSentAt = nil
         KeychainService.delete(key: Keys.currentUser)
@@ -188,6 +175,18 @@ final class AuthManager {
         currentUser = user
         isAuthenticated = true
         Task {
+            do {
+                // Prime the SDK session so auth.uid() is populated for RLS.
+                // This also triggers a token refresh if the access token is close
+                // to expiry. If the session is fully expired/gone, force re-login.
+                _ = try await supabase.auth.session
+            } catch {
+                // SDK has no valid session (e.g. token revoked, app reinstalled).
+                // Wipe our cached state and send the user back to Login.
+                await MainActor.run { self.signOut() }
+            }
+        }
+        Task {
             switch user.role {
             case .fleetManager:
                 await AppDataStore.shared.loadAll()
@@ -208,6 +207,9 @@ final class AuthManager {
         if let user = KeychainService.load(key: Keys.currentUser, as: AuthUser.self) {
             currentUser = user
         }
+        // Pre-prime the SDK session in the background so auth.uid() is set
+        // before the first DB query (which may happen before restoreSession is called).
+        Task { _ = try? await supabase.auth.session }
     }
 
     // MARK: - Routing
@@ -278,27 +280,21 @@ final class AuthManager {
 
     // MARK: - Password Management
     //
-    // IMPORTANT: Every password change must update BOTH:
-    //   a) staff_members.password  — used by the sign-in edge function for verification
-    //   b) Supabase Auth           — used by supabase.auth.signInWithPassword for sessions
-    // Skipping (b) causes RLS failures on the next login after a password change.
+    // Passwords are managed exclusively by Supabase Auth (bcrypt).
+    // CryptoService.hash is used only for local biometric reauth caching.
+    // staff_members has no password column.
 
     func updatePasswordAndFirstLogin(newPassword: String) async throws {
         guard var user = currentUser else { throw AuthError.invalidCredentials }
 
-        struct Payload: Encodable {
-            let password: String
-            let is_first_login: Bool
-        }
+        struct Payload: Encodable { let is_first_login: Bool }
 
-        // (a) Update staff_members table
         try await supabase
             .from("staff_members")
-            .update(Payload(password: newPassword, is_first_login: false))
+            .update(Payload(is_first_login: false))
             .eq("id", value: user.id.uuidString)
             .execute()
 
-        // (b) Keep Supabase Auth in sync so the next signInWithPassword succeeds
         try await supabase.auth.update(user: UserAttributes(password: newPassword))
 
         user.isFirstLogin = false
@@ -378,44 +374,88 @@ final class AuthManager {
             print("[AuthManager] requestPasswordReset skipped - cooldown active")
             return true
         }
+        pendingResetToken = ""
         do {
             struct EmailRow: Decodable { let id: String }
             let rows: [EmailRow] = try await supabase
                 .from("staff_members").select("id")
                 .eq("email", value: email).limit(1).execute().value
 
-            guard !rows.isEmpty else { return false }
+            guard let userRow = rows.first else { return false }
 
             pendingOTPEmail = email
+
             let otp = String(format: "%06d", Int.random(in: 100000...999999))
             resetOTP = otp
             resetOTPLastSentAt = Date()
             EmailService.sendResetOTP(to: email, otp: otp)
+
+            let resetToken = UUID().uuidString
+            pendingResetToken = resetToken
+
+            let expiresAt = ISO8601DateFormatter().string(
+                from: Date().addingTimeInterval(600)
+            )
+            struct TokenInsert: Encodable {
+                let email: String
+                let token: String
+                let user_id: String
+                let expires_at: String
+                let used: Bool
+            }
+            _ = try? await supabase
+                .from("password_reset_tokens")
+                .insert(TokenInsert(
+                    email: email,
+                    token: resetToken,
+                    user_id: userRow.id,
+                    expires_at: expiresAt,
+                    used: false
+                ))
+                .execute()
+
             return true
         } catch {
+            pendingResetToken = ""
             return false
         }
     }
 
     func resetPassword(code: String, newPassword: String) async throws {
+        // Validates in-memory OTP, then calls the reset-password edge
+        // function which updates Supabase Auth via auth.admin.updateUserById().
+        // No staff_members write — password column was dropped in migration
+        // 20260318000001_drop_plaintext_password_columns.
         try await Task.sleep(for: .milliseconds(600))
         guard code == resetOTP else { throw AuthError.invalidCredentials }
         guard let email = pendingOTPEmail else { throw AuthError.invalidCredentials }
+        guard !pendingResetToken.isEmpty else { throw AuthError.invalidCredentials }
 
-        // (a) Update staff_members.password
-        try await supabase
-            .from("staff_members")
-            .update(["password": newPassword])
-            .eq("email", value: email)
-            .execute()
+        struct ResetPayload: Encodable {
+            let email: String
+            let reset_token: String
+            let new_password: String
+        }
+        struct ResetResponse: Decodable { let success: Bool? }
 
-        // (b) Supabase Auth sync — the sign-in edge function re-syncs on the next
-        //     signIn() call, so the user can log in immediately with the new password.
-        //     (No active session here so supabase.auth.update is not available.)
+        do {
+            let _: ResetResponse = try await supabase.functions.invoke(
+                "reset-password",
+                options: FunctionInvokeOptions(body: ResetPayload(
+                    email: email,
+                    reset_token: pendingResetToken,
+                    new_password: newPassword
+                ))
+            )
+        } catch {
+            throw AuthError.invalidCredentials
+        }
+
         let hashed = CryptoService.hash(password: newPassword)
         _ = KeychainService.save(hashed, forKey: Keys.hashedCred)
 
         resetOTP = ""
+        pendingResetToken = ""
         pendingOTPEmail = nil
     }
 
@@ -450,7 +490,11 @@ final class AuthManager {
         if Date().timeIntervalSince1970 - ts > autoLockSeconds { needsReauth = true }
     }
 
-    func reauthCompleted() { needsReauth = false }
+    func reauthCompleted() {
+        needsReauth = false
+        // Re-prime SDK session after biometric unlock to ensure auth.uid() is set.
+        Task { _ = try? await supabase.auth.session }
+    }
 }
 
 // MARK: - AuthError

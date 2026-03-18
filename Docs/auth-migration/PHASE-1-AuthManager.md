@@ -20,8 +20,6 @@
 
 ---
 
-## Exact prompt — paste into Cursor
-
 ```
 Rewrite Sierra/Auth/AuthManager.swift for full Supabase Auth.
 The Supabase backend has been migrated:
@@ -183,7 +181,7 @@ emailExists, appDidEnterBackground, appWillEnterForeground, reauthCompleted.
 
 ## Build verification
 
-After Cursor applies the changes, confirm:
+After Applying the changes, confirm:
 
 - [ ] Build succeeds — zero errors
 - [ ] `StaffLoginRow` struct is gone

@@ -1,8 +1,20 @@
 import Foundation
 import SwiftUI
+import Supabase
 
 @Observable
 final class CreateStaffViewModel {
+    private struct CreateStaffAccountPayload: Encodable {
+        let email: String
+        let password: String
+        let name: String
+        let role: String
+    }
+
+    private struct CreateStaffAccountResponse: Decodable {
+        let id: String
+        let email: String
+    }
 
     // MARK: - Step 1: Role Selection
 
@@ -51,6 +63,10 @@ final class CreateStaffViewModel {
     @MainActor
     func createStaff() async {
         guard canSubmit, let role = selectedRole else { return }
+        guard role == .driver || role == .maintenancePersonnel else {
+            errorMessage = "Only Driver or Maintenance accounts can be created here."
+            return
+        }
 
         isLoading = true
         errorMessage = nil
@@ -58,41 +74,24 @@ final class CreateStaffViewModel {
         let tempPassword = generateTemporaryPassword()
         let trimmedName  = fullName.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
-        let newId        = UUID()
-        let now          = Date()
 
         do {
-            // Step 1: Build StaffMember with all v2 fields
-            let newStaff = StaffMember(
-                id:                    newId,
-                name:                  trimmedName,
-                role:                  role,
-                status:                .pendingApproval,
-                email:                 trimmedEmail,
-                phone:                 nil,
-                availability:          .unavailable,
-                dateOfBirth:           nil,
-                gender:                nil,
-                address:               nil,
-                emergencyContactName:  nil,
-                emergencyContactPhone: nil,
-                aadhaarNumber:         nil,
-                profilePhotoUrl:       nil,
-                isFirstLogin:          true,
-                isProfileComplete:     false,
-                isApproved:            false,
-                rejectionReason:       nil,
-                failedLoginAttempts:   0,
-                accountLockedUntil:    nil,
-                joinedDate:            now,
-                createdAt:             now,
-                updatedAt:             now
+            // Step 1: Provision Supabase Auth user + staff_members row via edge function.
+            let payload = CreateStaffAccountPayload(
+                email: trimmedEmail,
+                password: tempPassword,
+                name: trimmedName,
+                role: role.rawValue
             )
+            let created: CreateStaffAccountResponse = try await supabase.functions.invoke(
+                "create-staff-account",
+                options: FunctionInvokeOptions(body: payload)
+            )
+            guard UUID(uuidString: created.id) != nil else {
+                throw URLError(.badServerResponse)
+            }
 
-            // Step 2: Insert into staff_members with password column
-            try await StaffMemberService.addStaffMember(newStaff, password: tempPassword)
-
-            // Step 3: Email credentials via SwiftSMTP
+            // Step 2: Email credentials via SwiftSMTP
             try await EmailService.sendCredentials(
                 to:       trimmedEmail,
                 name:     trimmedName,

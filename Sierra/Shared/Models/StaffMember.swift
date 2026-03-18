@@ -77,8 +77,8 @@ struct StaffMember: Identifiable, Codable {
     var rejectionReason: String?
 
     // MARK: Security
-    var failedLoginAttempts: Int = 0      // failed_login_attempts (default 0)
-    var accountLockedUntil: Date?         // account_locked_until
+    var failedLoginAttempts: Int = 0
+    var accountLockedUntil: Date?
 
     // MARK: Timestamps
     var joinedDate: Date?
@@ -99,8 +99,6 @@ struct StaffMember: Identifiable, Codable {
         case isProfileComplete        = "is_profile_complete"
         case isApproved               = "is_approved"
         case rejectionReason          = "rejection_reason"
-        case failedLoginAttempts      = "failed_login_attempts"
-        case accountLockedUntil       = "account_locked_until"
         case joinedDate               = "joined_date"
         case createdAt                = "created_at"
         case updatedAt                = "updated_at"

@@ -38,6 +38,7 @@ final class ForgotPasswordViewModel {
 
     var isLoading: Bool = false
     var errorMessage: String?
+    var showErrorAlert: Bool = false
 
     // MARK: - Computed
 
@@ -149,6 +150,7 @@ final class ForgotPasswordViewModel {
         guard canSubmitNewPassword else { return }
         isLoading = true
         errorMessage = nil
+        showErrorAlert = false
 
         do {
             try await AuthManager.shared.resetPassword(
@@ -159,9 +161,18 @@ final class ForgotPasswordViewModel {
             withAnimation(.easeInOut(duration: 0.3)) {
                 step = .success
             }
+        } catch let error as AuthError {
+            isLoading = false
+            if error == .invalidCredentials {
+                errorMessage = "Invalid or expired reset code. Please request a new code."
+            } else {
+                errorMessage = error.errorDescription ?? "Failed to reset password. Please try again."
+            }
+            showErrorAlert = true
         } catch {
             isLoading = false
             errorMessage = "Failed to reset password. Please try again."
+            showErrorAlert = true
         }
     }
 

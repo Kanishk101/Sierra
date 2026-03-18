@@ -41,6 +41,17 @@ struct ForgotPasswordView: View {
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
+            .alert(
+                "Reset Failed",
+                isPresented: Binding(
+                    get: { viewModel.showErrorAlert },
+                    set: { viewModel.showErrorAlert = $0 }
+                )
+            ) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(viewModel.errorMessage ?? "Failed to reset password. Please try again.")
+            }
         }
     }
 

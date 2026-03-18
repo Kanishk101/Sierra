@@ -1,6 +1,5 @@
 import Foundation
 import SwiftUI
-import Supabase
 
 enum PasswordStrength: Int, Comparable {
     case weak = 0
@@ -54,6 +53,7 @@ final class ForcePasswordChangeViewModel {
 
     var isLoading: Bool = false
     var errorMessage: String?
+    var showErrorAlert: Bool = false
     var currentPasswordError: String?
     // awaitingOTP triggers the 2FA fullScreenCover in ForcePasswordChangeView
     var awaitingOTP: Bool = false
@@ -93,12 +93,10 @@ final class ForcePasswordChangeViewModel {
         guard canSubmit else { return }
         currentPasswordError = nil
         errorMessage = nil
+        showErrorAlert = false
         isLoading = true
 
-        // 1. Verify current password via a direct DB query.
-        //    NOTE: Do NOT call AuthManager.signIn() here. signIn() overwrites
-        //    currentUser with a fresh DB row where is_first_login is still true,
-        //    causing ContentView to re-route back to ForcePasswordChangeView.
+        // 1. Verify current password locally against the stored credential hash.
         let isValidCurrent = await verifyCurrentPasswordDirectly()
         guard isValidCurrent else {
             isLoading = false
@@ -114,7 +112,7 @@ final class ForcePasswordChangeViewModel {
         }
 
         do {
-            // 3. Update staff_members.password + is_first_login: false
+            // 3. Update is_first_login flag and Supabase Auth password.
             try await AuthManager.shared.updatePasswordAndFirstLogin(newPassword: newPassword)
 
             // 4. Generate OTP and fire SwiftSMTP in background
@@ -125,30 +123,21 @@ final class ForcePasswordChangeViewModel {
         } catch {
             isLoading = false
             errorMessage = "Failed to update password. Please try again."
+            showErrorAlert = true
         }
     }
 
     // MARK: - Private
 
-    /// Verifies the entered current password by querying staff_members directly.
-    /// Does NOT call signIn() to avoid overwriting AuthManager.currentUser
-    /// (which would reset is_first_login to true and cause ContentView to
-    ///  re-route back to the password change screen).
+    /// Verifies the entered current password using the last signed-in
+    /// credential hash stored in Keychain.
     private func verifyCurrentPasswordDirectly() async -> Bool {
-        guard let email = AuthManager.shared.currentUser?.email else { return false }
-        do {
-            struct PasswordCheck: Decodable { let password: String }
-            let rows: [PasswordCheck] = try await supabase
-                .from("staff_members")
-                .select("password")
-                .eq("email", value: email)
-                .limit(1)
-                .execute()
-                .value
-            guard let row = rows.first else { return false }
-            return row.password == currentPassword
-        } catch {
+        guard let stored = KeychainService.load(
+            key: "com.fleetOS.hashedCredential",
+            as: CryptoService.HashedCredential.self
+        ) else {
             return false
         }
+        return CryptoService.verify(password: currentPassword, credential: stored)
     }
 }

@@ -49,6 +49,11 @@ struct ForcePasswordChangeView: View {
         .onAppear {
             withAnimation(.spring(duration: 0.5, bounce: 0.25)) { appeared = true }
         }
+        .alert("Password Update Failed", isPresented: $viewModel.showErrorAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(viewModel.errorMessage ?? "Failed to update password. Please try again.")
+        }
         // 2FA OTP screen - shown after password change succeeds.
         .fullScreenCover(isPresented: $viewModel.awaitingOTP) {
             TwoFactorView(

@@ -3,6 +3,9 @@ import SwiftUI
 struct ChangePasswordView: View {
     @State private var newPassword: String = ""
     @State private var confirmPassword: String = ""
+    @State private var isLoading: Bool = false
+    @State private var errorMessage: String?
+    @State private var showErrorAlert: Bool = false
 
     var body: some View {
         ZStack {
@@ -50,7 +53,7 @@ struct ChangePasswordView: View {
                         )
 
                     Button {
-                        // Password change logic to be implemented with backend
+                        Task { await updatePassword() }
                     } label: {
                         Text("Update Password")
                             .font(.system(size: 17, weight: .semibold))
@@ -59,6 +62,7 @@ struct ChangePasswordView: View {
                             .frame(height: 54)
                             .background(Color.orange, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }
+                    .disabled(isLoading)
                     .padding(.top, 8)
                 }
                 .padding(24)
@@ -68,6 +72,33 @@ struct ChangePasswordView: View {
 
                 Spacer()
             }
+
+            if isLoading {
+                ProgressView()
+                    .progressViewStyle(.circular)
+            }
+        }
+        .alert("Password Update Failed", isPresented: $showErrorAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(errorMessage ?? "Unable to update password. Please try again.")
+        }
+    }
+
+    @MainActor
+    private func updatePassword() async {
+        guard !newPassword.isEmpty, newPassword == confirmPassword else { return }
+        isLoading = true
+        errorMessage = nil
+        showErrorAlert = false
+
+        do {
+            try await AuthManager.shared.updatePassword(newPassword)
+            isLoading = false
+        } catch {
+            isLoading = false
+            errorMessage = "Unable to update password. Please try again."
+            showErrorAlert = true
         }
     }
 }

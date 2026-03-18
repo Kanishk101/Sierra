@@ -30,7 +30,6 @@ struct StaffMemberInsertPayload: Encodable {
     let role: String
     let status: String
     let email: String
-    let password: String
     let phone: String?
     let availability: String
     let is_first_login: Bool
@@ -46,13 +45,12 @@ struct StaffMemberInsertPayload: Encodable {
     let profile_photo_url: String?
     let joined_date: String?
 
-    init(from s: StaffMember, password: String = "") {
+    init(from s: StaffMember) {
         self.id                      = s.id.uuidString
         self.name                    = s.name
         self.role                    = s.role.rawValue
         self.status                  = s.status.rawValue
         self.email                   = s.email
-        self.password                = password
         self.phone                   = s.phone
         self.availability            = s.availability.rawValue
         self.is_first_login          = s.isFirstLogin
@@ -107,7 +105,7 @@ struct StaffMemberUpdatePayload: Encodable {
     }
 }
 
-// MARK: - StaffMemberDB (full v2 decode struct with password)
+// MARK: - StaffMemberDB
 
 struct StaffMemberDB: Decodable {
     let id: UUID
@@ -115,7 +113,6 @@ struct StaffMemberDB: Decodable {
     let role: String
     let status: String
     let email: String
-    let password: String
     let phone: String?
     let availability: String
     let is_first_login: Bool?
@@ -234,10 +231,10 @@ struct StaffMemberService {
 
     // MARK: Insert
 
-    static func addStaffMember(_ member: StaffMember, password: String = "") async throws {
+    static func addStaffMember(_ member: StaffMember) async throws {
         try await supabase
             .from("staff_members")
-            .insert(StaffMemberInsertPayload(from: member, password: password))
+            .insert(StaffMemberInsertPayload(from: member))
             .execute()
     }
 
