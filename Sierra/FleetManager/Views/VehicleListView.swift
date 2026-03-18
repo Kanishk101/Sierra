@@ -8,6 +8,11 @@ struct VehicleListView: View {
     @State private var showAddSheet = false
     @State private var editingVehicle: Vehicle?
     @State private var deleteTarget: Vehicle?
+    @State private var isVehicleRefreshRunning = false
+    @State private var showRefreshTimeoutAlert = false
+
+    private let refreshTimeoutSeconds = 10
+    private let refreshPollIntervalNanoseconds: UInt64 = 200_000_000
 
     private var filteredVehicles: [Vehicle] {
         store.vehicles.filter { v in
@@ -69,10 +74,10 @@ struct VehicleListView: View {
                 VehicleDetailView(vehicleId: id)
             }
             .task {
-                if store.vehicles.isEmpty { await store.loadAll() }
+                if store.vehicles.isEmpty { await loadVehiclesWithTimeout() }
             }
             .refreshable {
-                await store.loadAll()
+                await loadVehiclesWithTimeout()
             }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -99,7 +104,35 @@ struct VehicleListView: View {
             } message: {
                 Text("This vehicle will be permanently removed.")
             }
+            .alert("Refresh Timed Out", isPresented: $showRefreshTimeoutAlert) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Vehicle refresh exceeded 10 seconds. Please pull to refresh again.")
+            }
         }
+    }
+
+    @MainActor
+    private func loadVehiclesWithTimeout() async {
+        guard !isVehicleRefreshRunning else { return }
+        isVehicleRefreshRunning = true
+
+        let tracker = RefreshTracker()
+        let refreshTask = Task {
+            await store.loadAll()
+            await tracker.markFinished()
+        }
+
+        defer { isVehicleRefreshRunning = false }
+
+        for _ in 0..<(refreshTimeoutSeconds * 5) {
+            if await tracker.isFinished() { return }
+            try? await Task.sleep(nanoseconds: refreshPollIntervalNanoseconds)
+        }
+
+        refreshTask.cancel()
+        store.loadError = "Vehicle refresh timed out after 10 seconds."
+        showRefreshTimeoutAlert = true
     }
 
     // MARK: - Filter Chips
@@ -230,6 +263,18 @@ struct VehicleListView: View {
         case .decommissioned: return "No decommissioned vehicles."
         case .none:           return "Add your first vehicle to get started."
         }
+    }
+}
+
+private actor RefreshTracker {
+    private var finished = false
+
+    func markFinished() {
+        finished = true
+    }
+
+    func isFinished() -> Bool {
+        finished
     }
 }
 

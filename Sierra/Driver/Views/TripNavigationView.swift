@@ -1,5 +1,5 @@
 import SwiftUI
-import MapboxNavigationCore
+import MapboxMaps //MapboxNavigation
 import MapboxDirections
 import CoreLocation
 

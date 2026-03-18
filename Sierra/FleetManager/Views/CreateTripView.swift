@@ -14,6 +14,8 @@ struct CreateTripView: View {
     // Step 1 — Trip Details
     @State private var origin = ""
     @State private var destination = ""
+    @State private var originError: String?
+    @State private var destinationError: String?
     @State private var scheduledDate = Date()
     @State private var scheduledEndDate: Date = Date().addingTimeInterval(3600 * 8)
     @State private var priority: TripPriority = .normal
@@ -37,6 +39,8 @@ struct CreateTripView: View {
     private var step1Valid: Bool {
         !origin.trimmingCharacters(in: .whitespaces).isEmpty
         && !destination.trimmingCharacters(in: .whitespaces).isEmpty
+        && routeFieldValidationError(for: origin) == nil
+        && routeFieldValidationError(for: destination) == nil
     }
 
     private var step2Valid: Bool { selectedDriverId != nil }
@@ -124,12 +128,46 @@ struct CreateTripView: View {
 
     // MARK: - Step 1: Trip Details
 
+    private func routeFieldValidationError(for value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return "This field is required." }
+        if trimmed.range(of: "[0-9]", options: .regularExpression) != nil {
+            return "Numbers are not allowed."
+        }
+        return nil
+    }
+
     private var step1View: some View {
         VStack(spacing: 0) {
             Form {
                 Section("Route") {
-                    TextField("Origin *", text: $origin)
-                    TextField("Destination *", text: $destination)
+                    VStack(alignment: .leading, spacing: 4) {
+                        TextField("Origin *", text: $origin)
+                            .onChange(of: origin) { _, newValue in
+                                let filtered = String(newValue.filter { !$0.isNumber })
+                                if filtered != newValue { origin = filtered }
+                                originError = routeFieldValidationError(for: filtered)
+                            }
+                        if let err = originError {
+                            Text(err)
+                                .font(.caption2)
+                                .foregroundStyle(.red)
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        TextField("Destination *", text: $destination)
+                            .onChange(of: destination) { _, newValue in
+                                let filtered = String(newValue.filter { !$0.isNumber })
+                                if filtered != newValue { destination = filtered }
+                                destinationError = routeFieldValidationError(for: filtered)
+                            }
+                        if let err = destinationError {
+                            Text(err)
+                                .font(.caption2)
+                                .foregroundStyle(.red)
+                        }
+                    }
                 }
                 Section("Schedule") {
                     DatePicker("Departure *",
@@ -395,6 +433,31 @@ struct CreateTripView: View {
         }
     }
 
+    // MARK: - Busy-Resource Validation
+
+    private func busyResourceValidationError(
+        resourceLabel: String,
+        trips: [Trip],
+        newTripStart: Date
+    ) -> String? {
+        let blockingTrips = trips.filter { $0.status == .active || $0.status == .scheduled }
+        guard !blockingTrips.isEmpty else {
+            return "Selected \(resourceLabel) is marked Busy. Please resolve the current assignment before scheduling this trip."
+        }
+
+        let explicitEndTimes = blockingTrips.compactMap { $0.actualEndDate ?? $0.scheduledEndDate }
+        guard let latestEnd = explicitEndTimes.max() else {
+            return "Selected \(resourceLabel) is Busy and has no explicit trip end time. Add an end time before assigning a future trip."
+        }
+
+        if latestEnd > newTripStart {
+            let endText = latestEnd.formatted(.dateTime.day().month(.abbreviated).year().hour().minute())
+            return "Selected \(resourceLabel) is Busy until \(endText). Choose another \(resourceLabel) or a later departure."
+        }
+
+        return nil
+    }
+
     // MARK: - Create Trip
 
     @MainActor
@@ -408,6 +471,62 @@ struct CreateTripView: View {
         async let destResult = geocodeAddress(destination.trimmingCharacters(in: .whitespaces))
         let (originCoords, destCoords) = await (originResult, destResult)
         do {
+            // Re-validate driver freshness
+            guard let latestDriver = try await StaffMemberService.fetchStaffMember(id: driverId) else {
+                errorMessage = "Selected driver no longer exists."
+                showError = true
+                isCreating = false
+                return
+            }
+            guard latestDriver.status == .active else {
+                errorMessage = "Selected driver is not active."
+                showError = true
+                isCreating = false
+                return
+            }
+            if latestDriver.availability != .available {
+                if latestDriver.availability == .busy {
+                    let driverTrips = try await TripService.fetchTrips(driverId: driverId)
+                    if let busyError = busyResourceValidationError(
+                        resourceLabel: "driver",
+                        trips: driverTrips,
+                        newTripStart: scheduledDate
+                    ) {
+                        errorMessage = busyError
+                        showError = true
+                        isCreating = false
+                        return
+                    }
+                } else {
+                    errorMessage = "Selected driver is unavailable. Please pick an available driver."
+                    showError = true
+                    isCreating = false
+                    return
+                }
+            }
+
+            // Re-validate vehicle freshness
+            guard let latestVehicle = try await VehicleService.fetchVehicle(id: vehicleId) else {
+                errorMessage = "Selected vehicle no longer exists."
+                showError = true
+                isCreating = false
+                return
+            }
+
+            if latestVehicle.status == .busy {
+                let vehicleTrips = try await TripService.fetchTrips(vehicleId: vehicleId)
+                if let busyError = busyResourceValidationError(
+                    resourceLabel: "vehicle",
+                    trips: vehicleTrips,
+                    newTripStart: scheduledDate
+                ) {
+                    errorMessage = busyError
+                    showError = true
+                    isCreating = false
+                    return
+                }
+            }
+
             let conflict = try await TripService.checkOverlap(
                 driverId: driverId,
                 vehicleId: vehicleId,
@@ -464,16 +583,21 @@ struct CreateTripView: View {
             )
 
             try await store.addTrip(trip)
-            try await TripService.markResourcesBusy(driverId: driverId, vehicleId: vehicleId)
 
-            if var v = store.vehicle(for: vehicleId) {
-                v.status = .busy
-                v.assignedDriverId = driverId.uuidString
-                try? await store.updateVehicle(v)
-            }
-            if var driver = store.staffMember(for: driverId) {
-                driver.availability = .busy
-                try? await store.updateStaffMember(driver)
+            // Only lock resources immediately when the trip starts now/past.
+            // Future scheduled trips should not force the driver/vehicle to busy yet.
+            if scheduledDate <= now {
+                try await TripService.markResourcesBusy(driverId: driverId, vehicleId: vehicleId)
+
+                if var v = store.vehicle(for: vehicleId) {
+                    v.status = .busy
+                    v.assignedDriverId = driverId.uuidString
+                    try? await store.updateVehicle(v)
+                }
+                if var driver = store.staffMember(for: driverId) {
+                    driver.availability = .busy
+                    try? await store.updateStaffMember(driver)
+                }
             }
 
             createdTrip = trip
