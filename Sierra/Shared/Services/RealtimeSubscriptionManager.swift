@@ -27,10 +27,13 @@ final class RealtimeSubscriptionManager {
         // 3. geofence_events
         subscribeToGeofenceEvents(store: store)
 
-        // 4. maintenance_tasks — update events
+        // 4. vehicles — live coordinate updates for FleetLiveMapView
+        subscribeToVehicleUpdates(store: store)
+
+        // 5. maintenance_tasks — update events
         subscribeToMaintenanceTasks(store: store)
 
-        // 5. notifications
+        // 6. notifications
         subscribeToNotifications(store: store)
     }
 
@@ -97,6 +100,32 @@ final class RealtimeSubscriptionManager {
         channels.append(channel)
     }
 
+    private func subscribeToVehicleUpdates(store: AppDataStore) {
+        let channel = supabase.channel("rt_vehicles")
+        _ = channel.onPostgresChange(UpdateAction.self, schema: "public", table: "vehicles") { [weak store] action in
+            guard let store else { return }
+            Task { @MainActor in
+                guard
+                    let idValue = action.record["id"],
+                    case let .string(idString) = idValue,
+                    let vehicleId = UUID(uuidString: idString),
+                    let idx = store.vehicles.firstIndex(where: { $0.id == vehicleId })
+                else { return }
+
+                if let lat = Self.doubleFromJSON(action.record["current_latitude"]) {
+                    store.vehicles[idx].currentLatitude = lat
+                }
+                if let lng = Self.doubleFromJSON(action.record["current_longitude"]) {
+                    store.vehicles[idx].currentLongitude = lng
+                }
+            }
+        }
+        Task {
+            do { try await channel.subscribeWithError() } catch { print("[RealtimeManager] vehicles error: \(error)") }
+        }
+        channels.append(channel)
+    }
+
     private func subscribeToMaintenanceTasks(store: AppDataStore) {
         let channel = supabase.channel("rt_maintenance_tasks")
         _ = channel.onPostgresChange(UpdateAction.self, schema: "public", table: "maintenance_tasks") { [weak store] action in
@@ -133,5 +162,19 @@ final class RealtimeSubscriptionManager {
             do { try await channel.subscribeWithError() } catch { print("[RealtimeManager] notifications error: \(error)") }
         }
         channels.append(channel)
+    }
+
+    private static func doubleFromJSON(_ value: AnyJSON?) -> Double? {
+        guard let value else { return nil }
+        switch value {
+        case .double(let d):
+            return d
+        case .integer(let i):
+            return Double(i)
+        case .string(let s):
+            return Double(s)
+        default:
+            return nil
+        }
     }
 }

@@ -31,7 +31,7 @@ Calling it produced a compile error or silent failure depending on SDK version.
 | `FleetLiveMapView.swift` | MapKit vehicle annotations with status colours, geofence `MKCircle` overlays, breadcrumb polyline for selected vehicle, filter sheet, vehicle tap → detail sheet |
 | `TripNavigationContainerView.swift` | Wires coordinator + HUD + navigation view together |
 
-### ⚠️ One Thing to Wire in Cursor
+### ⚠️ One Thing to Wire thats still left
 
 The admin fleet map (`FleetLiveMapView`) reads vehicle locations from `AppDataStore.shared.vehicles`
 which is correct — but **Realtime subscriptions for `vehicles` table must be active** while

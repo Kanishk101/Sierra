@@ -50,7 +50,7 @@ final class AuthManager {
     // MARK: - Sign In
     //
     // Two-step login:
-    //   1. supabase.auth.signInWithPassword() — Supabase Auth validates credentials
+    //   1. supabase.auth.signIn(email:password:) — Supabase Auth validates credentials
     //      (bcrypt, server-side). Sets auth.uid() so RLS works.
     //   2. sign-in edge function (verify_jwt: true) — fetches staff_members profile
     //      using the live JWT. No credentials involved.
@@ -59,10 +59,9 @@ final class AuthManager {
         otpLastSentAt = nil
 
         // Step 1 — Authenticate with Supabase Auth
-        // NOTE: signInWithPassword is the correct SDK v2 method.
-        // The old signIn(email:password:) was removed and caused silent failures.
+        // NOTE: This repo's Supabase Swift version uses signIn(email:password:).
         do {
-            try await supabase.auth.signInWithPassword(
+            try await supabase.auth.signIn(
                 email: email,
                 password: password
             )
