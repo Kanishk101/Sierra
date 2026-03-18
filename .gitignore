@@ -42,4 +42,4 @@ Secrets.xcconfig
 
 # Crash logs
 *.crash
-.idea
+.ideaSierra/Info.plist
