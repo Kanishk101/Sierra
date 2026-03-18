@@ -41,22 +41,28 @@ final class AuthManager {
     private var pendingResetToken: String = ""
     private var resetOTP: String = ""
     private let autoLockSeconds: TimeInterval = 300
-    /// Cooldown to prevent 2FA OTP spam (30 s window)
     private var otpLastSentAt: Date?
-    /// Cooldown to prevent reset OTP spam (30 s window)
     private var resetOTPLastSentAt: Date?
     private let otpCooldownSeconds: TimeInterval = 30
 
     private init() { restoreSessionSilently() }
 
     // MARK: - Sign In
+    //
+    // Two-step login:
+    //   1. supabase.auth.signInWithPassword() — Supabase Auth validates credentials
+    //      (bcrypt, server-side). Sets auth.uid() so RLS works.
+    //   2. sign-in edge function (verify_jwt: true) — fetches staff_members profile
+    //      using the live JWT. No credentials involved.
 
     func signIn(email: String, password: String) async throws -> UserRole {
         otpLastSentAt = nil
 
-        // Step 1 — Authenticate with Supabase Auth (bcrypt, server-side)
+        // Step 1 — Authenticate with Supabase Auth
+        // NOTE: signInWithPassword is the correct SDK v2 method.
+        // The old signIn(email:password:) was removed and caused silent failures.
         do {
-            try await supabase.auth.signIn(
+            try await supabase.auth.signInWithPassword(
                 email: email,
                 password: password
             )
@@ -120,8 +126,6 @@ final class AuthManager {
     }
 
     // MARK: - Complete Authentication
-    // Called after 2FA succeeds (or for first-login bypass).
-    // Triggers role-specific AppDataStore load so dashboards have data immediately.
 
     func completeAuthentication() {
         isAuthenticated = true
@@ -162,7 +166,6 @@ final class AuthManager {
         KeychainService.delete(key: Keys.backgroundTS)
         KeychainService.delete(key: Keys.biometricOn)
         KeychainService.delete(key: Keys.biometricPrompted)
-        // Invalidate the Supabase Auth session server-side
         Task { try? await supabase.auth.signOut() }
     }
 
@@ -176,13 +179,8 @@ final class AuthManager {
         isAuthenticated = true
         Task {
             do {
-                // Prime the SDK session so auth.uid() is populated for RLS.
-                // This also triggers a token refresh if the access token is close
-                // to expiry. If the session is fully expired/gone, force re-login.
                 _ = try await supabase.auth.session
             } catch {
-                // SDK has no valid session (e.g. token revoked, app reinstalled).
-                // Wipe our cached state and send the user back to Login.
                 await MainActor.run { self.signOut() }
             }
         }
@@ -207,8 +205,6 @@ final class AuthManager {
         if let user = KeychainService.load(key: Keys.currentUser, as: AuthUser.self) {
             currentUser = user
         }
-        // Pre-prime the SDK session in the background so auth.uid() is set
-        // before the first DB query (which may happen before restoreSession is called).
         Task { _ = try? await supabase.auth.session }
     }
 
@@ -422,10 +418,6 @@ final class AuthManager {
     }
 
     func resetPassword(code: String, newPassword: String) async throws {
-        // Validates in-memory OTP, then calls the reset-password edge
-        // function which updates Supabase Auth via auth.admin.updateUserById().
-        // No staff_members write — password column was dropped in migration
-        // 20260318000001_drop_plaintext_password_columns.
         try await Task.sleep(for: .milliseconds(600))
         guard code == resetOTP else { throw AuthError.invalidCredentials }
         guard let email = pendingOTPEmail else { throw AuthError.invalidCredentials }
@@ -492,7 +484,6 @@ final class AuthManager {
 
     func reauthCompleted() {
         needsReauth = false
-        // Re-prime SDK session after biometric unlock to ensure auth.uid() is set.
         Task { _ = try? await supabase.auth.session }
     }
 }
