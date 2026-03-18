@@ -243,9 +243,7 @@ final class AuthManager {
         print("🔑 [AuthManager.generateOTP] OTP = \(otp) → \(pendingOTPEmail ?? "no email")")
         #endif
         if let email = pendingOTPEmail {
-            Task.detached {
-                await sendEmail(userEmail: email, otp: otp)
-            }
+            EmailService.sendLoginOTP(to: email, otp: otp)
         }
         return otp
     }
@@ -366,7 +364,7 @@ final class AuthManager {
             let otp = String(format: "%06d", Int.random(in: 100000...999999))
             resetOTP = otp
             resetOTPLastSentAt = Date()
-            sendResetEmail(userEmail: email, otp: otp)
+            EmailService.sendResetOTP(to: email, otp: otp)
             return true
         } catch {
             return false

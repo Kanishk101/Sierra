@@ -9,46 +9,50 @@ import Supabase
 struct AlertsInboxView: View {
 
     @Environment(AppDataStore.self) private var store
-    @State private var emergencyAlerts: [EmergencyAlert] = []
-    @State private var routeDeviations: [RouteDeviationEvent] = []
-    @State private var isLoading = false
+    @State var vm = AlertsViewModel()
     @State private var reversedAddresses: [UUID: String] = [:]  // Safeguard 4: cache
 
-    var activeAlerts: [EmergencyAlert] {
-        emergencyAlerts.filter { $0.status == .active }
-    }
-
-    var unacknowledgedDeviations: [RouteDeviationEvent] {
-        routeDeviations.filter { !$0.isAcknowledged }
-    }
-
     var overdueMaintenanceTasks: [MaintenanceTask] {
-        store.maintenanceTasks.filter { $0.status == .pending && $0.dueDate < Date() }
+        guard vm.selectedFilter == .all || vm.selectedFilter == .maintenance else { return [] }
+        return store.maintenanceTasks.filter { $0.status == .pending && $0.dueDate < Date() }
     }
 
     var body: some View {
         List {
+            // Filter picker
+            Section {
+                Picker("Filter", selection: $vm.selectedFilter) {
+                    ForEach(AlertsViewModel.AlertFilter.allCases, id: \.self) { filter in
+                        Text(filter.rawValue).tag(filter)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets())
+                .padding(.horizontal, -4)
+            }
+
             // Emergency alerts
-            if !activeAlerts.isEmpty {
+            if !vm.activeAlerts.isEmpty {
                 Section {
-                    ForEach(activeAlerts) { alert in
+                    ForEach(vm.activeAlerts) { alert in
                         NavigationLink(value: alert.id) {
                             emergencyRow(alert)
                         }
                     }
                 } header: {
-                    sectionHeader("Emergency Alerts", count: activeAlerts.count, color: .red)
+                    sectionHeader("Emergency Alerts", count: vm.activeAlerts.count, color: .red)
                 }
             }
 
             // Route deviations
-            if !unacknowledgedDeviations.isEmpty {
+            if !vm.unacknowledgedDeviations.isEmpty {
                 Section {
-                    ForEach(unacknowledgedDeviations) { dev in
+                    ForEach(vm.unacknowledgedDeviations) { dev in
                         deviationRow(dev)
                     }
                 } header: {
-                    sectionHeader("Route Deviations", count: unacknowledgedDeviations.count, color: .yellow)
+                    sectionHeader("Route Deviations", count: vm.unacknowledgedDeviations.count, color: .yellow)
                 }
             }
 
@@ -63,7 +67,7 @@ struct AlertsInboxView: View {
                 }
             }
 
-            if activeAlerts.isEmpty && unacknowledgedDeviations.isEmpty && overdueMaintenanceTasks.isEmpty {
+            if vm.activeAlerts.isEmpty && vm.unacknowledgedDeviations.isEmpty && overdueMaintenanceTasks.isEmpty {
                 Section {
                     VStack(spacing: 12) {
                         Image(systemName: "checkmark.shield.fill")
@@ -81,15 +85,15 @@ struct AlertsInboxView: View {
         .navigationTitle("Alerts")
         .navigationBarTitleDisplayMode(.large)
         .task {
-            await loadAlerts()
+            await vm.load()
         }
         .refreshable {
-            await loadAlerts()
+            await vm.load()
         }
         .navigationDestination(for: UUID.self) { alertId in
-            if let alert = emergencyAlerts.first(where: { $0.id == alertId }) {
+            if let alert = vm.emergencyAlerts.first(where: { $0.id == alertId }) {
                 AlertDetailView(alert: alert) {
-                    Task { await loadAlerts() }
+                    Task { await vm.load() }
                 }
             }
         }
@@ -193,39 +197,12 @@ struct AlertsInboxView: View {
         return "\(Int(interval / 86400))d ago"
     }
 
-    // MARK: - Load
-
-    private func loadAlerts() async {
-        isLoading = true
-        do {
-            emergencyAlerts = try await EmergencyAlertService.fetchAllEmergencyAlerts()
-        } catch {
-            print("[AlertsInbox] Emergency alerts error: \(error)")
-        }
-        do {
-            let deviations: [RouteDeviationEvent] = try await supabase
-                .from("route_deviation_events")
-                .select()
-                .eq("is_acknowledged", value: false)
-                .order("detected_at", ascending: false)
-                .limit(50)
-                .execute()
-                .value
-            routeDeviations = deviations
-        } catch {
-            print("[AlertsInbox] Deviations error: \(error)")
-        }
-        isLoading = false
-    }
-
-    // MARK: - Reverse Geocode (Safeguard 4: cached, uses MKReverseGeocodingRequest on iOS 18+)
+    // MARK: - Reverse Geocode (Safeguard 4: cached, uses CLGeocoder)
 
     private func reverseGeocode(_ alert: EmergencyAlert) async {
         guard reversedAddresses[alert.id] == nil else { return }  // already cached
         do {
             let location = CLLocation(latitude: alert.latitude, longitude: alert.longitude)
-            // CLGeocoder is deprecated in iOS 26; MapKit replacement APIs are still stabilizing.
-            // Keep CLGeocoder for now to avoid breaking builds; revisit when MKReverseGeocodingRequest is fully available.
             let placemarks = try await CLGeocoder().reverseGeocodeLocation(location)
             if let pm = placemarks.first {
                 let parts = [pm.name, pm.locality, pm.administrativeArea].compactMap { $0 }

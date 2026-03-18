@@ -363,4 +363,17 @@ struct TripService {
             .eq("id", value: tripId.uuidString)
             .execute()
     }
+
+    // MARK: - Reassign Vehicle
+
+    /// Reassign a trip to a different vehicle (e.g. after pre-trip inspection failure).
+    /// DB trigger `trg_trip_started` handles vehicle status transitions automatically.
+    static func reassignVehicle(tripId: UUID, newVehicleId: UUID) async throws {
+        struct Payload: Encodable { let vehicle_id: String }
+        try await supabase
+            .from("trips")
+            .update(Payload(vehicle_id: newVehicleId.uuidString))
+            .eq("id", value: tripId.uuidString)
+            .execute()
+    }
 }

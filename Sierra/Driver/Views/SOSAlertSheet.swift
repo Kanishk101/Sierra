@@ -11,16 +11,7 @@ struct SOSAlertSheet: View {
     @Environment(AppDataStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
-    @State private var alertType: EmergencyAlertType = .sos
-    @State private var descriptionText = ""
-    @State private var isSending = false
-    @State private var alertSent = false
-    @State private var errorMessage: String?
-    @State private var showError = false
-    @State private var gpsRetryCount = 0
-
-    private let locationManager = CLLocationManager()
-    private var currentUserId: UUID { AuthManager.shared.currentUser?.id ?? UUID() }
+    @State private var vm = SOSAlertViewModel()
 
     var body: some View {
         ZStack {
@@ -54,147 +45,97 @@ struct SOSAlertSheet: View {
                     .foregroundStyle(.white)
 
                 // Alert type picker
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("ALERT TYPE")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.white.opacity(0.7))
-                        .kerning(1)
-
-                    Picker("Type", selection: $alertType) {
-                        ForEach(EmergencyAlertType.allCases, id: \.self) { type in
-                            Text(type.rawValue).tag(type)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                }
-                .padding(.horizontal, 24)
+                alertTypePicker
 
                 // Description
-                TextField("Describe the situation...", text: $descriptionText, axis: .vertical)
-                    .lineLimit(3...5)
-                    .padding(12)
-                    .background(.white.opacity(0.15), in: RoundedRectangle(cornerRadius: 10))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 24)
+                descriptionField
 
                 // Confirmation
-                if alertSent {
-                    VStack(spacing: 8) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 48))
-                            .foregroundStyle(.white)
-                        Text("Alert Sent — Help is on the way")
-                            .font(.headline)
-                            .foregroundStyle(.white)
-                    }
-                    .transition(.scale.combined(with: .opacity))
+                if vm.sentSuccessfully {
+                    confirmationView
                 }
 
                 Spacer()
 
                 // Send button (Safeguard 1: once only)
-                if !alertSent {
-                    Button {
-                        Task { await sendAlert() }
-                    } label: {
-                        HStack(spacing: 8) {
-                            if isSending {
-                                ProgressView().tint(.red)
-                            }
-                            Text("SEND ALERT")
-                                .font(.title3.weight(.black))
-                        }
-                        .foregroundStyle(.red)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 60)
-                        .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
-                    }
-                    .disabled(alertSent || isSending)
-                    .padding(.horizontal, 24)
+                if !vm.sentSuccessfully {
+                    sendButton
                 }
 
                 Spacer(minLength: 40)
             }
         }
-        .alert("Error", isPresented: $showError) {
-            Button("OK") {}
+        .alert("Error", isPresented: .constant(vm.error != nil)) {
+            Button("OK") { vm.error = nil }
         } message: {
-            Text(errorMessage ?? "Something went wrong")
+            Text(vm.error ?? "Something went wrong")
         }
     }
 
-    // MARK: - Send (Safeguards 1 + 2)
+    // MARK: - Subviews
 
-    private func sendAlert() async {
-        guard !alertSent && !isSending else { return }
-        isSending = true
+    private var alertTypePicker: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("ALERT TYPE")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.white.opacity(0.7))
+                .kerning(1)
 
-        // Safeguard 2: GPS validation
-        var latitude: Double = 0
-        var longitude: Double = 0
-
-        if let loc = locationManager.location,
-           loc.coordinate.latitude != 0 || loc.coordinate.longitude != 0 {
-            latitude = loc.coordinate.latitude
-            longitude = loc.coordinate.longitude
-        } else if gpsRetryCount < 5 {
-            gpsRetryCount += 1
-            isSending = false
-            errorMessage = "Acquiring GPS location... Please wait and try again."
-            showError = true
-            return
-        }
-        // After 5 retries, allow submission with (0,0) but warn
-
-        do {
-            let alert = EmergencyAlert(
-                id: UUID(),
-                driverId: currentUserId,
-                tripId: tripId,
-                vehicleId: vehicleId,
-                latitude: latitude,
-                longitude: longitude,
-                alertType: alertType,
-                status: .active,
-                description: descriptionText.isEmpty ? nil : descriptionText,
-                acknowledgedBy: nil,
-                acknowledgedAt: nil,
-                resolvedAt: nil,
-                triggeredAt: Date(),
-                createdAt: Date()
-            )
-
-            try await EmergencyAlertService.addEmergencyAlert(alert)
-
-            // Notify all fleet managers
-            let fms = store.staff.filter { $0.role == .fleetManager }
-            let notifType: NotificationType = (alertType == .defect) ? .defectAlert : .sosAlert
-            for fm in fms {
-                do {
-                    try await NotificationService.insertNotification(
-                        recipientId: fm.id,
-                        type: notifType,
-                        title: "\(alertType.rawValue) Alert",
-                        body: "Driver emergency: \(alertType.rawValue)\(descriptionText.isEmpty ? "" : " — \(descriptionText)")",
-                        entityType: "emergency_alert",
-                        entityId: alert.id
-                    )
-                } catch {
-                    print("[SOS] Non-fatal: notification to FM \(fm.id) failed")
+            Picker("Type", selection: $vm.alertType) {
+                ForEach(EmergencyAlertType.allCases, id: \.self) { type in
+                    Text(type.rawValue).tag(type)
                 }
             }
-
-            withAnimation { alertSent = true }
-
-            // Dismiss after 3 seconds
-            try? await Task.sleep(nanoseconds: 3_000_000_000)
-            dismiss()
-
-        } catch {
-            isSending = false
-            errorMessage = "Failed to send alert. Tap again to retry."
-            showError = true
+            .pickerStyle(.segmented)
         }
+        .padding(.horizontal, 24)
+    }
+
+    private var descriptionField: some View {
+        TextField("Describe the situation...", text: $vm.descriptionText, axis: .vertical)
+            .lineLimit(3...5)
+            .padding(12)
+            .background(.white.opacity(0.15), in: RoundedRectangle(cornerRadius: 10))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 24)
+    }
+
+    private var confirmationView: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 48))
+                .foregroundStyle(.white)
+            Text("Alert Sent — Help is on the way")
+                .font(.headline)
+                .foregroundStyle(.white)
+        }
+        .transition(.scale.combined(with: .opacity))
+    }
+
+    private var sendButton: some View {
+        Button {
+            Task {
+                await vm.triggerSOS(vehicleId: vehicleId, tripId: tripId, store: store)
+                if vm.sentSuccessfully {
+                    try? await Task.sleep(nanoseconds: 3_000_000_000)
+                    dismiss()
+                }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                if vm.isSending {
+                    ProgressView().tint(.red)
+                }
+                Text("SEND ALERT")
+                    .font(.title3.weight(.black))
+            }
+            .foregroundStyle(.red)
+            .frame(maxWidth: .infinity)
+            .frame(height: 60)
+            .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
+        }
+        .disabled(vm.sentSuccessfully || vm.isSending)
+        .padding(.horizontal, 24)
     }
 }

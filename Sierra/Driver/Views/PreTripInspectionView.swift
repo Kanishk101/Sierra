@@ -154,7 +154,12 @@ struct PreTripInspectionView: View {
     // MARK: - Step 2: Photos
 
     private var photoStep: some View {
-        VStack(spacing: 16) {
+        let selectedPhotoCount = photoItems.count
+        let photoButtonTitle = selectedPhotoCount == 0
+            ? "Select Photos"
+            : "\(selectedPhotoCount) photo(s) selected"
+
+        return VStack(spacing: 16) {
             Spacer()
 
             Image(systemName: "camera.fill")
@@ -176,9 +181,7 @@ struct PreTripInspectionView: View {
             ) {
                 HStack {
                     Image(systemName: "photo.on.rectangle.angled")
-                    Text(photoItems.isEmpty
-                         ? "Select Photos"
-                         : "\(photoItems.count) photo(s) selected")
+                    Text(photoButtonTitle)
                 }
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(SierraTheme.Colors.ember)

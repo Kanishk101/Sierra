@@ -2,6 +2,9 @@ import Foundation
 import CryptoKit
 
 /// Password hashing using SHA-256 + random salt via CryptoKit.
+// COMPLIANCE: OTP values are NEVER stored raw.
+// Only the SHA-256 hash is persisted to two_factor_sessions.otp_hash
+// and proof_of_deliveries.otp_hash. See Sprint 2 security audit.
 struct CryptoService {
 
     struct HashedCredential: Codable {

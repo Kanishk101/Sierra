@@ -3,6 +3,7 @@ import SwiftUI
 struct FleetManagerTabView: View {
     // Safeguard 1: ViewModel persisted at TabView level so map survives tab switches
     @State private var mapViewModel = FleetLiveMapViewModel()
+    @State private var alertsVM = AlertsViewModel()
     @State private var showNotifications = false
     @Environment(AppDataStore.self) private var store
 
@@ -32,9 +33,10 @@ struct FleetManagerTabView: View {
             }
             Tab("Alerts", systemImage: "bell.badge.fill") {
                 NavigationStack {
-                    AlertsInboxView()
+                    AlertsInboxView(vm: alertsVM)
                 }
             }
+            .badge(alertsVM.unreadCount)
             Tab("Vehicles", systemImage: "car.fill") {
                 NavigationStack {
                     VehicleStatusView()
@@ -52,6 +54,11 @@ struct FleetManagerTabView: View {
             }
             Tab("Reports", systemImage: "doc.text.fill") {
                 ReportsView()
+            }
+            Tab("Geofences", systemImage: "mappin.and.ellipse") {
+                NavigationStack {
+                    GeofenceListView()
+                }
             }
             Tab("Settings", systemImage: "gearshape.fill") {
                 settingsTab()

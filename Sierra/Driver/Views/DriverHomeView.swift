@@ -11,6 +11,8 @@ struct DriverHomeView: View {
     @State private var availabilitySwitch = false
     @State private var isUpdatingAvailability = false
     @State private var didRunDebugChecks = false
+    @State private var showFuelLog = false
+    @State private var showMaintenanceRequest = false
 
     private var user: AuthUser? { AuthManager.shared.currentUser }
 
@@ -66,6 +68,8 @@ struct DriverHomeView: View {
                         currentRouteBanner
                             .padding(.top, -30)
 
+                        quickActionsRow
+
                         upcomingRidesCard
 
                         if displayTrips.isEmpty {
@@ -97,6 +101,24 @@ struct DriverHomeView: View {
         }
         .onChange(of: isAvailable) { _, newValue in
             availabilitySwitch = newValue
+        }
+        .sheet(isPresented: $showFuelLog) {
+            if let vehicleIdStr = currentTrip?.vehicleId,
+               let vehicleId = UUID(uuidString: vehicleIdStr),
+               let driverId = driverStaffId {
+                FuelLogView(vehicleId: vehicleId, driverId: driverId, tripId: currentTrip?.id)
+            }
+        }
+        .sheet(isPresented: $showMaintenanceRequest) {
+            if let vehicleIdStr = currentTrip?.vehicleId,
+               let vehicleId = UUID(uuidString: vehicleIdStr),
+               let driverId = driverStaffId {
+                DriverMaintenanceRequestView(
+                    vehicleId: vehicleId,
+                    driverId: driverId,
+                    tripId: currentTrip?.id
+                )
+            }
         }
     }
 
@@ -213,6 +235,60 @@ struct DriverHomeView: View {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .stroke(Color.white.opacity(0.42), lineWidth: 1)
         )
+    }
+
+    // MARK: - Quick Actions
+
+    private var quickActionsRow: some View {
+        HStack(spacing: 12) {
+            Button {
+                showFuelLog = true
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "fuelpump.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("Log Fuel")
+                        .font(.system(size: 14, weight: .semibold))
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 42)
+                .background(
+                    LinearGradient(
+                        colors: [Color(red: 0.95, green: 0.55, blue: 0.10), Color(red: 0.90, green: 0.42, blue: 0.08)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    ),
+                    in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                )
+            }
+            .disabled(currentTrip == nil)
+            .opacity(currentTrip == nil ? 0.5 : 1.0)
+
+            Button {
+                showMaintenanceRequest = true
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "wrench.and.screwdriver.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("Report Issue")
+                        .font(.system(size: 14, weight: .semibold))
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 42)
+                .background(
+                    LinearGradient(
+                        colors: [Color(red: 0.85, green: 0.25, blue: 0.20), Color(red: 0.75, green: 0.18, blue: 0.15)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    ),
+                    in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                )
+            }
+            .disabled(currentTrip == nil)
+            .opacity(currentTrip == nil ? 0.5 : 1.0)
+        }
     }
 
     // MARK: - Upcoming
@@ -551,16 +627,16 @@ struct DriverHomeView: View {
 
     private func persistAvailability(_ available: Bool) async -> Bool {
         if !available, currentTrip != nil {
-            await presentAvailabilityError(.tripAssigned)
+            presentAvailabilityError(.tripAssigned)
             return false
         }
         if driverMember?.availability == .busy {
-            await presentAvailabilityError(.busy)
+            presentAvailabilityError(.busy)
             return false
         }
         if isAvailable == available { return true }
         guard let id = driverStaffId else {
-            await presentAvailabilityError(.missingDriverId)
+            presentAvailabilityError(.missingDriverId)
             return false
         }
 
@@ -573,7 +649,7 @@ struct DriverHomeView: View {
             }
             let confirmed = store.staff.first(where: { $0.id == id })?.availability == expected
             guard confirmed else {
-                await presentAvailabilityError(
+                presentAvailabilityError(
                     .stateMismatch(
                         expected: expected.rawValue,
                         actual: store.staff.first(where: { $0.id == id })?.availability.rawValue ?? "nil"
@@ -594,7 +670,7 @@ struct DriverHomeView: View {
             await MainActor.run { isUpdatingAvailability = false }
             return true
         } catch {
-            await presentAvailabilityError(.serviceError(error.localizedDescription))
+            presentAvailabilityError(.serviceError(error.localizedDescription))
             await MainActor.run { isUpdatingAvailability = false }
             return false
         }

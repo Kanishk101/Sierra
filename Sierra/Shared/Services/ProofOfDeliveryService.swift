@@ -15,6 +15,8 @@ struct ProofOfDeliveryPayload: Encodable {
     let recipientName: String?
     let deliveryLatitude: Double?
     let deliveryLongitude: Double?
+    let deliveryOtpHash: String?
+    let deliveryOtpExpiresAt: String?
     let capturedAt: String
 
     enum CodingKeys: String, CodingKey {
@@ -27,6 +29,8 @@ struct ProofOfDeliveryPayload: Encodable {
         case recipientName     = "recipient_name"
         case deliveryLatitude  = "delivery_latitude"
         case deliveryLongitude = "delivery_longitude"
+        case deliveryOtpHash   = "delivery_otp_hash"
+        case deliveryOtpExpiresAt = "delivery_otp_expires_at"
         case capturedAt        = "captured_at"
     }
 
@@ -42,6 +46,8 @@ struct ProofOfDeliveryPayload: Encodable {
         self.recipientName     = pod.recipientName
         self.deliveryLatitude  = pod.deliveryLatitude
         self.deliveryLongitude = pod.deliveryLongitude
+        self.deliveryOtpHash   = pod.deliveryOtpHash
+        self.deliveryOtpExpiresAt = pod.deliveryOtpExpiresAt.map { fmt.string(from: $0) }
         self.capturedAt        = fmt.string(from: pod.capturedAt)
     }
 }

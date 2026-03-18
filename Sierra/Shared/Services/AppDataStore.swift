@@ -47,6 +47,8 @@ final class AppDataStore {
     var currentTripDeviations: [RouteDeviationEvent] = []
     var activeTripExpenses: [TripExpense] = []
     var sparePartsRequests: [SparePartsRequest] = []
+    var vehicleLocations: [String: VehicleLocationHistory] = [:]  // vehicleId → latest location
+    var routeDeviationEvents: [RouteDeviationEvent] = []
     var isLoading: Bool = false
     var loadError: String?
 

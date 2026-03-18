@@ -4,6 +4,7 @@ import UIKit
 struct DriverTabView: View {
 
     @Environment(AppDataStore.self) private var store
+    @State private var bannerCoordinator = BannerCoordinator()
 
     init() {
         configureTabBarAppearance()
@@ -29,11 +30,25 @@ struct DriverTabView: View {
                     NotificationCentreView()
                 }
             }
+            .badge(store.unreadNotificationCount)
             Tab("Profile", systemImage: "person.fill") {
                 settingsTab()
             }
         }
         .tint(.orange)
+        .overlay(alignment: .top) {
+            if let banner = bannerCoordinator.current {
+                NotificationBannerView(title: banner.title, message: banner.body) {
+                    bannerCoordinator.dismiss()
+                    banner.onTap()
+                }
+            }
+        }
+        .onChange(of: store.notifications.count) { _, _ in
+            if let latest = store.notifications.first, !latest.isRead {
+                bannerCoordinator.show(.init(title: latest.title, body: latest.body))
+            }
+        }
     }
 
     private func configureTabBarAppearance() {

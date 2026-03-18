@@ -13,6 +13,7 @@ struct AlertDetailView: View {
 
     @State private var isAcknowledging = false
     @State private var isResolving = false
+    @State private var showReassignment = false
     @State private var errorMessage: String?
     @State private var showError = false
 
@@ -60,6 +61,11 @@ struct AlertDetailView: View {
             Button("OK") {}
         } message: {
             Text(errorMessage ?? "Something went wrong")
+        }
+        .sheet(isPresented: $showReassignment) {
+            if let tripId = alert.tripId {
+                VehicleReassignmentSheet(tripId: tripId)
+            }
         }
     }
 
@@ -210,6 +216,22 @@ struct AlertDetailView: View {
                         .foregroundStyle(SierraTheme.Colors.info)
                         .frame(maxWidth: .infinity).frame(height: 46)
                         .background(SierraTheme.Colors.info.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
+                }
+            }
+
+            // Vehicle reassignment for inspection failures
+            if alert.alertType == .defect, alert.tripId != nil {
+                Button {
+                    showReassignment = true
+                } label: {
+                    HStack {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                        Text("Reassign Vehicle")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity).frame(height: 46)
+                    .background(SierraTheme.Colors.ember, in: RoundedRectangle(cornerRadius: 12))
                 }
             }
         }

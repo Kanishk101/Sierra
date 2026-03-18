@@ -115,4 +115,84 @@ struct EmailService {
             }
         }
     }
+
+    // MARK: - 2FA Login OTP (migrated from sendEmail.swift)
+
+    /// Sends a 2FA login verification OTP email.
+    static func sendLoginOTP(to email: String, otp: String) {
+        let smtp = SMTP(
+            hostname: smtpHost,
+            email:    smtpEmail,
+            password: smtpPassword
+        )
+
+        let mail = Mail(
+            from: Mail.User(name: senderName, email: smtpEmail),
+            to:   [Mail.User(name: "User", email: email)],
+            subject: "🔐 Your Login Verification Code - Sierra FMS",
+            text: """
+            Sierra Fleet Manager - Login Verification
+            ==========================================
+
+            Your two-factor authentication code:
+
+            \(otp)
+
+            This code is valid for 10 minutes.
+            Do not share it with anyone.
+
+            If you did not attempt to sign in to Sierra Fleet Manager,
+            please contact your fleet administrator immediately.
+
+            - Sierra Fleet Manager System
+            """
+        )
+
+        smtp.send(mail) { error in
+            if let error { print("[EmailService] 2FA email error: \(error)") }
+            else          { print("[EmailService] 2FA OTP sent \u{2705} to \(email)") }
+        }
+    }
+
+    // MARK: - Password Reset OTP (migrated from sendEmail.swift)
+
+    /// Sends a password reset OTP email.
+    static func sendResetOTP(to email: String, otp: String) {
+        let smtp = SMTP(
+            hostname: smtpHost,
+            email:    smtpEmail,
+            password: smtpPassword
+        )
+
+        let mail = Mail(
+            from: Mail.User(name: senderName, email: smtpEmail),
+            to:   [Mail.User(name: "User", email: email)],
+            subject: "🔑 Password Reset Code - Sierra FMS",
+            text: """
+            Sierra Fleet Manager - Password Reset Request
+            =============================================
+
+            We received a request to reset your Sierra FMS account password.
+
+            Your password reset code:
+
+            \(otp)
+
+            Enter this code in the app to set a new password.
+            Valid for 10 minutes.
+
+            ⚠️  Did not request this?
+            If you did NOT ask for a password reset, ignore this email.
+            Your password will remain unchanged and no action is needed.
+
+            - Sierra Fleet Manager System
+            """
+        )
+
+        smtp.send(mail) { error in
+            if let error { print("[EmailService] Reset email error: \(error)") }
+            else          { print("[EmailService] Reset OTP sent \u{2705} to \(email)") }
+        }
+    }
 }
+
