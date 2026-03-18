@@ -58,14 +58,22 @@ struct AddVehicleView: View {
     private var isEditing: Bool { editingVehicle != nil }
 
     private func requiredLabel(_ title: String) -> Text {
-        Text(title) + Text(" *").foregroundStyle(.red)
+        var label = AttributedString("\(title) ")
+        var star = AttributedString("*")
+        star.foregroundColor = .red
+        label.append(star)
+        return Text(label)
     }
 
     private func requiredPrompt(_ title: String, trailing: String? = nil) -> Text {
+        var label = AttributedString("\(title) ")
+        var star = AttributedString("*")
+        star.foregroundColor = .red
+        label.append(star)
         if let trailing, !trailing.isEmpty {
-            return Text("\(title) ") + Text("*").foregroundStyle(.red) + Text(" \(trailing)")
+            label.append(AttributedString(" \(trailing)"))
         }
-        return Text("\(title) ") + Text("*").foregroundStyle(.red)
+        return Text(label)
     }
 
     private let defaultVehicleColors: [String] = [

@@ -215,11 +215,7 @@ struct CreateTripView: View {
 
     private var step2View: some View {
         VStack(spacing: 0) {
-            let drivers = store.staff.filter {
-                $0.role == .driver &&
-                $0.status == .active &&
-                $0.availability == .available
-            }
+            let drivers = store.availableDrivers()
 
             if drivers.isEmpty {
                 VStack(spacing: 10) {

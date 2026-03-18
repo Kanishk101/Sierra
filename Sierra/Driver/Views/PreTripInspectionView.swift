@@ -2,6 +2,7 @@ import SwiftUI
 import PhotosUI
 
 /// Multi-step pre-trip inspection form (checklist → photos → summary).
+@MainActor
 struct PreTripInspectionView: View {
 
     let tripId: UUID
@@ -14,6 +15,7 @@ struct PreTripInspectionView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var viewModel: PreTripInspectionViewModel
+    @State private var photoItems: [PhotosPickerItem] = []
 
     init(tripId: UUID, vehicleId: UUID, driverId: UUID, inspectionType: InspectionType = .preTripInspection, onComplete: @escaping () -> Void) {
         self.tripId = tripId
@@ -168,15 +170,15 @@ struct PreTripInspectionView: View {
                 .multilineTextAlignment(.center)
 
             PhotosPicker(
-                selection: $viewModel.selectedPhotoItems,
+                selection: $photoItems,
                 maxSelectionCount: 5,
                 matching: .images
             ) {
                 HStack {
                     Image(systemName: "photo.on.rectangle.angled")
-                    Text(viewModel.selectedPhotoItems.isEmpty
+                    Text(photoItems.isEmpty
                          ? "Select Photos"
-                         : "\(viewModel.selectedPhotoItems.count) photo(s) selected")
+                         : "\(photoItems.count) photo(s) selected")
                 }
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(SierraTheme.Colors.ember)
@@ -185,7 +187,8 @@ struct PreTripInspectionView: View {
                 .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .strokeBorder(SierraTheme.Colors.ember.opacity(0.5), lineWidth: 1.5))
             }
-            .onChange(of: viewModel.selectedPhotoItems) { _, _ in
+            .onChange(of: photoItems) { _, newItems in
+                viewModel.selectedPhotoItems = newItems
                 Task { @MainActor in
                     await viewModel.loadPhotos()
                 }

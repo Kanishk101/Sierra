@@ -109,11 +109,11 @@ final class NotificationService {
             // then decoding SierraNotification in a detached Task to avoid
             // main-actor conformance being used from nonisolated context.
             let rawRecord = action.record
-            Task.detached {
+            Task { @MainActor in
                 if let data = try? JSONEncoder().encode(rawRecord),
                    let notification = try? JSONDecoder().decode(SierraNotification.self, from: data),
                    notification.recipientId == recipientId {
-                    await MainActor.run { onNew(notification) }
+                    onNew(notification)
                 }
             }
         }

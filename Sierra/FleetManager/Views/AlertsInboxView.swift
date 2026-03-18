@@ -222,13 +222,11 @@ struct AlertsInboxView: View {
 
     private func reverseGeocode(_ alert: EmergencyAlert) async {
         guard reversedAddresses[alert.id] == nil else { return }  // already cached
-        let coord = CLLocationCoordinate2D(latitude: alert.latitude, longitude: alert.longitude)
         do {
             let location = CLLocation(latitude: alert.latitude, longitude: alert.longitude)
-            // CLGeocoder deprecation on iOS 26+ is a warning only; MKReverseGeocodingRequest
-            // API is still unstable — using CLGeocoder for now.
-            let geocoder = CLGeocoder()
-            let placemarks = try await geocoder.reverseGeocodeLocation(location)
+            // CLGeocoder is deprecated in iOS 26; MapKit replacement APIs are still stabilizing.
+            // Keep CLGeocoder for now to avoid breaking builds; revisit when MKReverseGeocodingRequest is fully available.
+            let placemarks = try await CLGeocoder().reverseGeocodeLocation(location)
             if let pm = placemarks.first {
                 let parts = [pm.name, pm.locality, pm.administrativeArea].compactMap { $0 }
                 reversedAddresses[alert.id] = parts.joined(separator: ", ")

@@ -1,210 +1,399 @@
 import SwiftUI
 
-
-/// Driver home screen embedded in the Home tab.
-/// Shows greeting, availability toggle, and current assignment.
+/// Driver home screen styled to match the FMS reference while preserving
+/// existing data sources and navigation/back-end hooks.
 struct DriverHomeView: View {
 
     @Environment(AppDataStore.self) private var store
 
-    @State private var showProfile = false
     @State private var showToast = false
     @State private var toastMessage: String?
+    @State private var availabilitySwitch = false
+    @State private var isUpdatingAvailability = false
+    @State private var didRunDebugChecks = false
 
     private var user: AuthUser? { AuthManager.shared.currentUser }
 
-    /// The StaffMember record for the current driver in AppDataStore.
-    /// Uses the authenticated user's UUID for exact match.
     private var driverMember: StaffMember? {
         guard let userId = user?.id else { return nil }
         return store.staff.first { $0.id == userId }
+    }
+
+    private var driverTrips: [Trip] {
+        guard let id = driverMember?.id else { return [] }
+        return store.trips(forDriver: id)
+            .sorted { $0.scheduledDate > $1.scheduledDate }
+    }
+
+    private var upcomingTrips: [Trip] {
+        driverTrips
+            .filter { $0.status == .scheduled || $0.status == .active }
+            .sorted { $0.scheduledDate < $1.scheduledDate }
+    }
+
+    private var recentTrips: [Trip] {
+        Array(driverTrips.prefix(5))
     }
 
     private var isAvailable: Bool {
         driverMember?.availability == .available
     }
 
-    /// Active/scheduled trip for this driver.
+    private var driverStaffId: UUID? { driverMember?.id ?? user?.id }
+
     private var currentTrip: Trip? {
         guard let member = driverMember else { return nil }
         return store.activeTrip(forDriverId: member.id)
     }
 
+    private var availabilityBinding: Binding<Bool> {
+        Binding(
+            get: { availabilitySwitch },
+            set: { newValue in requestAvailabilityChange(newValue) }
+        )
+    }
+
     var body: some View {
-        ScrollView {
-            VStack(spacing: 16) {
-                greetingCard
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
+        ZStack(alignment: .top) {
+            Color(red: 0.97, green: 0.97, blue: 0.96)
+                .ignoresSafeArea()
 
-                if let trip = currentTrip {
-                    activeTripCard(trip)
-                        .padding(.horizontal, 16)
-                } else {
-                    noTripAssignedCard
-                        .padding(.horizontal, 16)
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 0) {
+                    headerSection
+
+                    VStack(spacing: 16) {
+                        currentRouteBanner
+                            .padding(.top, -30)
+
+                        upcomingRidesCard
+
+                        if displayTrips.isEmpty {
+                            noTripAssignedCard
+                                .padding(.top, 4)
+                        } else {
+                            recentTripsSection
+                            recentTripCards
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 20)
                 }
+            }
+            .scrollIndicators(.hidden)
+            .ignoresSafeArea(edges: .top)
 
-                Spacer(minLength: 20)
+            if showToast, let message = toastMessage {
+                availabilityToast(message: message)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .zIndex(2)
             }
         }
-        .background(Color(.systemGroupedBackground).ignoresSafeArea())
-        .navigationTitle("Home")
-        .toolbarTitleDisplayMode(.inlineLarge)
-        .toolbarBackground(.hidden, for: .navigationBar)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Menu {
-                    Button(action: { toggleAvailability(true) }) {
-                        Label("Available", systemImage: isAvailable ? "checkmark" : "")
-                    }
-                    Button(action: { toggleAvailability(false) }) {
-                        Label("Unavailable", systemImage: !isAvailable ? "checkmark" : "")
-                    }
-                } label: {
-                    HStack(spacing: 6) {
+        .ignoresSafeArea(edges: .top)
+        .toolbar(.hidden, for: .navigationBar)
+        .onAppear {
+            availabilitySwitch = isAvailable
+            runDebugChecksIfNeeded()
+        }
+        .onChange(of: isAvailable) { _, newValue in
+            availabilitySwitch = newValue
+        }
+    }
+
+    // MARK: - Header
+
+    private var headerSection: some View {
+        ZStack {
+            headerGradient
+
+            RadialGradient(
+                colors: [Color.white.opacity(0.25), .clear],
+                center: .topLeading,
+                startRadius: 20,
+                endRadius: 320
+            )
+
+            VStack(spacing: 6) {
+                HStack {
+                    Spacer()
+
+                    HStack(spacing: 10) {
                         Circle()
-                            .fill(isAvailable ? Color(.systemGreen) : Color(.systemOrange))
-                            .frame(width: 8, height: 8)
-                        Text(isAvailable ? "Available" : "Unavailable")
-                            .font(.subheadline.weight(.medium))
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.caption2.weight(.medium))
-                            .foregroundStyle(Color(.tertiaryLabel))
+                            .fill(availabilitySwitch ? Color.green : Color.gray.opacity(0.8))
+                            .frame(width: 10, height: 10)
+
+                        Toggle("", isOn: availabilityBinding)
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                            .tint(.green)
+                            .scaleEffect(0.86)
+                            .disabled(isUpdatingAvailability)
                     }
-                    .foregroundStyle(isAvailable ? Color(.systemGreen) : Color(.systemOrange))
-                    .padding(.horizontal, 12).padding(.vertical, 8)
-                    .background(Color(.secondarySystemBackground), in: Capsule())
                 }
-            }
+                .padding(.horizontal, 20)
+                .padding(.top, 60)
 
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button { showProfile = true } label: {
-                    Image(systemName: "person.crop.circle")
-                        .font(.system(size: 22, weight: .regular))
-                        .foregroundStyle(.primary)
-                }
-                .accessibilityLabel("Profile")
+                Text(timeOfDayGreeting)
+                    .font(.system(size: 16, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .tracking(0.5)
+
+                Text(headerName.uppercased())
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .tracking(1.2)
+                    .minimumScaleFactor(0.85)
+                    .lineLimit(1)
+                    .padding(.horizontal, 24)
+
+                Spacer()
+                    .frame(height: 50)
             }
         }
-        .overlay(alignment: .top) {
-            if showToast, let msg = toastMessage {
-                HStack(spacing: 12) {
-                    Image(systemName: isAvailable ? "checkmark.circle.fill" : "moon.fill")
-                        .foregroundStyle(isAvailable ? Color(.systemGreen) : Color(.systemOrange))
-                        .font(.title3)
-                    Text(msg)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.primary)
+        .frame(height: 230)
+        .clipShape(
+            UnevenRoundedRectangle(
+                topLeadingRadius: 0,
+                bottomLeadingRadius: 34,
+                bottomTrailingRadius: 34,
+                topTrailingRadius: 0,
+                style: .continuous
+            )
+        )
+    }
+
+    private var currentRouteBanner: some View {
+        Group {
+            if let trip = currentTrip {
+                NavigationLink(value: trip.id) {
+                    currentRouteBannerLabel
                 }
-                .padding(.horizontal, 16).padding(.vertical, 12)
-                .background(Capsule().fill(.regularMaterial).shadow(color: .black.opacity(0.1), radius: 10, y: 4))
-                .transition(.move(edge: .top).combined(with: .opacity))
-                .padding(.top, 8)
-                .zIndex(1)
+                .buttonStyle(.plain)
+            } else {
+                currentRouteBannerLabel
             }
-        }
-        .sheet(isPresented: $showProfile) {
-            AdminProfileView()
         }
     }
 
-    // MARK: - Greeting Card
+    private var currentRouteBannerLabel: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(Color(red: 0.11, green: 0.12, blue: 0.16))
+                    .frame(width: 44, height: 44)
 
-    private var greetingCard: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(greetingText)
-                .font(.title3.weight(.bold))
-                .foregroundStyle(.primary)
-            Text(Date().formatted(.dateTime.weekday(.wide).month(.wide).day()))
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                Image(systemName: "location.north.fill")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .rotationEffect(.degrees(45))
+            }
+
+            Text("See your current route")
+                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                .foregroundStyle(Color(red: 0.12, green: 0.12, blue: 0.14))
+
+            Spacer()
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(Color.secondary)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
-        .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 14)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(Color(red: 1.00, green: 0.84, blue: 0.62).opacity(0.28))
+                )
+                .shadow(color: .black.opacity(0.06), radius: 12, y: 4)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(Color.white.opacity(0.42), lineWidth: 1)
+        )
     }
 
-    private var greetingText: String {
-        let hour = Calendar.current.component(.hour, from: Date())
-        let firstName: String =
-            driverMember?.displayName.split(separator: " ").first.map(String.init)
-            ?? user?.name?.split(separator: " ").first.map(String.init)
-            ?? "Driver"
-        let timeOfDay = hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening"
-        return "Good \(timeOfDay), \(firstName)"
-    }
+    // MARK: - Upcoming
 
-    // MARK: - Active Trip Card
+    private var upcomingRidesCard: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("\(upcomingTrips.count) upcoming Rides")
+                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .foregroundStyle(Color.secondary)
 
-    private func activeTripCard(_ trip: Trip) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("ACTIVE ASSIGNMENT")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(Color(.systemOrange))
-                .kerning(1.2)
+                    Text(nextRideHeadline)
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color(red: 0.12, green: 0.12, blue: 0.14))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
 
-            Text(trip.taskId)
-                .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color.gray.opacity(0.12), in: Capsule())
+                Spacer()
 
-            Text("\(trip.origin) \u{2192} \(trip.destination)")
-                .font(.headline).foregroundStyle(.primary)
+                ZStack {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color(red: 0.93, green: 0.93, blue: 0.94))
+                        .frame(width: 84, height: 70)
 
-            if let vId = trip.vehicleId,
-               let vUUID = UUID(uuidString: vId),
-               let vehicle = store.vehicle(for: vUUID) {
-                HStack(spacing: 8) {
                     Image(systemName: "car.fill")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    Text(vehicle.licensePlate)
-                        .font(.system(size: 12, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.gray.opacity(0.1), in: Capsule())
-                    Text("\(vehicle.name) \(vehicle.model)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 32))
+                        .foregroundStyle(Color.secondary.opacity(0.55))
                 }
             }
+            .padding(.horizontal, 22)
+            .padding(.top, 22)
+            .padding(.bottom, 16)
 
-            HStack(spacing: 6) {
-                Image(systemName: "clock")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                Text(trip.scheduledDate.formatted(.dateTime.month(.abbreviated).day().hour().minute()))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            NavigationLink(value: trip.id) {
-                Text("View Details")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(Color(.systemOrange))
+            NavigationLink {
+                DriverTripsListView()
+            } label: {
+                Text("View Rides")
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 40)
-                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(Color(.systemOrange).opacity(0.5), lineWidth: 1.5))
+                    .padding(.vertical, 14)
+                    .background(
+                        Capsule()
+                            .fill(Color(red: 0.11, green: 0.12, blue: 0.16))
+                    )
             }
+            .padding(.horizontal, 22)
+            .padding(.bottom, 20)
         }
-        .padding(16)
-        .background {
-            HStack(spacing: 0) {
-                Rectangle().fill(Color(.systemOrange)).frame(width: 4)
-                Color(.systemBackground)
-            }
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(Color.white)
+                .shadow(color: .black.opacity(0.06), radius: 16, y: 6)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(Color(red: 0.92, green: 0.92, blue: 0.93).opacity(0.6), lineWidth: 1)
+        )
     }
 
-    // MARK: - No Trip Assigned Card
+    // MARK: - Recent
+
+    private var recentTripsSection: some View {
+        HStack {
+            Text("Recent Trips")
+                .font(.system(size: 20, weight: .bold, design: .rounded))
+                .foregroundStyle(Color(red: 0.12, green: 0.12, blue: 0.14))
+
+            Spacer()
+
+            NavigationLink {
+                DriverTripsListView()
+            } label: {
+                Text("View All")
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Color.orange)
+            }
+        }
+        .padding(.top, 8)
+    }
+
+    private var recentTripCards: some View {
+        VStack(spacing: 12) {
+            ForEach(displayTrips.prefix(3)) { trip in
+                recentTripCard(trip)
+            }
+        }
+    }
+
+    private func recentTripCard(_ trip: Trip) -> some View {
+        NavigationLink(value: trip.id) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(trip.taskId)
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.orange)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Capsule().fill(Color.orange.opacity(0.10)))
+
+                HStack(spacing: 8) {
+                    Text(trip.origin.uppercased())
+                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color(red: 0.12, green: 0.12, blue: 0.14))
+
+                    HStack(spacing: 4) {
+                        Rectangle()
+                            .fill(Color.orange.opacity(0.4))
+                            .frame(width: 16, height: 2)
+                        Image(systemName: "arrowtriangle.right.fill")
+                            .font(.system(size: 8))
+                            .foregroundStyle(Color.orange)
+                        Rectangle()
+                            .fill(Color.orange.opacity(0.4))
+                            .frame(width: 16, height: 2)
+                    }
+
+                    Text(trip.destination.uppercased())
+                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color(red: 0.12, green: 0.12, blue: 0.14))
+
+                    Spacer(minLength: 0)
+                }
+
+                if let vehicle = vehicleForTrip(trip) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "car.fill")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Color.secondary)
+
+                        Text(vehicle.licensePlate)
+                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(Color.orange)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Capsule().fill(Color.orange.opacity(0.08)))
+
+                        Text("\(vehicle.name) \(vehicle.model)")
+                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .foregroundStyle(Color.secondary)
+                    }
+                }
+
+                HStack(spacing: 8) {
+                    Image(systemName: "clock")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.secondary)
+
+                    Text(trip.scheduledDate.formatted(.dateTime.day().month(.abbreviated).hour().minute()))
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundStyle(Color.secondary)
+                }
+
+                Text("View Details")
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.orange)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 13)
+                    .background(Capsule().fill(Color.orange.opacity(0.12)))
+                    .overlay(
+                        Capsule()
+                            .stroke(Color.orange.opacity(0.2), lineWidth: 1)
+                    )
+                    .padding(.top, 4)
+            }
+            .padding(18)
+            .background(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(Color.white)
+                    .shadow(color: .black.opacity(0.04), radius: 10, y: 4)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(Color(red: 0.92, green: 0.92, blue: 0.93).opacity(0.6), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Empty State
 
     private var noTripAssignedCard: some View {
         VStack(spacing: 14) {
@@ -217,14 +406,14 @@ struct DriverHomeView: View {
                 .font(.headline)
                 .foregroundStyle(.secondary)
 
-            Text("Your Fleet Manager hasn\u{2019}t assigned\na delivery task yet.")
+            Text("Your Fleet Manager hasn’t assigned\na delivery task yet.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .lineSpacing(2)
 
-            if isAvailable {
-                Text("You\u{2019}re waiting for assignment")
+            if availabilitySwitch {
+                Text("You’re waiting for assignment")
                     .font(.caption.weight(.medium))
                     .foregroundStyle(Color(.systemGreen))
                     .padding(.horizontal, 14)
@@ -240,14 +429,7 @@ struct DriverHomeView: View {
                         .background(Color(.systemOrange).opacity(0.1), in: Capsule())
 
                     Button {
-                        guard let id = driverMember?.id else { return }
-                        Task {
-                            do {
-                                try await store.updateDriverAvailability(staffId: id, available: true)
-                            } catch {
-                                print("[DriverHomeView] Set Available FAILED: \(error)")
-                            }
-                        }
+                        requestAvailabilityChange(true)
                     } label: {
                         Text("Set Available")
                             .font(.caption)
@@ -256,33 +438,228 @@ struct DriverHomeView: View {
                             .padding(.vertical, 8)
                             .background(.orange, in: Capsule())
                     }
+                    .disabled(isUpdatingAvailability)
                 }
             }
         }
         .padding(.bottom, 20)
         .frame(maxWidth: .infinity)
-        .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
     }
 
-    // MARK: - Availability Toggle
+    // MARK: - Helpers
 
-    private func toggleAvailability(_ available: Bool) {
-        guard driverMember?.availability != .busy else { return }
-        guard let id = driverMember?.id else {
-            print("[DriverHomeView] toggleAvailability: driverMember is nil — store.staff.count=\(store.staff.count)")
-            return
+    private var headerGradient: LinearGradient {
+        LinearGradient(
+            colors: [
+                Color(red: 1.00, green: 0.79, blue: 0.33),
+                Color(red: 0.96, green: 0.54, blue: 0.10),
+                Color(red: 0.92, green: 0.35, blue: 0.08)
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    private var displayTrips: [Trip] {
+        if let currentTrip {
+            var seen = Set<UUID>()
+            let prioritized = [currentTrip] + recentTrips
+            return prioritized.filter { seen.insert($0.id).inserted }
         }
-        Task {
-            do {
-                try await store.updateDriverAvailability(staffId: id, available: available)
-                toastMessage = available ? "You\u{2019}re now Available" : "You\u{2019}re now Unavailable"
-                withAnimation(.spring(duration: 0.3)) { showToast = true }
-                try? await Task.sleep(for: .seconds(2.5))
-                withAnimation(.spring(duration: 0.3)) { showToast = false }
-            } catch {
-                print("[DriverHomeView] availability update FAILED: \(error)")
+        return recentTrips
+    }
+
+    private var headerName: String {
+        driverMember?.displayName
+        ?? user?.name
+        ?? "Driver"
+    }
+
+    private var timeOfDayGreeting: String {
+        let hour = Calendar.current.component(.hour, from: Date())
+        switch hour {
+        case 5..<12:  return "Good Morning"
+        case 12..<17: return "Good Afternoon"
+        case 17..<21: return "Good Evening"
+        default:      return "Good Night"
+        }
+    }
+
+    private var nextRideHeadline: String {
+        guard let nextTrip = upcomingTrips.first else { return "No upcoming rides" }
+        if nextTrip.status == .active { return "Ride in progress" }
+
+        let interval = nextTrip.scheduledDate.timeIntervalSinceNow
+        if interval <= 0 { return "Starting soon" }
+
+        let mins = Int(interval / 60)
+        if mins < 60 { return "First Ride in \(mins) min" }
+
+        let hours = max(1, mins / 60)
+        return "First Ride in \(hours) hr"
+    }
+
+    private func vehicleForTrip(_ trip: Trip) -> Vehicle? {
+        guard let vId = trip.vehicleId,
+              let vUUID = UUID(uuidString: vId) else { return nil }
+        return store.vehicle(for: vUUID)
+    }
+
+    private func availabilityToast(message: String) -> some View {
+        HStack(spacing: 12) {
+            Circle()
+                .fill(availabilitySwitch ? Color.green : Color.red.opacity(0.8))
+                .frame(width: 12, height: 12)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(message)
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+
+                Text(availabilitySwitch ? "Ready to accept rides" : "You won’t receive new rides")
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.8))
             }
+
+            Spacer()
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 14)
+        .background(
+            Capsule()
+                .fill(availabilitySwitch ? Color.green.opacity(0.9) : Color(red: 0.35, green: 0.35, blue: 0.40))
+                .shadow(color: (availabilitySwitch ? Color.green : Color.black).opacity(0.3), radius: 16, y: 6)
+        )
+        .padding(.horizontal, 20)
+        .padding(.top, 58)
+    }
+
+    private func requestAvailabilityChange(_ available: Bool) {
+        guard !isUpdatingAvailability else { return }
+        let previous = availabilitySwitch
+        availabilitySwitch = available
+
+        Task {
+            let ok = await persistAvailability(available)
+            if !ok {
+                await MainActor.run { availabilitySwitch = previous }
+            }
+        }
+    }
+
+    private func persistAvailability(_ available: Bool) async -> Bool {
+        if !available, currentTrip != nil {
+            await presentAvailabilityError(.tripAssigned)
+            return false
+        }
+        if driverMember?.availability == .busy {
+            await presentAvailabilityError(.busy)
+            return false
+        }
+        if isAvailable == available { return true }
+        guard let id = driverStaffId else {
+            await presentAvailabilityError(.missingDriverId)
+            return false
+        }
+
+        await MainActor.run { isUpdatingAvailability = true }
+        do {
+            try await store.updateDriverAvailability(staffId: id, available: available)
+            let expected: StaffAvailability = available ? .available : .unavailable
+            if store.staff.first(where: { $0.id == id })?.availability != expected {
+                await store.loadDriverData(driverId: id)
+            }
+            let confirmed = store.staff.first(where: { $0.id == id })?.availability == expected
+            guard confirmed else {
+                await presentAvailabilityError(
+                    .stateMismatch(
+                        expected: expected.rawValue,
+                        actual: store.staff.first(where: { $0.id == id })?.availability.rawValue ?? "nil"
+                    )
+                )
+                await MainActor.run { isUpdatingAvailability = false }
+                return false
+            }
+
+            await MainActor.run {
+                toastMessage = available ? "You're Available" : "You're Offline"
+                withAnimation(.spring(response: 0.5, dampingFraction: 0.78)) { showToast = true }
+            }
+            try? await Task.sleep(for: .seconds(2.5))
+            await MainActor.run {
+                withAnimation(.easeOut(duration: 0.35)) { showToast = false }
+            }
+            await MainActor.run { isUpdatingAvailability = false }
+            return true
+        } catch {
+            await presentAvailabilityError(.serviceError(error.localizedDescription))
+            await MainActor.run { isUpdatingAvailability = false }
+            return false
+        }
+    }
+
+    @MainActor
+    private func presentAvailabilityError(_ failure: AvailabilityFailure) {
+        print("[DriverHomeView][AvailabilityError] \(failure.message)")
+        toastMessage = failure.message
+        withAnimation(.spring(response: 0.5, dampingFraction: 0.78)) { showToast = true }
+        Task {
+            try? await Task.sleep(for: .seconds(2.5))
+            await MainActor.run {
+                withAnimation(.easeOut(duration: 0.35)) { showToast = false }
+            }
+        }
+    }
+
+    @MainActor
+    private func runDebugChecksIfNeeded() {
+        guard !didRunDebugChecks else { return }
+        didRunDebugChecks = true
+#if DEBUG
+        let checks: [(name: String, passed: Bool)] = [
+            ("Busy reason is explicit", AvailabilityFailure.busy.message.lowercased().contains("busy")),
+            ("Missing-id reason is explicit", AvailabilityFailure.missingDriverId.message.lowercased().contains("id")),
+            (
+                "Mismatch reason includes expected and actual values",
+                AvailabilityFailure.stateMismatch(expected: "available", actual: "unavailable")
+                    .message.contains("expected=available")
+                    && AvailabilityFailure.stateMismatch(expected: "available", actual: "unavailable")
+                    .message.contains("actual=unavailable")
+            )
+        ]
+
+        for check in checks {
+            if check.passed {
+                print("[DriverHomeView][SelfTest] PASS: \(check.name)")
+            } else {
+                assertionFailure("[DriverHomeView][SelfTest] FAIL: \(check.name)")
+            }
+        }
+#endif
+    }
+}
+
+private enum AvailabilityFailure {
+    case tripAssigned
+    case busy
+    case missingDriverId
+    case stateMismatch(expected: String, actual: String)
+    case serviceError(String)
+
+    var message: String {
+        switch self {
+        case .tripAssigned:
+            return "Availability update blocked: you cannot go offline while a trip is assigned."
+        case .busy:
+            return "Availability update blocked: driver is busy on a trip."
+        case .missingDriverId:
+            return "Availability update failed: missing driver id."
+        case let .stateMismatch(expected, actual):
+            return "Availability update failed: expected=\(expected), actual=\(actual)."
+        case let .serviceError(details):
+            return "Availability update failed: \(details)"
         }
     }
 }

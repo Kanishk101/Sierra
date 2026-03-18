@@ -1,9 +1,13 @@
 import SwiftUI
+import UIKit
 
 struct DriverTabView: View {
 
     @Environment(AppDataStore.self) private var store
-    @State private var showNotifications = false
+
+    init() {
+        configureTabBarAppearance()
+    }
 
     var body: some View {
         TabView {
@@ -13,47 +17,46 @@ struct DriverTabView: View {
                         .navigationDestination(for: UUID.self) { id in
                             TripDetailDriverView(tripId: id)
                         }
-                        .toolbar {
-                            ToolbarItem(placement: .topBarTrailing) {
-                                notificationBell
-                            }
-                        }
                 }
             }
             Tab("Trips", systemImage: "map.fill") {
                 NavigationStack {
-                    DriverTripHistoryView()
+                    DriverTripsListView()
                 }
             }
-            Tab("Vehicle", systemImage: "car.fill") {
-                placeholderTab(title: "Inspection", icon: "checklist", color: .orange)
+            Tab("Alerts", systemImage: "bell.fill") {
+                NavigationStack {
+                    NotificationCentreView()
+                }
             }
             Tab("Profile", systemImage: "person.fill") {
                 settingsTab()
             }
         }
-        .tint(.white)
-        .sheet(isPresented: $showNotifications) {
-            NotificationCentreView()
-        }
+        .tint(.orange)
     }
 
-    private var notificationBell: some View {
-        Button { showNotifications = true } label: {
-            ZStack(alignment: .topTrailing) {
-                Image(systemName: "bell.fill")
-                    .font(.body)
-                    .foregroundStyle(.white)
-                if store.unreadNotificationCount > 0 {
-                    Text("\(store.unreadNotificationCount)")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(.white)
-                        .padding(3)
-                        .background(.red, in: Circle())
-                        .offset(x: 6, y: -6)
-                }
-            }
-        }
+    private func configureTabBarAppearance() {
+        let appearance = UITabBarAppearance()
+        appearance.configureWithDefaultBackground()
+        appearance.backgroundColor = UIColor.systemBackground
+
+        let selectedColor = UIColor(red: 0.95, green: 0.55, blue: 0.10, alpha: 1.0)
+        appearance.stackedLayoutAppearance.selected.iconColor = selectedColor
+        appearance.stackedLayoutAppearance.selected.titleTextAttributes = [
+            .foregroundColor: selectedColor,
+            .font: UIFont.systemFont(ofSize: 11, weight: .bold)
+        ]
+
+        let normalColor = UIColor.secondaryLabel
+        appearance.stackedLayoutAppearance.normal.iconColor = normalColor
+        appearance.stackedLayoutAppearance.normal.titleTextAttributes = [
+            .foregroundColor: normalColor,
+            .font: UIFont.systemFont(ofSize: 11, weight: .medium)
+        ]
+
+        UITabBar.appearance().standardAppearance = appearance
+        UITabBar.appearance().scrollEdgeAppearance = appearance
     }
 
     private func placeholderTab(title: String, icon: String, color: Color) -> some View {
