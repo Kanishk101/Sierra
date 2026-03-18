@@ -41,7 +41,7 @@ struct DriverHomeView: View {
         driverMember?.availability == .available
     }
 
-    private var driverStaffId: UUID? { driverMember?.id ?? user?.id }
+    private var driverStaffId: UUID? { driverMember?.id }
 
     private var currentTrip: Trip? {
         guard let member = driverMember else { return nil }

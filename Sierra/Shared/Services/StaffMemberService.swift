@@ -11,6 +11,17 @@ private let iso: ISO8601DateFormatter = {
     return f
 }()
 
+enum StaffMemberServiceError: LocalizedError {
+    case availabilityTargetMissing(UUID)
+
+    var errorDescription: String? {
+        switch self {
+        case .availabilityTargetMissing(let id):
+            return "No staff_members row found for id \(id.uuidString.lowercased())"
+        }
+    }
+}
+
 // MARK: - StaffMemberInsertPayload
 
 struct StaffMemberInsertPayload: Encodable {
@@ -241,9 +252,10 @@ struct StaffMemberService {
     }
 
     // MARK: - Targeted availability-only update with verification
-    // Returns the DB-confirmed availability value, or nil if 0 rows matched.
+    // Returns the DB-confirmed availability value.
+    // Throws if 0 rows matched so callers never treat a no-op as success.
 
-    static func updateAvailability(staffId: UUID, available: Bool) async throws -> String? {
+    static func updateAvailability(staffId: UUID, available: Bool) async throws -> String {
         struct Row: Decodable { let id: UUID; let availability: String }
         let value = available
             ? StaffAvailability.available.rawValue
@@ -263,7 +275,7 @@ struct StaffMemberService {
 
         if rows.isEmpty {
             print("[StaffMemberService] ⚠️ 0 rows updated — UUID \(idLower) not found in DB")
-            return nil
+            throw StaffMemberServiceError.availabilityTargetMissing(staffId)
         }
         print("[StaffMemberService] ✅ confirmed: \(rows[0].id) → \(rows[0].availability)")
         return rows[0].availability

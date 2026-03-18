@@ -11,6 +11,17 @@ private let iso: ISO8601DateFormatter = {
     return f
 }()
 
+enum TripServiceError: LocalizedError {
+    case tripNotFound(UUID)
+
+    var errorDescription: String? {
+        switch self {
+        case .tripNotFound(let id):
+            return "No trips row found for id \(id.uuidString.lowercased())"
+        }
+    }
+}
+
 // MARK: - TripInsertPayload
 // Excludes: id, created_at, updated_at, proof_of_delivery_id,
 //           pre_inspection_id, post_inspection_id (set after related records)
@@ -370,10 +381,21 @@ struct TripService {
     /// DB trigger `trg_trip_started` handles vehicle status transitions automatically.
     static func reassignVehicle(tripId: UUID, newVehicleId: UUID) async throws {
         struct Payload: Encodable { let vehicle_id: String }
-        try await supabase
+        struct Row: Decodable {
+            let id: UUID
+            let vehicle_id: UUID?
+        }
+
+        let rows: [Row] = try await supabase
             .from("trips")
             .update(Payload(vehicle_id: newVehicleId.uuidString))
             .eq("id", value: tripId.uuidString)
+            .select("id, vehicle_id")
             .execute()
+            .value
+
+        guard !rows.isEmpty else {
+            throw TripServiceError.tripNotFound(tripId)
+        }
     }
 }

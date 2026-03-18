@@ -247,6 +247,7 @@ struct MaintenanceTaskService {
             let status: String
             let task_type: String
             let source_inspection_id: String?
+            let photo_urls: [String]?
             let due_date: String
         }
 
@@ -259,13 +260,48 @@ struct MaintenanceTaskService {
             status: MaintenanceTaskStatus.pending.rawValue,
             task_type: MaintenanceTaskType.inspectionDefect.rawValue,
             source_inspection_id: sourceInspectionId?.uuidString,
+            photo_urls: photoURLs.isEmpty ? nil : photoURLs,
             due_date: iso.string(from: Calendar.current.date(byAdding: .day, value: 3, to: Date()) ?? Date())
         )
 
-        try await supabase
-            .from("maintenance_tasks")
-            .insert(payload)
-            .execute()
+        do {
+            try await supabase
+                .from("maintenance_tasks")
+                .insert(payload)
+                .execute()
+        } catch {
+            // Backward-compat fallback for environments where `photo_urls` is not yet in schema.
+            if !photoURLs.isEmpty,
+               error.localizedDescription.localizedCaseInsensitiveContains("photo_urls") {
+                struct FallbackPayload: Encodable {
+                    let vehicle_id: String
+                    let created_by_admin_id: String
+                    let title: String
+                    let task_description: String
+                    let priority: String
+                    let status: String
+                    let task_type: String
+                    let source_inspection_id: String?
+                    let due_date: String
+                }
+                let fallback = FallbackPayload(
+                    vehicle_id: vehicleId.uuidString,
+                    created_by_admin_id: driverId.uuidString,
+                    title: title,
+                    task_description: description,
+                    priority: priority.rawValue,
+                    status: MaintenanceTaskStatus.pending.rawValue,
+                    task_type: MaintenanceTaskType.inspectionDefect.rawValue,
+                    source_inspection_id: sourceInspectionId?.uuidString,
+                    due_date: iso.string(from: Calendar.current.date(byAdding: .day, value: 3, to: Date()) ?? Date())
+                )
+                try await supabase
+                    .from("maintenance_tasks")
+                    .insert(fallback)
+                    .execute()
+                return
+            }
+            throw error
+        }
     }
 }
-

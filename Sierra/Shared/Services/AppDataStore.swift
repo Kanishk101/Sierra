@@ -189,12 +189,9 @@ final class AppDataStore {
     // which adds .select() to verify the DB write and logs the result.
 
     func updateDriverAvailability(staffId: UUID, available: Bool) async throws {
-        guard let confirmedValue = try await StaffMemberService.updateAvailability(
+        let confirmedValue = try await StaffMemberService.updateAvailability(
             staffId: staffId, available: available
-        ) else {
-            print("[AppDataStore] ⚠️ updateDriverAvailability: DB returned 0 rows for \(staffId)")
-            return
-        }
+        )
         // Patch local store with the DB-confirmed value
         let confirmedAvailability = StaffAvailability(rawValue: confirmedValue) ?? (available ? .available : .unavailable)
         if let idx = staff.firstIndex(where: { $0.id == staffId }) {

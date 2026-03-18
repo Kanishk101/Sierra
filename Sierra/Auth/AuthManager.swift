@@ -88,8 +88,12 @@ final class AuthManager {
             throw AuthError.invalidCredentials
         }
 
+        guard let userId = UUID(uuidString: row.id) else {
+            throw AuthError.invalidCredentials
+        }
+
         let user = AuthUser(
-            id: UUID(uuidString: row.id) ?? UUID(),
+            id: userId,
             email: row.email,
             role: UserRole(rawValue: row.role) ?? .driver,
             isFirstLogin: row.is_first_login ?? true,

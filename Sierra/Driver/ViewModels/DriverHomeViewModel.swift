@@ -14,10 +14,16 @@ final class DriverHomeViewModel {
         defer { isTogglingAvailability = false }
         do {
             // updateAvailability returns the DB-confirmed value
-            let _ = try await StaffMemberService.updateAvailability(
+            let confirmed = try await StaffMemberService.updateAvailability(
                 staffId: staffId,
                 available: !currentlyAvailable
             )
+            let expected = currentlyAvailable
+                ? StaffAvailability.unavailable.rawValue
+                : StaffAvailability.available.rawValue
+            if confirmed != expected {
+                self.error = "Availability mismatch (expected \(expected), got \(confirmed))."
+            }
             // AppDataStore's staff_members realtime channel will propagate the change
         } catch {
             self.error = error.localizedDescription
