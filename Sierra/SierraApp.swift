@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import MapboxMaps
 
 @main
 struct SierraApp: App {
@@ -14,7 +13,7 @@ struct SierraApp: App {
     private var lifecycle = AppLifecycleMonitor.shared
 
     init() {
-        MapboxOptions.accessToken = Bundle.main.object(forInfoDictionaryKey: "MBXAccessToken") as? String ?? ""
+        // Mapbox SDK v3 reads MBXAccessToken from Info.plist automatically — no code needed.
         // Keychain persists across app reinstalls on iOS.
         // On first launch after a fresh install, clear stale Keychain data
         // so Face ID / session tokens from a previous install don't carry over.
@@ -59,6 +58,7 @@ struct SierraApp: App {
                 AuthManager.shared.appDidEnterBackground()
             case .active:
                 AuthManager.shared.appWillEnterForeground()
+                Task { await AppDataStore.shared.checkOverdueMaintenance() }
             default:
                 break
             }

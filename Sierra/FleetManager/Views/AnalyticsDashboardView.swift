@@ -55,6 +55,7 @@ struct AnalyticsDashboardView: View {
 
     @State private var viewModel = AnalyticsDashboardViewModel()
     @State private var appeared  = false
+    @State private var selectedDays: Int = 30   // date range filter: 7, 30, 90
 
     var body: some View {
         NavigationStack {
@@ -84,7 +85,13 @@ struct AnalyticsDashboardView: View {
                         monthlyTripBarChart
                     }
 
-                    // 5. Document Health
+                    // 5. Completed Trips Summary (date-range filtered)
+                    sectionCard(title: "Completed Trips Summary",
+                                subtitle: "Aggregated stats for completed trips — filtered client-side") {
+                        completedTripsSummarySection
+                    }
+
+                    // 6. Document Health
                     sectionCard(title: "Document Health",
                                 subtitle: "Vehicle documents by validity status") {
                         documentHealthSection
@@ -175,6 +182,29 @@ struct AnalyticsDashboardView: View {
                 date:  range.start
             )
         }
+    }
+
+    // MARK: - Date Range Computed Props (Safeguard: all client-side, no new Supabase calls)
+
+    private var tripsInRange: [Trip] {
+        let cutoff = Calendar.current.date(byAdding: .day, value: -selectedDays, to: Date()) ?? Date()
+        return store.trips.filter { $0.createdAt >= cutoff && $0.status == .completed }
+    }
+
+    private var totalDistanceKm: Double {
+        tripsInRange.compactMap { trip -> Double? in
+            guard let end = trip.endMileage, let start = trip.startMileage else { return nil }
+            return max(0, end - start)
+        }.reduce(0, +)
+    }
+
+    private var averageDurationMinutes: Double? {
+        let durations = tripsInRange.compactMap { trip -> Double? in
+            guard let start = trip.actualStartDate, let end = trip.actualEndDate else { return nil }
+            return end.timeIntervalSince(start) / 60
+        }
+        guard !durations.isEmpty else { return nil }
+        return durations.reduce(0, +) / Double(durations.count)
     }
 
     // MARK: - Chart 1: Fleet Status
@@ -544,6 +574,100 @@ struct AnalyticsDashboardView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Completed Trips Summary Section
+
+    private var completedTripsSummarySection: some View {
+        VStack(spacing: 16) {
+            // Date range picker
+            Picker("Range", selection: $selectedDays) {
+                Text("7 Days").tag(7)
+                Text("30 Days").tag(30)
+                Text("90 Days").tag(90)
+            }
+            .pickerStyle(.segmented)
+
+            // Summary stats row
+            HStack(spacing: 0) {
+                summaryStatCell(value: "\(tripsInRange.count)",
+                                label: "Completed")
+                Divider().frame(height: 40)
+                summaryStatCell(value: String(format: "%.0f km", totalDistanceKm),
+                                label: "Distance")
+                Divider().frame(height: 40)
+                if let avg = averageDurationMinutes {
+                    summaryStatCell(value: String(format: "%.0f min", avg),
+                                    label: "Avg Duration")
+                } else {
+                    summaryStatCell(value: "—", label: "Avg Duration")
+                }
+            }
+            .padding(.vertical, 8)
+            .background(Color(.tertiarySystemGroupedBackground),
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+            // Driver performance table
+            let drivers = store.staff.filter { $0.role == .driver && $0.status == .active }
+            if !drivers.isEmpty {
+                VStack(spacing: 0) {
+                    HStack {
+                        Text("Driver").font(.caption.weight(.bold)).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
+                        Text("Trips").font(.caption.weight(.bold)).foregroundStyle(.secondary).frame(width: 44, alignment: .trailing)
+                        Text("Rating").font(.caption.weight(.bold)).foregroundStyle(.secondary).frame(width: 54, alignment: .trailing)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color(.secondarySystemGroupedBackground))
+
+                    ForEach(drivers) { driver in
+                        let dTrips = tripsInRange.filter { $0.driverId == driver.id.uuidString }
+                        let ratedTrips = dTrips.filter { $0.driverRating != nil }
+                        let avgRating: String = {
+                            guard !ratedTrips.isEmpty else { return "—" }
+                            let sum = ratedTrips.compactMap { $0.driverRating }.reduce(0, +)
+                            let avg = Double(sum) / Double(ratedTrips.count)
+                            return String(format: "%.1f ★", avg)
+                        }()
+                        HStack {
+                            Text(driver.name ?? "Unknown")
+                                .font(.caption)
+                                .foregroundStyle(.primary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .lineLimit(1)
+                            Text("\(dTrips.count)")
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.primary)
+                                .frame(width: 44, alignment: .trailing)
+                            Text(avgRating)
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 54, alignment: .trailing)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        Divider().padding(.leading, 12)
+                    }
+                }
+                .background(Color(.tertiarySystemGroupedBackground),
+                            in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+        }
+    }
+
+    private func summaryStatCell(value: String, label: String) -> some View {
+        VStack(spacing: 2) {
+            Text(value)
+                .font(.title3.weight(.bold).monospacedDigit())
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private func docHealthCell(icon: String, count: Int, label: String, color: Color) -> some View {

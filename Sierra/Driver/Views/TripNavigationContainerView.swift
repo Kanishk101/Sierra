@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 
 /// Full-screen container composing TripNavigationView + NavigationHUDOverlay.
 /// Safeguard 9: .ignoresSafeArea() + tab bar hidden.
@@ -6,8 +7,11 @@ struct TripNavigationContainerView: View {
 
     @State private var coordinator: TripNavigationCoordinator
     @State private var showProofOfDelivery = false
+    @State private var lastSpokenInstruction = ""
     @Environment(AppDataStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+
+    private let speechSynthesizer = AVSpeechSynthesizer()
 
     init(trip: Trip) {
         _coordinator = State(initialValue: TripNavigationCoordinator(trip: trip))
@@ -39,6 +43,15 @@ struct TripNavigationContainerView: View {
         }
         .onDisappear {
             coordinator.stopLocationPublishing()
+            speechSynthesizer.stopSpeaking(at: .immediate)
+        }
+        .onChange(of: coordinator.currentStepInstruction) { _, newInstruction in
+            guard !newInstruction.isEmpty, newInstruction != lastSpokenInstruction else { return }
+            lastSpokenInstruction = newInstruction
+            let utterance = AVSpeechUtterance(string: newInstruction)
+            utterance.rate = 0.52
+            utterance.voice = AVSpeechSynthesisVoice(language: "en-IN")
+            speechSynthesizer.speak(utterance)
         }
         .sheet(isPresented: $showProofOfDelivery) {
             NavigationStack {

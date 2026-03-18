@@ -403,6 +403,10 @@ struct CreateTripView: View {
               let vehicleId = selectedVehicleId else { return }
 
         isCreating = true
+        // Geocode both addresses concurrently before creating the trip
+        async let originResult = geocodeAddress(origin.trimmingCharacters(in: .whitespaces))
+        async let destResult = geocodeAddress(destination.trimmingCharacters(in: .whitespaces))
+        let (originCoords, destCoords) = await (originResult, destResult)
         do {
             let conflict = try await TripService.checkOverlap(
                 driverId: driverId,
@@ -433,10 +437,10 @@ struct CreateTripView: View {
                 createdByAdminId: adminId.uuidString,
                 origin: origin.trimmingCharacters(in: .whitespaces),
                 destination: destination.trimmingCharacters(in: .whitespaces),
-                originLatitude: nil,
-                originLongitude: nil,
-                destinationLatitude: nil,
-                destinationLongitude: nil,
+                originLatitude: originCoords?.0,
+                originLongitude: originCoords?.1,
+                destinationLatitude: destCoords?.0,
+                destinationLongitude: destCoords?.1,
                 routePolyline: nil,
                 deliveryInstructions: "",
                 scheduledDate: scheduledDate,
@@ -542,6 +546,30 @@ struct CreateTripView: View {
                 .foregroundStyle(.primary)
             Spacer()
         }
+    }
+
+    // MARK: - Geocoding (Mapbox v5, token from Info.plist — never hardcoded)
+
+    private func geocodeAddress(_ address: String) async -> (Double, Double)? {
+        guard !address.isEmpty,
+              let token = Bundle.main.object(forInfoDictionaryKey: "MBXAccessToken") as? String,
+              !token.isEmpty else { return nil }
+        let encoded = address.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        let urlString = "https://api.mapbox.com/geocoding/v5/mapbox.places/\(encoded).json?access_token=\(token)&limit=1&country=IN"
+        guard let url = URL(string: urlString) else { return nil }
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let features = json?["features"] as? [[String: Any]]
+            let geometry = features?.first?["geometry"] as? [String: Any]
+            let coords = geometry?["coordinates"] as? [Double]  // [lng, lat]
+            if let lng = coords?[0], let lat = coords?[1] {
+                return (lat, lng)
+            }
+        } catch {
+            print("[CreateTrip] Geocoding failed for '\(address)': \(error)")
+        }
+        return nil
     }
 }
 

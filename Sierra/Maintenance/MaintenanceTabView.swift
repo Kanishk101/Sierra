@@ -1,10 +1,21 @@
 import SwiftUI
 
 struct MaintenanceTabView: View {
+
+    @Environment(AppDataStore.self) private var store
+    @State private var showNotifications = false
+
     var body: some View {
         TabView {
             Tab("Tasks", systemImage: "wrench.and.screwdriver.fill") {
-                placeholderTab(title: "Work Orders", icon: "wrench.and.screwdriver.fill", color: .yellow)
+                NavigationStack {
+                    MaintenanceDashboardView()
+                        .toolbar {
+                            ToolbarItem(placement: .topBarTrailing) {
+                                notificationBell
+                            }
+                        }
+                }
             }
             Tab("Schedule", systemImage: "calendar") {
                 placeholderTab(title: "Schedule", icon: "calendar.badge.clock", color: .mint)
@@ -17,6 +28,26 @@ struct MaintenanceTabView: View {
             }
         }
         .tint(.white)
+        .sheet(isPresented: $showNotifications) {
+            NotificationCentreView()
+        }
+    }
+
+    private var notificationBell: some View {
+        Button { showNotifications = true } label: {
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: "bell.fill")
+                    .font(.body)
+                if store.unreadNotificationCount > 0 {
+                    Text("\(store.unreadNotificationCount)")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.white)
+                        .padding(3)
+                        .background(.red, in: Circle())
+                        .offset(x: 6, y: -6)
+                }
+            }
+        }
     }
 
     private func placeholderTab(title: String, icon: String, color: Color) -> some View {
