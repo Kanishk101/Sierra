@@ -1,10 +1,11 @@
 import SwiftUI
-import MapboxMaps
+import MapboxNavigationCore
 import MapboxDirections
 import CoreLocation
 
 /// Map view showing the route with a polyline overlay and live driver position.
-/// Uses MapboxMaps since MapboxNavigationUIKit is not linked.
+/// MapboxMaps types (MapView, CameraOptions, PolylineAnnotation etc.) are
+/// re-exported through MapboxNavigationCore in SDK v3 — no direct MapboxMaps link needed.
 /// Safeguard 4: MapView is created ONCE in makeUIView, never recreated.
 struct TripNavigationView: UIViewRepresentable {
 
@@ -51,7 +52,6 @@ struct TripNavigationView: UIViewRepresentable {
 
             routeAdded = true
 
-            // Use the mapboxMap to add a route annotation via the PolylineAnnotationManager
             let annotationManager = mapView.annotations.makePolylineAnnotationManager()
 
             var annotation = PolylineAnnotation(lineCoordinates: coordinates)
