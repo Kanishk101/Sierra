@@ -1,8 +1,10 @@
-// Deploy with: supabase functions deploy create-staff-account
-// Secrets required:
-//   supabase secrets set SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-//   supabase secrets set SUPABASE_URL=https://ldqcdngdlbbiojlnbnjg.supabase.co
-//   supabase secrets set SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+// create-staff-account edge function
+// verify_jwt: true — only authenticated fleet managers can call this.
+//
+// Creates a Supabase Auth user + staff_members row atomically.
+// Rolls back the auth user if the DB insert fails.
+// Password goes to auth.admin.createUser() only — staff_members has no
+// password column (dropped in migration 20260318000001).
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -24,13 +26,11 @@ interface CreateStaffPayload {
 }
 
 serve(async (req: Request) => {
-  // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    // Require a valid JWT in the Authorization header
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -39,12 +39,11 @@ serve(async (req: Request) => {
       });
     }
 
-    // Admin client - only used server-side, never sent to iOS
     const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    // Verify the calling user's JWT is valid
+    // Verify calling user JWT
     const callerClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       global: { headers: { Authorization: authHeader } },
     });
@@ -56,7 +55,7 @@ serve(async (req: Request) => {
       });
     }
 
-    // Verify the caller is a fleet manager
+    // Verify caller is a fleet manager
     const { data: staffRow } = await adminClient
       .from("staff_members")
       .select("role")
@@ -70,7 +69,6 @@ serve(async (req: Request) => {
       });
     }
 
-    // Parse and validate body
     const body: CreateStaffPayload = await req.json();
     const { email, password, name, role } = body;
 
@@ -88,7 +86,7 @@ serve(async (req: Request) => {
       });
     }
 
-    // Create the Supabase Auth user (email_confirm: true skips confirmation email)
+    // Create Supabase Auth user — password stored here as bcrypt, never in staff_members
     const { data: authUser, error: authError } = await adminClient.auth.admin.createUser({
       email,
       password,
@@ -96,8 +94,7 @@ serve(async (req: Request) => {
     });
 
     if (authError || !authUser.user) {
-      const msg = authError?.message ?? "Failed to create auth user";
-      return new Response(JSON.stringify({ error: msg }), {
+      return new Response(JSON.stringify({ error: authError?.message ?? "Failed to create auth user" }), {
         status: 400,
         headers: { "Content-Type": "application/json", ...corsHeaders },
       });
@@ -105,21 +102,21 @@ serve(async (req: Request) => {
 
     const userId = authUser.user.id;
 
-    // Insert staff_members row
+    // Insert staff_members row — no password field (column dropped 2026-03-18)
     const { error: dbError } = await adminClient.from("staff_members").insert({
-      id:                   userId,
+      id:                  userId,
       name,
       email,
       role,
-      status:               "Pending Approval",
-      availability:         "Unavailable",
-      is_first_login:       true,
-      is_profile_complete:  false,
-      is_approved:          false,
+      status:              "Pending Approval",
+      availability:        "Unavailable",
+      is_first_login:      true,
+      is_profile_complete: false,
+      is_approved:         false,
     });
 
     if (dbError) {
-      // Rollback: delete the auth user we just created
+      // Rollback: remove the auth user we just created
       await adminClient.auth.admin.deleteUser(userId);
       return new Response(JSON.stringify({ error: `DB insert failed: ${dbError.message}` }), {
         status: 500,
@@ -129,13 +126,10 @@ serve(async (req: Request) => {
 
     return new Response(
       JSON.stringify({ id: userId, email }),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json", ...corsHeaders },
-      }
+      { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
     );
   } catch (err) {
-    console.error("create-staff-account error:", err);
+    console.error("[create-staff-account] error:", err);
     return new Response(JSON.stringify({ error: String(err) }), {
       status: 500,
       headers: { "Content-Type": "application/json", ...corsHeaders },
