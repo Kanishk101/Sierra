@@ -16,7 +16,6 @@ struct StartTripSheet: View {
     @State private var errorMessage: String?
     @State private var showError = false
 
-    // Route options (fetched on Start Navigation tap — Safeguard 3)
     @State private var routeOptions: [RouteOption] = []
     @State private var selectedRouteIndex = 0
     @State private var isFetchingRoutes = false
@@ -56,7 +55,6 @@ struct StartTripSheet: View {
 
                 Divider()
 
-                // Route options (shown after fetch)
                 if isFetchingRoutes {
                     HStack {
                         ProgressView()
@@ -83,14 +81,12 @@ struct StartTripSheet: View {
 
                 Spacer(minLength: 20)
 
-                // Start Navigation — Safeguard 7: uses Task { }
                 Button {
                     Task { await startNavigation() }
                 } label: {
                     HStack {
                         if isStarting {
-                            ProgressView()
-                                .tint(.white)
+                            ProgressView().tint(.white)
                         } else {
                             Image(systemName: "location.fill")
                         }
@@ -125,8 +121,8 @@ struct StartTripSheet: View {
 
     private func routeCard(_ route: RouteOption, isSelected: Bool) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: route.label.contains("Green") ? "leaf.fill" : "bolt.fill")
-                .foregroundStyle(route.label.contains("Green") ? .green : SierraTheme.Colors.ember)
+            Image(systemName: route.isGreen ? "leaf.fill" : "bolt.fill")
+                .foregroundStyle(route.isGreen ? .green : SierraTheme.Colors.ember)
                 .frame(width: 32)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -134,11 +130,14 @@ struct StartTripSheet: View {
                     .font(.subheadline.weight(.medium))
                 HStack(spacing: 12) {
                     Text(String(format: "%.1f km", route.distanceKm))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(.caption).foregroundStyle(.secondary)
                     Text(String(format: "%.0f min", route.durationMinutes))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(.caption).foregroundStyle(.secondary)
+                    if route.isGreen {
+                        Text("Least fuel")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.green)
+                    }
                 }
             }
             Spacer()
@@ -165,7 +164,6 @@ struct StartTripSheet: View {
         return true
     }
 
-    /// Safeguard 3: Directions API fires ONCE on this button tap, never reactively.
     private func startNavigation() async {
         guard let mileage = Double(odometerText) else {
             errorMessage = "Please enter a valid odometer reading"
@@ -175,19 +173,13 @@ struct StartTripSheet: View {
 
         isStarting = true
 
-        // Fetch routes if not already fetched
         if routeOptions.isEmpty {
             await fetchRouteOptions()
-            if routeOptions.isEmpty {
-                // No routes fetched — continue without route data
-                print("[StartTripSheet] No route options available, starting without Mapbox data")
-            }
         }
 
         do {
             try await store.startActiveTrip(tripId: tripId, startMileage: mileage)
 
-            // Save route coordinates if available
             if let trip = trip,
                let originLat = trip.originLatitude,
                let originLng = trip.originLongitude,
@@ -231,8 +223,13 @@ struct StartTripSheet: View {
         urlString += "\(originLng),\(originLat);\(destLng),\(destLat)"
         urlString += "?alternatives=true&geometries=polyline6&overview=full&access_token=\(token)"
 
-        if avoidTolls { urlString += "&exclude=toll" }
-        if avoidHighways { urlString += (urlString.contains("exclude=") ? ",motorway" : "&exclude=motorway") }
+        // Build exclude string
+        var exclusions: [String] = []
+        if avoidTolls { exclusions.append("toll") }
+        if avoidHighways { exclusions.append("motorway") }
+        if !exclusions.isEmpty {
+            urlString += "&exclude=\(exclusions.joined(separator: ","))"
+        }
 
         guard let url = URL(string: urlString) else {
             isFetchingRoutes = false
@@ -242,20 +239,59 @@ struct StartTripSheet: View {
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
             if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let routes = json["routes"] as? [[String: Any]] {
-                var options: [RouteOption] = []
-                for (idx, route) in routes.prefix(2).enumerated() {
-                    let distanceM = route["distance"] as? Double ?? 0
-                    let durationS = route["duration"] as? Double ?? 0
-                    let geometry = route["geometry"] as? String ?? ""
+               let routes = json["routes"] as? [[String: Any]], !routes.isEmpty {
+
+                // Parse all returned routes
+                struct RawRoute {
+                    let distanceM: Double
+                    let durationS: Double
+                    let geometry: String
+                }
+
+                let rawRoutes: [RawRoute] = routes.prefix(3).compactMap { route in
+                    guard let dist = route["distance"] as? Double,
+                          let dur = route["duration"] as? Double,
+                          let geo = route["geometry"] as? String else { return nil }
+                    return RawRoute(distanceM: dist, durationS: dur, geometry: geo)
+                }
+
+                guard !rawRoutes.isEmpty else {
+                    isFetchingRoutes = false
+                    return
+                }
+
+                // Fastest = lowest duration
+                let fastest = rawRoutes.min(by: { $0.durationS < $1.durationS })!
+
+                // Green = lowest distance (correlates to least fuel — fewer km = less fuel burned)
+                // Must be a different route from fastest if alternatives exist
+                let green: RawRoute? = rawRoutes.count > 1
+                    ? rawRoutes.filter { $0.geometry != fastest.geometry }
+                               .min(by: { $0.distanceM < $1.distanceM })
+                    : nil
+
+                var options: [RouteOption] = [
+                    RouteOption(
+                        label: "Fastest Route",
+                        distanceKm: fastest.distanceM / 1000.0,
+                        durationMinutes: fastest.durationS / 60.0,
+                        geometry: fastest.geometry,
+                        isGreen: false
+                    )
+                ]
+
+                if let g = green {
                     options.append(RouteOption(
-                        label: idx == 0 ? "Fastest Route" : "Green Route (Fuel Efficient)",
-                        distanceKm: distanceM / 1000.0,
-                        durationMinutes: durationS / 60.0,
-                        geometry: geometry
+                        label: "Green Route",
+                        distanceKm: g.distanceM / 1000.0,
+                        durationMinutes: g.durationS / 60.0,
+                        geometry: g.geometry,
+                        isGreen: true
                     ))
                 }
+
                 routeOptions = options
+                selectedRouteIndex = 0
             }
         } catch {
             print("[StartTripSheet] Route fetch error: \(error)")
@@ -272,4 +308,5 @@ struct RouteOption {
     let distanceKm: Double
     let durationMinutes: Double
     let geometry: String
+    let isGreen: Bool
 }
