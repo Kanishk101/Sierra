@@ -9,11 +9,25 @@ struct FleetManagerTabView: View {
     var body: some View {
         TabView {
             Tab("Dashboard", systemImage: "square.grid.2x2.fill") {
-                placeholderTab(title: "Fleet Dashboard", icon: "chart.bar.fill", color: .orange)
+                NavigationStack {
+                    DashboardHomeView()
+                }
             }
             Tab("Live Map", systemImage: "map.fill") {
                 NavigationStack {
                     FleetLiveMapView(viewModel: mapViewModel)
+                        .toolbar {
+                            ToolbarItem(placement: .topBarTrailing) {
+                                Button { showNotifications = true } label: {
+                                    Image(systemName: "bell.fill")
+                                        .overlay(alignment: .topTrailing) {
+                                            if store.unreadNotificationCount > 0 {
+                                                Circle().fill(.red).frame(width: 8, height: 8).offset(x: 4, y: -4)
+                                            }
+                                        }
+                                }
+                            }
+                        }
                 }
             }
             Tab("Alerts", systemImage: "bell.badge.fill") {
@@ -27,7 +41,9 @@ struct FleetManagerTabView: View {
                 }
             }
             Tab("Drivers", systemImage: "person.2.fill") {
-                placeholderTab(title: "Drivers", icon: "person.2.fill", color: .orange)
+                NavigationStack {
+                    StaffTabView()
+                }
             }
             Tab("Maintenance", systemImage: "wrench.and.screwdriver.fill") {
                 NavigationStack {

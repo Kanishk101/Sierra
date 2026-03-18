@@ -9,6 +9,7 @@ struct DashboardHomeView: View {
     @Environment(AppDataStore.self) private var store
     @State private var showProfile   = false
     @State private var showAnalytics = false
+    @State private var showNotifications = false
 
     var body: some View {
         NavigationStack {
@@ -33,6 +34,22 @@ struct DashboardHomeView: View {
             .toolbarTitleDisplayMode(.inlineLarge)
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { showNotifications = true } label: {
+                        ZStack(alignment: .topTrailing) {
+                            Image(systemName: "bell.fill")
+                                .font(.body)
+                            if store.unreadNotificationCount > 0 {
+                                Text("\(min(store.unreadNotificationCount, 9))")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 16, height: 16)
+                                    .background(.red, in: Circle())
+                                    .offset(x: 8, y: -8)
+                            }
+                        }
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showProfile = true } label: {
                         Image(systemName: "person.crop.circle")
@@ -49,6 +66,9 @@ struct DashboardHomeView: View {
             }
             .sheet(isPresented: $showAnalytics) {
                 AnalyticsDashboardView().environment(AppDataStore.shared)
+            }
+            .sheet(isPresented: $showNotifications) {
+                NotificationCentreView()
             }
         }
     }

@@ -44,6 +44,15 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         super.init()
     }
 
+    // MARK: - Add Stop
+
+    func addStop(latitude: Double, longitude: Double, name: String) async {
+        // Reset so buildRoutes() will run again
+        hasBuiltRoutes = false
+        // TODO: In a full implementation, waypoints would be stored and passed to buildRoutes
+        await buildRoutes()
+    }
+
     // MARK: - Route Building (Safeguard 2: exactly once)
 
     func buildRoutes() async {
@@ -126,6 +135,9 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         manager.startUpdatingLocation()
         locationManager = manager
         isNavigating = true
+
+        // Register geofences for monitoring (iOS max 20 regions)
+        registerGeofences(AppDataStore.shared.geofences)
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
@@ -171,6 +183,12 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     func stopLocationPublishing() {
         locationPublishTimer?.invalidate()
         locationPublishTimer = nil
+        // Unregister all monitored geofence regions
+        if let manager = locationManager {
+            for region in manager.monitoredRegions {
+                manager.stopMonitoring(for: region)
+            }
+        }
         locationManager?.stopUpdatingLocation()
         locationManager = nil
     }
@@ -285,5 +303,81 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         let projLoc = CLLocation(latitude: projLat, longitude: projLng)
 
         return pointLoc.distance(from: projLoc)
+    }
+
+    // MARK: - Geofence Monitoring
+
+    /// Registers CLCircularRegion monitors for active geofences.
+    /// iOS enforces a max of 20 monitored regions; only the 20 closest are registered.
+    func registerGeofences(_ geofences: [Geofence]) {
+        guard let manager = locationManager else { return }
+        // Clear existing
+        for region in manager.monitoredRegions {
+            manager.stopMonitoring(for: region)
+        }
+        // Sort by distance from driver (closest first) and take 20
+        let driverCoord = currentLocation?.coordinate ?? CLLocationCoordinate2D(latitude: 20.5937, longitude: 78.9629)
+        let driverLoc = CLLocation(latitude: driverCoord.latitude, longitude: driverCoord.longitude)
+        let active = geofences.filter { $0.isActive }
+        let sorted = active.sorted {
+            let loc0 = CLLocation(latitude: $0.latitude, longitude: $0.longitude)
+            let loc1 = CLLocation(latitude: $1.latitude, longitude: $1.longitude)
+            return driverLoc.distance(from: loc0) < driverLoc.distance(from: loc1)
+        }
+        for geofence in sorted.prefix(20) {
+            let center = CLLocationCoordinate2D(latitude: geofence.latitude, longitude: geofence.longitude)
+            let region = CLCircularRegion(center: center, radius: geofence.radiusMeters, identifier: geofence.id.uuidString)
+            region.notifyOnEntry = geofence.alertOnEntry
+            region.notifyOnExit = geofence.alertOnExit
+            manager.startMonitoring(for: region)
+        }
+    }
+
+    nonisolated func locationManager(_ manager: CLLocationManager, didEnterRegion region: CLRegion) {
+        guard let geofenceId = UUID(uuidString: region.identifier) else { return }
+        Task { @MainActor in
+            await self.handleGeofenceEvent(geofenceId: geofenceId, eventType: "Entry")
+        }
+    }
+
+    nonisolated func locationManager(_ manager: CLLocationManager, didExitRegion region: CLRegion) {
+        guard let geofenceId = UUID(uuidString: region.identifier) else { return }
+        Task { @MainActor in
+            await self.handleGeofenceEvent(geofenceId: geofenceId, eventType: "Exit")
+        }
+    }
+
+    private func handleGeofenceEvent(geofenceId: UUID, eventType: String) async {
+        guard let vehicleIdStr = trip.vehicleId, let vehicleId = UUID(uuidString: vehicleIdStr) else { return }
+        let driverId = AuthManager.shared.currentUser?.id ?? UUID()
+        // Insert geofence event (non-fatal)
+        do {
+            try await GeofenceEventService.addGeofenceEvent(GeofenceEvent(
+                id: UUID(),
+                geofenceId: geofenceId,
+                vehicleId: vehicleId,
+                tripId: trip.id,
+                driverId: driverId,
+                eventType: eventType == "Entry" ? .entry : .exit,
+                latitude: currentLocation?.coordinate.latitude ?? 0,
+                longitude: currentLocation?.coordinate.longitude ?? 0,
+                triggeredAt: Date(),
+                createdAt: Date()
+            ))
+        } catch {
+            print("[NavCoordinator] Geofence event insert failed (non-fatal): \(error)")
+        }
+        // Notify fleet managers (non-fatal — all wrapped in try?)
+        let fmIds = AppDataStore.shared.staff.filter { $0.role == .fleetManager && $0.status == .active }.map { $0.id }
+        for fmId in fmIds {
+            try? await NotificationService.insertNotification(
+                recipientId: fmId,
+                type: .geofenceViolation,
+                title: "Geofence \(eventType)",
+                body: "Vehicle \(vehicleIdStr) \(eventType == "Entry" ? "entered" : "exited") a monitored zone",
+                entityType: "geofence",
+                entityId: geofenceId
+            )
+        }
     }
 }

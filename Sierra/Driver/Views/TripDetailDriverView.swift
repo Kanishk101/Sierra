@@ -10,6 +10,7 @@ struct TripDetailDriverView: View {
 
     @State private var showPreInspection = false
     @State private var showStartTrip = false
+    @State private var showNavigation = false
     @State private var showProofOfDelivery = false
     @State private var showPostInspection = false
     @State private var errorMessage: String?
@@ -91,6 +92,12 @@ struct TripDetailDriverView: View {
                         driverId: user?.id ?? UUID()
                     )
                 }
+            }
+        }
+        .fullScreenCover(isPresented: $showNavigation) {
+            if let trip {
+                TripNavigationContainerView(trip: trip)
+                    .environment(AppDataStore.shared)
             }
         }
     }
@@ -212,6 +219,9 @@ struct TripDetailDriverView: View {
                 }
 
             case .active:
+                actionButton("Navigate", icon: "location.fill", color: SierraTheme.Colors.alpineMint) {
+                    showNavigation = true
+                }
                 if trip.proofOfDeliveryId == nil {
                     actionButton("Complete Delivery", icon: "shippingbox.fill", color: SierraTheme.Colors.ember) {
                         showProofOfDelivery = true

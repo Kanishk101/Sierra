@@ -44,7 +44,7 @@ struct FleetLiveMapView: View {
         .sheet(isPresented: $viewModel.showVehicleDetail) {
             if let vehicleId = viewModel.selectedVehicleId,
                let vehicle = store.vehicles.first(where: { $0.id == vehicleId }) {
-                VehicleMapDetailSheet(vehicle: vehicle) {
+                VehicleMapDetailSheet(vehicle: vehicle, viewModel: viewModel) {
                     viewModel.showVehicleDetail = false
                 }
             }

@@ -4,6 +4,7 @@ import SwiftUI
 struct VehicleMapDetailSheet: View {
 
     let vehicle: Vehicle
+    var viewModel: FleetLiveMapViewModel
     var onDismiss: () -> Void
 
     @Environment(AppDataStore.self) private var store
@@ -45,6 +46,12 @@ struct VehicleMapDetailSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
+        .onAppear {
+            // Fetch breadcrumb trail for active trip on this vehicle
+            if let trip = activeTrip {
+                Task { await viewModel.fetchBreadcrumb(vehicleId: vehicle.id, tripId: trip.id) }
+            }
+        }
     }
 
     // MARK: - Vehicle Header

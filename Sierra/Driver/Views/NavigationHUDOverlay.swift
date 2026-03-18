@@ -9,6 +9,8 @@ struct NavigationHUDOverlay: View {
 
     @State private var showEndTripConfirm = false
     @State private var showAddStop = false
+    @State private var showSOSAlert = false
+    @State private var showIncidentReport = false
     @State private var stopAddress = ""
     @State private var geocodeTask: Task<Void, Never>?
     @State private var geocodedResults: [GeocodedStop] = []
@@ -43,6 +45,15 @@ struct NavigationHUDOverlay: View {
         }
         .sheet(isPresented: $showAddStop) {
             addStopSheet
+        }
+        .sheet(isPresented: $showSOSAlert) {
+            SOSAlertSheet(
+                tripId: coordinator.trip.id,
+                vehicleId: UUID(uuidString: coordinator.trip.vehicleId ?? "")
+            )
+        }
+        .sheet(isPresented: $showIncidentReport) {
+            IncidentReportSheet()
         }
         .alert("End Trip?", isPresented: $showEndTripConfirm) {
             Button("Cancel", role: .cancel) {}
@@ -149,7 +160,10 @@ struct NavigationHUDOverlay: View {
     private var actionBar: some View {
         HStack(spacing: 12) {
             actionButton("SOS", icon: "sos", color: SierraTheme.Colors.danger) {
-                // SOS action — future implementation
+                showSOSAlert = true
+            }
+            actionButton("Incident", icon: "exclamationmark.triangle.fill", color: .orange) {
+                showIncidentReport = true
             }
             actionButton("Add Stop", icon: "plus.circle", color: SierraTheme.Colors.info) {
                 showAddStop = true
@@ -200,7 +214,13 @@ struct NavigationHUDOverlay: View {
                 } else {
                     List(geocodedResults) { result in
                         Button {
-                            // In a full implementation, this would add the waypoint and rebuild routes
+                            Task {
+                                await coordinator.addStop(
+                                    latitude: result.latitude,
+                                    longitude: result.longitude,
+                                    name: result.name
+                                )
+                            }
                             showAddStop = false
                         } label: {
                             VStack(alignment: .leading, spacing: 2) {
