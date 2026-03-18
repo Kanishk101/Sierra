@@ -39,6 +39,7 @@ struct TripNavigationContainerView: View {
             guard let vehicleIdStr = coordinator.trip.vehicleId,
                   let vehicleId = UUID(uuidString: vehicleIdStr),
                   let driverId = user?.id else { return }
+            coordinator.startLocationTracking()
             coordinator.startLocationPublishing(vehicleId: vehicleId, driverId: driverId)
         }
         .onDisappear {
