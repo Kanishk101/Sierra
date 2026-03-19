@@ -7,11 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		3E0441522F69B0920090D4EC /* MapboxCoreNavigation in Frameworks */ = {isa = PBXBuildFile; productRef = 3E0441512F69B0920090D4EC /* MapboxCoreNavigation */; };
-		3E0441542F69B09D0090D4EC /* MapboxNavigation in Frameworks */ = {isa = PBXBuildFile; productRef = 3E0441532F69B09D0090D4EC /* MapboxNavigation */; };
 		3E432BD82F6405A5008CE2B3 /* Auth in Frameworks */ = {isa = PBXBuildFile; productRef = 3E432BD72F6405A5008CE2B3 /* Auth */; };
 		3E432BDA2F6405A5008CE2B3 /* PostgREST in Frameworks */ = {isa = PBXBuildFile; productRef = 3E432BD92F6405A5008CE2B3 /* PostgREST */; };
 		3E432BDD2F6405C9008CE2B3 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 3E432BDC2F6405C9008CE2B3 /* Supabase */; };
+		3ED813DE2F6BABAC00B0EA38 /* MapboxNavigationCore in Frameworks */ = {isa = PBXBuildFile; productRef = 3ED813DD2F6BABAC00B0EA38 /* MapboxNavigationCore */; };
 		3EFD6A452F695C5700D685D5 /* MapboxDirections in Frameworks */ = {isa = PBXBuildFile; productRef = 3EFD6A442F695C5700D685D5 /* MapboxDirections */; };
 /* End PBXBuildFile section */
 
@@ -46,11 +45,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				3EFD6A452F695C5700D685D5 /* MapboxDirections in Frameworks */,
-				3E0441542F69B09D0090D4EC /* MapboxNavigation in Frameworks */,
 				3E432BDD2F6405C9008CE2B3 /* Supabase in Frameworks */,
 				3E432BDA2F6405A5008CE2B3 /* PostgREST in Frameworks */,
+				3ED813DE2F6BABAC00B0EA38 /* MapboxNavigationCore in Frameworks */,
 				3E432BD82F6405A5008CE2B3 /* Auth in Frameworks */,
-				3E0441522F69B0920090D4EC /* MapboxCoreNavigation in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -105,8 +103,7 @@
 				3E432BD92F6405A5008CE2B3 /* PostgREST */,
 				3E432BDC2F6405C9008CE2B3 /* Supabase */,
 				3EFD6A442F695C5700D685D5 /* MapboxDirections */,
-				3E0441512F69B0920090D4EC /* MapboxCoreNavigation */,
-				3E0441532F69B09D0090D4EC /* MapboxNavigation */,
+				3ED813DD2F6BABAC00B0EA38 /* MapboxNavigationCore */,
 			);
 			productName = Sierra;
 			productReference = 3E9600752F5F0CEE0040F55E /* Sierra.app */;
@@ -403,16 +400,6 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		3E0441512F69B0920090D4EC /* MapboxCoreNavigation */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 3EFD6A432F695C5700D685D5 /* XCRemoteSwiftPackageReference "mapbox-navigation-ios" */;
-			productName = MapboxCoreNavigation;
-		};
-		3E0441532F69B09D0090D4EC /* MapboxNavigation */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 3EFD6A432F695C5700D685D5 /* XCRemoteSwiftPackageReference "mapbox-navigation-ios" */;
-			productName = MapboxNavigation;
-		};
 		3E432BD72F6405A5008CE2B3 /* Auth */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 3E432BD62F6405A5008CE2B3 /* XCRemoteSwiftPackageReference "supabase-swift" */;
@@ -427,6 +414,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 3E432BD62F6405A5008CE2B3 /* XCRemoteSwiftPackageReference "supabase-swift" */;
 			productName = Supabase;
+		};
+		3ED813DD2F6BABAC00B0EA38 /* MapboxNavigationCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3EFD6A432F695C5700D685D5 /* XCRemoteSwiftPackageReference "mapbox-navigation-ios" */;
+			productName = MapboxNavigationCore;
 		};
 		3EFD6A442F695C5700D685D5 /* MapboxDirections */ = {
 			isa = XCSwiftPackageProductDependency;

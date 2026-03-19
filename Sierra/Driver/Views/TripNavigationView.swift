@@ -1,13 +1,13 @@
 import SwiftUI
 import MapboxNavigationCore
+import MapboxMaps
 import MapboxDirections
+import Turf
 import CoreLocation
 
 // MARK: - TripNavigationView
 //
 // UIViewRepresentable wrapping Mapbox Maps v3 MapView.
-// MapboxNavigationCore re-exports MapboxMaps types (MapView, CameraOptions,
-// PolylineAnnotation etc.) in SDK v3 — no separate MapboxMaps import needed.
 // MapboxDirections is linked separately for Route / RouteStep types.
 //
 // Safeguard: MapView is created ONCE in makeUIView, never recreated.
@@ -67,12 +67,18 @@ struct TripNavigationView: UIViewRepresentable {
             annotationManager.annotations = [annotation]
 
             // Fit camera to route bounds
-            let camera = mapView.mapboxMap.camera(
-                for: coordinates,
-                padding: UIEdgeInsets(top: 80, left: 40, bottom: 200, right: 40),
-                bearing: nil,
-                pitch: nil
-            )
+            let camera: CameraOptions
+            do {
+                camera = try mapView.mapboxMap.camera(
+                    for: coordinates,
+                    camera: CameraOptions(),
+                    coordinatesPadding: UIEdgeInsets(top: 80, left: 40, bottom: 200, right: 40),
+                    maxZoom: nil,
+                    offset: nil
+                )
+            } catch {
+                camera = CameraOptions(center: coordinates.first, zoom: 14)
+            }
             mapView.camera.ease(to: camera, duration: 1.0)
         }
     }

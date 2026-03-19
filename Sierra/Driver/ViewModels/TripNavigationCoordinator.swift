@@ -1,7 +1,8 @@
 import Foundation
 import CoreLocation
 import MapboxDirections
-import Turf
+//import Turf
+import MapboxMaps
 
 // MARK: - TripNavigationCoordinator
 
@@ -82,7 +83,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
 
         do {
             let response: RouteResponse = try await withCheckedThrowingContinuation { continuation in
-                Directions.shared.calculate(options) { _, result in
+                Directions.shared.calculate(options) { result in
                     switch result {
                     case .success(let resp):
                         continuation.resume(returning: resp)
@@ -94,7 +95,8 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
 
             let routes = response.routes ?? []
 
-            if let fastest = routes.min(by: { $0.expectedTravelTime < $1.expectedTravelTime }) {
+            if let fastestIndex = routes.indices.min(by: { routes[$0].expectedTravelTime < routes[$1].expectedTravelTime }) {
+                let fastest = routes[fastestIndex]
                 currentRoute = fastest
                 distanceRemainingMetres = fastest.distance
                 estimatedArrivalTime = Date().addingTimeInterval(fastest.expectedTravelTime)
@@ -102,9 +104,10 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
                 if let firstStep = fastest.legs.first?.steps.first {
                     currentStepInstruction = firstStep.instructions
                 }
-            }
-            if routes.count > 1 {
-                alternativeRoute = routes.first { $0 !== currentRoute }
+
+                if routes.count > 1 {
+                    alternativeRoute = routes.enumerated().first(where: { $0.offset != fastestIndex })?.element
+                }
             }
 
             // Decode route geometry for local deviation math
