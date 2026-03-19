@@ -77,6 +77,9 @@ final class CreateStaffViewModel {
 
         do {
             // Step 1: Provision Supabase Auth user + staff_members row via edge function.
+            // The edge function (create-staff-account, verify_jwt: true) verifies the
+            // caller is a fleet manager and does an atomic auth.admin.createUser() +
+            // staff_members insert with rollback on DB failure.
             let payload = CreateStaffAccountPayload(
                 email: trimmedEmail,
                 password: tempPassword,
@@ -91,7 +94,9 @@ final class CreateStaffViewModel {
                 throw URLError(.badServerResponse)
             }
 
-            // Step 2: Email credentials via SwiftSMTP
+            // Step 2: Email login credentials to the new staff member.
+            // Uses the send-email edge function which relays through Gmail SMTP
+            // (credentials stored as Supabase secrets, never in source code).
             try await EmailService.sendCredentials(
                 to:       trimmedEmail,
                 name:     trimmedName,
