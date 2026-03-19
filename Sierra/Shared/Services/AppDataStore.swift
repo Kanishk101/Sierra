@@ -7,20 +7,26 @@ final class AppDataStore {
 
     static let shared = AppDataStore()
 
-    private init() {
-        subscribeToEmergencyAlerts()
-        subscribeToStaffMemberUpdates()
-        subscribeToVehicleUpdates()
-        subscribeToTripUpdates()
-    }
+    // MARK: - init
+    // Realtime subscriptions are NOT started here.
+    // They start in loadAll/loadDriverData/loadMaintenanceData after the user
+    // has authenticated so channels open with a valid session JWT.
+    // Previously subscribing in init() caused all 4 channels to fail silently
+    // (no valid session yet) and never reconnect for the entire login session.
 
-    // MARK: - Realtime
+    private init() {}
+
+    // MARK: - Realtime channels (started post-auth)
 
     private var emergencyAlertsChannel: RealtimeChannelV2?
-    private var staffMembersChannel: RealtimeChannelV2?
-    // vehiclesChannel and tripsChannel declared alongside their subscribe methods below
-    private var notificationsChannel: RealtimeChannelV2?
-    private var isSubscribedToNotifications = false
+    private var staffMembersChannel:   RealtimeChannelV2?
+    private var vehiclesChannel:        RealtimeChannelV2?
+    private var tripsChannel:           RealtimeChannelV2?
+    private var notificationsChannel:   RealtimeChannelV2?
+
+    // Tracks which user's notifications are subscribed so we
+    // re-subscribe correctly on role/user switch (Issue 14 / Codex MED-4).
+    private var subscribedNotificationsUserId: UUID?
 
     // MARK: - Data Arrays
 
@@ -47,14 +53,20 @@ final class AppDataStore {
     var currentTripDeviations: [RouteDeviationEvent] = []
     var activeTripExpenses: [TripExpense] = []
     var sparePartsRequests: [SparePartsRequest] = []
-    var vehicleLocations: [String: VehicleLocationHistory] = [:]  // vehicleId → latest location
+    var vehicleLocations: [String: VehicleLocationHistory] = [:]
     var routeDeviationEvents: [RouteDeviationEvent] = []
     var isLoading: Bool = false
     var loadError: String?
 
     // MARK: - Load Methods
+    // Each load method tears down existing channels first, then resubscribes
+    // with the now-valid session JWT. This ensures realtime works correctly
+    // on every login (including re-login after sign-out).
 
     func loadAll() async {
+        // Tear down any stale channels from a previous session
+        await tearDownRealtimeChannels()
+
         isLoading = true
         loadError = nil
 
@@ -79,24 +91,24 @@ final class AppDataStore {
 
         var errors: [String] = []
 
-        do { staff               = try await staffTask }        catch { errors.append("staff: \(error.localizedDescription)"); print("[AppDataStore] ⚠️ staff load failed: \(error)") }
-        do { driverProfiles      = try await driverProfsTask }  catch { errors.append("driverProfiles: \(error.localizedDescription)"); print("[AppDataStore] ⚠️ driverProfiles load failed: \(error)") }
-        do { maintenanceProfiles = try await maintProfsTask }   catch { errors.append("maintenanceProfiles: \(error.localizedDescription)"); print("[AppDataStore] ⚠️ maintenanceProfiles load failed: \(error)") }
-        do { staffApplications   = try await appsTask }         catch { errors.append("staffApplications: \(error.localizedDescription)"); print("[AppDataStore] ⚠️ staffApplications load failed: \(error)") }
-        do { vehicles            = try await vehiclesTask }     catch { errors.append("vehicles: \(error.localizedDescription)"); print("[AppDataStore] ⚠️ vehicles load failed: \(error)") }
-        do { vehicleDocuments    = try await vehicleDocsTask }  catch { errors.append("vehicleDocuments: \(error.localizedDescription)"); print("[AppDataStore] ⚠️ vehicleDocuments load failed: \(error)") }
-        do { trips               = try await tripsTask }        catch { errors.append("trips: \(error.localizedDescription)"); print("[AppDataStore] ⚠️ trips load failed: \(error)") }
-        do { fuelLogs            = try await fuelLogsTask }     catch { errors.append("fuelLogs: \(error.localizedDescription)"); print("[AppDataStore] ⚠️ fuelLogs load failed: \(error)") }
-        do { vehicleInspections  = try await inspectionsTask }  catch { errors.append("vehicleInspections: \(error.localizedDescription)"); print("[AppDataStore] ⚠️ vehicleInspections load failed: \(error)") }
-        do { proofOfDeliveries   = try await podsTask }         catch { errors.append("proofOfDeliveries: \(error.localizedDescription)"); print("[AppDataStore] ⚠️ proofOfDeliveries load failed: \(error)") }
-        do { emergencyAlerts     = try await alertsTask }       catch { errors.append("emergencyAlerts: \(error.localizedDescription)"); print("[AppDataStore] ⚠️ emergencyAlerts load failed: \(error)") }
-        do { maintenanceTasks    = try await maintTasksTask }   catch { errors.append("maintenanceTasks: \(error.localizedDescription)"); print("[AppDataStore] ⚠️ maintenanceTasks load failed: \(error)") }
-        do { workOrders          = try await workOrdersTask }   catch { errors.append("workOrders: \(error.localizedDescription)"); print("[AppDataStore] ⚠️ workOrders load failed: \(error)") }
-        do { maintenanceRecords  = try await maintRecsTask }    catch { errors.append("maintenanceRecords: \(error.localizedDescription)"); print("[AppDataStore] ⚠️ maintenanceRecords load failed: \(error)") }
-        do { partsUsed           = try await partsTask }        catch { errors.append("partsUsed: \(error.localizedDescription)"); print("[AppDataStore] ⚠️ partsUsed load failed: \(error)") }
-        do { geofences           = try await geofencesTask }    catch { errors.append("geofences: \(error.localizedDescription)"); print("[AppDataStore] ⚠️ geofences load failed: \(error)") }
-        do { geofenceEvents      = try await geoEventsTask }    catch { errors.append("geofenceEvents: \(error.localizedDescription)"); print("[AppDataStore] ⚠️ geofenceEvents load failed: \(error)") }
-        do { activityLogs        = try await activityTask }     catch { errors.append("activityLogs: \(error.localizedDescription)"); print("[AppDataStore] ⚠️ activityLogs load failed: \(error)") }
+        do { staff               = try await staffTask }        catch { errors.append("staff: \(error.localizedDescription)") }
+        do { driverProfiles      = try await driverProfsTask }  catch { errors.append("driverProfiles: \(error.localizedDescription)") }
+        do { maintenanceProfiles = try await maintProfsTask }   catch { errors.append("maintenanceProfiles: \(error.localizedDescription)") }
+        do { staffApplications   = try await appsTask }         catch { errors.append("staffApplications: \(error.localizedDescription)") }
+        do { vehicles            = try await vehiclesTask }     catch { errors.append("vehicles: \(error.localizedDescription)") }
+        do { vehicleDocuments    = try await vehicleDocsTask }  catch { errors.append("vehicleDocuments: \(error.localizedDescription)") }
+        do { trips               = try await tripsTask }        catch { errors.append("trips: \(error.localizedDescription)") }
+        do { fuelLogs            = try await fuelLogsTask }     catch { errors.append("fuelLogs: \(error.localizedDescription)") }
+        do { vehicleInspections  = try await inspectionsTask }  catch { errors.append("vehicleInspections: \(error.localizedDescription)") }
+        do { proofOfDeliveries   = try await podsTask }         catch { errors.append("proofOfDeliveries: \(error.localizedDescription)") }
+        do { emergencyAlerts     = try await alertsTask }       catch { errors.append("emergencyAlerts: \(error.localizedDescription)") }
+        do { maintenanceTasks    = try await maintTasksTask }   catch { errors.append("maintenanceTasks: \(error.localizedDescription)") }
+        do { workOrders          = try await workOrdersTask }   catch { errors.append("workOrders: \(error.localizedDescription)") }
+        do { maintenanceRecords  = try await maintRecsTask }    catch { errors.append("maintenanceRecords: \(error.localizedDescription)") }
+        do { partsUsed           = try await partsTask }        catch { errors.append("partsUsed: \(error.localizedDescription)") }
+        do { geofences           = try await geofencesTask }    catch { errors.append("geofences: \(error.localizedDescription)") }
+        do { geofenceEvents      = try await geoEventsTask }    catch { errors.append("geofenceEvents: \(error.localizedDescription)") }
+        do { activityLogs        = try await activityTask }     catch { errors.append("activityLogs: \(error.localizedDescription)") }
 
         if !errors.isEmpty {
             loadError = "Partial load failure: \(errors.joined(separator: "; "))"
@@ -105,13 +117,19 @@ final class AppDataStore {
 
         isLoading = false
 
-        // Wire notifications for fleet managers
+        // Start realtime channels NOW — session JWT is valid
+        subscribeToEmergencyAlerts()
+        subscribeToStaffMemberUpdates()
+        subscribeToVehicleUpdates()
+        subscribeToTripUpdates()
+
         if let userId = AuthManager.shared.currentUser?.id {
-            Task { await loadAndSubscribeNotifications(for: userId) }
+            await loadAndSubscribeNotifications(for: userId)
         }
     }
 
     func loadDriverData(driverId: UUID) async {
+        await tearDownRealtimeChannels()
         isLoading = true
         do {
             async let selfMemberTask   = StaffMemberService.fetchStaffMember(id: driverId)
@@ -121,9 +139,7 @@ final class AppDataStore {
             async let inspectionsTask  = VehicleInspectionService.fetchAllInspections()
             async let driverProfTask   = DriverProfileService.fetchDriverProfile(staffMemberId: driverId)
 
-            if let selfMember = try await selfMemberTask {
-                staff = [selfMember]
-            }
+            if let selfMember = try await selfMemberTask { staff = [selfMember] }
             vehicles           = try await vehiclesTask
             trips              = try await tripsTask
             fuelLogs           = try await fuelLogsTask
@@ -134,11 +150,12 @@ final class AppDataStore {
             print("[AppDataStore.loadDriverData] Error: \(error)")
         }
         isLoading = false
-
-        Task { await loadAndSubscribeNotifications(for: driverId) }
+        subscribeToTripUpdates()
+        await loadAndSubscribeNotifications(for: driverId)
     }
 
     func loadMaintenanceData(staffId: UUID) async {
+        await tearDownRealtimeChannels()
         isLoading = true
         do {
             async let selfMemberTask = StaffMemberService.fetchStaffMember(id: staffId)
@@ -161,8 +178,21 @@ final class AppDataStore {
             print("[AppDataStore.loadMaintenanceData] Error: \(error)")
         }
         isLoading = false
+        await loadAndSubscribeNotifications(for: staffId)
+    }
 
-        Task { await loadAndSubscribeNotifications(for: staffId) }
+    // MARK: - Realtime teardown
+    // Called before every loadAll/loadDriverData/loadMaintenanceData to prevent
+    // duplicate channels and stale-state contamination across session transitions.
+
+    private func tearDownRealtimeChannels() async {
+        if let ch = emergencyAlertsChannel { await ch.unsubscribe(); emergencyAlertsChannel = nil }
+        if let ch = staffMembersChannel   { await ch.unsubscribe(); staffMembersChannel = nil }
+        if let ch = vehiclesChannel        { await ch.unsubscribe(); vehiclesChannel = nil }
+        if let ch = tripsChannel           { await ch.unsubscribe(); tripsChannel = nil }
+        if let ch = notificationsChannel   { await ch.unsubscribe(); notificationsChannel = nil }
+        subscribedNotificationsUserId = nil
+        NotificationService.shared.unsubscribeFromNotifications()
     }
 
     // MARK: - Staff CRUD
@@ -185,14 +215,10 @@ final class AppDataStore {
         staffApplications.removeAll   { $0.staffMemberId == id }
     }
 
-    // Targeted availability update - routes through StaffMemberService.updateAvailability
-    // which adds .select() to verify the DB write and logs the result.
-
     func updateDriverAvailability(staffId: UUID, available: Bool) async throws {
         let confirmedValue = try await StaffMemberService.updateAvailability(
             staffId: staffId, available: available
         )
-        // Patch local store with the DB-confirmed value
         let confirmedAvailability = StaffAvailability(rawValue: confirmedValue) ?? (available ? .available : .unavailable)
         if let idx = staff.firstIndex(where: { $0.id == staffId }) {
             staff[idx].availability = confirmedAvailability
@@ -315,8 +341,8 @@ final class AppDataStore {
         try await TripService.updateTripStatus(id: id, status: status)
         if let idx = trips.firstIndex(where: { $0.id == id }) {
             trips[idx].status = status
-            if status == .active { trips[idx].actualStartDate = Date() }
-            else if status == .completed { trips[idx].actualEndDate = Date() }
+            if status == .active   { trips[idx].actualStartDate = Date() }
+            if status == .completed { trips[idx].actualEndDate  = Date() }
         }
     }
 
@@ -583,7 +609,7 @@ final class AppDataStore {
     var vehiclesInMaintenance: [Vehicle] { vehicles.filter { $0.status == .inMaintenance } }
     var overdueTrips: [Trip] { trips.filter { $0.isOverdue } }
 
-    // MARK: - Realtime - Emergency Alerts
+    // MARK: - Realtime — Emergency Alerts
 
     private func subscribeToEmergencyAlerts() {
         let channel = supabase.channel("emergency_alerts_channel")
@@ -602,7 +628,7 @@ final class AppDataStore {
         }
     }
 
-    // MARK: - Realtime - Staff Members UPDATE
+    // MARK: - Realtime — Staff Members UPDATE
 
     private func subscribeToStaffMemberUpdates() {
         let channel = supabase.channel("staff_members_updates_channel")
@@ -624,9 +650,7 @@ final class AppDataStore {
         }
     }
 
-    // MARK: - Realtime - Vehicles UPDATE
-
-    private var vehiclesChannel: RealtimeChannelV2?
+    // MARK: - Realtime — Vehicles UPDATE
 
     private func subscribeToVehicleUpdates() {
         let channel = supabase.channel("vehicles_updates_channel")
@@ -648,9 +672,7 @@ final class AppDataStore {
         }
     }
 
-    // MARK: - Realtime - Trips UPDATE
-
-    private var tripsChannel: RealtimeChannelV2?
+    // MARK: - Realtime — Trips (UPDATE + INSERT)
 
     private func subscribeToTripUpdates() {
         let channel = supabase.channel("trips_updates_channel")
@@ -672,7 +694,6 @@ final class AppDataStore {
                 guard let idValue = action.record["id"],
                       case let .string(idString) = idValue,
                       let newId = UUID(uuidString: idString) else { return }
-                // Only add if not already in the local store
                 guard !self.trips.contains(where: { $0.id == newId }) else { return }
                 if let fresh = try? await TripService.fetchTrip(id: newId) {
                     self.trips.insert(fresh, at: 0)
@@ -685,16 +706,22 @@ final class AppDataStore {
         }
     }
 
-    // MARK: - Sprint 2: Notifications
+    // MARK: - Notifications
+    // Identity-bound: if userId changes, we unsubscribe from old and re-subscribe for new.
 
     func loadAndSubscribeNotifications(for userId: UUID) async {
-        guard !isSubscribedToNotifications else { return }
-        isSubscribedToNotifications = true
+        // Re-subscribe if user identity has changed (role switch / re-login)
+        if subscribedNotificationsUserId == userId { return }
+        NotificationService.shared.unsubscribeFromNotifications()
+        subscribedNotificationsUserId = userId
+        notifications = []
+
         do {
             notifications = try await NotificationService.fetchNotifications(for: userId)
         } catch {
             print("[AppDataStore] Failed to fetch notifications: \(error)")
         }
+
         NotificationService.shared.subscribeToNotifications(for: userId) { [weak self] newNotification in
             guard let self else { return }
             Task { @MainActor in
@@ -703,7 +730,7 @@ final class AppDataStore {
         }
     }
 
-    // MARK: - Sprint 2: Location Publishing (non-throwing)
+    // MARK: - Location Publishing
 
     func publishDriverLocation(vehicleId: UUID, tripId: UUID, latitude: Double, longitude: Double, speedKmh: Double?) async {
         do {
@@ -716,15 +743,10 @@ final class AppDataStore {
                 speedKmh: speedKmh
             )
             let entry = VehicleLocationHistory(
-                id: UUID(),
-                vehicleId: vehicleId,
-                tripId: tripId,
+                id: UUID(), vehicleId: vehicleId, tripId: tripId,
                 driverId: AuthManager.shared.currentUser?.id,
-                latitude: latitude,
-                longitude: longitude,
-                speedKmh: speedKmh,
-                recordedAt: Date(),
-                createdAt: Date()
+                latitude: latitude, longitude: longitude,
+                speedKmh: speedKmh, recordedAt: Date(), createdAt: Date()
             )
             activeTripLocationHistory.append(entry)
         } catch {
@@ -732,7 +754,7 @@ final class AppDataStore {
         }
     }
 
-    // MARK: - Sprint 2: Trip Lifecycle
+    // MARK: - Trip Lifecycle
 
     func startActiveTrip(tripId: UUID, startMileage: Double) async throws {
         try await TripService.startTrip(tripId: tripId, startMileage: startMileage)
@@ -744,6 +766,8 @@ final class AppDataStore {
     }
 
     func endTrip(tripId: UUID, endMileage: Double) async throws {
+        // completeTrip updates the DB — the trg_trip_status_change trigger
+        // automatically releases driver and vehicle resources atomically.
         try await TripService.completeTrip(tripId: tripId, endMileage: endMileage)
         if let idx = trips.firstIndex(where: { $0.id == tripId }) {
             trips[idx].status = .completed
@@ -756,6 +780,8 @@ final class AppDataStore {
     }
 
     func abortTrip(tripId: UUID) async throws {
+        // cancelTrip updates the DB — the trg_trip_status_change trigger
+        // automatically releases driver and vehicle resources atomically.
         try await TripService.cancelTrip(tripId: tripId)
         if let idx = trips.firstIndex(where: { $0.id == tripId }) {
             trips[idx].status = .cancelled
@@ -765,9 +791,11 @@ final class AppDataStore {
         activeTripExpenses = []
     }
 
-    // MARK: - Sprint 2: Overdue Maintenance Check (idempotent)
+    // MARK: - Overdue Maintenance Check
 
     func checkOverdueMaintenance() async {
+        // Guard: only run after notifications are loaded to prevent duplicate inserts
+        guard subscribedNotificationsUserId != nil else { return }
         let overdueTasks = maintenanceTasks.filter {
             $0.status == .pending && $0.dueDate < Date()
         }
@@ -791,12 +819,10 @@ final class AppDataStore {
         }
     }
 
-    // MARK: - Sprint 2: Cleanup
+    // MARK: - Full Cleanup (called on sign-out)
 
     func unsubscribeAll() {
-        isSubscribedToNotifications = false
-        NotificationService.shared.unsubscribeFromNotifications()
-        notificationsChannel = nil
+        Task { await tearDownRealtimeChannels() }
         activeTripLocationHistory = []
         currentTripDeviations = []
         activeTripExpenses = []

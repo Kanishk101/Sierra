@@ -37,9 +37,12 @@ final class AuthManager {
     var isAuthenticated: Bool = false
     var needsReauth: Bool = false
     private var currentOTP: String = ""
+    private var otpGeneratedAt: Date?          // tracks OTP age for timestamp-based expiry
+    private let otpValidSeconds: TimeInterval = 600  // 10 minutes
     var pendingOTPEmail: String?
     private var pendingResetToken: String = ""
     private var resetOTP: String = ""
+    private var resetOTPGeneratedAt: Date?
     private let autoLockSeconds: TimeInterval = 300
     private var otpLastSentAt: Date?
     private var resetOTPLastSentAt: Date?
@@ -48,50 +51,28 @@ final class AuthManager {
     private init() { restoreSessionSilently() }
 
     // MARK: - Sign In
-    //
-    // Two-step login:
-    //   1. supabase.auth.signIn(email:password:) — Supabase Auth validates
-    //      credentials server-side (bcrypt). Sets auth.uid() so RLS works.
-    //   2. 150 ms sleep — ensures the JWT is fully propagated before the
-    //      edge function’s anonClient.auth.getUser() call resolves it.
-    //      Without this, a fast network can trigger a race where getUser()
-    //      returns null and the function throws 401 → invalidCredentials.
-    //   3. sign-in edge function (verify_jwt: true) — fetches staff profile.
 
     func signIn(email: String, password: String) async throws -> UserRole {
         otpLastSentAt = nil
 
         do {
-            try await supabase.auth.signIn(
-                email: email,
-                password: password
-            )
+            try await supabase.auth.signIn(email: email, password: password)
         } catch {
             throw AuthError.invalidCredentials
         }
 
-        // Allow JWT to propagate before calling the edge function
         try await Task.sleep(for: .milliseconds(150))
 
         struct StaffProfile: Decodable {
-            let id: String
-            let email: String
-            let name: String?
-            let role: String
-            let is_first_login: Bool?
-            let is_profile_complete: Bool?
-            let is_approved: Bool?
-            let rejection_reason: String?
-            let phone: String?
-            let created_at: String?
+            let id: String; let email: String; let name: String?
+            let role: String; let is_first_login: Bool?
+            let is_profile_complete: Bool?; let is_approved: Bool?
+            let rejection_reason: String?; let phone: String?; let created_at: String?
         }
 
         let profile: StaffProfile
         do {
-            profile = try await supabase.functions.invoke(
-                "sign-in",
-                options: FunctionInvokeOptions()
-            )
+            profile = try await supabase.functions.invoke("sign-in", options: FunctionInvokeOptions())
         } catch {
             try? await supabase.auth.signOut()
             throw AuthError.invalidCredentials
@@ -103,14 +84,12 @@ final class AuthManager {
         }
 
         let user = AuthUser(
-            id: userId,
-            email: profile.email,
+            id: userId, email: profile.email,
             role: UserRole(rawValue: profile.role) ?? .driver,
             isFirstLogin: profile.is_first_login ?? true,
             isProfileComplete: profile.is_profile_complete ?? false,
             isApproved: profile.is_approved ?? false,
-            name: profile.name,
-            rejectionReason: profile.rejection_reason,
+            name: profile.name, rejectionReason: profile.rejection_reason,
             phone: profile.phone,
             createdAt: ISO8601DateFormatter().date(from: profile.created_at ?? "") ?? Date()
         )
@@ -132,12 +111,9 @@ final class AuthManager {
         guard let user = currentUser else { return }
         Task {
             switch user.role {
-            case .fleetManager:
-                await AppDataStore.shared.loadAll()
-            case .driver:
-                await AppDataStore.shared.loadDriverData(driverId: user.id)
-            case .maintenancePersonnel:
-                await AppDataStore.shared.loadMaintenanceData(staffId: user.id)
+            case .fleetManager:          await AppDataStore.shared.loadAll()
+            case .driver:                await AppDataStore.shared.loadDriverData(driverId: user.id)
+            case .maintenancePersonnel:  await AppDataStore.shared.loadMaintenanceData(staffId: user.id)
             }
         }
     }
@@ -159,12 +135,15 @@ final class AuthManager {
         pendingResetToken = ""
         otpLastSentAt = nil
         resetOTPLastSentAt = nil
+        currentOTP = ""
+        otpGeneratedAt = nil
         KeychainService.delete(key: Keys.currentUser)
         KeychainService.delete(key: Keys.hashedCred)
         KeychainService.delete(key: Keys.sessionToken)
         KeychainService.delete(key: Keys.backgroundTS)
         KeychainService.delete(key: Keys.biometricOn)
         KeychainService.delete(key: Keys.biometricPrompted)
+        AppDataStore.shared.unsubscribeAll()
         Task { try? await supabase.auth.signOut() }
     }
 
@@ -176,6 +155,8 @@ final class AuthManager {
               let user = KeychainService.load(key: Keys.currentUser, as: AuthUser.self) else { return nil }
         currentUser = user
         isAuthenticated = true
+        // Asynchronously validate that the Supabase session is still live.
+        // If the server-side session has been revoked or expired, sign out.
         Task {
             do {
                 _ = try await supabase.auth.session
@@ -185,12 +166,9 @@ final class AuthManager {
         }
         Task {
             switch user.role {
-            case .fleetManager:
-                await AppDataStore.shared.loadAll()
-            case .driver:
-                await AppDataStore.shared.loadDriverData(driverId: user.id)
-            case .maintenancePersonnel:
-                await AppDataStore.shared.loadMaintenanceData(staffId: user.id)
+            case .fleetManager:         await AppDataStore.shared.loadAll()
+            case .driver:               await AppDataStore.shared.loadDriverData(driverId: user.id)
+            case .maintenancePersonnel: await AppDataStore.shared.loadMaintenanceData(staffId: user.id)
             }
         }
         return user.role
@@ -211,23 +189,20 @@ final class AuthManager {
 
     func destination(for user: AuthUser) -> AuthDestination {
         switch user.role {
-        case .fleetManager:
-            return .fleetManagerDashboard
-
+        case .fleetManager: return .fleetManagerDashboard
         case .driver:
             if user.isFirstLogin        { return .changePassword }
             if !user.isProfileComplete  { return .driverOnboarding }
             if !user.isApproved {
-                if let reason = user.rejectionReason, !reason.isEmpty { return .rejected }
+                if let r = user.rejectionReason, !r.isEmpty { return .rejected }
                 return .pendingApproval
             }
             return .driverDashboard
-
         case .maintenancePersonnel:
             if user.isFirstLogin        { return .changePassword }
             if !user.isProfileComplete  { return .maintenanceOnboarding }
             if !user.isApproved {
-                if let reason = user.rejectionReason, !reason.isEmpty { return .rejected }
+                if let r = user.rejectionReason, !r.isEmpty { return .rejected }
                 return .pendingApproval
             }
             return .maintenanceDashboard
@@ -242,20 +217,22 @@ final class AuthManager {
         return "\(email.prefix(1))***\(email[atRange.lowerBound...])"
     }
 
-    // MARK: - OTP helpers
+    // MARK: - OTP
+    // OTP is verified with a timestamp check so codes cannot be used after
+    // expiry even if the TwoFactorViewModel countdown was bypassed.
 
     @discardableResult
     func generateOTP() -> String {
         if let last = otpLastSentAt, Date().timeIntervalSince(last) < otpCooldownSeconds {
-            print("[AuthManager] generateOTP skipped - cooldown active (\(Int(otpCooldownSeconds - Date().timeIntervalSince(last)))s remaining)")
             return currentOTP
         }
         let otp = String(format: "%06d", Int.random(in: 100000...999999))
         currentOTP = otp
+        otpGeneratedAt = Date()
         otpLastSentAt = Date()
         pendingOTPEmail = currentUser?.email
         #if DEBUG
-        print("🔑 [AuthManager.generateOTP] OTP = \(otp) → \(pendingOTPEmail ?? "no email")")
+        print("🔑 [AuthManager] OTP = \(otp) → \(pendingOTPEmail ?? "no email")")
         #endif
         if let email = pendingOTPEmail {
             EmailService.sendLoginOTP(to: email, otp: otp)
@@ -264,36 +241,36 @@ final class AuthManager {
     }
 
     func verifyOTP(_ code: String) -> Bool {
+        // Timestamp check: reject codes older than otpValidSeconds regardless
+        // of whether the TwoFactorViewModel countdown was bypassed.
+        guard let generatedAt = otpGeneratedAt,
+              Date().timeIntervalSince(generatedAt) < otpValidSeconds else {
+            currentOTP = ""
+            otpGeneratedAt = nil
+            return false
+        }
         let match = code == currentOTP
-        if match { currentOTP = "" }
+        if match {
+            currentOTP = ""
+            otpGeneratedAt = nil
+        }
         return match
     }
 
-    func verifyResetOTP(_ code: String) -> Bool {
-        return code == resetOTP
-    }
+    func verifyResetOTP(_ code: String) -> Bool { code == resetOTP }
 
     // MARK: - Password Management
 
     func updatePasswordAndFirstLogin(newPassword: String) async throws {
         guard var user = currentUser else { throw AuthError.invalidCredentials }
-
         struct Payload: Encodable { let is_first_login: Bool }
-
-        try await supabase
-            .from("staff_members")
-            .update(Payload(is_first_login: false))
-            .eq("id", value: user.id.uuidString)
-            .execute()
-
+        try await supabase.from("staff_members")
+            .update(Payload(is_first_login: false)).eq("id", value: user.id.uuidString).execute()
         try await supabase.auth.update(user: UserAttributes(password: newPassword))
-
         user.isFirstLogin = false
         currentUser = user
         _ = KeychainService.save(user, forKey: Keys.currentUser)
-
-        let hashed = CryptoService.hash(password: newPassword)
-        _ = KeychainService.save(hashed, forKey: Keys.hashedCred)
+        _ = KeychainService.save(CryptoService.hash(password: newPassword), forKey: Keys.hashedCred)
     }
 
     func updatePassword(_ newPassword: String) async throws {
@@ -302,30 +279,20 @@ final class AuthManager {
 
     func markProfileComplete() async throws {
         guard let user = currentUser else { return }
-        struct ProfilePayload: Encodable { let is_profile_complete: Bool }
-        try await supabase
-            .from("staff_members")
-            .update(ProfilePayload(is_profile_complete: true))
-            .eq("id", value: user.id.uuidString)
-            .execute()
-        var updated = user
-        updated.isProfileComplete = true
-        currentUser = updated
-        _ = KeychainService.save(updated, forKey: Keys.currentUser)
+        struct P: Encodable { let is_profile_complete: Bool }
+        try await supabase.from("staff_members")
+            .update(P(is_profile_complete: true)).eq("id", value: user.id.uuidString).execute()
+        var updated = user; updated.isProfileComplete = true
+        currentUser = updated; _ = KeychainService.save(updated, forKey: Keys.currentUser)
     }
 
     func markPasswordChanged() async throws {
         guard let user = currentUser else { return }
-        struct FirstLoginPayload: Encodable { let is_first_login: Bool }
-        try await supabase
-            .from("staff_members")
-            .update(FirstLoginPayload(is_first_login: false))
-            .eq("id", value: user.id.uuidString)
-            .execute()
-        var updated = user
-        updated.isFirstLogin = false
-        currentUser = updated
-        _ = KeychainService.save(updated, forKey: Keys.currentUser)
+        struct P: Encodable { let is_first_login: Bool }
+        try await supabase.from("staff_members")
+            .update(P(is_first_login: false)).eq("id", value: user.id.uuidString).execute()
+        var updated = user; updated.isFirstLogin = false
+        currentUser = updated; _ = KeychainService.save(updated, forKey: Keys.currentUser)
     }
 
     func refreshCurrentUser() async throws {
@@ -343,68 +310,47 @@ final class AuthManager {
                 case createdAt         = "created_at"
             }
         }
-        let rows: [RoleRow] = try await supabase
-            .from("staff_members")
-            .select("role, name, is_first_login, is_profile_complete, is_approved, rejection_reason, phone, created_at")
-            .eq("id", value: userId.uuidString)
-            .limit(1).execute().value
+        let rows: [RoleRow] = try await supabase.from("staff_members")
+            .select("role,name,is_first_login,is_profile_complete,is_approved,rejection_reason,phone,created_at")
+            .eq("id", value: userId.uuidString).limit(1).execute().value
         guard let row = rows.first, let current = currentUser else { return }
         var updated = current
-        updated.isApproved        = row.isApproved
-        updated.isProfileComplete = row.isProfileComplete
-        updated.isFirstLogin      = row.isFirstLogin
-        updated.rejectionReason   = row.rejectionReason
-        currentUser = updated
-        _ = KeychainService.save(updated, forKey: Keys.currentUser)
+        updated.isApproved = row.isApproved; updated.isProfileComplete = row.isProfileComplete
+        updated.isFirstLogin = row.isFirstLogin; updated.rejectionReason = row.rejectionReason
+        currentUser = updated; _ = KeychainService.save(updated, forKey: Keys.currentUser)
     }
 
     // MARK: - Password Reset
 
     func requestPasswordReset(email: String) async -> Bool {
-        if let last = resetOTPLastSentAt, Date().timeIntervalSince(last) < otpCooldownSeconds {
-            print("[AuthManager] requestPasswordReset skipped - cooldown active")
-            return true
-        }
+        if let last = resetOTPLastSentAt, Date().timeIntervalSince(last) < otpCooldownSeconds { return true }
         pendingResetToken = ""
         do {
             struct EmailRow: Decodable { let id: String }
-            let rows: [EmailRow] = try await supabase
-                .from("staff_members").select("id")
+            let rows: [EmailRow] = try await supabase.from("staff_members").select("id")
                 .eq("email", value: email).limit(1).execute().value
-
             guard let userRow = rows.first else { return false }
 
             pendingOTPEmail = email
-
             let otp = String(format: "%06d", Int.random(in: 100000...999999))
             resetOTP = otp
+            resetOTPGeneratedAt = Date()
             resetOTPLastSentAt = Date()
             EmailService.sendResetOTP(to: email, otp: otp)
 
             let resetToken = UUID().uuidString
             pendingResetToken = resetToken
 
-            let expiresAt = ISO8601DateFormatter().string(
-                from: Date().addingTimeInterval(600)
-            )
+            let expiresAt = ISO8601DateFormatter().string(from: Date().addingTimeInterval(600))
             struct TokenInsert: Encodable {
-                let email: String
-                let token: String
-                let user_id: String
-                let expires_at: String
-                let used: Bool
+                let email: String; let token: String; let user_id: String
+                let expires_at: String; let used: Bool
             }
-            _ = try? await supabase
-                .from("password_reset_tokens")
-                .insert(TokenInsert(
-                    email: email,
-                    token: resetToken,
-                    user_id: userRow.id,
-                    expires_at: expiresAt,
-                    used: false
-                ))
+            // NOT try? — if DB insert fails we return false so the user knows the reset didn't start
+            try await supabase.from("password_reset_tokens")
+                .insert(TokenInsert(email: email, token: resetToken, user_id: userRow.id,
+                                    expires_at: expiresAt, used: false))
                 .execute()
-
             return true
         } catch {
             pendingResetToken = ""
@@ -414,36 +360,28 @@ final class AuthManager {
 
     func resetPassword(code: String, newPassword: String) async throws {
         try await Task.sleep(for: .milliseconds(600))
+        // Validate reset OTP with timestamp check
+        guard let generatedAt = resetOTPGeneratedAt,
+              Date().timeIntervalSince(generatedAt) < otpValidSeconds else {
+            throw AuthError.otpExpired
+        }
         guard code == resetOTP else { throw AuthError.invalidCredentials }
         guard let email = pendingOTPEmail else { throw AuthError.invalidCredentials }
         guard !pendingResetToken.isEmpty else { throw AuthError.invalidCredentials }
 
-        struct ResetPayload: Encodable {
-            let email: String
-            let reset_token: String
-            let new_password: String
-        }
+        struct ResetPayload: Encodable { let email: String; let reset_token: String; let new_password: String }
         struct ResetResponse: Decodable { let success: Bool? }
-
         do {
             let _: ResetResponse = try await supabase.functions.invoke(
                 "reset-password",
                 options: FunctionInvokeOptions(body: ResetPayload(
-                    email: email,
-                    reset_token: pendingResetToken,
-                    new_password: newPassword
+                    email: email, reset_token: pendingResetToken, new_password: newPassword
                 ))
             )
-        } catch {
-            throw AuthError.invalidCredentials
-        }
+        } catch { throw AuthError.invalidCredentials }
 
-        let hashed = CryptoService.hash(password: newPassword)
-        _ = KeychainService.save(hashed, forKey: Keys.hashedCred)
-
-        resetOTP = ""
-        pendingResetToken = ""
-        pendingOTPEmail = nil
+        _ = KeychainService.save(CryptoService.hash(password: newPassword), forKey: Keys.hashedCred)
+        resetOTP = ""; resetOTPGeneratedAt = nil; pendingResetToken = ""; pendingOTPEmail = nil
     }
 
     // MARK: - Email Existence Check
@@ -451,29 +389,24 @@ final class AuthManager {
     func emailExists(_ email: String) async -> Bool {
         do {
             struct EmailRow: Decodable { let id: String }
-            let rows: [EmailRow] = try await supabase
-                .from("staff_members").select("id")
+            let rows: [EmailRow] = try await supabase.from("staff_members").select("id")
                 .eq("email", value: email).limit(1).execute().value
             return !rows.isEmpty
-        } catch {
-            return false
-        }
+        } catch { return false }
     }
 
     // MARK: - Auto-Lock
 
     func appDidEnterBackground() {
         let ts = "\(Date().timeIntervalSince1970)"
-        if let data = ts.data(using: .utf8) {
-            _ = KeychainService.save(data, forKey: Keys.backgroundTS)
-        }
+        if let data = ts.data(using: .utf8) { _ = KeychainService.save(data, forKey: Keys.backgroundTS) }
     }
 
     func appWillEnterForeground() {
         guard isAuthenticated else { return }
         guard let data = KeychainService.load(key: Keys.backgroundTS),
-              let str  = String(data: data, encoding: .utf8),
-              let ts   = TimeInterval(str) else { return }
+              let str = String(data: data, encoding: .utf8),
+              let ts  = TimeInterval(str) else { return }
         if Date().timeIntervalSince1970 - ts > autoLockSeconds { needsReauth = true }
     }
 
@@ -486,26 +419,20 @@ final class AuthManager {
 // MARK: - AuthError
 
 enum AuthError: LocalizedError, Equatable {
-    case invalidCredentials
-    case userNotFound
-    case biometricFailed
-    case sessionExpired
-    case createStaffFailed
-    case accountSuspended
-    case otpExpired
-    case otpInvalid
+    case invalidCredentials, userNotFound, biometricFailed, sessionExpired
+    case createStaffFailed, accountSuspended, otpExpired, otpInvalid
     case networkError(String)
 
     var errorDescription: String? {
         switch self {
-        case .invalidCredentials:  return "Invalid email or password."
-        case .userNotFound:        return "Account not found. Contact your fleet administrator."
-        case .biometricFailed:     return "Biometric authentication failed."
-        case .sessionExpired:      return "Your session has expired. Please sign in again."
-        case .createStaffFailed:   return "Failed to create staff account. Please try again."
-        case .accountSuspended:    return "Your account has been suspended. Contact your fleet manager."
-        case .otpExpired:          return "The verification code has expired. Please request a new one."
-        case .otpInvalid:          return "Incorrect verification code. Please check and try again."
+        case .invalidCredentials: return "Invalid email or password."
+        case .userNotFound:       return "Account not found. Contact your fleet administrator."
+        case .biometricFailed:    return "Biometric authentication failed."
+        case .sessionExpired:     return "Your session has expired. Please sign in again."
+        case .createStaffFailed:  return "Failed to create staff account. Please try again."
+        case .accountSuspended:   return "Your account has been suspended. Contact your fleet manager."
+        case .otpExpired:         return "The verification code has expired. Please request a new one."
+        case .otpInvalid:         return "Incorrect verification code. Please check and try again."
         case .networkError(let d): return "Connection error: \(d)"
         }
     }

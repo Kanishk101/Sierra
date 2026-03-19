@@ -12,10 +12,13 @@
 // Response:         { sent: boolean } | { error: string }
 
 import nodemailer from "npm:nodemailer@6.9.9";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const GMAIL_USER         = Deno.env.get("GMAIL_USER")         ?? "";
 const GMAIL_APP_PASSWORD = Deno.env.get("GMAIL_APP_PASSWORD") ?? "";
 const GMAIL_SENDER_NAME  = Deno.env.get("GMAIL_SENDER_NAME")  ?? "Sierra Fleet Manager";
+const SUPABASE_URL              = Deno.env.get("SUPABASE_URL") ?? "";
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
 const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Origin":  "*",
@@ -47,6 +50,22 @@ Deno.serve(async (req: Request) => {
 
   if (!to || !subject || !text) {
     return json({ error: "Missing required fields: to, subject, text." }, 400);
+  }
+
+  const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  const ip = getClientIp(req);
+  const recipient = String(to).trim().toLowerCase();
+
+  const ipAllowed = await enforceRateLimit(admin, "send-email-ip", `ip:${ip}`, 600, 20);
+  if (!ipAllowed) {
+    return json({ error: "Too many requests. Please wait and try again." }, 429);
+  }
+
+  const recipientAllowed = await enforceRateLimit(admin, "send-email-recipient", `to:${recipient}`, 600, 5);
+  if (!recipientAllowed) {
+    return json({ error: "Too many emails sent to this recipient. Please wait." }, 429);
   }
 
   try {
@@ -81,4 +100,33 @@ function json(data: unknown, status: number): Response {
     status,
     headers: { "Content-Type": "application/json", ...corsHeaders },
   });
+}
+
+async function enforceRateLimit(
+  admin: ReturnType<typeof createClient>,
+  action: string,
+  identifier: string,
+  windowSeconds: number,
+  maxRequests: number,
+): Promise<boolean> {
+  const { data, error } = await admin.rpc("enforce_edge_rate_limit", {
+    p_action: action,
+    p_identifier: identifier,
+    p_window_seconds: windowSeconds,
+    p_max_requests: maxRequests,
+  });
+
+  if (error) {
+    console.error("[send-email] rate-limit rpc failed:", error.message);
+    return false;
+  }
+
+  return Boolean(data);
+}
+
+function getClientIp(req: Request): string {
+  const forwarded = req.headers.get("x-forwarded-for") ?? "";
+  const first = forwarded.split(",")[0]?.trim();
+  if (first && first.length > 0) return first;
+  return "unknown";
 }

@@ -132,7 +132,7 @@ struct NotificationCentreView: View {
     private func markRead(_ notif: SierraNotification) async {
         guard !notif.isRead else { return }
         do {
-            try await NotificationService.markAsRead(notificationId: notif.id)
+            try await NotificationService.markAsRead(id: notif.id)
             if let idx = store.notifications.firstIndex(where: { $0.id == notif.id }) {
                 store.notifications[idx].isRead = true
             }

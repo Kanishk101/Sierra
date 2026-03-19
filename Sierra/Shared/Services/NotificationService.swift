@@ -4,8 +4,6 @@ import Supabase
 // Uses global `supabase` constant from SupabaseManager.swift
 
 // MARK: - NotificationService
-// Manages CRUD and Realtime for the notifications table.
-// Uses a class (not struct) to hold Realtime channel state.
 
 final class NotificationService {
 
@@ -28,13 +26,15 @@ final class NotificationService {
             .select()
             .eq("recipient_id", value: recipientId.uuidString)
             .order("sent_at", ascending: false)
+            .limit(200)
             .execute()
             .value
     }
 
     // MARK: - Mark As Read
+    // Label uses `id:` to match all call sites in AppDataStore / views.
 
-    static func markAsRead(notificationId: UUID) async throws {
+    static func markAsRead(id: UUID) async throws {
         struct Payload: Encodable {
             let is_read: Bool
             let read_at: String
@@ -42,7 +42,7 @@ final class NotificationService {
         try await supabase
             .from("notifications")
             .update(Payload(is_read: true, read_at: iso.string(from: Date())))
-            .eq("id", value: notificationId.uuidString)
+            .eq("id", value: id.uuidString)
             .execute()
     }
 
@@ -95,6 +95,9 @@ final class NotificationService {
     }
 
     // MARK: - Realtime
+    // Server-side filter: only INSERT events for this specific recipient are
+    // delivered over the WebSocket. Prevents data leakage where all connected
+    // users could see each other's notifications before the client-side check.
 
     func subscribeToNotifications(for recipientId: UUID, onNew: @escaping (SierraNotification) -> Void) {
         if notificationChannel != nil { return }
@@ -103,16 +106,13 @@ final class NotificationService {
         _ = channel.onPostgresChange(
             InsertAction.self,
             schema: "public",
-            table: "notifications"
+            table: "notifications",
+            filter: "recipient_id=eq.\(recipientId.uuidString)"  // server-side filter
         ) { action in
-            // Decode off main-actor by encoding action.record to JSON bytes first,
-            // then decoding SierraNotification in a detached Task to avoid
-            // main-actor conformance being used from nonisolated context.
             let rawRecord = action.record
             Task { @MainActor in
                 if let data = try? JSONEncoder().encode(rawRecord),
-                   let notification = try? JSONDecoder().decode(SierraNotification.self, from: data),
-                   notification.recipientId == recipientId {
+                   let notification = try? JSONDecoder().decode(SierraNotification.self, from: data) {
                     onNew(notification)
                 }
             }

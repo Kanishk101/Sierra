@@ -1,6 +1,5 @@
 import SwiftUI
 import PhotosUI
-import Supabase
 
 /// Detail view for a maintenance task — shows task info, vehicle card,
 /// status timeline, work order form, and action buttons.
@@ -9,38 +8,15 @@ struct MaintenanceTaskDetailView: View {
     let task: MaintenanceTask
     @Environment(AppDataStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+    @State private var viewModel: MaintenanceTaskDetailViewModel
 
-    @State private var workOrder: WorkOrder?
-    @State private var isLoadingWO = true
-    @State private var isStartingWork = false
-    @State private var errorMessage: String?
-    @State private var showError = false
-
-    // Work order form
-    @State private var repairDescription = ""
-    @State private var estimatedCompletion = Date().addingTimeInterval(86400)
-    @State private var technicianNotes = ""
-    @State private var labourCost: Double = 0
-    @State private var partsUsed: [PartRow] = []
     @State private var repairImageItems: [PhotosPickerItem] = []
-    @State private var repairImageUrls: [String] = []
-    @State private var isUploadingImages = false
-    @State private var isCompleting = false
+    @State private var showError = false
     @State private var showSparePartsSheet = false
 
-    private var currentUserId: UUID { AuthManager.shared.currentUser?.id ?? UUID() }
-
-    struct PartRow: Identifiable {
-        let id = UUID()
-        var name: String = ""
-        var partNumber: String = ""
-        var quantity: Int = 1
-        var unitCost: Double = 0
-    }
-
-    // Safeguard 6: computed total
-    private var computedPartsCost: Double {
-        partsUsed.reduce(0) { $0 + ($1.unitCost * Double($1.quantity)) }
+    init(task: MaintenanceTask) {
+        self.task = task
+        _viewModel = State(initialValue: MaintenanceTaskDetailViewModel(task: task))
     }
 
     var body: some View {
@@ -51,10 +27,9 @@ struct MaintenanceTaskDetailView: View {
                 statusTimeline
                 Divider()
 
-                // Safeguard 4: context-aware actions
                 actionSection
 
-                if workOrder != nil {
+                if viewModel.workOrder != nil {
                     workOrderForm
                 }
             }
@@ -64,15 +39,18 @@ struct MaintenanceTaskDetailView: View {
         .navigationTitle("Task Detail")
         .navigationBarTitleDisplayMode(.inline)
         .task {
-            await loadExistingWorkOrder()
+            await viewModel.loadExistingWorkOrder()
+        }
+        .onChange(of: viewModel.errorMessage) { _, msg in
+            showError = (msg != nil)
         }
         .alert("Error", isPresented: $showError) {
-            Button("OK") {}
+            Button("OK") { viewModel.errorMessage = nil }
         } message: {
-            Text(errorMessage ?? "Something went wrong")
+            Text(viewModel.errorMessage ?? "Something went wrong")
         }
         .sheet(isPresented: $showSparePartsSheet) {
-            if let wo = workOrder {
+            if let wo = viewModel.workOrder {
                 SparePartsRequestSheet(maintenanceTaskId: task.id, workOrderId: wo.id)
             }
         }
@@ -184,16 +162,18 @@ struct MaintenanceTaskDetailView: View {
         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
     }
 
-    // MARK: - Actions (Safeguard 4: validate status before action)
+    // MARK: - Actions
 
     @ViewBuilder
     private var actionSection: some View {
-        if task.status == .assigned && workOrder == nil {
+        if task.status == .assigned && viewModel.workOrder == nil {
             Button {
-                Task { await startWork() }
+                Task {
+                    await viewModel.startWork()
+                }
             } label: {
                 HStack {
-                    if isStartingWork { ProgressView().tint(.white) }
+                    if viewModel.isStartingWork { ProgressView().tint(.white) }
                     Text("Start Work")
                         .font(.subheadline.weight(.semibold))
                 }
@@ -201,63 +181,8 @@ struct MaintenanceTaskDetailView: View {
                 .frame(maxWidth: .infinity).frame(height: 50)
                 .background(SierraTheme.Colors.ember, in: RoundedRectangle(cornerRadius: 14))
             }
-            .disabled(isStartingWork)
+            .disabled(viewModel.isStartingWork)
         }
-    }
-
-    // MARK: - Start Work (Safeguard 1: idempotent check + Safeguard 4: status validation)
-
-    private func startWork() async {
-        guard task.status == .assigned else {
-            errorMessage = "This task cannot be started — it is \(task.status.rawValue)"
-            showError = true
-            return
-        }
-        isStartingWork = true
-
-        // Check if work order already exists (Safeguard 1)
-        do {
-            if let existing = try await WorkOrderService.fetchWorkOrder(maintenanceTaskId: task.id) {
-                workOrder = existing
-                repairDescription = existing.repairDescription
-                technicianNotes = existing.technicianNotes ?? ""
-                labourCost = existing.labourCostTotal
-                repairImageUrls = existing.repairImageUrls
-                isStartingWork = false
-                return
-            }
-        } catch {
-            // Continue to create
-        }
-
-        do {
-            let newWO = WorkOrder(
-                id: UUID(),
-                maintenanceTaskId: task.id,
-                vehicleId: task.vehicleId,
-                assignedToId: currentUserId,
-                status: .inProgress,
-                repairDescription: "",
-                labourCostTotal: 0,
-                partsCostTotal: 0,
-                totalCost: 0,
-                startedAt: Date(),
-                completedAt: nil,
-                technicianNotes: nil,
-                vinScanned: false,
-                repairImageUrls: [],
-                estimatedCompletionAt: nil,
-                createdAt: Date(),
-                updatedAt: Date()
-            )
-            try await WorkOrderService.addWorkOrder(newWO)
-            try await MaintenanceTaskService.updateMaintenanceTaskStatus(id: task.id, status: .inProgress)
-            workOrder = newWO
-        } catch {
-            errorMessage = "Failed to start work: \(error.localizedDescription)"
-            showError = true
-        }
-        isStartingWork = false
     }
 
     // MARK: - Work Order Form
@@ -268,25 +193,26 @@ struct MaintenanceTaskDetailView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("Repair Description").font(.caption.weight(.medium))
-                TextEditor(text: $repairDescription)
+                TextEditor(text: $viewModel.repairDescription)
                     .frame(minHeight: 80)
                     .padding(8)
                     .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 8))
             }
 
-            DatePicker("Est. Completion", selection: $estimatedCompletion, displayedComponents: [.date, .hourAndMinute])
+            DatePicker("Est. Completion", selection: $viewModel.estimatedCompletion, displayedComponents: [.date, .hourAndMinute])
                 .font(.subheadline)
 
-            // Parts
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("Parts Used").font(.caption.weight(.medium))
                     Spacer()
-                    Button { partsUsed.append(PartRow()) } label: {
+                    Button {
+                        viewModel.addPartRow()
+                    } label: {
                         Image(systemName: "plus.circle.fill").foregroundStyle(.orange)
                     }
                 }
-                ForEach($partsUsed) { $part in
+                ForEach($viewModel.partsUsed) { $part in
                     HStack(spacing: 8) {
                         TextField("Part", text: $part.name).textFieldStyle(.roundedBorder).font(.caption)
                         TextField("#", text: $part.partNumber).textFieldStyle(.roundedBorder).font(.caption).frame(width: 60)
@@ -294,8 +220,7 @@ struct MaintenanceTaskDetailView: View {
                         TextField("Cost", value: $part.unitCost, format: .number).textFieldStyle(.roundedBorder).font(.caption).frame(width: 60)
                     }
                 }
-                // Safeguard 6: computed total, not manual
-                Text("Parts Total: ₹\(computedPartsCost, specifier: "%.2f")")
+                Text("Parts Total: ₹\(viewModel.computedPartsCost, specifier: "%.2f")")
                     .font(.caption.weight(.bold)).foregroundStyle(.orange)
             }
 
@@ -305,7 +230,6 @@ struct MaintenanceTaskDetailView: View {
             .font(.subheadline.weight(.medium))
             .foregroundStyle(SierraTheme.Colors.info)
 
-            // Repair images (Safeguard 2: sequential upload)
             VStack(alignment: .leading, spacing: 8) {
                 Text("Repair Images").font(.caption.weight(.medium))
                 PhotosPicker(selection: $repairImageItems, maxSelectionCount: 5, matching: .images) {
@@ -314,40 +238,40 @@ struct MaintenanceTaskDetailView: View {
                         .foregroundStyle(SierraTheme.Colors.info)
                 }
                 .onChange(of: repairImageItems) { _, items in
-                    Task { await uploadRepairImages(items) }
+                    Task { await viewModel.uploadRepairImages(items) }
                 }
-                if isUploadingImages {
+                if viewModel.isUploadingImages {
                     ProgressView("Uploading images...")
                 }
-                if !repairImageUrls.isEmpty {
-                    Text("\(repairImageUrls.count) image(s) uploaded").font(.caption).foregroundStyle(.green)
+                if !viewModel.repairImageUrls.isEmpty {
+                    Text("\(viewModel.repairImageUrls.count) image(s) uploaded").font(.caption).foregroundStyle(.green)
                 }
             }
 
-            // Labour cost
             HStack {
                 Text("Labour Cost").font(.caption.weight(.medium))
                 Spacer()
-                TextField("₹", value: $labourCost, format: .number)
+                TextField("₹", value: $viewModel.labourCost, format: .number)
                     .textFieldStyle(.roundedBorder).frame(width: 100)
             }
 
-            // Notes
             VStack(alignment: .leading, spacing: 4) {
                 Text("Technician Notes").font(.caption.weight(.medium))
-                TextEditor(text: $technicianNotes)
+                TextEditor(text: $viewModel.technicianNotes)
                     .frame(minHeight: 60)
                     .padding(8)
                     .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 8))
             }
 
-            // Mark Complete
-            if task.status == .inProgress || workOrder != nil {
+            if task.status == .inProgress || viewModel.workOrder != nil {
                 Button {
-                    Task { await markComplete() }
+                    Task {
+                        let completed = await viewModel.markComplete()
+                        if completed { dismiss() }
+                    }
                 } label: {
                     HStack {
-                        if isCompleting { ProgressView().tint(.white) }
+                        if viewModel.isCompleting { ProgressView().tint(.white) }
                         Text("Mark Complete")
                             .font(.subheadline.weight(.semibold))
                     }
@@ -355,106 +279,10 @@ struct MaintenanceTaskDetailView: View {
                     .frame(maxWidth: .infinity).frame(height: 50)
                     .background(SierraTheme.Colors.alpineMint, in: RoundedRectangle(cornerRadius: 14))
                 }
-                .disabled(isCompleting)
+                .disabled(viewModel.isCompleting)
             }
         }
         .padding(16)
         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
-    }
-
-    // MARK: - Upload Images (Safeguard 2: sequential for-loop)
-
-    private func uploadRepairImages(_ items: [PhotosPickerItem]) async {
-        isUploadingImages = true
-        guard let woId = workOrder?.id else { isUploadingImages = false; return }
-
-        for item in items {
-            do {
-                guard let data = try await item.loadTransferable(type: Data.self) else { continue }
-                let fileName = "\(UUID().uuidString).jpg"
-                let path = "repair-images/\(woId.uuidString)/\(fileName)"
-                try await supabase.storage.from("vehicle-images").upload(path, data: data, options: .init(contentType: "image/jpeg"))
-                let url = try supabase.storage.from("vehicle-images").getPublicURL(path: path).absoluteString
-                repairImageUrls.append(url)
-            } catch {
-                print("[TaskDetail] Image upload error: \(error)")
-                // Non-fatal: continue with next image
-            }
-        }
-
-        // Update work order with new images
-        do {
-            try await WorkOrderService.updateRepairImages(workOrderId: woId, imageUrls: repairImageUrls)
-        } catch {
-            print("[TaskDetail] Failed to update image URLs: \(error)")
-        }
-        isUploadingImages = false
-    }
-
-    // MARK: - Mark Complete
-
-    private func markComplete() async {
-        guard task.status == .inProgress || workOrder != nil else {
-            errorMessage = "Task cannot be completed from \(task.status.rawValue)"
-            showError = true
-            return
-        }
-        isCompleting = true
-
-        do {
-            // Update work order
-            if var wo = workOrder {
-                wo.repairDescription = repairDescription
-                wo.labourCostTotal = labourCost
-                wo.partsCostTotal = computedPartsCost  // Safeguard 6
-                wo.technicianNotes = technicianNotes
-                wo.completedAt = Date()
-                wo.estimatedCompletionAt = estimatedCompletion
-                wo.status = .completed
-                try await WorkOrderService.updateWorkOrder(wo)
-            }
-
-            // Update task
-            try await MaintenanceTaskService.updateMaintenanceTaskStatus(id: task.id, status: .completed)
-
-            // Notify fleet manager (Safeguard 3: non-fatal)
-            do {
-                try await NotificationService.insertNotification(
-                    recipientId: task.createdByAdminId,
-                    type: .general,
-                    title: "Maintenance Completed",
-                    body: "Task '\(task.title)' has been completed.",
-                    entityType: "maintenance_task",
-                    entityId: task.id
-                )
-            } catch {
-                print("[TaskDetail] Non-fatal: notification failed: \(error)")
-            }
-
-            dismiss()
-        } catch {
-            errorMessage = "Failed to complete: \(error.localizedDescription)"
-            showError = true
-        }
-        isCompleting = false
-    }
-
-    // MARK: - Load Existing WO (Safeguard 1)
-
-    private func loadExistingWorkOrder() async {
-        isLoadingWO = true
-        do {
-            if let existing = try await WorkOrderService.fetchWorkOrder(maintenanceTaskId: task.id) {
-                workOrder = existing
-                repairDescription = existing.repairDescription
-                technicianNotes = existing.technicianNotes ?? ""
-                labourCost = existing.labourCostTotal
-                repairImageUrls = existing.repairImageUrls
-                if let est = existing.estimatedCompletionAt { estimatedCompletion = est }
-            }
-        } catch {
-            print("[TaskDetail] WO load error: \(error)")
-        }
-        isLoadingWO = false
     }
 }

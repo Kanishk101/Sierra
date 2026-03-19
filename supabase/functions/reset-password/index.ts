@@ -38,6 +38,25 @@ serve(async (req: Request) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
+    const ip = getClientIp(req);
+    const emailKey = String(email).trim().toLowerCase();
+
+    const ipAllowed = await enforceRateLimit(admin, "reset-password-ip", `ip:${ip}`, 900, 10);
+    if (!ipAllowed) {
+      return new Response(JSON.stringify({ error: "Too many reset attempts. Please try again later." }), {
+        status: 429,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      });
+    }
+
+    const emailAllowed = await enforceRateLimit(admin, "reset-password-email", `email:${emailKey}`, 900, 3);
+    if (!emailAllowed) {
+      return new Response(JSON.stringify({ error: "Too many reset attempts for this account. Please try later." }), {
+        status: 429,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      });
+    }
+
     // Validate the reset token against the database
     const { data: tokens, error: tokenErr } = await admin
       .from("password_reset_tokens")
@@ -101,3 +120,32 @@ serve(async (req: Request) => {
     });
   }
 });
+
+async function enforceRateLimit(
+  admin: ReturnType<typeof createClient>,
+  action: string,
+  identifier: string,
+  windowSeconds: number,
+  maxRequests: number,
+): Promise<boolean> {
+  const { data, error } = await admin.rpc("enforce_edge_rate_limit", {
+    p_action: action,
+    p_identifier: identifier,
+    p_window_seconds: windowSeconds,
+    p_max_requests: maxRequests,
+  });
+
+  if (error) {
+    console.error("[reset-password] rate-limit rpc failed:", error.message);
+    return false;
+  }
+
+  return Boolean(data);
+}
+
+function getClientIp(req: Request): string {
+  const forwarded = req.headers.get("x-forwarded-for") ?? "";
+  const first = forwarded.split(",")[0]?.trim();
+  if (first && first.length > 0) return first;
+  return "unknown";
+}

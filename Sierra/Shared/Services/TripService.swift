@@ -23,8 +23,9 @@ enum TripServiceError: LocalizedError {
 }
 
 // MARK: - TripInsertPayload
-// Excludes: id, created_at, updated_at, proof_of_delivery_id,
-//           pre_inspection_id, post_inspection_id (set after related records)
+// Full payload for INSERT — includes geocoordinates.
+// NOTE: TripUpdatePayload is a SEPARATE struct (not a typealias) so that
+// updateTrip() never sends NULL for coordinates that are already stored.
 
 struct TripInsertPayload: Encodable {
     let taskId: String
@@ -43,6 +44,12 @@ struct TripInsertPayload: Encodable {
     let notes: String
     let status: String
     let priority: String
+    // Coordinates included at insert time (geocoded during trip creation)
+    let originLatitude: Double?
+    let originLongitude: Double?
+    let destinationLatitude: Double?
+    let destinationLongitude: Double?
+    let routePolyline: String?
 
     enum CodingKeys: String, CodingKey {
         case taskId               = "task_id"
@@ -58,13 +65,18 @@ struct TripInsertPayload: Encodable {
         case startMileage         = "start_mileage"
         case endMileage           = "end_mileage"
         case notes, status, priority
+        case originLatitude       = "origin_latitude"
+        case originLongitude      = "origin_longitude"
+        case destinationLatitude  = "destination_latitude"
+        case destinationLongitude = "destination_longitude"
+        case routePolyline        = "route_polyline"
     }
 
     init(from t: Trip) {
         taskId               = t.taskId
-        driverId             = t.driverId             // already String?
-        vehicleId            = t.vehicleId            // already String?
-        createdByAdminId     = t.createdByAdminId     // already String
+        driverId             = t.driverId
+        vehicleId            = t.vehicleId
+        createdByAdminId     = t.createdByAdminId
         origin               = t.origin
         destination          = t.destination
         deliveryInstructions = t.deliveryInstructions
@@ -77,12 +89,94 @@ struct TripInsertPayload: Encodable {
         notes                = t.notes
         status               = t.status.rawValue
         priority             = t.priority.rawValue
+        originLatitude       = t.originLatitude
+        originLongitude      = t.originLongitude
+        destinationLatitude  = t.destinationLatitude
+        destinationLongitude = t.destinationLongitude
+        routePolyline        = t.routePolyline
     }
 }
 
-// MARK: - TripUpdatePayload (same fields as insert)
+// MARK: - TripUpdatePayload
+// Separate from TripInsertPayload — intentionally omits coordinates.
+// Coordinates are set at creation and updated explicitly via
+// TripService.updateTripCoordinates(). Sending them in every general
+// update would risk overwriting stored geocoding data with nil.
 
-typealias TripUpdatePayload = TripInsertPayload
+struct TripUpdatePayload: Encodable {
+    let taskId: String
+    let driverId: String?
+    let vehicleId: String?
+    let createdByAdminId: String
+    let origin: String
+    let destination: String
+    let deliveryInstructions: String
+    let scheduledDate: String
+    let scheduledEndDate: String?
+    let actualStartDate: String?
+    let actualEndDate: String?
+    let startMileage: Double?
+    let endMileage: Double?
+    let notes: String
+    let status: String
+    let priority: String
+    let proofOfDeliveryId: String?
+    let preInspectionId: String?
+    let postInspectionId: String?
+    let driverRating: Int?
+    let driverRatingNote: String?
+    let ratedById: String?
+    let ratedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case taskId               = "task_id"
+        case driverId             = "driver_id"
+        case vehicleId            = "vehicle_id"
+        case createdByAdminId     = "created_by_admin_id"
+        case origin, destination
+        case deliveryInstructions = "delivery_instructions"
+        case scheduledDate        = "scheduled_date"
+        case scheduledEndDate     = "scheduled_end_date"
+        case actualStartDate      = "actual_start_date"
+        case actualEndDate        = "actual_end_date"
+        case startMileage         = "start_mileage"
+        case endMileage           = "end_mileage"
+        case notes, status, priority
+        case proofOfDeliveryId    = "proof_of_delivery_id"
+        case preInspectionId      = "pre_inspection_id"
+        case postInspectionId     = "post_inspection_id"
+        case driverRating         = "driver_rating"
+        case driverRatingNote     = "driver_rating_note"
+        case ratedById            = "rated_by_id"
+        case ratedAt              = "rated_at"
+    }
+
+    init(from t: Trip) {
+        taskId               = t.taskId
+        driverId             = t.driverId
+        vehicleId            = t.vehicleId
+        createdByAdminId     = t.createdByAdminId
+        origin               = t.origin
+        destination          = t.destination
+        deliveryInstructions = t.deliveryInstructions
+        scheduledDate        = iso.string(from: t.scheduledDate)
+        scheduledEndDate     = t.scheduledEndDate.map { iso.string(from: $0) }
+        actualStartDate      = t.actualStartDate.map  { iso.string(from: $0) }
+        actualEndDate        = t.actualEndDate.map    { iso.string(from: $0) }
+        startMileage         = t.startMileage
+        endMileage           = t.endMileage
+        notes                = t.notes
+        status               = t.status.rawValue
+        priority             = t.priority.rawValue
+        proofOfDeliveryId    = t.proofOfDeliveryId?.uuidString
+        preInspectionId      = t.preInspectionId?.uuidString
+        postInspectionId     = t.postInspectionId?.uuidString
+        driverRating         = t.driverRating
+        driverRatingNote     = t.driverRatingNote
+        ratedById            = t.ratedById?.uuidString
+        ratedAt              = t.ratedAt.map { iso.string(from: $0) }
+    }
+}
 
 // MARK: - TripService
 
@@ -95,6 +189,7 @@ struct TripService {
             .from("trips")
             .select()
             .order("scheduled_date", ascending: false)
+            .limit(500)  // pagination guard — prevents unbounded response
             .execute()
             .value
     }
@@ -115,6 +210,7 @@ struct TripService {
             .select()
             .eq("driver_id", value: driverId.uuidString.lowercased())
             .order("scheduled_date", ascending: false)
+            .limit(200)
             .execute()
             .value
     }
@@ -125,6 +221,7 @@ struct TripService {
             .select()
             .eq("vehicle_id", value: vehicleId.uuidString)
             .order("scheduled_date", ascending: false)
+            .limit(200)
             .execute()
             .value
     }
@@ -149,6 +246,7 @@ struct TripService {
     }
 
     // MARK: Update
+    // Uses TripUpdatePayload (NOT TripInsertPayload) to avoid nulling coordinates.
 
     static func updateTrip(_ trip: Trip) async throws {
         try await supabase
@@ -178,6 +276,7 @@ struct TripService {
     }
 
     // MARK: Task ID Helper
+    // Uses UUID prefix to avoid collision: 16^8 = 4.3 billion possibilities
 
     static func newTaskId() -> String { generateTaskId() }
 
@@ -185,13 +284,12 @@ struct TripService {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd"
         let datePart = formatter.string(from: Date())
-        let suffix = String(format: "%04d", Int.random(in: 1...9999))
+        let suffix = String(UUID().uuidString.prefix(8)).uppercased()
         return "TRP-\(datePart)-\(suffix)"
     }
 
     // MARK: - Busy Status Helpers
 
-    /// Calls the `check-resource-overlap` Edge Function to detect double-booking.
     static func checkOverlap(
         driverId: UUID,
         vehicleId: UUID,
@@ -232,7 +330,6 @@ struct TripService {
         return (result.driverConflict, result.vehicleConflict)
     }
 
-    /// Sets driver availability → "Busy" and vehicle status → "Busy" at the DB level.
     static func markResourcesBusy(driverId: UUID, vehicleId: UUID) async throws {
         struct AvailabilityPayload: Encodable { let availability: String }
         struct VehicleStatusPayload: Encodable { let status: String }
@@ -250,8 +347,6 @@ struct TripService {
             .execute()
     }
 
-    /// Releases resources after trip completion or cancellation:
-    /// driver → "Available", vehicle → "Idle", assignedDriverId → nil.
     static func releaseResources(driverId: UUID, vehicleId: UUID) async throws {
         struct AvailabilityPayload: Encodable { let availability: String }
         struct VehicleReleasePayload: Encodable {
@@ -277,9 +372,9 @@ struct TripService {
     }
 
     // MARK: - Trip Lifecycle
+    // Note: DB trigger trg_trip_status_change handles resource state transitions
+    // atomically when status changes. These methods update status only.
 
-    /// Sets trip to Active with start date and mileage.
-    /// Does NOT update vehicles or staff_members — DB triggers handle that.
     static func startTrip(tripId: UUID, startMileage: Double) async throws {
         struct Payload: Encodable {
             let status: String
@@ -297,8 +392,6 @@ struct TripService {
             .execute()
     }
 
-    /// Sets trip to Completed with end date and mileage.
-    /// Does NOT update vehicles or staff_members — DB triggers handle that.
     static func completeTrip(tripId: UUID, endMileage: Double) async throws {
         struct Payload: Encodable {
             let status: String
@@ -314,9 +407,9 @@ struct TripService {
             ))
             .eq("id", value: tripId.uuidString)
             .execute()
+        // DB trigger fn_trip_status_change fires automatically to release resources.
     }
 
-    /// Sets trip to Cancelled. Does NOT update vehicles or staff_members.
     static func cancelTrip(tripId: UUID) async throws {
         struct Payload: Encodable { let status: String }
         try await supabase
@@ -324,6 +417,7 @@ struct TripService {
             .update(Payload(status: TripStatus.cancelled.rawValue))
             .eq("id", value: tripId.uuidString)
             .execute()
+        // DB trigger fn_trip_status_change fires automatically to release resources.
     }
 
     // MARK: - Coordinates & Rating
@@ -377,8 +471,6 @@ struct TripService {
 
     // MARK: - Reassign Vehicle
 
-    /// Reassign a trip to a different vehicle (e.g. after pre-trip inspection failure).
-    /// DB trigger `trg_trip_started` handles vehicle status transitions automatically.
     static func reassignVehicle(tripId: UUID, newVehicleId: UUID) async throws {
         struct Payload: Encodable { let vehicle_id: String }
         struct Row: Decodable {
