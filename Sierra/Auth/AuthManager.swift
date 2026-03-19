@@ -28,6 +28,10 @@ final class AuthManager {
         static let sessionToken      = "com.fleetOS.sessionToken"
         static let hashedCred        = "com.fleetOS.hashedCredential"
         static let biometricOn       = "com.fleetOS.biometricEnabled"
+        // NOTE: biometricPrompted is intentionally NOT deleted on signOut.
+        // It is only cleared on fresh install (SierraApp.init) so the enrollment
+        // sheet never re-appears just because the user logged out and back in.
+        // Clearing it on signOut caused an annoying re-prompt on every login.
         static let biometricPrompted = "com.fleetOS.hasPromptedBiometric"
     }
 
@@ -61,7 +65,6 @@ final class AuthManager {
     func signIn(email: String, password: String) async throws -> UserRole {
         otpLastSentAt = nil
 
-        // Step 1 — Authenticate with Supabase Auth
         do {
             try await supabase.auth.signIn(
                 email: email,
@@ -71,10 +74,9 @@ final class AuthManager {
             throw AuthError.invalidCredentials
         }
 
-        // Step 2 — Allow JWT to propagate before calling the edge function
+        // Allow JWT to propagate before calling the edge function
         try await Task.sleep(for: .milliseconds(150))
 
-        // Step 3 — Fetch staff profile via edge function (JWT now live)
         struct StaffProfile: Decodable {
             let id: String
             let email: String
@@ -95,7 +97,6 @@ final class AuthManager {
                 options: FunctionInvokeOptions()
             )
         } catch {
-            // Auth succeeded but profile fetch failed — roll back
             try? await supabase.auth.signOut()
             throw AuthError.invalidCredentials
         }
@@ -118,14 +119,12 @@ final class AuthManager {
             createdAt: ISO8601DateFormatter().date(from: profile.created_at ?? "") ?? Date()
         )
 
-        // Hash is kept for biometric reauth caching only — NOT used for Supabase Auth
         let hashed = CryptoService.hash(password: password)
         _ = KeychainService.save(hashed, forKey: Keys.hashedCred)
         _ = KeychainService.save(user, forKey: Keys.currentUser)
 
         currentUser = user
         pendingOTPEmail = user.email
-        // NOTE: Do NOT set isAuthenticated here — 2FA must complete first
         return user.role
     }
 
@@ -168,8 +167,14 @@ final class AuthManager {
         KeychainService.delete(key: Keys.hashedCred)
         KeychainService.delete(key: Keys.sessionToken)
         KeychainService.delete(key: Keys.backgroundTS)
+        // biometricEnabled is cleared on signOut so the Face ID login button
+        // correctly disappears after logout — the user must explicitly re-enable
+        // it on their next login via the enrollment sheet.
         KeychainService.delete(key: Keys.biometricOn)
-        KeychainService.delete(key: Keys.biometricPrompted)
+        // biometricPrompted is intentionally NOT deleted here — see Keys comment.
+        // Deleting it caused the enrollment sheet to re-appear on every login,
+        // even if the user had already declined or enabled biometric. It is
+        // cleared on fresh install in SierraApp.init() instead.
         Task { try? await supabase.auth.signOut() }
     }
 

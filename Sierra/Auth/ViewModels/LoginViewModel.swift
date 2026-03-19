@@ -82,8 +82,7 @@ final class LoginViewModel {
             }
 
             // 2FA is only required when the user is about to enter a real dashboard.
-            // Pending, rejected, onboarding, and first-login users skip 2FA entirely
-            // and go directly to their respective screens.
+            // Pending, rejected, onboarding, and first-login users skip 2FA entirely.
             let needsTwoFactor: Bool
             switch destination {
             case .fleetManagerDashboard, .driverDashboard, .maintenanceDashboard:
@@ -93,13 +92,13 @@ final class LoginViewModel {
             }
 
             if !needsTwoFactor {
-                // Complete auth immediately - ContentView routes via destination(for:)
                 AuthManager.shared.completeAuthentication()
                 return
             }
 
-            // Dashboard-bound user: pre-generate OTP (fires SwiftSMTP in background)
-            // and start prefetching data. 2FA screen appears instantly.
+            // Dashboard-bound user: pre-generate OTP (fires EmailService.sendLoginOTP
+            // which calls the send-email edge function via Gmail SMTP) and start
+            // prefetching data. 2FA screen appears instantly.
             AuthManager.shared.generateOTP()
 
             if let user {
@@ -133,30 +132,22 @@ final class LoginViewModel {
     // MARK: - Biometric Sign In
     //
     // Navigation architecture:
-    //   ContentView is the single routing authority via authManager.isAuthenticated.
-    //   LoginView’s fullScreenCover (triggered by authState = .authenticated) must NEVER
-    //   fire during biometric login - that causes a race where LoginView tries to present
-    //   a cover while ContentView is already animating it out, producing the flash-to-
-    //   dashboard-then-back-to-login bug.
+    //   ContentView is the single routing authority via authManager.isAuthenticated
+    //   and !authManager.needsReauth. Both flags must be in the correct state before
+    //   the dashboard can show. This is why we call BOTH completeAuthentication() AND
+    //   reauthCompleted() here — the former sets isAuthenticated=true, the latter
+    //   clears needsReauth=false. Without reauthCompleted(), the ContentView guard
+    //   (isAuthenticated && !needsReauth) fails when biometric is triggered from
+    //   the auto-lock reauth path (app backgrounded >300s).
     //
-    // Prefetch strategy:
-    //   currentUser is already populated by restoreSessionSilently() at AuthManager.init(),
-    //   so we know the user’s role before the Face ID prompt appears. We kick the data load
-    //   as a Task.detached BEFORE calling BiometricManager.authenticate(). The Face ID scan
-    //   takes ~0.5–1 second - that’s free prefetch time. By the time auth resolves and the
-    //   dashboard animates in, most or all data is already loaded.
-    //
-    //   completeAuthentication() will fire a second load after success. That’s intentional:
-    //   it guarantees the dashboard always shows fresh data even if the prefetch raced ahead.
-    //   The second pass is imperceptible because the store is already populated.
+    //   We also do NOT set authState = .authenticated here. That would trigger
+    //   LoginView's fullScreenCover while ContentView is already animating the
+    //   dashboard in, producing a flash-to-dashboard-then-back-to-login bug.
 
     @MainActor
     func biometricSignIn() async {
         authState = .loading
 
-        // Snapshot the user now - currentUser is set by restoreSessionSilently() at init.
-        // Start the data prefetch concurrently with the Face ID prompt so the dashboard
-        // has data ready the moment the user authenticates.
         if let user = AuthManager.shared.currentUser {
             Task.detached {
                 switch user.role {
@@ -171,10 +162,8 @@ final class LoginViewModel {
         }
 
         do {
-            // Face ID / Touch ID prompt - data is loading in parallel during this await.
             try await BiometricManager.shared.authenticate()
 
-            // Verify session is still valid after biometric success.
             guard AuthManager.shared.hasSessionToken(),
                   AuthManager.shared.currentUser != nil else {
                 authState = .error("Session expired. Please sign in with your password.")
@@ -182,14 +171,14 @@ final class LoginViewModel {
                 return
             }
 
-            // Sets isAuthenticated = true and saves the session token.
-            // Also fires a second data load - this guarantees fresh data and is
-            // imperceptible since the prefetch above already populated the store.
-            // ContentView observes isAuthenticated and routes to the dashboard cleanly.
+            // Set isAuthenticated = true and persist the session token.
             AuthManager.shared.completeAuthentication()
+            // Clear needsReauth so ContentView's guard condition passes.
+            // This is required when biometric is triggered from the reauth path
+            // (app backgrounded >300s sets needsReauth=true). Without this,
+            // the dashboard would never appear even after successful Face ID.
+            AuthManager.shared.reauthCompleted()
 
-            // Stay .idle - LoginView’s onChange must NOT see .authenticated,
-            // which would trigger a competing fullScreenCover navigation.
             authState = .idle
 
         } catch {

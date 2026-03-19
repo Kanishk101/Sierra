@@ -18,7 +18,6 @@ final class AppLifecycleMonitor {
 
     // MARK: - Scene Phase
 
-    /// Unified handler for scene phase changes.
     func handleScenePhaseChange(to phase: ScenePhase, hasSession: Bool) {
         guard hasSession else { return }
 
@@ -57,9 +56,17 @@ final class AppLifecycleMonitor {
 
     func biometricUnlocked() {
         showBiometricLock = false
+        // Also clear needsReauth so ContentView doesn't fall back to LoginView.
+        // Both AppLifecycleMonitor (60s threshold) and AuthManager (300s threshold)
+        // set their respective flags on foreground. Unlocking the overlay must
+        // resolve both, otherwise ContentView's guard (isAuthenticated &&
+        // !needsReauth) fails and the user is forced to authenticate a second time.
+        AuthManager.shared.reauthCompleted()
     }
 
     func passwordFallbackUsed() {
         showBiometricLock = false
+        // signOut() already sets needsReauth = false and isAuthenticated = false,
+        // so ContentView will route to LoginView cleanly.
     }
 }
