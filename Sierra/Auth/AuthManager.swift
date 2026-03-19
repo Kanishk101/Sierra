@@ -28,10 +28,6 @@ final class AuthManager {
         static let sessionToken      = "com.fleetOS.sessionToken"
         static let hashedCred        = "com.fleetOS.hashedCredential"
         static let biometricOn       = "com.fleetOS.biometricEnabled"
-        // NOTE: biometricPrompted is intentionally NOT deleted on signOut.
-        // It is only cleared on fresh install (SierraApp.init) so the enrollment
-        // sheet never re-appears just because the user logged out and back in.
-        // Clearing it on signOut caused an annoying re-prompt on every login.
         static let biometricPrompted = "com.fleetOS.hasPromptedBiometric"
     }
 
@@ -57,7 +53,7 @@ final class AuthManager {
     //   1. supabase.auth.signIn(email:password:) — Supabase Auth validates
     //      credentials server-side (bcrypt). Sets auth.uid() so RLS works.
     //   2. 150 ms sleep — ensures the JWT is fully propagated before the
-    //      edge function's anonClient.auth.getUser() call resolves it.
+    //      edge function’s anonClient.auth.getUser() call resolves it.
     //      Without this, a fast network can trigger a race where getUser()
     //      returns null and the function throws 401 → invalidCredentials.
     //   3. sign-in edge function (verify_jwt: true) — fetches staff profile.
@@ -167,14 +163,8 @@ final class AuthManager {
         KeychainService.delete(key: Keys.hashedCred)
         KeychainService.delete(key: Keys.sessionToken)
         KeychainService.delete(key: Keys.backgroundTS)
-        // biometricEnabled is cleared on signOut so the Face ID login button
-        // correctly disappears after logout — the user must explicitly re-enable
-        // it on their next login via the enrollment sheet.
         KeychainService.delete(key: Keys.biometricOn)
-        // biometricPrompted is intentionally NOT deleted here — see Keys comment.
-        // Deleting it caused the enrollment sheet to re-appear on every login,
-        // even if the user had already declined or enabled biometric. It is
-        // cleared on fresh install in SierraApp.init() instead.
+        KeychainService.delete(key: Keys.biometricPrompted)
         Task { try? await supabase.auth.signOut() }
     }
 
