@@ -1,198 +1,130 @@
 import Foundation
-import SwiftSMTP
+import Supabase
 
 // MARK: - EmailService
-// Sends real emails via SwiftSMTP using Gmail SMTP.
-// Used for: staff credential emails after account creation.
+//
+// All emails are sent via the `send-email` Supabase Edge Function, which uses
+// Gmail SMTP (credentials stored as Supabase secrets — never in source code).
+//
+// Supabase Auth built-in emails (confirmation, magic links) use the project's
+// Custom SMTP setting in Auth > Settings, also pointed at Gmail.
+//
+// Three entry points:
+//   sendCredentials  — async throws (fleet manager awaits confirmation)
+//   sendLoginOTP     — fire-and-forget (called mid-login, failure is logged)
+//   sendResetOTP     — fire-and-forget (called during reset flow)
 
 struct EmailService {
 
-    private static let smtpHost     = "smtp.gmail.com"
-    private static let smtpEmail    = "fleet.manager.system.infosys@gmail.com"
-    private static let smtpPassword = "gnurohgfexvvemnn"
-    private static let senderName   = "Fleet Manager System"
+    // MARK: - Private payload
 
-    // MARK: - Send Credentials
+    private struct Payload: Encodable {
+        let to: String
+        let subject: String
+        let text: String
+    }
 
-    /// Sends login credentials to a newly created staff member via Gmail SMTP.
-    /// Called by CreateStaffViewModel after staff_members row is inserted.
+    private struct SendResult: Decodable {
+        let sent: Bool
+    }
+
+    // MARK: - Internal send (fire-and-forget)
+
+    private static func send(to: String, subject: String, text: String) {
+        Task {
+            do {
+                let _: SendResult = try await supabase.functions.invoke(
+                    "send-email",
+                    options: FunctionInvokeOptions(body: Payload(to: to, subject: subject, text: text))
+                )
+                print("[EmailService] ✅ sent to \(to)")
+            } catch {
+                // Non-fatal — log and continue. OTP is still valid in AuthManager.
+                print("[EmailService] ⚠️ send failed to \(to): \(error)")
+            }
+        }
+    }
+
+    // MARK: - Send Credentials (async throws — fleet manager waits for confirmation)
+
     static func sendCredentials(
         to email: String,
         name: String,
         password: String,
         role: UserRole
     ) async throws {
-
-        let subject = "Welcome to FleetOS \u{2014} Your Login Credentials"
-
-        let body = """
-            \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}
-            FleetOS \u{2014} Staff Credential Notification
-            \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}
+        let subject = "Welcome to Sierra FMS — Your Login Credentials"
+        let text = """
+            ─────────────────────────────────────────
+            Sierra Fleet Manager — New Account
+            ─────────────────────────────────────────
 
             Hello \(name),
 
-            Your FleetOS account has been created by a Fleet Administrator.
-            Below are your login credentials:
+            Your Sierra FMS account has been created by a Fleet Administrator.
 
             Email:    \(email)
             Password: \(password)
             Role:     \(role.displayName)
 
-            IMPORTANT:
-            You will be required to change your password on first login.
-            After changing your password, please complete your profile
-            to gain full access to the platform.
+            IMPORTANT: You must change your password on first login.
+            After that, complete your profile to get full platform access.
 
-            If you did not expect this email, please contact your
-            fleet administrator immediately.
+            If you did not expect this, contact your fleet administrator immediately.
 
-            \u{2014} The FleetOS Team
-            \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}
+            — The Sierra FMS Team
+            ─────────────────────────────────────────
             """
 
-        let smtp = SMTP(
-            hostname: smtpHost,
-            email:    smtpEmail,
-            password: smtpPassword
+        let _: SendResult = try await supabase.functions.invoke(
+            "send-email",
+            options: FunctionInvokeOptions(body: Payload(to: email, subject: subject, text: text))
         )
-
-        let mail = Mail(
-            from: Mail.User(name: senderName, email: smtpEmail),
-            to:   [Mail.User(name: name, email: email)],
-            subject: subject,
-            text:    body
-        )
-
-        // SwiftSMTP.send is callback-based - wrap in async continuation
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            smtp.send(mail) { error in
-                if let error = error {
-                    print("[EmailService] ERROR sending credentials to \(email): \(error)")
-                    continuation.resume(throwing: error)
-                } else {
-                    print("[EmailService] Credentials sent \u{2705} to \(email)")
-                    continuation.resume()
-                }
-            }
-        }
     }
 
-    // MARK: - Send OTP (legacy helper - kept for reference; real 2FA now uses Supabase)
+    // MARK: - Send 2FA Login OTP (fire-and-forget)
 
-    static func sendOTP(to email: String, otp: String) {
-        let smtp = SMTP(
-            hostname: smtpHost,
-            email:    smtpEmail,
-            password: smtpPassword
-        )
-
-        let mail = Mail(
-            from: Mail.User(name: senderName, email: smtpEmail),
-            to:   [Mail.User(name: "User", email: email)],
-            subject: "Your OTP Code",
-            text: """
-            Hello,
-
-            Your One-Time Password (OTP) for verification is:
-
-            OTP: \(otp)
-
-            This OTP is valid for the next 5 minutes. Please do not share it with anyone.
-
-            If you did not request this code, please ignore this email.
-
-            Regards,
-            Fleet Manager System
-            """
-        )
-
-        smtp.send(mail) { error in
-            if let error = error {
-                print("[EmailService] OTP send error: \(error)")
-            } else {
-                print("[EmailService] OTP sent \u{2705} to \(email)")
-            }
-        }
-    }
-
-    // MARK: - 2FA Login OTP (migrated from sendEmail.swift)
-
-    /// Sends a 2FA login verification OTP email.
     static func sendLoginOTP(to email: String, otp: String) {
-        let smtp = SMTP(
-            hostname: smtpHost,
-            email:    smtpEmail,
-            password: smtpPassword
-        )
-
-        let mail = Mail(
-            from: Mail.User(name: senderName, email: smtpEmail),
-            to:   [Mail.User(name: "User", email: email)],
-            subject: "🔐 Your Login Verification Code - Sierra FMS",
+        send(
+            to: email,
+            subject: "Your Login Verification Code — Sierra FMS",
             text: """
-            Sierra Fleet Manager - Login Verification
-            ==========================================
+                Sierra Fleet Manager — Login Verification
+                ==========================================
 
-            Your two-factor authentication code:
+                Your two-factor authentication code:
 
-            \(otp)
+                \(otp)
 
-            This code is valid for 10 minutes.
-            Do not share it with anyone.
+                Valid for 10 minutes. Do not share it with anyone.
 
-            If you did not attempt to sign in to Sierra Fleet Manager,
-            please contact your fleet administrator immediately.
+                If you did not attempt to sign in, contact your fleet administrator immediately.
 
-            - Sierra Fleet Manager System
-            """
+                — Sierra FMS
+                """
         )
-
-        smtp.send(mail) { error in
-            if let error { print("[EmailService] 2FA email error: \(error)") }
-            else          { print("[EmailService] 2FA OTP sent \u{2705} to \(email)") }
-        }
     }
 
-    // MARK: - Password Reset OTP (migrated from sendEmail.swift)
+    // MARK: - Send Password Reset OTP (fire-and-forget)
 
-    /// Sends a password reset OTP email.
     static func sendResetOTP(to email: String, otp: String) {
-        let smtp = SMTP(
-            hostname: smtpHost,
-            email:    smtpEmail,
-            password: smtpPassword
-        )
-
-        let mail = Mail(
-            from: Mail.User(name: senderName, email: smtpEmail),
-            to:   [Mail.User(name: "User", email: email)],
-            subject: "🔑 Password Reset Code - Sierra FMS",
+        send(
+            to: email,
+            subject: "Password Reset Code — Sierra FMS",
             text: """
-            Sierra Fleet Manager - Password Reset Request
-            =============================================
+                Sierra Fleet Manager — Password Reset
+                =====================================
 
-            We received a request to reset your Sierra FMS account password.
+                Your password reset code:
 
-            Your password reset code:
+                \(otp)
 
-            \(otp)
+                Valid for 10 minutes.
 
-            Enter this code in the app to set a new password.
-            Valid for 10 minutes.
+                Did not request this? Ignore this email — your password is unchanged.
 
-            ⚠️  Did not request this?
-            If you did NOT ask for a password reset, ignore this email.
-            Your password will remain unchanged and no action is needed.
-
-            - Sierra Fleet Manager System
-            """
+                — Sierra FMS
+                """
         )
-
-        smtp.send(mail) { error in
-            if let error { print("[EmailService] Reset email error: \(error)") }
-            else          { print("[EmailService] Reset OTP sent \u{2705} to \(email)") }
-        }
     }
 }
-

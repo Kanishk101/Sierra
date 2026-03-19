@@ -50,16 +50,18 @@ final class AuthManager {
     // MARK: - Sign In
     //
     // Two-step login:
-    //   1. supabase.auth.signIn(email:password:) — Supabase Auth validates credentials
-    //      (bcrypt, server-side). Sets auth.uid() so RLS works.
-    //   2. sign-in edge function (verify_jwt: true) — fetches staff_members profile
-    //      using the live JWT. No credentials involved.
+    //   1. supabase.auth.signIn(email:password:) — Supabase Auth validates
+    //      credentials server-side (bcrypt). Sets auth.uid() so RLS works.
+    //   2. 150 ms sleep — ensures the JWT is fully propagated before the
+    //      edge function's anonClient.auth.getUser() call resolves it.
+    //      Without this, a fast network can trigger a race where getUser()
+    //      returns null and the function throws 401 → invalidCredentials.
+    //   3. sign-in edge function (verify_jwt: true) — fetches staff profile.
 
     func signIn(email: String, password: String) async throws -> UserRole {
         otpLastSentAt = nil
 
         // Step 1 — Authenticate with Supabase Auth
-        // NOTE: This repo's Supabase Swift version uses signIn(email:password:).
         do {
             try await supabase.auth.signIn(
                 email: email,
@@ -69,7 +71,10 @@ final class AuthManager {
             throw AuthError.invalidCredentials
         }
 
-        // Step 2 — Fetch staff profile via edge function (JWT now live)
+        // Step 2 — Allow JWT to propagate before calling the edge function
+        try await Task.sleep(for: .milliseconds(150))
+
+        // Step 3 — Fetch staff profile via edge function (JWT now live)
         struct StaffProfile: Decodable {
             let id: String
             let email: String
@@ -274,10 +279,6 @@ final class AuthManager {
     }
 
     // MARK: - Password Management
-    //
-    // Passwords are managed exclusively by Supabase Auth (bcrypt).
-    // CryptoService.hash is used only for local biometric reauth caching.
-    // staff_members has no password column.
 
     func updatePasswordAndFirstLogin(newPassword: String) async throws {
         guard var user = currentUser else { throw AuthError.invalidCredentials }

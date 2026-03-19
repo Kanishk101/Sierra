@@ -12,7 +12,6 @@
 		3E432BD82F6405A5008CE2B3 /* Auth in Frameworks */ = {isa = PBXBuildFile; productRef = 3E432BD72F6405A5008CE2B3 /* Auth */; };
 		3E432BDA2F6405A5008CE2B3 /* PostgREST in Frameworks */ = {isa = PBXBuildFile; productRef = 3E432BD92F6405A5008CE2B3 /* PostgREST */; };
 		3E432BDD2F6405C9008CE2B3 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 3E432BDC2F6405C9008CE2B3 /* Supabase */; };
-		3EB769722F64054000374218 /* SwiftSMTP in Frameworks */ = {isa = PBXBuildFile; productRef = 3EB769712F64054000374218 /* SwiftSMTP */; };
 		3EFD6A452F695C5700D685D5 /* MapboxDirections in Frameworks */ = {isa = PBXBuildFile; productRef = 3EFD6A442F695C5700D685D5 /* MapboxDirections */; };
 /* End PBXBuildFile section */
 
@@ -52,7 +51,6 @@
 				3E432BDA2F6405A5008CE2B3 /* PostgREST in Frameworks */,
 				3E432BD82F6405A5008CE2B3 /* Auth in Frameworks */,
 				3E0441522F69B0920090D4EC /* MapboxCoreNavigation in Frameworks */,
-				3EB769722F64054000374218 /* SwiftSMTP in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -103,7 +101,6 @@
 			);
 			name = Sierra;
 			packageProductDependencies = (
-				3EB769712F64054000374218 /* SwiftSMTP */,
 				3E432BD72F6405A5008CE2B3 /* Auth */,
 				3E432BD92F6405A5008CE2B3 /* PostgREST */,
 				3E432BDC2F6405C9008CE2B3 /* Supabase */,
@@ -140,7 +137,6 @@
 			mainGroup = 3E96006C2F5F0CEE0040F55E;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				3EB769702F64054000374218 /* XCRemoteSwiftPackageReference "Swift-SMTP" */,
 				3E432BD62F6405A5008CE2B3 /* XCRemoteSwiftPackageReference "supabase-swift" */,
 				3EFD6A432F695C5700D685D5 /* XCRemoteSwiftPackageReference "mapbox-navigation-ios" */,
 			);
@@ -396,20 +392,12 @@
 				minimumVersion = 2.5.1;
 			};
 		};
-		3EB769702F64054000374218 /* XCRemoteSwiftPackageReference "Swift-SMTP" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/IBM-Swift/Swift-SMTP";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 6.0.0;
-			};
-		};
 		3EFD6A432F695C5700D685D5 /* XCRemoteSwiftPackageReference "mapbox-navigation-ios" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/mapbox/mapbox-navigation-ios";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 2.20.0;
+				minimumVersion = 3.0.0;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
@@ -439,11 +427,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 3E432BD62F6405A5008CE2B3 /* XCRemoteSwiftPackageReference "supabase-swift" */;
 			productName = Supabase;
-		};
-		3EB769712F64054000374218 /* SwiftSMTP */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 3EB769702F64054000374218 /* XCRemoteSwiftPackageReference "Swift-SMTP" */;
-			productName = SwiftSMTP;
 		};
 		3EFD6A442F695C5700D685D5 /* MapboxDirections */ = {
 			isa = XCSwiftPackageProductDependency;
