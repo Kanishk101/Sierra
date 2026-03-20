@@ -173,29 +173,46 @@ final class AppDataStore {
         await loadAndSubscribeNotifications(for: driverId)
     }
 
+    // MARK: - loadMaintenanceData
+    // Each field is loaded with its own try/catch (matching the loadDriverData
+    // pattern) so that a single service failure never silently drops the
+    // remaining fields. Previously one monolithic do/catch meant any error
+    // before maintenanceProfile would leave workOrders, maintenanceTasks, etc.
+    // completely empty for the entire session.
+
     func loadMaintenanceData(staffId: UUID) async {
         await tearDownRealtimeChannels()
         isLoading = true
-        do {
-            async let selfMemberTask = StaffMemberService.fetchStaffMember(id: staffId)
-            async let vehiclesTask   = VehicleService.fetchAllVehicles()
-            async let workOrdersTask = WorkOrderService.fetchWorkOrders(assignedToId: staffId)
-            async let maintTasksTask = MaintenanceTaskService.fetchMaintenanceTasks(assignedToId: staffId)
-            async let maintRecsTask  = MaintenanceRecordService.fetchMaintenanceRecords(performedById: staffId)
-            async let partsTask      = PartUsedService.fetchAllPartsUsed()
-            async let maintProfTask  = MaintenanceProfileService.fetchMaintenanceProfile(staffMemberId: staffId)
 
-            if let selfMember = try await selfMemberTask { staff = [selfMember] }
-            vehicles           = try await vehiclesTask
-            workOrders         = try await workOrdersTask
-            maintenanceTasks   = try await maintTasksTask
-            maintenanceRecords = try await maintRecsTask
-            partsUsed          = try await partsTask
-            if let prof = try await maintProfTask { maintenanceProfiles = [prof] }
-        } catch {
-            loadError = error.localizedDescription
-            print("[AppDataStore.loadMaintenanceData] Error: \(error)")
-        }
+        async let selfMemberTask = StaffMemberService.fetchStaffMember(id: staffId)
+        async let vehiclesTask   = VehicleService.fetchAllVehicles()
+        async let workOrdersTask = WorkOrderService.fetchWorkOrders(assignedToId: staffId)
+        async let maintTasksTask = MaintenanceTaskService.fetchMaintenanceTasks(assignedToId: staffId)
+        async let maintRecsTask  = MaintenanceRecordService.fetchMaintenanceRecords(performedById: staffId)
+        async let partsTask      = PartUsedService.fetchAllPartsUsed()
+        async let maintProfTask  = MaintenanceProfileService.fetchMaintenanceProfile(staffMemberId: staffId)
+
+        do { if let m = try await selfMemberTask { staff = [m] } }
+            catch { print("[AppDataStore.loadMaintenanceData] [non-fatal] staff error: \(error)") }
+
+        do { vehicles = try await vehiclesTask }
+            catch { print("[AppDataStore.loadMaintenanceData] [non-fatal] vehicles error: \(error)") }
+
+        do { workOrders = try await workOrdersTask }
+            catch { print("[AppDataStore.loadMaintenanceData] [non-fatal] workOrders error: \(error)") }
+
+        do { maintenanceTasks = try await maintTasksTask }
+            catch { print("[AppDataStore.loadMaintenanceData] [non-fatal] maintenanceTasks error: \(error)") }
+
+        do { maintenanceRecords = try await maintRecsTask }
+            catch { print("[AppDataStore.loadMaintenanceData] [non-fatal] maintenanceRecords error: \(error)") }
+
+        do { partsUsed = try await partsTask }
+            catch { print("[AppDataStore.loadMaintenanceData] [non-fatal] partsUsed error: \(error)") }
+
+        do { if let p = try await maintProfTask { maintenanceProfiles = [p] } }
+            catch { print("[AppDataStore.loadMaintenanceData] [non-fatal] maintenanceProfile error: \(error)") }
+
         isLoading = false
         await loadAndSubscribeNotifications(for: staffId)
     }

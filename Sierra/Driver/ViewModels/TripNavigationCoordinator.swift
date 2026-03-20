@@ -38,6 +38,15 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     private var locationManager: CLLocationManager?
     private var currentStepIndex: Int = 0
 
+    // Waypoints added by the driver mid-trip via the HUD stop picker.
+    // Cleared on a full reroute so only future stops are carried forward.
+    private var intermediateWaypoints: [(lat: Double, lng: Double, name: String)] = []
+
+    // When true, buildRoutes() uses currentLocation as the route origin instead
+    // of the original trip coordinates. Set by checkDeviation(); reset inside
+    // buildRoutes() once the effective origin has been consumed.
+    private var rerouteFromCurrentLocation: Bool = false
+
     // MARK: - Init / deinit
 
     init(trip: Trip) {
@@ -57,30 +66,67 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     }
 
     // MARK: - Add Stop
+    // Bug 1 fix: previously the body ignored all three parameters and just
+    // rebuilt the original A→B route. Now the stop is appended to
+    // intermediateWaypoints so buildRoutes() includes it in the API call.
 
     func addStop(latitude: Double, longitude: Double, name: String) async {
+        intermediateWaypoints.append((lat: latitude, lng: longitude, name: name))
         hasBuiltRoutes = false
         await buildRoutes()
     }
 
     // MARK: - Route Building
     // hasBuiltRoutes is set to true ONLY on success so retries work.
+    //
+    // Two additional behaviours vs the original:
+    //  • When rerouteFromCurrentLocation is true the driver’s current GPS fix
+    //    is used as the route origin instead of the original trip coordinates.
+    //  • Any intermediateWaypoints are injected between origin and destination.
 
     func buildRoutes() async {
         guard !hasBuiltRoutes else { return }
 
-        guard let originLat = trip.originLatitude,
-              let originLng = trip.originLongitude,
-              let destLat = trip.destinationLatitude,
+        // --- Determine effective origin ---
+        let startLat: Double
+        let startLng: Double
+        let isRerouting = rerouteFromCurrentLocation
+
+        if isRerouting, let loc = currentLocation {
+            startLat = loc.coordinate.latitude
+            startLng = loc.coordinate.longitude
+            rerouteFromCurrentLocation = false   // consumed; reset before any await
+        } else {
+            rerouteFromCurrentLocation = false
+            guard let originLat = trip.originLatitude,
+                  let originLng = trip.originLongitude else {
+                print("[NavCoordinator] Missing trip coordinates")
+                return
+            }
+            startLat = originLat
+            startLng = originLng
+        }
+
+        guard let destLat = trip.destinationLatitude,
               let destLng = trip.destinationLongitude else {
-            print("[NavCoordinator] Missing trip coordinates")
+            print("[NavCoordinator] Missing trip destination coordinates")
             return
         }
 
-        let originWP = Waypoint(coordinate: CLLocationCoordinate2D(latitude: originLat, longitude: originLng))
-        let destWP   = Waypoint(coordinate: CLLocationCoordinate2D(latitude: destLat, longitude: destLng))
+        // --- Build waypoint array: origin → stops → destination ---
+        let originWP = Waypoint(coordinate: CLLocationCoordinate2D(latitude: startLat, longitude: startLng))
+        var waypoints: [Waypoint] = [originWP]
+        for stop in intermediateWaypoints {
+            waypoints.append(
+                Waypoint(
+                    coordinate: CLLocationCoordinate2D(latitude: stop.lat, longitude: stop.lng),
+                    name: stop.name
+                )
+            )
+        }
+        waypoints.append(Waypoint(coordinate: CLLocationCoordinate2D(latitude: destLat, longitude: destLng)))
 
-        let options = RouteOptions(waypoints: [originWP, destWP])
+        let options = RouteOptions(waypoints: waypoints)
         options.includesAlternativeRoutes = true
         options.routeShapeResolution = .full
         options.shapeFormat = .polyline6
@@ -124,6 +170,11 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
 
             // Only mark built AFTER successful route assignment
             hasBuiltRoutes = true
+
+            // Clear the deviation banner now that a fresh route has landed.
+            // For the initial build hasDeviated is already false, so this is a no-op
+            // there. On a reroute it dismisses the “Off Route — Recalculating” banner.
+            if hasDeviated { hasDeviated = false }
 
         } catch {
             // Do NOT set hasBuiltRoutes = true — leaves retry open
@@ -236,6 +287,14 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     }
 
     // MARK: - Deviation Check
+    // Bug 2 fix: previously this function set hasDeviated=true and recorded the
+    // event to the DB, but never triggered a route rebuild. The driver saw the
+    // “Off Route — Recalculating” banner forever while the stale polyline remained.
+    //
+    // Now: once the cooldown passes, we flag rerouteFromCurrentLocation=true,
+    // clear hasBuiltRoutes, and fire buildRoutes(). buildRoutes() fetches a fresh
+    // Mapbox route from the driver’s current GPS position and clears hasDeviated
+    // only after the new route lands successfully.
 
     func checkDeviation(from location: CLLocation) {
         guard decodedRouteCoordinates.count >= 2 else { return }
@@ -255,6 +314,11 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
                 deviationMetres: deviationMetres
             )
         }
+        // Trigger a real reroute from the driver’s current position.
+        // intermediateWaypoints are preserved so any pending stops survive the reroute.
+        rerouteFromCurrentLocation = true
+        hasBuiltRoutes = false
+        Task { await buildRoutes() }
     }
 
     private func computeMinDistanceToRoute(location: CLLocationCoordinate2D, routeCoords: [CLLocationCoordinate2D]) -> Double {
