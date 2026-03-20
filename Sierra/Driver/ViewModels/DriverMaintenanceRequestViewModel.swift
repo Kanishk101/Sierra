@@ -2,7 +2,10 @@ import Foundation
 import Supabase
 
 /// ViewModel for the driver ad-hoc maintenance request form.
-/// Supports sequential photo upload and submission via MaintenanceTaskService.
+/// Supports sequential photo upload to Supabase Storage.
+/// Photos are uploaded and their URLs stored on the vehicle_inspections
+/// row (via photo_urls) when sourceInspectionId is set. The maintenance_tasks
+/// table has no photo_urls column — photos link to the task via source_inspection_id.
 @Observable
 final class DriverMaintenanceRequestViewModel {
 
@@ -19,7 +22,6 @@ final class DriverMaintenanceRequestViewModel {
     var issueDescription: String = ""
     var priority: TaskPriority = .medium
     var photos: [Data] = []
-    var photoURLs: [String] = []
 
     // MARK: - Submission state
 
@@ -51,10 +53,23 @@ final class DriverMaintenanceRequestViewModel {
         defer { isSubmitting = false }
 
         do {
-            // Upload photos SEQUENTIALLY — never async let / TaskGroup
+            // Upload photos SEQUENTIALLY to Supabase Storage.
+            // URLs are stored on the vehicle_inspections row (photo_urls)
+            // linked via sourceInspectionId — maintenance_tasks has no photo_urls column.
+            var uploadedURLs: [String] = []
             for photo in photos {
                 let url = try await uploadPhoto(photo)
-                photoURLs.append(url)
+                uploadedURLs.append(url)
+            }
+
+            // If we have a source inspection and uploaded photos, patch the inspection
+            // photo_urls so the fleet manager can see them alongside the task.
+            if let inspectionId = sourceInspectionId, !uploadedURLs.isEmpty {
+                try? await supabase
+                    .from("vehicle_inspections")
+                    .update(["photo_urls": uploadedURLs])
+                    .eq("id", value: inspectionId.uuidString)
+                    .execute()
             }
 
             try await MaintenanceTaskService.createDriverRequest(
@@ -63,7 +78,6 @@ final class DriverMaintenanceRequestViewModel {
                 title: title,
                 description: issueDescription,
                 priority: priority,
-                photoURLs: photoURLs,
                 sourceInspectionId: sourceInspectionId
             )
             submitSuccess = true
