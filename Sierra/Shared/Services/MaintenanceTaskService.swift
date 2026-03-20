@@ -226,16 +226,21 @@ struct MaintenanceTaskService {
     }
 
     // MARK: - Driver-initiated Request
+    //
+    // Creates a maintenance request raised by a driver (e.g. post-trip inspection
+    // fail or ad-hoc breakdown report).
+    //
+    // Note on photos: maintenance_tasks has NO photo_urls column. Photos related
+    // to a defect are stored on the vehicle_inspections row via its photo_urls
+    // column and linked here via source_inspection_id. Do not attempt to pass
+    // photos to this method — store them on the inspection first.
 
-    /// Creates a maintenance request raised by a driver (e.g. post-trip inspection fail or ad-hoc).
-    /// Uses the driver's own ID as `created_by_admin_id` since no admin is involved.
     static func createDriverRequest(
         vehicleId: UUID,
         driverId: UUID,
         title: String,
         description: String,
         priority: TaskPriority,
-        photoURLs: [String],
         sourceInspectionId: UUID?
     ) async throws {
         struct DriverRequestPayload: Encodable {
@@ -247,7 +252,6 @@ struct MaintenanceTaskService {
             let status: String
             let task_type: String
             let source_inspection_id: String?
-            let photo_urls: [String]?
             let due_date: String
         }
 
@@ -260,48 +264,12 @@ struct MaintenanceTaskService {
             status: MaintenanceTaskStatus.pending.rawValue,
             task_type: MaintenanceTaskType.inspectionDefect.rawValue,
             source_inspection_id: sourceInspectionId?.uuidString,
-            photo_urls: photoURLs.isEmpty ? nil : photoURLs,
             due_date: iso.string(from: Calendar.current.date(byAdding: .day, value: 3, to: Date()) ?? Date())
         )
 
-        do {
-            try await supabase
-                .from("maintenance_tasks")
-                .insert(payload)
-                .execute()
-        } catch {
-            // Backward-compat fallback for environments where `photo_urls` is not yet in schema.
-            if !photoURLs.isEmpty,
-               error.localizedDescription.localizedCaseInsensitiveContains("photo_urls") {
-                struct FallbackPayload: Encodable {
-                    let vehicle_id: String
-                    let created_by_admin_id: String
-                    let title: String
-                    let task_description: String
-                    let priority: String
-                    let status: String
-                    let task_type: String
-                    let source_inspection_id: String?
-                    let due_date: String
-                }
-                let fallback = FallbackPayload(
-                    vehicle_id: vehicleId.uuidString,
-                    created_by_admin_id: driverId.uuidString,
-                    title: title,
-                    task_description: description,
-                    priority: priority.rawValue,
-                    status: MaintenanceTaskStatus.pending.rawValue,
-                    task_type: MaintenanceTaskType.inspectionDefect.rawValue,
-                    source_inspection_id: sourceInspectionId?.uuidString,
-                    due_date: iso.string(from: Calendar.current.date(byAdding: .day, value: 3, to: Date()) ?? Date())
-                )
-                try await supabase
-                    .from("maintenance_tasks")
-                    .insert(fallback)
-                    .execute()
-                return
-            }
-            throw error
-        }
+        try await supabase
+            .from("maintenance_tasks")
+            .insert(payload)
+            .execute()
     }
 }
