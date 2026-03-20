@@ -37,8 +37,8 @@ final class AuthManager {
     var isAuthenticated: Bool = false
     var needsReauth: Bool = false
     private var currentOTP: String = ""
-    private var otpGeneratedAt: Date?          // tracks OTP age for timestamp-based expiry
-    private let otpValidSeconds: TimeInterval = 600  // 10 minutes
+    private var otpGeneratedAt: Date?
+    private let otpValidSeconds: TimeInterval = 600
     var pendingOTPEmail: String?
     private var pendingResetToken: String = ""
     private var resetOTP: String = ""
@@ -51,18 +51,34 @@ final class AuthManager {
     private init() { restoreSessionSilently() }
 
     // MARK: - Sign In
+    //
+    // Two-step login:
+    //   1. supabase.auth.signIn() — Supabase Auth validates credentials (bcrypt).
+    //      If this fails the password is genuinely wrong — throw invalidCredentials.
+    //   2. 500ms sleep — gives GoTrue time to propagate the new JWT to all
+    //      edge nodes before the sign-in edge function calls auth.getUser().
+    //      The edge function also retries getUser() up to 3 times with 200ms
+    //      gaps as an extra safety net.
+    //   3. sign-in edge function (verify_jwt: true) — fetches staff profile.
+    //      If this fails throw sessionExpired (not invalidCredentials) so the
+    //      error message is accurate: the password was right, the profile fetch failed.
 
     func signIn(email: String, password: String) async throws -> UserRole {
         otpLastSentAt = nil
 
+        // Step 1: Supabase Auth credential check
         do {
             try await supabase.auth.signIn(email: email, password: password)
         } catch {
+            // Auth rejected the credentials — wrong email/password
+            print("[AuthManager] signIn step 1 failed: \(error)")
             throw AuthError.invalidCredentials
         }
 
-        try await Task.sleep(for: .milliseconds(150))
+        // Step 2: Wait for JWT propagation
+        try await Task.sleep(for: .milliseconds(500))
 
+        // Step 3: Fetch staff profile via edge function
         struct StaffProfile: Decodable {
             let id: String; let email: String; let name: String?
             let role: String; let is_first_login: Bool?
@@ -74,13 +90,15 @@ final class AuthManager {
         do {
             profile = try await supabase.functions.invoke("sign-in", options: FunctionInvokeOptions())
         } catch {
+            print("[AuthManager] signIn step 3 (edge fn) failed: \(error)")
             try? await supabase.auth.signOut()
-            throw AuthError.invalidCredentials
+            // Password was correct but profile fetch failed — distinct error
+            throw AuthError.userNotFound
         }
 
         guard let userId = UUID(uuidString: profile.id) else {
             try? await supabase.auth.signOut()
-            throw AuthError.invalidCredentials
+            throw AuthError.userNotFound
         }
 
         let user = AuthUser(
@@ -155,8 +173,6 @@ final class AuthManager {
               let user = KeychainService.load(key: Keys.currentUser, as: AuthUser.self) else { return nil }
         currentUser = user
         isAuthenticated = true
-        // Asynchronously validate that the Supabase session is still live.
-        // If the server-side session has been revoked or expired, sign out.
         Task {
             do {
                 _ = try await supabase.auth.session
@@ -218,8 +234,6 @@ final class AuthManager {
     }
 
     // MARK: - OTP
-    // OTP is verified with a timestamp check so codes cannot be used after
-    // expiry even if the TwoFactorViewModel countdown was bypassed.
 
     @discardableResult
     func generateOTP() -> String {
@@ -241,8 +255,6 @@ final class AuthManager {
     }
 
     func verifyOTP(_ code: String) -> Bool {
-        // Timestamp check: reject codes older than otpValidSeconds regardless
-        // of whether the TwoFactorViewModel countdown was bypassed.
         guard let generatedAt = otpGeneratedAt,
               Date().timeIntervalSince(generatedAt) < otpValidSeconds else {
             currentOTP = ""
@@ -250,10 +262,7 @@ final class AuthManager {
             return false
         }
         let match = code == currentOTP
-        if match {
-            currentOTP = ""
-            otpGeneratedAt = nil
-        }
+        if match { currentOTP = ""; otpGeneratedAt = nil }
         return match
     }
 
@@ -346,7 +355,6 @@ final class AuthManager {
                 let email: String; let token: String; let user_id: String
                 let expires_at: String; let used: Bool
             }
-            // NOT try? — if DB insert fails we return false so the user knows the reset didn't start
             try await supabase.from("password_reset_tokens")
                 .insert(TokenInsert(email: email, token: resetToken, user_id: userRow.id,
                                     expires_at: expiresAt, used: false))
@@ -360,7 +368,6 @@ final class AuthManager {
 
     func resetPassword(code: String, newPassword: String) async throws {
         try await Task.sleep(for: .milliseconds(600))
-        // Validate reset OTP with timestamp check
         guard let generatedAt = resetOTPGeneratedAt,
               Date().timeIntervalSince(generatedAt) < otpValidSeconds else {
             throw AuthError.otpExpired
