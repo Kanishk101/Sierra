@@ -25,7 +25,7 @@ final class AppDataStore {
     private var notificationsChannel:   RealtimeChannelV2?
 
     // Tracks which user's notifications are subscribed so we
-    // re-subscribe correctly on role/user switch (Issue 14 / Codex MED-4).
+    // re-subscribe correctly on role/user switch.
     private var subscribedNotificationsUserId: UUID?
 
     // MARK: - Data Arrays
@@ -58,15 +58,11 @@ final class AppDataStore {
     var isLoading: Bool = false
     var loadError: String?
 
-    // MARK: - Load Methods
-    // Each load method tears down existing channels first, then resubscribes
-    // with the now-valid session JWT. This ensures realtime works correctly
-    // on every login (including re-login after sign-out).
+    // MARK: - loadAll (Fleet Manager)
+    // Every array has its own try/catch so no single failure blocks the rest.
 
     func loadAll() async {
-        // Tear down any stale channels from a previous session
         await tearDownRealtimeChannels()
-
         isLoading = true
         loadError = nil
 
@@ -88,6 +84,8 @@ final class AppDataStore {
         async let geofencesTask    = GeofenceService.fetchAllGeofences()
         async let geoEventsTask    = GeofenceEventService.fetchAllGeofenceEvents()
         async let activityTask     = ActivityLogService.fetchRecentLogs(limit: 100)
+        async let routeDevsTask    = RouteDeviationService.fetchAllDeviations()
+        async let sparePartsTask   = SparePartsRequestService.fetchAllSparePartsRequests()
 
         var errors: [String] = []
 
@@ -109,6 +107,8 @@ final class AppDataStore {
         do { geofences           = try await geofencesTask }    catch { errors.append("geofences: \(error.localizedDescription)") }
         do { geofenceEvents      = try await geoEventsTask }    catch { errors.append("geofenceEvents: \(error.localizedDescription)") }
         do { activityLogs        = try await activityTask }     catch { errors.append("activityLogs: \(error.localizedDescription)") }
+        do { routeDeviationEvents = try await routeDevsTask }   catch { errors.append("routeDeviationEvents: \(error.localizedDescription)") }
+        do { sparePartsRequests  = try await sparePartsTask }   catch { errors.append("sparePartsRequests: \(error.localizedDescription)") }
 
         if !errors.isEmpty {
             loadError = "Partial load failure: \(errors.joined(separator: "; "))"
@@ -117,7 +117,6 @@ final class AppDataStore {
 
         isLoading = false
 
-        // Start realtime channels NOW — session JWT is valid
         subscribeToEmergencyAlerts()
         subscribeToStaffMemberUpdates()
         subscribeToVehicleUpdates()
@@ -129,11 +128,9 @@ final class AppDataStore {
     }
 
     // MARK: - loadDriverData
-    // Each field is loaded with its own try/catch so that a single decode
-    // failure (e.g. vehicleInspections JSONB bug) never silently drops trips,
-    // driverProfile, or any other field. Previously one big do-catch meant
-    // any error before driverProfile would leave it empty and fire a second
-    // loadDriverData call from DriverTripsListView.task.
+    // Each field isolated with its own try/catch — a single decode failure
+    // (e.g. vehicleInspections JSONB double-encoding) never blocks trips or
+    // driverProfile from loading.
 
     func loadDriverData(driverId: UUID) async {
         await tearDownRealtimeChannels()
@@ -158,10 +155,8 @@ final class AppDataStore {
         do { fuelLogs = try await fuelLogsTask }
             catch { print("[AppDataStore.loadDriverData] [non-fatal] fuelLogs error: \(error)") }
 
-        // vehicleInspections uses JSONB 'items' column which Supabase sometimes
-        // returns double-encoded as a string. VehicleInspection has a custom
-        // init(from:) to handle this, but we still isolate the error here so
-        // a schema mismatch never blocks trips or driverProfile from loading.
+        // vehicleInspections: RLS scopes this to the driver's own records.
+        // Custom init(from:) in VehicleInspection handles JSONB double-encoding.
         do { vehicleInspections = try await inspectionsTask }
             catch { print("[AppDataStore.loadDriverData] [non-fatal] inspections error: \(error)") }
 
@@ -174,11 +169,9 @@ final class AppDataStore {
     }
 
     // MARK: - loadMaintenanceData
-    // Each field is loaded with its own try/catch (matching the loadDriverData
-    // pattern) so that a single service failure never silently drops the
-    // remaining fields. Previously one monolithic do/catch meant any error
-    // before maintenanceProfile would leave workOrders, maintenanceTasks, etc.
-    // completely empty for the entire session.
+    // Per-field try/catch matching loadDriverData pattern.
+    // sparePartsRequests is now fetched here so SparePartsRequestSheet
+    // does not show empty lists every session.
 
     func loadMaintenanceData(staffId: UUID) async {
         await tearDownRealtimeChannels()
@@ -191,6 +184,7 @@ final class AppDataStore {
         async let maintRecsTask  = MaintenanceRecordService.fetchMaintenanceRecords(performedById: staffId)
         async let partsTask      = PartUsedService.fetchAllPartsUsed()
         async let maintProfTask  = MaintenanceProfileService.fetchMaintenanceProfile(staffMemberId: staffId)
+        async let sparePartsTask = SparePartsRequestService.fetchAllRequests(requestedById: staffId)
 
         do { if let m = try await selfMemberTask { staff = [m] } }
             catch { print("[AppDataStore.loadMaintenanceData] [non-fatal] staff error: \(error)") }
@@ -213,13 +207,14 @@ final class AppDataStore {
         do { if let p = try await maintProfTask { maintenanceProfiles = [p] } }
             catch { print("[AppDataStore.loadMaintenanceData] [non-fatal] maintenanceProfile error: \(error)") }
 
+        do { sparePartsRequests = try await sparePartsTask }
+            catch { print("[AppDataStore.loadMaintenanceData] [non-fatal] sparePartsRequests error: \(error)") }
+
         isLoading = false
         await loadAndSubscribeNotifications(for: staffId)
     }
 
     // MARK: - Realtime teardown
-    // Called before every loadAll/loadDriverData/loadMaintenanceData to prevent
-    // duplicate channels and stale-state contamination across session transitions.
 
     private func tearDownRealtimeChannels() async {
         if let ch = emergencyAlertsChannel { await ch.unsubscribe(); emergencyAlertsChannel = nil }
@@ -377,26 +372,14 @@ final class AppDataStore {
         try await TripService.updateTripStatus(id: id, status: status)
         if let idx = trips.firstIndex(where: { $0.id == id }) {
             trips[idx].status = status
-            if status == .active   { trips[idx].actualStartDate = Date() }
-            if status == .completed { trips[idx].actualEndDate  = Date() }
+            if status == .active    { trips[idx].actualStartDate = Date() }
+            if status == .completed { trips[idx].actualEndDate   = Date() }
         }
     }
 
     func deleteTrip(id: UUID) async throws {
         try await TripService.deleteTrip(id: id)
         trips.removeAll { $0.id == id }
-    }
-
-    func completeTrip(id: UUID, endMileage: Double) async throws {
-        guard let idx = trips.firstIndex(where: { $0.id == id }) else { return }
-        var trip = trips[idx]
-        trip.status = .completed; trip.actualEndDate = Date(); trip.endMileage = endMileage
-        try await TripService.updateTrip(trip)
-        trips[idx] = trip
-        if let vehicleIdStr = trip.vehicleId, let vehicleId = UUID(uuidString: vehicleIdStr),
-           let vIdx = vehicles.firstIndex(where: { $0.id == vehicleId }) {
-            vehicles[vIdx].odometer = endMileage; vehicles[vIdx].totalTrips += 1
-        }
     }
 
     // MARK: - Fuel Logs
@@ -491,6 +474,9 @@ final class AppDataStore {
             let vehicleId = maintenanceTasks[idx].vehicleId
             if let vIdx = vehicles.firstIndex(where: { $0.id == vehicleId }) {
                 vehicles[vIdx].status = .idle
+                // DB trigger (SECURITY DEFINER) handles vehicle release atomically.
+                // try? here is intentional — maintenance personnel cannot write vehicles
+                // via RLS, but the trigger fires regardless.
                 try? await VehicleService.updateVehicle(vehicles[vIdx])
             }
         }
@@ -554,6 +540,42 @@ final class AppDataStore {
         if let idx = workOrders.firstIndex(where: { $0.id == workOrderId }) {
             workOrders[idx].partsCostTotal = total
             try? await WorkOrderService.updateWorkOrder(workOrders[idx])
+        }
+    }
+
+    // MARK: - Spare Parts Requests
+
+    func addSparePartsRequest(_ request: SparePartsRequest) async throws {
+        try await SparePartsRequestService.submitRequest(
+            maintenanceTaskId: request.maintenanceTaskId,
+            workOrderId: request.workOrderId,
+            requestedById: request.requestedById,
+            partName: request.partName,
+            partNumber: request.partNumber,
+            quantity: request.quantity,
+            estimatedUnitCost: request.estimatedUnitCost,
+            supplier: request.supplier,
+            reason: request.reason
+        )
+        sparePartsRequests.insert(request, at: 0)
+    }
+
+    func approveSparePartsRequest(id: UUID, reviewedBy adminId: UUID) async throws {
+        try await SparePartsRequestService.approveRequest(id: id, reviewedBy: adminId)
+        if let idx = sparePartsRequests.firstIndex(where: { $0.id == id }) {
+            sparePartsRequests[idx].status = .approved
+            sparePartsRequests[idx].reviewedBy = adminId
+            sparePartsRequests[idx].reviewedAt = Date()
+        }
+    }
+
+    func rejectSparePartsRequest(id: UUID, reviewedBy adminId: UUID, reason: String) async throws {
+        try await SparePartsRequestService.rejectRequest(id: id, reviewedBy: adminId, reason: reason)
+        if let idx = sparePartsRequests.firstIndex(where: { $0.id == id }) {
+            sparePartsRequests[idx].status = .rejected
+            sparePartsRequests[idx].reviewedBy = adminId
+            sparePartsRequests[idx].reviewedAt = Date()
+            sparePartsRequests[idx].rejectionReason = reason
         }
     }
 
@@ -637,6 +659,9 @@ final class AppDataStore {
         trips.first { $0.driverId?.lowercased() == driverId.uuidString.lowercased() && ($0.status == .active || $0.status == .scheduled) }
     }
     func workOrder(forMaintenanceTask taskId: UUID) -> WorkOrder? { workOrders.first { $0.maintenanceTaskId == taskId } }
+    func sparePartsRequests(forTask taskId: UUID) -> [SparePartsRequest] { sparePartsRequests.filter { $0.maintenanceTaskId == taskId } }
+    func pendingSparePartsRequests() -> [SparePartsRequest] { sparePartsRequests.filter { $0.status == .pending } }
+    func routeDeviations(forTrip tripId: UUID) -> [RouteDeviationEvent] { routeDeviationEvents.filter { $0.tripId == tripId } }
 
     // MARK: - Computed Aggregates
 
@@ -743,10 +768,8 @@ final class AppDataStore {
     }
 
     // MARK: - Notifications
-    // Identity-bound: if userId changes, we unsubscribe from old and re-subscribe for new.
 
     func loadAndSubscribeNotifications(for userId: UUID) async {
-        // Re-subscribe if user identity has changed (role switch / re-login)
         if subscribedNotificationsUserId == userId { return }
         NotificationService.shared.unsubscribeFromNotifications()
         subscribedNotificationsUserId = userId
@@ -801,9 +824,10 @@ final class AppDataStore {
         }
     }
 
+    /// Completes the active trip. Calls TripService.completeTrip which triggers
+    /// the DB trigger trg_trip_completed — this releases driver + vehicle resources
+    /// and updates stats atomically in Postgres (SECURITY DEFINER).
     func endTrip(tripId: UUID, endMileage: Double) async throws {
-        // completeTrip updates the DB — the trg_trip_status_change trigger
-        // automatically releases driver and vehicle resources atomically.
         try await TripService.completeTrip(tripId: tripId, endMileage: endMileage)
         if let idx = trips.firstIndex(where: { $0.id == tripId }) {
             trips[idx].status = .completed
@@ -816,8 +840,6 @@ final class AppDataStore {
     }
 
     func abortTrip(tripId: UUID) async throws {
-        // cancelTrip updates the DB — the trg_trip_status_change trigger
-        // automatically releases driver and vehicle resources atomically.
         try await TripService.cancelTrip(tripId: tripId)
         if let idx = trips.firstIndex(where: { $0.id == tripId }) {
             trips[idx].status = .cancelled
@@ -830,7 +852,6 @@ final class AppDataStore {
     // MARK: - Overdue Maintenance Check
 
     func checkOverdueMaintenance() async {
-        // Guard: only run after notifications are loaded to prevent duplicate inserts
         guard subscribedNotificationsUserId != nil else { return }
         let overdueTasks = maintenanceTasks.filter {
             $0.status == .pending && $0.dueDate < Date()
