@@ -70,9 +70,22 @@ final class LoginViewModel {
         guard validate() else { return }
         authState = .loading
 
+        #if DEBUG
+        print("")
+        print("🖥️ [LoginViewModel.signIn] ════════════════════════════════════════")
+        print("🖥️ [LoginViewModel.signIn] ▶ Calling AuthManager.signIn()")
+        let vmStart = Date()
+        #endif
+
         do {
             let role = try await AuthManager.shared.signIn(email: email, password: password)
             let user = AuthManager.shared.currentUser
+
+            #if DEBUG
+            let vmMs = Int(Date().timeIntervalSince(vmStart) * 1000)
+            print("🖥️ [LoginViewModel.signIn] ✅ AuthManager.signIn() succeeded in \(vmMs)ms")
+            print("🖥️ [LoginViewModel.signIn] 📋 role=\(role.rawValue), user=\(user?.email ?? "nil")")
+            #endif
 
             let destination: AuthDestination
             if let user {
@@ -81,8 +94,11 @@ final class LoginViewModel {
                 destination = defaultDestination(for: role)
             }
 
+            #if DEBUG
+            print("🖥️ [LoginViewModel.signIn] 📋 destination=\(destination)")
+            #endif
+
             // 2FA is only required when the user is about to enter a real dashboard.
-            // Pending, rejected, onboarding, and first-login users skip 2FA entirely.
             let needsTwoFactor: Bool
             switch destination {
             case .fleetManagerDashboard, .driverDashboard, .maintenanceDashboard:
@@ -92,13 +108,14 @@ final class LoginViewModel {
             }
 
             if !needsTwoFactor {
+                #if DEBUG
+                print("🖥️ [LoginViewModel.signIn] ⏩ Skipping 2FA (non-dashboard destination)")
+                #endif
                 AuthManager.shared.completeAuthentication()
                 return
             }
 
-            // Dashboard-bound user: pre-generate OTP (fires EmailService.sendLoginOTP
-            // which calls the send-email edge function via Gmail SMTP) and start
-            // prefetching data. 2FA screen appears instantly.
+            // Dashboard-bound: generate OTP and prefetch data
             AuthManager.shared.generateOTP()
 
             if let user {
@@ -122,27 +139,42 @@ final class LoginViewModel {
                 sessionToken: "",
                 authDestination: destination
             )
+
+            #if DEBUG
+            print("🖥️ [LoginViewModel.signIn] ✅ Transitioning to 2FA screen")
+            print("🖥️ [LoginViewModel.signIn] ════════════════════════════════════════")
+            print("")
+            #endif
+
             authState = .requiresTwoFactor(context: context)
 
+        } catch let authError as AuthError {
+            // ⚠️ IMPORTANT: surface the REAL error — not a generic "Invalid credentials"
+            #if DEBUG
+            let vmMs = Int(Date().timeIntervalSince(vmStart) * 1000)
+            print("🖥️ [LoginViewModel.signIn] ❌ AuthError after \(vmMs)ms: \(authError)")
+            print("🖥️ [LoginViewModel.signIn] ❌ Description: \(authError.localizedDescription ?? "nil")")
+            print("🖥️ [LoginViewModel.signIn] ════════════════════════════════════════")
+            print("")
+            #endif
+            authState = .error(authError.localizedDescription ?? "Authentication failed.")
+
         } catch {
-            authState = .error("Invalid credentials")
+            // Unexpected non-AuthError — still show something useful
+            #if DEBUG
+            let vmMs = Int(Date().timeIntervalSince(vmStart) * 1000)
+            print("🖥️ [LoginViewModel.signIn] ❌ Unexpected error after \(vmMs)ms")
+            print("🖥️ [LoginViewModel.signIn] ❌ Type: \(type(of: error))")
+            print("🖥️ [LoginViewModel.signIn] ❌ Full: \(error)")
+            print("🖥️ [LoginViewModel.signIn] ❌ Localized: \(error.localizedDescription)")
+            print("🖥️ [LoginViewModel.signIn] ════════════════════════════════════════")
+            print("")
+            #endif
+            authState = .error("Sign-in failed: \(error.localizedDescription)")
         }
     }
 
     // MARK: - Biometric Sign In
-    //
-    // Navigation architecture:
-    //   ContentView is the single routing authority via authManager.isAuthenticated
-    //   and !authManager.needsReauth. Both flags must be in the correct state before
-    //   the dashboard can show. This is why we call BOTH completeAuthentication() AND
-    //   reauthCompleted() here — the former sets isAuthenticated=true, the latter
-    //   clears needsReauth=false. Without reauthCompleted(), the ContentView guard
-    //   (isAuthenticated && !needsReauth) fails when biometric is triggered from
-    //   the auto-lock reauth path (app backgrounded >300s).
-    //
-    //   We also do NOT set authState = .authenticated here. That would trigger
-    //   LoginView's fullScreenCover while ContentView is already animating the
-    //   dashboard in, producing a flash-to-dashboard-then-back-to-login bug.
 
     @MainActor
     func biometricSignIn() async {
@@ -171,14 +203,8 @@ final class LoginViewModel {
                 return
             }
 
-            // Set isAuthenticated = true and persist the session token.
             AuthManager.shared.completeAuthentication()
-            // Clear needsReauth so ContentView's guard condition passes.
-            // This is required when biometric is triggered from the reauth path
-            // (app backgrounded >300s sets needsReauth=true). Without this,
-            // the dashboard would never appear even after successful Face ID.
             AuthManager.shared.reauthCompleted()
-
             authState = .idle
 
         } catch {

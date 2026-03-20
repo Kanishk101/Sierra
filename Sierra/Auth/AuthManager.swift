@@ -53,32 +53,98 @@ final class AuthManager {
     // MARK: - Sign In
     //
     // Two-step login:
-    //   1. supabase.auth.signIn() — Supabase Auth validates credentials (bcrypt).
-    //      If this fails the password is genuinely wrong — throw invalidCredentials.
-    //   2. 500ms sleep — gives GoTrue time to propagate the new JWT to all
-    //      edge nodes before the sign-in edge function calls auth.getUser().
-    //      The edge function also retries getUser() up to 3 times with 200ms
-    //      gaps as an extra safety net.
-    //   3. sign-in edge function (verify_jwt: true) — fetches staff profile.
-    //      If this fails throw sessionExpired (not invalidCredentials) so the
-    //      error message is accurate: the password was right, the profile fetch failed.
+    //   1. supabase.auth.signIn() — Supabase Auth validates credentials.
+    //   2. sign-in edge function (verify_jwt: true) — fetches staff profile.
+    //      JWT payload decoded inside to get user ID — no redundant getUser() call.
 
     func signIn(email: String, password: String) async throws -> UserRole {
         otpLastSentAt = nil
 
-        // Step 1: Supabase Auth credential check
+        #if DEBUG
+        let signInStart = Date()
+        let t: (String) -> Int = { _ in Int(Date().timeIntervalSince(signInStart) * 1000) }
+        print("")
+        print("🔐 [AuthManager.signIn] ════════════════════════════════════════")
+        print("🔐 [AuthManager.signIn] ▶ T+0ms: Starting signIn for \(email)")
+        print("🔐 [AuthManager.signIn] ────────────────────────────────────────")
+        #endif
+
+        // ── STEP 1: Supabase Auth credential check ─────────────────────────
+        #if DEBUG
+        print("🔐 [AuthManager.signIn] T+\(t("s1"))ms: STEP 1 — supabase.auth.signIn() START")
+        let step1Start = Date()
+        #endif
+
         do {
             try await supabase.auth.signIn(email: email, password: password)
         } catch {
-            // Auth rejected the credentials — wrong email/password
-            print("[AuthManager] signIn step 1 failed: \(error)")
+            #if DEBUG
+            let step1ms = Int(Date().timeIntervalSince(step1Start) * 1000)
+            print("🔐 [AuthManager.signIn] ❌ T+\(t("s1e"))ms: STEP 1 FAILED in \(step1ms)ms")
+            print("🔐 [AuthManager.signIn] ❌ Error type : \(type(of: error))")
+            print("🔐 [AuthManager.signIn] ❌ Error full : \(error)")
+            print("🔐 [AuthManager.signIn] ❌ Localized  : \(error.localizedDescription)")
+            #endif
             throw AuthError.invalidCredentials
         }
 
-        // Step 2: Wait for JWT propagation
+        #if DEBUG
+        let step1ms = Int(Date().timeIntervalSince(step1Start) * 1000)
+        print("🔐 [AuthManager.signIn] ✅ T+\(t("s1ok"))ms: STEP 1 succeeded in \(step1ms)ms")
+
+        // Inspect the session immediately after signIn()
+        print("🔐 [AuthManager.signIn] 📋 Inspecting Supabase session after signIn...")
+        do {
+            let session = try await supabase.auth.session
+            let accessToken = session.accessToken
+            let tokenParts = accessToken.split(separator: ".").map(String.init)
+            print("🔐 [AuthManager.signIn] 📋 Session user ID  : \(session.user.id)")
+            print("🔐 [AuthManager.signIn] 📋 Session user email: \(session.user.email ?? "nil")")
+            print("🔐 [AuthManager.signIn] 📋 Access token length: \(accessToken.count) chars")
+            print("🔐 [AuthManager.signIn] 📋 Access token parts (valid=3): \(tokenParts.count)")
+            print("🔐 [AuthManager.signIn] 📋 Access token prefix [0..39]: \(String(accessToken.prefix(40)))...")
+            if tokenParts.count == 3 {
+                // Decode the JWT payload to show role/sub
+                if let payloadData = Data(base64Encoded: tokenParts[1].padding(
+                        toLength: ((tokenParts[1].count + 3) / 4) * 4,
+                        withPad: "=", startingAt: 0)) {
+                    if let payloadJSON = try? JSONSerialization.jsonObject(with: payloadData) as? [String: Any] {
+                        print("🔐 [AuthManager.signIn] 📋 JWT.sub (user ID): \(payloadJSON["sub"] ?? "<MISSING>")")
+                        print("🔐 [AuthManager.signIn] 📋 JWT.role         : \(payloadJSON["role"] ?? "<MISSING>")")
+                        print("🔐 [AuthManager.signIn] 📋 JWT.iss          : \(payloadJSON["iss"] ?? "<MISSING>")")
+                        if let exp = payloadJSON["exp"] as? Double {
+                            let expDate = Date(timeIntervalSince1970: exp)
+                            print("🔐 [AuthManager.signIn] 📋 JWT.exp          : \(expDate) (in \(Int(exp - Date().timeIntervalSince1970))s)")
+                        }
+                    } else {
+                        print("🔐 [AuthManager.signIn] ⚠️ Could not parse JWT payload JSON")
+                    }
+                } else {
+                    print("🔐 [AuthManager.signIn] ⚠️ Could not base64-decode JWT payload")
+                }
+            }
+            print("🔐 [AuthManager.signIn] 📋 Refresh token present: \(!session.refreshToken.isEmpty)")
+            print("🔐 [AuthManager.signIn] 📋 Token type: \(session.tokenType)")
+        } catch {
+            print("🔐 [AuthManager.signIn] ⚠️ WARNING: Could not retrieve session after signIn!")
+            print("🔐 [AuthManager.signIn] ⚠️ Error: \(error)")
+        }
+        print("🔐 [AuthManager.signIn] ────────────────────────────────────────")
+        #endif
+
+        // ── STEP 2: Wait for JWT propagation ──────────────────────────────
+        #if DEBUG
+        print("🔐 [AuthManager.signIn] T+\(t("s2"))ms: STEP 2 — sleeping 500ms for JWT propagation")
+        #endif
+
         try await Task.sleep(for: .milliseconds(500))
 
-        // Step 3: Fetch staff profile via edge function
+        #if DEBUG
+        print("🔐 [AuthManager.signIn] T+\(t("s2e"))ms: STEP 2 — sleep complete")
+        print("🔐 [AuthManager.signIn] ────────────────────────────────────────")
+        #endif
+
+        // ── STEP 3: Fetch staff profile via edge function ─────────────────
         struct StaffProfile: Decodable {
             let id: String; let email: String; let name: String?
             let role: String; let is_first_login: Bool?
@@ -86,17 +152,56 @@ final class AuthManager {
             let rejection_reason: String?; let phone: String?; let created_at: String?
         }
 
+        #if DEBUG
+        print("🔐 [AuthManager.signIn] T+\(t("s3"))ms: STEP 3 — invoking 'sign-in' edge function")
+        let edgeFnStart = Date()
+        // Re-check session one more time right before the edge function call
+        print("🔐 [AuthManager.signIn] 🔍 Session check immediately before functions.invoke():")
+        do {
+            let session = try await supabase.auth.session
+            print("🔐 [AuthManager.signIn] 🔍   ✅ Session exists: userId=\(session.user.id)")
+            print("🔐 [AuthManager.signIn] 🔍   Token prefix: \(String(session.accessToken.prefix(30)))...")
+        } catch {
+            print("🔐 [AuthManager.signIn] 🔍   ❌ NO SESSION at edge function call time!")
+            print("🔐 [AuthManager.signIn] 🔍   Error: \(error)")
+        }
+        #endif
+
         let profile: StaffProfile
         do {
             profile = try await supabase.functions.invoke("sign-in", options: FunctionInvokeOptions())
+            #if DEBUG
+            let edgeFnMs = Int(Date().timeIntervalSince(edgeFnStart) * 1000)
+            print("🔐 [AuthManager.signIn] ✅ T+\(t("s3ok"))ms: Edge fn succeeded in \(edgeFnMs)ms")
+            print("🔐 [AuthManager.signIn] 📋 Profile id    : \(profile.id)")
+            print("🔐 [AuthManager.signIn] 📋 Profile role  : \(profile.role)")
+            print("🔐 [AuthManager.signIn] 📋 First login   : \(profile.is_first_login ?? true)")
+            print("🔐 [AuthManager.signIn] 📋 Approved      : \(profile.is_approved ?? false)")
+            print("🔐 [AuthManager.signIn] 📋 Profile complete: \(profile.is_profile_complete ?? false)")
+            print("🔐 [AuthManager.signIn] ────────────────────────────────────────")
+            #endif
         } catch {
-            print("[AuthManager] signIn step 3 (edge fn) failed: \(error)")
+            #if DEBUG
+            let edgeFnMs = Int(Date().timeIntervalSince(edgeFnStart) * 1000)
+            print("🔐 [AuthManager.signIn] ❌ T+\(t("s3e"))ms: Edge fn FAILED in \(edgeFnMs)ms")
+            print("🔐 [AuthManager.signIn] ❌ Error type     : \(type(of: error))")
+            print("🔐 [AuthManager.signIn] ❌ Error full     : \(error)")
+            print("🔐 [AuthManager.signIn] ❌ Localized      : \(error.localizedDescription)")
+            // Try to extract HTTP status code if the SDK wraps it
+            let mirror = Mirror(reflecting: error)
+            for child in mirror.children {
+                print("🔐 [AuthManager.signIn] ❌ Error field [\(child.label ?? "?")]: \(child.value)")
+            }
+            print("🔐 [AuthManager.signIn] ════════════════════════════════════════")
+            #endif
             try? await supabase.auth.signOut()
-            // Password was correct but profile fetch failed — distinct error
-            throw AuthError.userNotFound
+            throw AuthError.edgeFunctionFailed(error.localizedDescription)
         }
 
         guard let userId = UUID(uuidString: profile.id) else {
+            #if DEBUG
+            print("🔐 [AuthManager.signIn] ❌ Could not parse profile.id as UUID: \(profile.id)")
+            #endif
             try? await supabase.auth.signOut()
             throw AuthError.userNotFound
         }
@@ -118,6 +223,13 @@ final class AuthManager {
 
         currentUser = user
         pendingOTPEmail = user.email
+
+        #if DEBUG
+        print("🔐 [AuthManager.signIn] ✅ T+\(t("done"))ms: signIn() complete — role=\(user.role.rawValue)")
+        print("🔐 [AuthManager.signIn] ════════════════════════════════════════")
+        print("")
+        #endif
+
         return user.role
     }
 
@@ -146,6 +258,9 @@ final class AuthManager {
     // MARK: - Sign Out
 
     func signOut() {
+        #if DEBUG
+        print("🔐 [AuthManager.signOut] Signing out user: \(currentUser?.email ?? "unknown")")
+        #endif
         currentUser = nil
         isAuthenticated = false
         needsReauth = false
@@ -428,19 +543,37 @@ final class AuthManager {
 enum AuthError: LocalizedError, Equatable {
     case invalidCredentials, userNotFound, biometricFailed, sessionExpired
     case createStaffFailed, accountSuspended, otpExpired, otpInvalid
+    case edgeFunctionFailed(String)
     case networkError(String)
+
+    static func == (lhs: AuthError, rhs: AuthError) -> Bool {
+        switch (lhs, rhs) {
+        case (.invalidCredentials, .invalidCredentials): return true
+        case (.userNotFound, .userNotFound): return true
+        case (.biometricFailed, .biometricFailed): return true
+        case (.sessionExpired, .sessionExpired): return true
+        case (.createStaffFailed, .createStaffFailed): return true
+        case (.accountSuspended, .accountSuspended): return true
+        case (.otpExpired, .otpExpired): return true
+        case (.otpInvalid, .otpInvalid): return true
+        case (.edgeFunctionFailed(let a), .edgeFunctionFailed(let b)): return a == b
+        case (.networkError(let a), .networkError(let b)): return a == b
+        default: return false
+        }
+    }
 
     var errorDescription: String? {
         switch self {
-        case .invalidCredentials: return "Invalid email or password."
-        case .userNotFound:       return "Account not found. Contact your fleet administrator."
-        case .biometricFailed:    return "Biometric authentication failed."
-        case .sessionExpired:     return "Your session has expired. Please sign in again."
-        case .createStaffFailed:  return "Failed to create staff account. Please try again."
-        case .accountSuspended:   return "Your account has been suspended. Contact your fleet manager."
-        case .otpExpired:         return "The verification code has expired. Please request a new one."
-        case .otpInvalid:         return "Incorrect verification code. Please check and try again."
-        case .networkError(let d): return "Connection error: \(d)"
+        case .invalidCredentials:        return "Invalid email or password."
+        case .userNotFound:              return "Account not found. Contact your fleet administrator."
+        case .biometricFailed:           return "Biometric authentication failed."
+        case .sessionExpired:            return "Your session has expired. Please sign in again."
+        case .createStaffFailed:         return "Failed to create staff account. Please try again."
+        case .accountSuspended:          return "Your account has been suspended. Contact your fleet manager."
+        case .otpExpired:                return "The verification code has expired. Please request a new one."
+        case .otpInvalid:                return "Incorrect verification code. Please check and try again."
+        case .edgeFunctionFailed(let d): return "Profile fetch failed (\(d)). Please try again."
+        case .networkError(let d):       return "Connection error: \(d)"
         }
     }
 }
