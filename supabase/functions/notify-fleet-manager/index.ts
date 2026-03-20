@@ -1,5 +1,9 @@
-// Deploy with: supabase functions deploy notify-fleet-manager
+// Deploy with: supabase functions deploy notify-fleet-manager --no-verify-jwt=false
 // Set secrets: supabase secrets set RESEND_API_KEY=re_xxx FLEET_MANAGER_EMAIL=admin@yourdomain.com FROM_EMAIL=noreply@yourdomain.com
+//
+// verify_jwt: true  — this function is called when an authenticated user submits
+// their staff application. A valid Supabase JWT is always present at that point.
+// Leaving it open allowed unauthenticated callers to spam the fleet manager inbox.
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 
@@ -18,6 +22,9 @@ serve(async (req: Request) => {
   if (req.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
   }
+
+  // JWT is validated by Supabase infrastructure (verify_jwt: true in config).
+  // No additional auth logic needed here.
 
   try {
     const payload: NotifyPayload = await req.json();

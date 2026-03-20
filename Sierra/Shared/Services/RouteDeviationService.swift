@@ -94,7 +94,7 @@ struct RouteDeviationService {
         }
     }
 
-    // MARK: Fetch
+    // MARK: Fetch — by trip (used during active trip context)
 
     static func fetchDeviations(for tripId: UUID) async throws -> [RouteDeviationEvent] {
         try await supabase
@@ -102,6 +102,20 @@ struct RouteDeviationService {
             .select()
             .eq("trip_id", value: tripId.uuidString)
             .order("detected_at", ascending: false)
+            .execute()
+            .value
+    }
+
+    // MARK: Fetch — all (used by loadAll for fleet manager dashboard)
+    // RLS policy rde_select: get_my_role() = 'fleetManager' OR driver_id = auth.uid()
+    // so drivers only see their own events; fleet managers see all.
+
+    static func fetchAllDeviations(limit: Int = 500) async throws -> [RouteDeviationEvent] {
+        try await supabase
+            .from("route_deviation_events")
+            .select()
+            .order("detected_at", ascending: false)
+            .limit(limit)
             .execute()
             .value
     }

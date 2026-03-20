@@ -55,7 +55,7 @@ struct SparePartsRequestService {
             .execute()
     }
 
-    // MARK: Fetch
+    // MARK: Fetch — by task (used inside MaintenanceTaskDetailView)
 
     static func fetchRequests(for maintenanceTaskId: UUID) async throws -> [SparePartsRequest] {
         try await supabase
@@ -63,6 +63,34 @@ struct SparePartsRequestService {
             .select()
             .eq("maintenance_task_id", value: maintenanceTaskId.uuidString)
             .order("created_at", ascending: false)
+            .execute()
+            .value
+    }
+
+    // MARK: Fetch — by requester (used by loadMaintenanceData)
+    // Returns all requests submitted by a specific maintenance staff member.
+    // RLS policy spr_select: get_my_role() = 'fleetManager' OR requested_by_id = auth.uid()
+    // so this is safe to call unfiltered, but we filter explicitly for performance.
+
+    static func fetchAllRequests(requestedById: UUID) async throws -> [SparePartsRequest] {
+        try await supabase
+            .from("spare_parts_requests")
+            .select()
+            .eq("requested_by_id", value: requestedById.uuidString)
+            .order("created_at", ascending: false)
+            .execute()
+            .value
+    }
+
+    // MARK: Fetch — all pending (used by loadAll for fleet manager)
+    // Fleet manager sees all pending requests awaiting their approval.
+
+    static func fetchAllSparePartsRequests() async throws -> [SparePartsRequest] {
+        try await supabase
+            .from("spare_parts_requests")
+            .select()
+            .order("created_at", ascending: false)
+            .limit(500)
             .execute()
             .value
     }
