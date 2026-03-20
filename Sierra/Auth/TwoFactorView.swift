@@ -1,7 +1,6 @@
 import SwiftUI
 
 /// 2FA OTP verification screen.
-/// Supabase is configured to send 6-digit tokens (Auth > Settings > OTP length = 6).
 struct TwoFactorView: View {
 
     @Bindable var viewModel: TwoFactorViewModel
@@ -57,6 +56,14 @@ struct TwoFactorView: View {
             print("\u{1F510} [TwoFactorView] appeared")
             #endif
             viewModel.onAppear()
+        }
+        .task {
+            // iOS 17+: UITextField inside fullScreenCover needs the presentation
+            // animation to fully complete before becomeFirstResponder() will work.
+            // 'perform input operation requires a valid sessionID' is the symptom
+            // of requesting focus too early. 650ms covers the cover animation.
+            try? await Task.sleep(for: .milliseconds(650))
+            viewModel.requestInitialFocus()
         }
     }
 

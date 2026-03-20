@@ -2,14 +2,15 @@ import Foundation
 import SwiftUI
 
 /// ViewModel for the 2FA OTP verification screen.
-/// Supabase is configured to send 6-digit OTP tokens (Auth → Settings → OTP length = 6).
 @MainActor @Observable
 final class TwoFactorViewModel {
 
     // MARK: - Input
 
     var digits: [String] = Array(repeating: "", count: 6)
-    var focusedIndex: Int? = 0
+    // Starts nil — focus is requested by TwoFactorView after the fullScreenCover
+    // animation completes (iOS 17+ requires the input session to be ready first).
+    var focusedIndex: Int? = nil
 
     // MARK: - State
 
@@ -106,13 +107,20 @@ final class TwoFactorViewModel {
         Task { await sendOTP() }
     }
 
+    /// Called by TwoFactorView after a delay to let the fullScreenCover animation
+    /// fully settle before requesting keyboard focus (iOS 17+ input session requirement).
+    func requestInitialFocus() {
+        guard focusedIndex == nil else { return }
+        focusedIndex = 0
+    }
+
     func sendOTP() async {
         state = .sending
         isLoading = true
         do {
             let result = try await service.sendOTP(context: context)
-        state = .awaitingEntry
-        isLoading = false
+            state = .awaitingEntry
+            isLoading = false
             startExpiryCountdown(until: result.expiresAt)
             startResendCooldown(until: result.cooldownUntil)
         } catch let authErr as AuthError {
