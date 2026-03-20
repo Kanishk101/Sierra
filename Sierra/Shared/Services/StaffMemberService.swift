@@ -23,6 +23,8 @@ enum StaffMemberServiceError: LocalizedError {
 }
 
 // MARK: - StaffMemberInsertPayload
+// Used only by the create-staff-account edge function flow (addStaffMember).
+// Includes id (client-generated UUID) and all fields for a new staff row.
 
 struct StaffMemberInsertPayload: Encodable {
     let id: String
@@ -69,13 +71,17 @@ struct StaffMemberInsertPayload: Encodable {
 }
 
 // MARK: - StaffMemberUpdatePayload
-// Profile-only fields — excludes auth and admin-controlled columns.
+// Profile-only fields. Intentionally excludes `role` and `email`:
+//   - `role`  is admin-controlled: only the create-staff-account edge fn or
+//             setApprovalStatus() should change it. Including it here would
+//             allow any authenticated user to promote themselves to fleetManager
+//             by PATCHing their own staff_members row.
+//   - `email` is an auth.users identity field; changing it here without also
+//             changing auth.users.email creates a split-brain between the two
+//             tables. Email changes must go through Supabase Auth.
 
 struct StaffMemberUpdatePayload: Encodable {
     let name: String?
-    let role: String
-    let status: String
-    let email: String
     let phone: String?
     let availability: String
     let is_profile_complete: Bool
@@ -89,9 +95,6 @@ struct StaffMemberUpdatePayload: Encodable {
 
     init(from s: StaffMember) {
         self.name                    = s.name
-        self.role                    = s.role.rawValue
-        self.status                  = s.status.rawValue
-        self.email                   = s.email
         self.phone                   = s.phone
         self.availability            = s.availability.rawValue
         self.is_profile_complete     = s.isProfileComplete
@@ -195,7 +198,6 @@ struct StaffMemberService {
     }
 
     static func fetchStaffMember(id: UUID) async throws -> StaffMember? {
-        // Always lowercase UUID for PostgREST filter compatibility
         let rows: [StaffMemberDB] = try await supabase
             .from("staff_members")
             .select()
@@ -238,7 +240,7 @@ struct StaffMemberService {
             .execute()
     }
 
-    // MARK: Update (profile fields only)
+    // MARK: Update (profile fields only — role and email excluded intentionally)
 
     static func updateStaffMember(_ member: StaffMember) async throws {
         try await supabase
@@ -249,8 +251,6 @@ struct StaffMemberService {
     }
 
     // MARK: - Targeted availability-only update with verification
-    // Returns the DB-confirmed availability value.
-    // Throws if 0 rows matched so callers never treat a no-op as success.
 
     static func updateAvailability(staffId: UUID, available: Bool) async throws -> String {
         struct Row: Decodable { let id: UUID; let availability: String }
@@ -260,8 +260,6 @@ struct StaffMemberService {
         struct Payload: Encodable { let availability: String }
 
         let idLower = staffId.uuidString.lowercased()
-        print("[StaffMemberService] updateAvailability called: id=\(idLower) value=\(value)")
-
         let rows: [Row] = try await supabase
             .from("staff_members")
             .update(Payload(availability: value))
@@ -271,10 +269,8 @@ struct StaffMemberService {
             .value
 
         if rows.isEmpty {
-            print("[StaffMemberService] ⚠️ 0 rows updated — UUID \(idLower) not found in DB")
             throw StaffMemberServiceError.availabilityTargetMissing(staffId)
         }
-        print("[StaffMemberService] ✅ confirmed: \(rows[0].id) → \(rows[0].availability)")
         return rows[0].availability
     }
 
