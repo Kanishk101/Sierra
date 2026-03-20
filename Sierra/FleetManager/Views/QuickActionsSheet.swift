@@ -5,6 +5,10 @@ struct QuickActionsSheet: View {
     @State private var showCreateStaff = false
     @State private var showAddVehicle = false
     @State private var showCreateTrip = false
+    @State private var showCreateMaintenance = false
+    @State private var showCreateGeofence = false
+    @State private var showAlerts = false
+    @State private var alertsVM = AlertsViewModel()
 
     private struct QuickAction: Identifiable {
         let id = UUID()
@@ -19,6 +23,8 @@ struct QuickActionsSheet: View {
         QuickAction(icon: "car.badge.gearshape", label: "Add Vehicle", color: .green, tag: "vehicle"),
         QuickAction(icon: "wrench.and.screwdriver.fill", label: "Create Maintenance Request", color: .orange, tag: "maintenance"),
         QuickAction(icon: "person.badge.plus", label: "Add Staff Member", color: .indigo, tag: "staff"),
+        QuickAction(icon: "mappin.and.ellipse", label: "Create Geofence", color: .teal, tag: "geofence"),
+        QuickAction(icon: "bell.badge.fill", label: "View Alerts", color: .red, tag: "alerts"),
     ]
 
     var body: some View {
@@ -41,6 +47,9 @@ struct QuickActionsSheet: View {
                         case "staff":    showCreateStaff = true
                         case "vehicle":  showAddVehicle = true
                         case "delivery": showCreateTrip = true
+                        case "maintenance": showCreateMaintenance = true
+                        case "geofence": showCreateGeofence = true
+                        case "alerts": showAlerts = true
                         default:         dismiss()
                         }
                     } label: {
@@ -85,6 +94,22 @@ struct QuickActionsSheet: View {
         .sheet(isPresented: $showCreateTrip) {
             CreateTripView()
                 .presentationDetents([.large])
+        }
+        .sheet(isPresented: $showCreateMaintenance) {
+            NavigationStack {
+                MaintenanceRequestsView()
+            }
+            .presentationDetents([.large])
+        }
+        .sheet(isPresented: $showCreateGeofence) {
+            CreateGeofenceSheet()
+                .presentationDetents([.large])
+        }
+        .sheet(isPresented: $showAlerts) {
+            NavigationStack {
+                AlertsInboxView(vm: alertsVM)
+            }
+            .presentationDetents([.large])
         }
     }
 }

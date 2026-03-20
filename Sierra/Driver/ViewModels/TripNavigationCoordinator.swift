@@ -84,6 +84,9 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         options.includesAlternativeRoutes = true
         options.routeShapeResolution = .full
         options.shapeFormat = .polyline6
+        if trip.scheduledDate > Date() {
+            options.departAt = trip.scheduledDate
+        }
 
         var avoidClasses: RoadClasses = []
         if avoidTolls    { avoidClasses.insert(.toll) }

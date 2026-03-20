@@ -128,27 +128,46 @@ final class AppDataStore {
         }
     }
 
+    // MARK: - loadDriverData
+    // Each field is loaded with its own try/catch so that a single decode
+    // failure (e.g. vehicleInspections JSONB bug) never silently drops trips,
+    // driverProfile, or any other field. Previously one big do-catch meant
+    // any error before driverProfile would leave it empty and fire a second
+    // loadDriverData call from DriverTripsListView.task.
+
     func loadDriverData(driverId: UUID) async {
         await tearDownRealtimeChannels()
         isLoading = true
-        do {
-            async let selfMemberTask   = StaffMemberService.fetchStaffMember(id: driverId)
-            async let vehiclesTask     = VehicleService.fetchAllVehicles()
-            async let tripsTask        = TripService.fetchTrips(driverId: driverId)
-            async let fuelLogsTask     = FuelLogService.fetchFuelLogs(driverId: driverId)
-            async let inspectionsTask  = VehicleInspectionService.fetchAllInspections()
-            async let driverProfTask   = DriverProfileService.fetchDriverProfile(staffMemberId: driverId)
 
-            if let selfMember = try await selfMemberTask { staff = [selfMember] }
-            vehicles           = try await vehiclesTask
-            trips              = try await tripsTask
-            fuelLogs           = try await fuelLogsTask
-            vehicleInspections = try await inspectionsTask
-            if let prof = try await driverProfTask { driverProfiles = [prof] }
-        } catch {
-            loadError = error.localizedDescription
-            print("[AppDataStore.loadDriverData] Error: \(error)")
-        }
+        async let selfMemberTask  = StaffMemberService.fetchStaffMember(id: driverId)
+        async let vehiclesTask    = VehicleService.fetchAllVehicles()
+        async let tripsTask       = TripService.fetchTrips(driverId: driverId)
+        async let fuelLogsTask    = FuelLogService.fetchFuelLogs(driverId: driverId)
+        async let inspectionsTask = VehicleInspectionService.fetchAllInspections()
+        async let driverProfTask  = DriverProfileService.fetchDriverProfile(staffMemberId: driverId)
+
+        do { if let m = try await selfMemberTask { staff = [m] } }
+            catch { print("[AppDataStore.loadDriverData] [non-fatal] staff error: \(error)") }
+
+        do { vehicles = try await vehiclesTask }
+            catch { print("[AppDataStore.loadDriverData] [non-fatal] vehicles error: \(error)") }
+
+        do { trips = try await tripsTask }
+            catch { print("[AppDataStore.loadDriverData] [non-fatal] trips error: \(error)") }
+
+        do { fuelLogs = try await fuelLogsTask }
+            catch { print("[AppDataStore.loadDriverData] [non-fatal] fuelLogs error: \(error)") }
+
+        // vehicleInspections uses JSONB 'items' column which Supabase sometimes
+        // returns double-encoded as a string. VehicleInspection has a custom
+        // init(from:) to handle this, but we still isolate the error here so
+        // a schema mismatch never blocks trips or driverProfile from loading.
+        do { vehicleInspections = try await inspectionsTask }
+            catch { print("[AppDataStore.loadDriverData] [non-fatal] inspections error: \(error)") }
+
+        do { if let p = try await driverProfTask { driverProfiles = [p] } }
+            catch { print("[AppDataStore.loadDriverData] [non-fatal] driverProfile error: \(error)") }
+
         isLoading = false
         subscribeToTripUpdates()
         await loadAndSubscribeNotifications(for: driverId)

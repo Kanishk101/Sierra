@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// Driver-side trip list. Shows only trips assigned to the authenticated driver,
-/// with status filter chips, search, and navigation to TripDetailDriverView.
+/// Driver-side trip list. Shows only trips assigned to the authenticated driver.
+/// navigationDestination for UUID is declared by the parent NavigationStack in
+/// DriverTabView, NOT here, to avoid the duplicate-destination warning.
 struct DriverTripsListView: View {
 
     @Environment(AppDataStore.self) private var store
@@ -58,19 +59,15 @@ struct DriverTripsListView: View {
         .toolbarTitleDisplayMode(.inlineLarge)
         .toolbarBackground(.hidden, for: .navigationBar)
         .searchable(text: $searchText, prompt: "Search task ID, origin…")
-        .navigationDestination(for: UUID.self) { id in
-            TripDetailDriverView(tripId: id)
-        }
+        // navigationDestination is declared by the parent NavigationStack in DriverTabView.
+        // Declaring it here too causes the "declared earlier on the stack" SwiftUI warning.
         .task {
-            if store.trips.isEmpty,
-               let id = driverId {
+            if store.trips.isEmpty, let id = driverId {
                 await store.loadDriverData(driverId: id)
             }
         }
         .refreshable {
-            if let id = driverId {
-                await store.loadDriverData(driverId: id)
-            }
+            if let id = driverId { await store.loadDriverData(driverId: id) }
         }
     }
 
@@ -123,13 +120,9 @@ struct DriverTripsListView: View {
                     Text(trip.taskId)
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
                         .foregroundStyle(.tertiary)
-
-                    Text("·")
-                        .foregroundStyle(.tertiary)
-
+                    Text("·").foregroundStyle(.tertiary)
                     Text(trip.scheduledDate.formatted(.dateTime.month(.abbreviated).day().hour().minute()))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .font(.caption2).foregroundStyle(.secondary)
                 }
 
                 vehicleLine(trip)
@@ -144,7 +137,6 @@ struct DriverTripsListView: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
                     .background(statusColor(trip.status).opacity(0.1), in: Capsule())
-
                 Text(trip.priority.rawValue)
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.secondary)
@@ -155,43 +147,26 @@ struct DriverTripsListView: View {
         .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
     }
 
-    // MARK: - Vehicle line
-
     @ViewBuilder
     private func vehicleLine(_ trip: Trip) -> some View {
-        if let idStr = trip.vehicleId,
-           let uuid = UUID(uuidString: idStr),
+        if let idStr = trip.vehicleId, let uuid = UUID(uuidString: idStr),
            let v = store.vehicle(for: uuid) {
             HStack(spacing: 4) {
-                Image(systemName: "car.fill")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.secondary)
-                Text(v.licensePlate)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                Text("· \(v.name) \(v.model)")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                Image(systemName: "car.fill").font(.system(size: 9)).foregroundStyle(.secondary)
+                Text(v.licensePlate).font(.caption2).foregroundStyle(.secondary)
+                Text("· \(v.name) \(v.model)").font(.caption2).foregroundStyle(.secondary)
             }
         }
     }
 
-    // MARK: - Empty State
-
     private var emptyState: some View {
         VStack(spacing: 14) {
-            Image(systemName: "map")
-                .font(.system(size: 44))
-                .foregroundStyle(.gray.opacity(0.4))
-            Text("No trips found")
-                .font(.headline)
-                .foregroundStyle(.secondary)
+            Image(systemName: "map").font(.system(size: 44)).foregroundStyle(.gray.opacity(0.4))
+            Text("No trips found").font(.headline).foregroundStyle(.secondary)
             Text(searchText.isEmpty
                  ? "You haven't been assigned any trips yet."
                  : "Try a different search term.")
-                .font(.subheadline)
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
+                .font(.subheadline).foregroundStyle(.tertiary).multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

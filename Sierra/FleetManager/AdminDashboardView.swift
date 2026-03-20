@@ -6,6 +6,7 @@ struct AdminDashboardView: View {
     @State private var selectedTab = 0
     @State private var lastContentTab = 0
     @State private var showQuickActions = false
+    @State private var mapViewModel = FleetLiveMapViewModel()
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -25,9 +26,7 @@ struct AdminDashboardView: View {
             .badge(store.pendingCount)
 
             Tab("Trips", systemImage: "arrow.triangle.swap", value: 3) {
-                NavigationStack {
-                    TripsListView()
-                }
+                TripsAndMapContainerView(mapViewModel: mapViewModel)
             }
 
             Tab(value: 4, role: .search) {
