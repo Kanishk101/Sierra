@@ -65,11 +65,16 @@ final class DriverMaintenanceRequestViewModel {
             // If we have a source inspection and uploaded photos, patch the inspection
             // photo_urls so the fleet manager can see them alongside the task.
             if let inspectionId = sourceInspectionId, !uploadedURLs.isEmpty {
-                try? await supabase
-                    .from("vehicle_inspections")
-                    .update(["photo_urls": uploadedURLs])
-                    .eq("id", value: inspectionId.uuidString)
-                    .execute()
+                do {
+                    try await supabase
+                        .from("vehicle_inspections")
+                        .update(["photo_urls": uploadedURLs])
+                        .eq("id", value: inspectionId.uuidString)
+                        .execute()
+                } catch {
+                    // Non-fatal: request creation should still proceed even if photo_urls patch fails.
+                    print("[DriverMaintenanceRequest] Non-fatal photo_urls update failed: \(error)")
+                }
             }
 
             try await MaintenanceTaskService.createDriverRequest(

@@ -153,11 +153,11 @@ final class LoginViewModel {
             #if DEBUG
             let vmMs = Int(Date().timeIntervalSince(vmStart) * 1000)
             print("🖥️ [LoginViewModel.signIn] ❌ AuthError after \(vmMs)ms: \(authError)")
-            print("🖥️ [LoginViewModel.signIn] ❌ Description: \(authError.localizedDescription ?? "nil")")
+            print("🖥️ [LoginViewModel.signIn] ❌ Description: \(authError.localizedDescription)")
             print("🖥️ [LoginViewModel.signIn] ════════════════════════════════════════")
             print("")
             #endif
-            authState = .error(authError.localizedDescription ?? "Authentication failed.")
+            authState = .error(authError.localizedDescription)
 
         } catch {
             // Unexpected non-AuthError — still show something useful
