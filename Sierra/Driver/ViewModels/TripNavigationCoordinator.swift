@@ -56,8 +56,6 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
 
     deinit {
         MainActor.assumeIsolated {
-            // Always invalidate the timer to prevent retain cycle and battery drain
-            // even if stopLocationPublishing() was not called (app kill, forced dismiss).
             locationPublishTimer?.invalidate()
             locationPublishTimer = nil
             locationManager?.stopUpdatingLocation()
@@ -66,9 +64,6 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     }
 
     // MARK: - Add Stop
-    // Bug 1 fix: previously the body ignored all three parameters and just
-    // rebuilt the original A→B route. Now the stop is appended to
-    // intermediateWaypoints so buildRoutes() includes it in the API call.
 
     func addStop(latitude: Double, longitude: Double, name: String) async {
         intermediateWaypoints.append((lat: latitude, lng: longitude, name: name))
@@ -76,13 +71,46 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         await buildRoutes()
     }
 
+    // MARK: - Select Green Route
+    // Swaps currentRoute and alternativeRoute so the driver follows the
+    // lower-distance (eco) route. Called by RouteSelectionSheet.
+    // Does NOT call buildRoutes() — it only reorders already-fetched routes.
+
+    func selectGreenRoute() {
+        guard let alt = alternativeRoute else { return }
+        let prev       = currentRoute
+        currentRoute   = alt
+        alternativeRoute = prev
+
+        // Re-decode the newly selected route's shape for deviation detection
+        if let shape = currentRoute?.shape {
+            decodedRouteCoordinates = shape.coordinates
+        }
+
+        // Refresh HUD state for the new route
+        if let firstStep = currentRoute?.legs.first?.steps.first {
+            currentStepInstruction = firstStep.instructions
+        }
+        if let travel = currentRoute?.expectedTravelTime {
+            estimatedArrivalTime = Date().addingTimeInterval(travel)
+        }
+        if let dist = currentRoute?.distance {
+            distanceRemainingMetres = dist
+        }
+
+        currentStepIndex = 0
+    }
+
+    // MARK: - Rebuild Routes
+    // Resets hasBuiltRoutes and rebuilds. Called when the driver changes
+    // avoidTolls / avoidHighways in RouteSelectionSheet.
+
+    func rebuildRoutes() async {
+        hasBuiltRoutes = false
+        await buildRoutes()
+    }
+
     // MARK: - Route Building
-    // hasBuiltRoutes is set to true ONLY on success so retries work.
-    //
-    // Two additional behaviours vs the original:
-    //  • When rerouteFromCurrentLocation is true the driver’s current GPS fix
-    //    is used as the route origin instead of the original trip coordinates.
-    //  • Any intermediateWaypoints are injected between origin and destination.
 
     func buildRoutes() async {
         guard !hasBuiltRoutes else { return }
@@ -95,7 +123,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         if isRerouting, let loc = currentLocation {
             startLat = loc.coordinate.latitude
             startLng = loc.coordinate.longitude
-            rerouteFromCurrentLocation = false   // consumed; reset before any await
+            rerouteFromCurrentLocation = false
         } else {
             rerouteFromCurrentLocation = false
             guard let originLat = trip.originLatitude,
@@ -116,14 +144,24 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         // --- Build waypoint array: origin → stops → destination ---
         let originWP = Waypoint(coordinate: CLLocationCoordinate2D(latitude: startLat, longitude: startLng))
         var waypoints: [Waypoint] = [originWP]
-        for stop in intermediateWaypoints {
-            waypoints.append(
-                Waypoint(
-                    coordinate: CLLocationCoordinate2D(latitude: stop.lat, longitude: stop.lng),
-                    name: stop.name
-                )
-            )
+
+        // Inject any stops from the Trip model's route_stops field
+        let modelStops = (trip.routeStops ?? []).sorted { $0.order < $1.order }
+        for stop in modelStops {
+            waypoints.append(Waypoint(
+                coordinate: CLLocationCoordinate2D(latitude: stop.latitude, longitude: stop.longitude),
+                name: stop.name
+            ))
         }
+
+        // Plus any stops added mid-trip via addStop()
+        for stop in intermediateWaypoints {
+            waypoints.append(Waypoint(
+                coordinate: CLLocationCoordinate2D(latitude: stop.lat, longitude: stop.lng),
+                name: stop.name
+            ))
+        }
+
         waypoints.append(Waypoint(coordinate: CLLocationCoordinate2D(latitude: destLat, longitude: destLng)))
 
         let options = RouteOptions(waypoints: waypoints)
@@ -168,16 +206,10 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
                 decodedRouteCoordinates = shape.coordinates
             }
 
-            // Only mark built AFTER successful route assignment
             hasBuiltRoutes = true
-
-            // Clear the deviation banner now that a fresh route has landed.
-            // For the initial build hasDeviated is already false, so this is a no-op
-            // there. On a reroute it dismisses the “Off Route — Recalculating” banner.
             if hasDeviated { hasDeviated = false }
 
         } catch {
-            // Do NOT set hasBuiltRoutes = true — leaves retry open
             print("[NavCoordinator] Route build failed (will retry on next buildRoutes() call): \(error)")
         }
     }
@@ -195,7 +227,6 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         let status = manager.authorizationStatus
         switch status {
         case .denied, .restricted:
-            // Post notification so UI can show a settings alert
             NotificationCenter.default.post(name: .locationPermissionDenied, object: nil)
             return
         case .notDetermined, .authorizedWhenInUse:
@@ -287,14 +318,6 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     }
 
     // MARK: - Deviation Check
-    // Bug 2 fix: previously this function set hasDeviated=true and recorded the
-    // event to the DB, but never triggered a route rebuild. The driver saw the
-    // “Off Route — Recalculating” banner forever while the stale polyline remained.
-    //
-    // Now: once the cooldown passes, we flag rerouteFromCurrentLocation=true,
-    // clear hasBuiltRoutes, and fire buildRoutes(). buildRoutes() fetches a fresh
-    // Mapbox route from the driver’s current GPS position and clears hasDeviated
-    // only after the new route lands successfully.
 
     func checkDeviation(from location: CLLocation) {
         guard decodedRouteCoordinates.count >= 2 else { return }
@@ -305,8 +328,8 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         hasDeviated = true
         guard Date().timeIntervalSince(lastDeviationRecordedAt) > deviationCooldownSeconds else { return }
         lastDeviationRecordedAt = Date()
-        let driverId    = AuthManager.shared.currentUser?.id ?? UUID()
-        let vehicleId   = UUID(uuidString: trip.vehicleId ?? "") ?? UUID()
+        let driverId  = AuthManager.shared.currentUser?.id ?? UUID()
+        let vehicleId = UUID(uuidString: trip.vehicleId ?? "") ?? UUID()
         Task {
             try? await RouteDeviationService.recordDeviation(
                 tripId: trip.id, driverId: driverId, vehicleId: vehicleId,
@@ -314,8 +337,6 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
                 deviationMetres: deviationMetres
             )
         }
-        // Trigger a real reroute from the driver’s current position.
-        // intermediateWaypoints are preserved so any pending stops survive the reroute.
         rerouteFromCurrentLocation = true
         hasBuiltRoutes = false
         Task { await buildRoutes() }
