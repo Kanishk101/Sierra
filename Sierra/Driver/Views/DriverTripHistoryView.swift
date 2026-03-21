@@ -2,6 +2,8 @@ import SwiftUI
 
 /// Driver-side completed trip history.
 /// Safeguard 1: data from AppDataStore, no extra queries.
+/// Safeguard 2: NO .navigationDestination declared here — it lives in
+///   DriverTabView so there is exactly one declaration per NavigationStack.
 struct DriverTripHistoryView: View {
 
     @Environment(AppDataStore.self) private var store
@@ -31,6 +33,7 @@ struct DriverTripHistoryView: View {
             } else {
                 List {
                     ForEach(myCompletedTrips) { trip in
+                        // Uses parent NavigationStack's destination declaration
                         NavigationLink(value: trip.id) {
                             tripRow(trip)
                         }
@@ -41,7 +44,9 @@ struct DriverTripHistoryView: View {
         }
         .navigationTitle("Trip History")
         .navigationBarTitleDisplayMode(.large)
-        // navigationDestination is declared by the parent NavigationStack in DriverTabView.
+        // NOTE: .navigationDestination intentionally omitted here.
+        // DriverTabView declares it once on each NavigationStack to avoid
+        // the SwiftUI "declared earlier on the stack" warning and recursive push.
     }
 
     private func tripRow(_ trip: Trip) -> some View {

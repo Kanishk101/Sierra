@@ -65,6 +65,19 @@ struct AdminDashboardView: View {
             }
         }
         .tint(.orange)
+        // ── Data load on first appear ─────────────────────────────────────────
+        // Without this, store.vehicles / store.trips / store.staff are all empty
+        // when the admin first lands here, meaning the fleet map shows no vehicles
+        // and the dashboard KPI cards show zeros.
+        .task {
+            if store.vehicles.isEmpty || store.staff.isEmpty {
+                await store.loadAll()
+            }
+        }
+        // Refresh data whenever the app returns from background
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+            Task { await store.loadAll() }
+        }
         .onChange(of: selectedTab) { _, newValue in
             if newValue == 4 && lastContentTab == 0 {
                 showQuickActions = true
