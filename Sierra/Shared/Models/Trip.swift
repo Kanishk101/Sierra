@@ -52,6 +52,7 @@ struct Trip: Identifiable, Codable {
     var destinationLatitude: Double?      // destination_latitude
     var destinationLongitude: Double?     // destination_longitude
     var routePolyline: String?            // route_polyline
+    var routeStops: [RouteStop]?          // route_stops (JSONB array, nullable for backward compat)
     var deliveryInstructions: String      // delivery_instructions (default '')
 
     // MARK: Scheduling
@@ -75,7 +76,7 @@ struct Trip: Identifiable, Codable {
     var postInspectionId: UUID?
 
     // MARK: Rating
-    var driverRating: Int?               // driver_rating
+    var driverRating: Int?               // driver_rating (smallint nullable)
     var driverRatingNote: String?        // driver_rating_note
     var ratedById: UUID?                 // rated_by_id (FK → staff_members.id)
     var ratedAt: Date?                   // rated_at
@@ -98,6 +99,7 @@ struct Trip: Identifiable, Codable {
         case destinationLatitude  = "destination_latitude"
         case destinationLongitude = "destination_longitude"
         case routePolyline        = "route_polyline"
+        case routeStops           = "route_stops"
         case deliveryInstructions = "delivery_instructions"
         case scheduledDate        = "scheduled_date"
         case scheduledEndDate     = "scheduled_end_date"
@@ -175,6 +177,7 @@ struct Trip: Identifiable, Codable {
                 destinationLatitude: nil,
                 destinationLongitude: nil,
                 routePolyline: nil,
+                routeStops: nil,
                 deliveryInstructions: "Handle with care — electronics",
                 scheduledDate: cal.date(byAdding: .hour, value: -2, to: now) ?? now,
                 scheduledEndDate: cal.date(byAdding: .hour, value: 4, to: now),
@@ -208,6 +211,7 @@ struct Trip: Identifiable, Codable {
                 destinationLatitude: nil,
                 destinationLongitude: nil,
                 routePolyline: nil,
+                routeStops: nil,
                 deliveryInstructions: "",
                 scheduledDate: cal.date(byAdding: .day, value: 1, to: now) ?? now,
                 scheduledEndDate: nil,
@@ -241,6 +245,7 @@ struct Trip: Identifiable, Codable {
                 destinationLatitude: nil,
                 destinationLongitude: nil,
                 routePolyline: nil,
+                routeStops: nil,
                 deliveryInstructions: "",
                 scheduledDate: cal.date(byAdding: .day, value: -1, to: now) ?? now,
                 scheduledEndDate: cal.date(byAdding: .hour, value: -22, to: now),
@@ -274,6 +279,7 @@ struct Trip: Identifiable, Codable {
                 destinationLatitude: nil,
                 destinationLongitude: nil,
                 routePolyline: nil,
+                routeStops: nil,
                 deliveryInstructions: "",
                 scheduledDate: cal.date(byAdding: .day, value: -2, to: now) ?? now,
                 scheduledEndDate: nil,
