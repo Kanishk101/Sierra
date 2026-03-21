@@ -1,10 +1,39 @@
 # Phase 01 — Critical Bug Fixes (Must Ship Before Any UI Work)
 
 ## Context & Architecture
-- **Project:** Sierra FMS — iOS 17+ SwiftUI, MVVM, `@Observable` (no `@Published` anywhere), Swift Concurrency
+- **Project:** Sierra FMS — iOS 17+, SwiftUI, MVVM, `@Observable` (no `@Published` anywhere), Swift Concurrency
 - **Backend:** Supabase (PostgreSQL). No RLS enforced. All business logic in Swift layer.
 - **Repo:** `Kanishk101/Sierra` · Branch: `main`
 - **Pattern:** `AppDataStore` is the single source of truth. Every service call that mutates state must also update the in-memory array in `AppDataStore`.
+
+---
+
+## ABSOLUTE ARCHITECTURAL RULE — READ BEFORE TOUCHING ANYTHING
+
+`AdminDashboardView` is the fleet manager root. Full stop.
+
+The current `AdminDashboardView` has exactly 5 tabs in this exact order:
+1. **Dashboard** — `DashboardHomeView()`
+2. **Vehicles** — `VehicleListView()`
+3. **Staff** — `StaffTabView()` + pending badge
+4. **Trips** — `TripsAndMapContainerView(mapViewModel:)`
+5. **Search/Add** — contextual search + `QuickActionsSheet`
+
+This structure is **correct, final, and must not be changed**. Do not:
+- Add tabs
+- Remove tabs
+- Reorder tabs
+- Change tab icons or labels
+- Add a "More" tab or any overflow mechanism
+- Route the fleet manager to `FleetManagerTabView` instead
+
+`FleetManagerTabView.swift` exists in `Sierra/FleetManager/FleetManagerTabView.swift` and contains a 9-tab version of the fleet manager dashboard. This file is **entirely dead code**. It must be **deleted** as part of this phase. The features it contained (Maintenance, Reports, Geofences, Alerts, Live Map, Settings) are already implemented as standalone views — they just need to be wired into `AdminDashboardView`'s existing structure, which is handled in Phase 05 and Phase 06.
+
+**DO NOT** change `ContentView.swift`. The routing line:
+```swift
+case .fleetManagerDashboard: AdminDashboardView()
+```
+is already correct. Leave it alone.
 
 ---
 
@@ -28,35 +57,23 @@ To:
 var workOrderId: UUID?          // work_order_id (nullable — may not exist until work order is created)
 ```
 
-Also update `AppDataStore.addSparePartsRequest()` — the service layer call already uses `workOrderId?.uuidString` so the service is already correct. The model fix is the only change needed.
+The service layer call already uses `workOrderId?.uuidString` so it is already correct. The model fix is the only change needed.
 
 ---
 
-## Bug 2 — `ContentView.swift` still routes Fleet Manager to `AdminDashboardView()` — 4 implemented features completely unreachable
+## Bug 2 — Delete `FleetManagerTabView.swift`
 
-### Root Cause
-`ContentView.destinationView(for:)` has:
-```swift
-case .fleetManagerDashboard: AdminDashboardView()
+`Sierra/FleetManager/FleetManagerTabView.swift` is dead code. It is never referenced by `ContentView`, never presented, and never navigated to. Its entire 9-tab implementation is superseded by `AdminDashboardView` plus the individual feature views (`MaintenanceRequestsView`, `ReportsView`, etc.) that already exist and are wired in Phase 05/06.
+
+**Action:** Delete `Sierra/FleetManager/FleetManagerTabView.swift` from the repository entirely.
+
+Do NOT leave it as dead code. Dead code creates confusion for collaborators and for Claude when it reads the project.
+
+After deletion, verify that no other file imports or references `FleetManagerTabView`. Run:
 ```
-
-`AdminDashboardView` is a 5-tab view (Dashboard, Vehicles, Staff, Trips, Search/Add). It has NO Maintenance tab and NO Reports tab. `FleetManagerTabView.swift` (9-tab) is fully implemented and was never wired.
-
-This means the following fully-implemented views are **completely unreachable** from the Fleet Manager login:
-- `MaintenanceRequestsView` (Spare Parts approval, maintenance task approval, history)
-- `ReportsView` (CSV export, analytics)
-- `GeofenceListView`
-- `AlertsInboxView`
-
-### CRITICAL CONSTRAINT — DO NOT CHANGE THE TAB BAR STRUCTURE
-Kanishk explicitly wants **`AdminDashboardView`** to remain as the root — NOT `FleetManagerTabView`. The `AdminDashboardView` 5-tab structure (Dashboard, Vehicles, Staff, Trips, Search/Add) must stay **exactly as-is**. The missing features (Maintenance, Reports, Geofences, Alerts) must be surfaced **inside the existing 5 tabs** via the `QuickActionsSheet` and `DashboardHomeView`, not by adding new tabs.
-
-Specifically:
-- **DO NOT** change `ContentView.swift` to use `FleetManagerTabView()`
-- **DO NOT** add more tabs to `AdminDashboardView`
-- The `FleetManagerTabView.swift` file can remain in the project but is dead code
-
-The correct fix is to wire `MaintenanceRequestsView`, `ReportsView`, `GeofenceListView`, and `AlertsInboxView` into the existing `AdminDashboardView` through the Dashboard tab's `DashboardHomeView` and the `QuickActionsSheet`. This is covered in Phase 05 and Phase 06.
+grep -r "FleetManagerTabView" Sierra/
+```
+The result should be empty. If any reference still exists, remove it.
 
 ---
 
@@ -104,12 +121,13 @@ try await NotificationService.insertNotification(
 The comment even says `"placeholder — caller can replace with admin IDs"` but it was never replaced. Fleet managers never receive route deviation notifications in real-time. The deviation events ARE recorded correctly in `route_deviation_events` and shown in `AnalyticsDashboardView`, but there is no push to the fleet manager.
 
 ### Fix in `Sierra/Shared/Services/RouteDeviationService.swift`
-Replace the notification block with a version that fetches all fleet manager IDs and inserts a notification for each. Since we have no RLS and Supabase is a pure data store:
+Replace the notification block:
 
 ```swift
 // 3. Notify ALL fleet managers (non-fatal)
 do {
-    let fmRows: [StaffMemberDB] = try await supabase
+    struct FMIdRow: Decodable { let id: UUID }
+    let fmRows: [FMIdRow] = try await supabase
         .from("staff_members")
         .select("id")
         .eq("role", value: "fleetManager")
@@ -131,19 +149,14 @@ do {
 }
 ```
 
-Note: `StaffMemberDB` is the existing decodable struct in `StaffMemberService.swift`. Use it or define a minimal local struct:
-```swift
-struct FMIdRow: Decodable { let id: UUID }
-```
-
 ---
 
 ## Verification Checklist
 
-After applying all four fixes, verify:
+- [ ] `FleetManagerTabView.swift` deleted; `grep -r "FleetManagerTabView" Sierra/` returns empty
 - [ ] A spare parts request with `work_order_id = NULL` in DB decodes correctly; `store.sparePartsRequests` is non-empty
-- [ ] Fleet Manager login still lands on `AdminDashboardView` with 5 tabs — no structure change
+- [ ] Fleet Manager login lands on `AdminDashboardView` — still 5 tabs, no structural change
 - [ ] Driver logs fuel → `store.fuelLogs` array updated immediately without session reload
-- [ ] Route deviation recorded → fleet manager receives notification, driver does NOT receive their own deviation alert
+- [ ] Route deviation → fleet manager receives notification; driver does NOT receive their own deviation alert
 - [ ] Build compiles with zero warnings and zero errors
 - [ ] No `@Published` added anywhere
