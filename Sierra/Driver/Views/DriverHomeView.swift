@@ -5,14 +5,14 @@ import SwiftUI
 struct DriverHomeView: View {
 
     @Environment(AppDataStore.self) private var store
+    @Binding var tabSelection: DriverTab
 
     @State private var showToast = false
     @State private var toastMessage: String?
     @State private var availabilitySwitch = false
     @State private var isUpdatingAvailability = false
     @State private var didRunDebugChecks = false
-    @State private var showFuelLog = false
-    @State private var showMaintenanceRequest = false
+    @State private var showProfile = false
 
     private var user: AuthUser? { AuthManager.shared.currentUser }
 
@@ -68,8 +68,6 @@ struct DriverHomeView: View {
                         currentRouteBanner
                             .padding(.top, -30)
 
-                        quickActionsRow
-
                         upcomingRidesCard
 
                         if displayTrips.isEmpty {
@@ -102,23 +100,10 @@ struct DriverHomeView: View {
         .onChange(of: isAvailable) { _, newValue in
             availabilitySwitch = newValue
         }
-        .sheet(isPresented: $showFuelLog) {
-            if let vehicleIdStr = currentTrip?.vehicleId,
-               let vehicleId = UUID(uuidString: vehicleIdStr),
-               let driverId = driverStaffId {
-                FuelLogView(vehicleId: vehicleId, driverId: driverId, tripId: currentTrip?.id)
-            }
-        }
-        .sheet(isPresented: $showMaintenanceRequest) {
-            if let vehicleIdStr = currentTrip?.vehicleId,
-               let vehicleId = UUID(uuidString: vehicleIdStr),
-               let driverId = driverStaffId {
-                DriverMaintenanceRequestView(
-                    vehicleId: vehicleId,
-                    driverId: driverId,
-                    tripId: currentTrip?.id
-                )
-            }
+        .sheet(isPresented: $showProfile) {
+            DriverProfileSheet()
+                .environment(AppDataStore.shared)
+                .presentationDetents([.large])
         }
     }
 
@@ -137,6 +122,20 @@ struct DriverHomeView: View {
 
             VStack(spacing: 6) {
                 HStack {
+                    // Profile avatar button
+                    Button {
+                        showProfile = true
+                    } label: {
+                        Circle()
+                            .fill(Color.white.opacity(0.25))
+                            .frame(width: 38, height: 38)
+                            .overlay(
+                                Text(driverMember?.initials ?? "D")
+                                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                                    .foregroundStyle(.white)
+                            )
+                    }
+
                     Spacer()
 
                     HStack(spacing: 10) {
@@ -237,60 +236,6 @@ struct DriverHomeView: View {
         )
     }
 
-    // MARK: - Quick Actions
-
-    private var quickActionsRow: some View {
-        HStack(spacing: 12) {
-            Button {
-                showFuelLog = true
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "fuelpump.fill")
-                        .font(.system(size: 14, weight: .semibold))
-                    Text("Log Fuel")
-                        .font(.system(size: 14, weight: .semibold))
-                }
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .frame(height: 42)
-                .background(
-                    LinearGradient(
-                        colors: [Color(red: 0.95, green: 0.55, blue: 0.10), Color(red: 0.90, green: 0.42, blue: 0.08)],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    ),
-                    in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-                )
-            }
-            .disabled(currentTrip == nil)
-            .opacity(currentTrip == nil ? 0.5 : 1.0)
-
-            Button {
-                showMaintenanceRequest = true
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "wrench.and.screwdriver.fill")
-                        .font(.system(size: 14, weight: .semibold))
-                    Text("Report Issue")
-                        .font(.system(size: 14, weight: .semibold))
-                }
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .frame(height: 42)
-                .background(
-                    LinearGradient(
-                        colors: [Color(red: 0.85, green: 0.25, blue: 0.20), Color(red: 0.75, green: 0.18, blue: 0.15)],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    ),
-                    in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-                )
-            }
-            .disabled(currentTrip == nil)
-            .opacity(currentTrip == nil ? 0.5 : 1.0)
-        }
-    }
-
     // MARK: - Upcoming
 
     private var upcomingRidesCard: some View {
@@ -324,8 +269,8 @@ struct DriverHomeView: View {
             .padding(.top, 22)
             .padding(.bottom, 16)
 
-            NavigationLink {
-                DriverTripsListView()
+            Button {
+                tabSelection = .trips
             } label: {
                 Text("View Rides")
                     .font(.system(size: 15, weight: .bold, design: .rounded))
@@ -361,8 +306,8 @@ struct DriverHomeView: View {
 
             Spacer()
 
-            NavigationLink {
-                DriverTripsListView()
+            Button {
+                tabSelection = .trips
             } label: {
                 Text("View All")
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
@@ -742,7 +687,7 @@ private enum AvailabilityFailure {
 
 #Preview {
     NavigationStack {
-        DriverHomeView()
+        DriverHomeView(tabSelection: .constant(.home))
             .environment(AppDataStore.shared)
     }
 }

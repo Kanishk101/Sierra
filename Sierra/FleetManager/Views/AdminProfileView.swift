@@ -1,8 +1,10 @@
 import SwiftUI
-
+import LocalAuthentication
 
 struct AdminProfileView: View {
     @Environment(\.dismiss) private var dismiss
+
+    @State private var isBiometricEnabled: Bool = BiometricAuthManager.isEnabled
 
     var body: some View {
         VStack(spacing: 24) {
@@ -38,6 +40,50 @@ struct AdminProfileView: View {
                     .padding(.vertical, 4)
                     .background(.blue.opacity(0.1), in: Capsule())
                     .padding(.top, 4)
+            }
+
+            // Security Section
+            VStack(alignment: .leading, spacing: 0) {
+                Text("SECURITY")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .kerning(1)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
+
+                Toggle(isOn: $isBiometricEnabled) {
+                    HStack(spacing: 12) {
+                        Image(systemName: LAContext().biometryType == .faceID ? "faceid" : "touchid")
+                            .foregroundStyle(.blue)
+                            .frame(width: 28)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(LAContext().biometryType == .faceID ? "Face ID" : "Touch ID")
+                                .font(.body)
+                            Text("Sign in without typing your password")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .tint(.orange)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+                .padding(.horizontal, 16)
+                .onChange(of: isBiometricEnabled) { _, enabled in
+                    if enabled {
+                        Task {
+                            let ok = await BiometricAuthManager.authenticate(reason: "Enable biometric sign-in for Sierra")
+                            if ok {
+                                BiometricAuthManager.enable()
+                            } else {
+                                isBiometricEnabled = false
+                            }
+                        }
+                    } else {
+                        BiometricAuthManager.disable()
+                    }
+                }
             }
 
             Spacer()

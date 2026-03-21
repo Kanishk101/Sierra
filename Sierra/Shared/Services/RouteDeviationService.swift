@@ -79,18 +79,28 @@ struct RouteDeviationService {
             ))
             .execute()
 
-        // 3. Notify fleet managers (non-fatal)
+        // 3. Notify ALL fleet managers (non-fatal)
         do {
-            try await NotificationService.insertNotification(
-                recipientId: driverId,   // placeholder — caller can replace with admin IDs
-                type: .routeDeviation,
-                title: "Route Deviation",
-                body: "Driver deviated \(Int(deviationMetres))m from planned route",
-                entityType: "trip",
-                entityId: tripId
-            )
+            struct FMIdRow: Decodable { let id: UUID }
+            let fmRows: [FMIdRow] = try await supabase
+                .from("staff_members")
+                .select("id")
+                .eq("role", value: "fleetManager")
+                .eq("status", value: "Active")
+                .execute()
+                .value
+            for fm in fmRows {
+                try await NotificationService.insertNotification(
+                    recipientId: fm.id,
+                    type: .routeDeviation,
+                    title: "Route Deviation Detected",
+                    body: "A driver deviated \(Int(deviationMetres))m from the planned route on trip \(tripId.uuidString.prefix(8)).",
+                    entityType: "trip",
+                    entityId: tripId
+                )
+            }
         } catch {
-            print("[RouteDeviationService] Non-fatal: failed to insert notification: \(error)")
+            print("[RouteDeviationService] Non-fatal: failed to notify fleet managers: \(error)")
         }
     }
 

@@ -2,11 +2,17 @@ import SwiftUI
 
 struct AdminDashboardView: View {
     @Environment(AppDataStore.self) private var store
-    @State private var searchText = ""
-    @State private var selectedTab = 0
-    @State private var lastContentTab = 0
+    @State private var searchText       = ""
+    @State private var selectedTab      = 0
+    @State private var lastContentTab   = 0
     @State private var showQuickActions = false
-    @State private var mapViewModel = FleetLiveMapViewModel()
+    @State private var mapViewModel     = FleetLiveMapViewModel()
+
+    // Navigation destinations triggered from QuickActionsSheet
+    @State private var showAlerts        = false
+    @State private var showReports       = false
+    @State private var showGeofences     = false
+    @State private var showNotifications = false
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -69,13 +75,47 @@ struct AdminDashboardView: View {
             }
         }
         .sheet(isPresented: $showQuickActions) {
-            QuickActionsSheet()
-                .presentationDetents([.fraction(0.45)])
-                .presentationDragIndicator(.visible)
+            QuickActionsSheet { destination in
+                switch destination {
+                case .alerts:
+                    showAlerts = true
+                case .reports:
+                    showReports = true
+                case .geofences:
+                    showGeofences = true
+                case .notifications:
+                    showNotifications = true
+                }
+            }
+            .presentationDetents([.fraction(0.65)])
+            .presentationDragIndicator(.visible)
+        }
+        // Navigation destinations from QuickActionsSheet — presented at root level, no double-stacking
+        .sheet(isPresented: $showAlerts) {
+            NavigationStack {
+                AlertsInboxView()
+                    .environment(AppDataStore.shared)
+            }
+        }
+        .sheet(isPresented: $showReports) {
+            NavigationStack {
+                ReportsView()
+                    .environment(AppDataStore.shared)
+            }
+        }
+        .sheet(isPresented: $showGeofences) {
+            NavigationStack {
+                GeofenceListView()
+                    .environment(AppDataStore.shared)
+            }
+        }
+        .sheet(isPresented: $showNotifications) {
+            NotificationCentreView()
         }
     }
 }
 
 #Preview {
     AdminDashboardView()
+        .environment(AppDataStore.shared)
 }

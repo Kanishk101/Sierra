@@ -19,7 +19,7 @@ struct SparePartsRequest: Identifiable, Codable, Equatable {
 
     // MARK: Foreign keys
     var maintenanceTaskId: UUID           // maintenance_task_id (FK → maintenance_tasks.id)
-    var workOrderId: UUID                 // work_order_id (FK → work_orders.id)
+    var workOrderId: UUID?                // work_order_id (nullable — may not exist until work order is created)
     var requestedById: UUID              // requested_by_id (FK → staff_members.id)
 
     // MARK: Part details

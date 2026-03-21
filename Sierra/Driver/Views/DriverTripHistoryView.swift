@@ -41,9 +41,7 @@ struct DriverTripHistoryView: View {
         }
         .navigationTitle("Trip History")
         .navigationBarTitleDisplayMode(.large)
-        .navigationDestination(for: UUID.self) { tripId in
-            TripDetailDriverView(tripId: tripId)
-        }
+        // navigationDestination is declared by the parent NavigationStack in DriverTabView.
     }
 
     private func tripRow(_ trip: Trip) -> some View {

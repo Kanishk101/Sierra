@@ -26,6 +26,9 @@ struct DashboardHomeView: View {
 
                     expiringDocsSection
 
+                    fleetManagementSection
+                        .padding(.horizontal, 20)
+
                     Spacer(minLength: 40)
                 }
             }
@@ -400,6 +403,94 @@ struct DashboardHomeView: View {
                 .background((doc.isExpired ? Color.red : Color.orange).opacity(0.1), in: Capsule())
         }
         .padding(.horizontal, 16).padding(.vertical, 12)
+    }
+
+    // MARK: - Fleet Management Section
+
+    private var fleetManagementSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("FLEET MANAGEMENT")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.secondary)
+                .kerning(1)
+                .padding(.horizontal, 2)
+
+            NavigationLink {
+                MaintenanceRequestsView()
+                    .environment(AppDataStore.shared)
+            } label: {
+                managementCard(
+                    icon: "wrench.and.screwdriver.fill",
+                    title: "Maintenance",
+                    subtitle: "\(store.maintenanceTasks.filter { $0.status == .pending }.count) pending tasks",
+                    color: .orange
+                )
+            }
+
+            NavigationLink {
+                ReportsView()
+                    .environment(AppDataStore.shared)
+            } label: {
+                managementCard(
+                    icon: "chart.bar.fill",
+                    title: "Reports & Analytics",
+                    subtitle: "Fleet performance and exports",
+                    color: .blue
+                )
+            }
+
+            NavigationLink {
+                AlertsInboxView()
+                    .environment(AppDataStore.shared)
+            } label: {
+                managementCard(
+                    icon: "bell.badge.fill",
+                    title: "Alerts Inbox",
+                    subtitle: "\(store.activeEmergencyAlerts().count) active alerts",
+                    color: .red
+                )
+            }
+
+            NavigationLink {
+                GeofenceListView()
+                    .environment(AppDataStore.shared)
+            } label: {
+                managementCard(
+                    icon: "mappin.and.ellipse",
+                    title: "Geofences",
+                    subtitle: "\(store.geofences.filter { $0.isActive }.count) active zones",
+                    color: .teal
+                )
+            }
+        }
+    }
+
+    private func managementCard(icon: String, title: String, subtitle: String, color: Color) -> some View {
+        HStack(spacing: 14) {
+            Image(systemName: icon)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(color)
+                .frame(width: 44, height: 44)
+                .background(color.opacity(0.1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.tertiary)
+        }
+        .padding(14)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: .black.opacity(0.04), radius: 6, y: 3)
     }
 
     // MARK: - Helpers

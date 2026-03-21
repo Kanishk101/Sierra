@@ -1,14 +1,25 @@
 import SwiftUI
 
+// MARK: - QuickActionDestination
+// Used to signal non-creation navigations to AdminDashboardView so we avoid modal-over-modal.
+enum QuickActionDestination {
+    case alerts
+    case reports
+    case geofences
+    case notifications
+}
+
 struct QuickActionsSheet: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var showCreateStaff = false
-    @State private var showAddVehicle = false
-    @State private var showCreateTrip = false
+    @Environment(AppDataStore.self) private var store
+
+    /// Called when the user selects a navigation-only action (Alerts, Reports, Geofences, Notifications).
+    var onNavigate: (QuickActionDestination) -> Void
+
+    @State private var showCreateTrip        = false
+    @State private var showAddVehicle        = false
+    @State private var showCreateStaff       = false
     @State private var showCreateMaintenance = false
-    @State private var showCreateGeofence = false
-    @State private var showAlerts = false
-    @State private var alertsVM = AlertsViewModel()
 
     private struct QuickAction: Identifiable {
         let id = UUID()
@@ -19,12 +30,14 @@ struct QuickActionsSheet: View {
     }
 
     private let actions: [QuickAction] = [
-        QuickAction(icon: "shippingbox.fill", label: "Create Delivery Task", color: .blue, tag: "delivery"),
-        QuickAction(icon: "car.badge.gearshape", label: "Add Vehicle", color: .green, tag: "vehicle"),
-        QuickAction(icon: "wrench.and.screwdriver.fill", label: "Create Maintenance Request", color: .orange, tag: "maintenance"),
-        QuickAction(icon: "person.badge.plus", label: "Add Staff Member", color: .indigo, tag: "staff"),
-        QuickAction(icon: "mappin.and.ellipse", label: "Create Geofence", color: .teal, tag: "geofence"),
-        QuickAction(icon: "bell.badge.fill", label: "View Alerts", color: .red, tag: "alerts"),
+        QuickAction(icon: "arrow.triangle.swap",          label: "Create Trip",         color: .blue,   tag: "trip"),
+        QuickAction(icon: "car.badge.gearshape",          label: "Add Vehicle",         color: .green,  tag: "vehicle"),
+        QuickAction(icon: "person.badge.plus",            label: "Add Staff",           color: .indigo, tag: "staff"),
+        QuickAction(icon: "wrench.and.screwdriver.fill",  label: "Maint. Request",      color: .orange, tag: "maintenance"),
+        QuickAction(icon: "chart.bar.fill",               label: "View Reports",        color: .purple, tag: "reports"),
+        QuickAction(icon: "bell.badge.fill",              label: "View Alerts",         color: .red,    tag: "alerts"),
+        QuickAction(icon: "mappin.and.ellipse",           label: "View Geofences",      color: .teal,   tag: "geofences"),
+        QuickAction(icon: "tray.full.fill",               label: "Notifications",       color: .gray,   tag: "notifications"),
     ]
 
     var body: some View {
@@ -40,19 +53,12 @@ struct QuickActionsSheet: View {
                 .foregroundStyle(.primary)
                 .padding(.top, 2)
 
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)], spacing: 16) {
+            LazyVGrid(
+                columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)],
+                spacing: 16
+            ) {
                 ForEach(actions) { action in
-                    Button {
-                        switch action.tag {
-                        case "staff":    showCreateStaff = true
-                        case "vehicle":  showAddVehicle = true
-                        case "delivery": showCreateTrip = true
-                        case "maintenance": showCreateMaintenance = true
-                        case "geofence": showCreateGeofence = true
-                        case "alerts": showAlerts = true
-                        default:         dismiss()
-                        }
-                    } label: {
+                    Button { handle(action.tag) } label: {
                         VStack(spacing: 16) {
                             Image(systemName: action.icon)
                                 .font(.system(size: 26, weight: .light))
@@ -83,16 +89,17 @@ struct QuickActionsSheet: View {
             Spacer()
         }
         .background(Color(.systemGroupedBackground).ignoresSafeArea())
-        .sheet(isPresented: $showCreateStaff) {
-            CreateStaffView()
+        // Creation sheets — shown after dismiss delay to avoid double-sheet jitter
+        .sheet(isPresented: $showCreateTrip) {
+            CreateTripView()
                 .presentationDetents([.large])
         }
         .sheet(isPresented: $showAddVehicle) {
             AddVehicleView()
                 .presentationDetents([.large])
         }
-        .sheet(isPresented: $showCreateTrip) {
-            CreateTripView()
+        .sheet(isPresented: $showCreateStaff) {
+            CreateStaffView()
                 .presentationDetents([.large])
         }
         .sheet(isPresented: $showCreateMaintenance) {
@@ -101,19 +108,70 @@ struct QuickActionsSheet: View {
             }
             .presentationDetents([.large])
         }
-        .sheet(isPresented: $showCreateGeofence) {
-            CreateGeofenceSheet()
-                .presentationDetents([.large])
-        }
-        .sheet(isPresented: $showAlerts) {
-            NavigationStack {
-                AlertsInboxView(vm: alertsVM)
+    }
+
+    // MARK: - Action Handler
+
+    private func handle(_ tag: String) {
+        switch tag {
+        // Navigation-only actions — dismiss first, then let parent navigate
+        case "alerts":
+            dismiss()
+            Task {
+                try? await Task.sleep(for: .milliseconds(350))
+                onNavigate(.alerts)
             }
-            .presentationDetents([.large])
+        case "reports":
+            dismiss()
+            Task {
+                try? await Task.sleep(for: .milliseconds(350))
+                onNavigate(.reports)
+            }
+        case "geofences":
+            dismiss()
+            Task {
+                try? await Task.sleep(for: .milliseconds(350))
+                onNavigate(.geofences)
+            }
+        case "notifications":
+            dismiss()
+            Task {
+                try? await Task.sleep(for: .milliseconds(350))
+                onNavigate(.notifications)
+            }
+
+        // Creation actions — dismiss self, then present the creation sheet after a brief delay
+        case "trip":
+            dismiss()
+            Task {
+                try? await Task.sleep(for: .milliseconds(300))
+                showCreateTrip = true
+            }
+        case "vehicle":
+            dismiss()
+            Task {
+                try? await Task.sleep(for: .milliseconds(300))
+                showAddVehicle = true
+            }
+        case "staff":
+            dismiss()
+            Task {
+                try? await Task.sleep(for: .milliseconds(300))
+                showCreateStaff = true
+            }
+        case "maintenance":
+            dismiss()
+            Task {
+                try? await Task.sleep(for: .milliseconds(300))
+                showCreateMaintenance = true
+            }
+        default:
+            dismiss()
         }
     }
 }
 
 #Preview {
-    QuickActionsSheet()
+    QuickActionsSheet(onNavigate: { _ in })
+        .environment(AppDataStore.shared)
 }

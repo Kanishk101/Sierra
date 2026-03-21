@@ -2,7 +2,7 @@ import SwiftUI
 import MapKit
 
 /// Admin fleet live map: vehicle annotations + geofence circle overlays.
-/// Safeguard 1: ViewModel persisted at parent level (FleetManagerTabView).
+/// Safeguard 1: ViewModel persisted at parent level (AdminDashboardView).
 /// Safeguard 2: annotations updated in-place via identifiable struct array.
 struct FleetLiveMapView: View {
 
@@ -11,6 +11,8 @@ struct FleetLiveMapView: View {
 
     @State private var cameraPosition: MapCameraPosition = .automatic
     @State private var hasSetInitialRegion = false
+    @State private var showVehicleSearch = false
+    @State private var vehicleSearchText = ""
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -18,6 +20,9 @@ struct FleetLiveMapView: View {
 
             // Floating buttons
             VStack(spacing: 12) {
+                floatingButton(icon: "magnifyingglass.circle.fill") {
+                    showVehicleSearch = true
+                }
                 floatingButton(icon: "line.3.horizontal.decrease.circle.fill") {
                     viewModel.showFilterPicker = true
                 }
@@ -54,6 +59,22 @@ struct FleetLiveMapView: View {
         }
         .sheet(isPresented: $viewModel.showFilterPicker) {
             filterSheet
+        }
+        .sheet(isPresented: $showVehicleSearch) {
+            vehicleSearchSheet
+        }
+        .onChange(of: viewModel.selectedVehicleId) { _, newId in
+            guard let newId,
+                  let vehicle = store.vehicles.first(where: { $0.id == newId }),
+                  let lat = vehicle.currentLatitude,
+                  let lng = vehicle.currentLongitude else { return }
+            withAnimation(.easeInOut(duration: 0.5)) {
+                cameraPosition = .region(MKCoordinateRegion(
+                    center: CLLocationCoordinate2D(latitude: lat, longitude: lng),
+                    latitudinalMeters: 2000,
+                    longitudinalMeters: 2000
+                ))
+            }
         }
     }
 
@@ -188,6 +209,87 @@ struct FleetLiveMapView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { viewModel.showFilterPicker = false }
+                }
+            }
+        }
+        .presentationDetents([.medium])
+    }
+
+    // MARK: - Vehicle Search Sheet
+
+    private var vehicleSearchSheet: some View {
+        NavigationStack {
+            let matches = store.vehicles.filter { v in
+                guard !vehicleSearchText.isEmpty else { return true }
+                let q = vehicleSearchText.lowercased()
+                return v.name.localizedCaseInsensitiveContains(q)
+                    || v.licensePlate.localizedCaseInsensitiveContains(q)
+            }
+
+            List {
+                if matches.isEmpty {
+                    HStack {
+                        Spacer()
+                        VStack(spacing: 6) {
+                            Image(systemName: "car.fill")
+                                .font(.title2)
+                                .foregroundStyle(.tertiary)
+                            Text("No vehicles matched")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 30)
+                        Spacer()
+                    }
+                    .listRowSeparator(.hidden)
+                } else {
+                    ForEach(matches) { vehicle in
+                        Button {
+                            viewModel.selectedVehicleId = vehicle.id
+                            showVehicleSearch = false
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "car.fill")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(annotationColor(for: vehicle.status))
+                                    .frame(width: 36, height: 36)
+                                    .background(annotationColor(for: vehicle.status).opacity(0.12), in: Circle())
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(vehicle.name)
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(.primary)
+                                    Text(vehicle.licensePlate)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                Spacer()
+
+                                SierraBadge(vehicle.status, size: .compact)
+
+                                if store.trips.contains(where: {
+                                    $0.vehicleId == vehicle.id.uuidString && $0.status == .active
+                                }) {
+                                    Text("On Trip")
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundStyle(.green)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(.green.opacity(0.1), in: Capsule())
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .listStyle(.plain)
+            .navigationTitle("Find Vehicle")
+            .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $vehicleSearchText, prompt: "Search by name or plate…")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { showVehicleSearch = false }
                 }
             }
         }

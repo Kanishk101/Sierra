@@ -17,6 +17,8 @@ struct TripDetailDriverView: View {
     @State private var showNavigation = false
     @State private var showProofOfDelivery = false
     @State private var showPostInspection = false
+    @State private var showFuelLog = false
+    @State private var showMaintenanceRequest = false
     @State private var errorMessage: String?
     @State private var showError = false
     @State private var navigatePulse = false
@@ -114,6 +116,20 @@ struct TripDetailDriverView: View {
             if let trip {
                 TripNavigationContainerView(trip: trip)
                     .environment(AppDataStore.shared)
+            }
+        }
+        .sheet(isPresented: $showFuelLog) {
+            if let vehicleId = vehicle?.id, let driverId = user?.id {
+                FuelLogView(vehicleId: vehicleId, driverId: driverId, tripId: trip?.id)
+            }
+        }
+        .sheet(isPresented: $showMaintenanceRequest) {
+            if let vehicleId = vehicle?.id, let driverId = user?.id {
+                DriverMaintenanceRequestView(
+                    vehicleId: vehicleId,
+                    driverId: driverId,
+                    tripId: trip?.id
+                )
             }
         }
         .onAppear {
@@ -443,6 +459,14 @@ struct TripDetailDriverView: View {
                     }
                 } else {
                     completionSummary(trip)
+                }
+
+                // Trip-scoped quick actions — always available during active trip
+                actionButton("Log Fuel", icon: "fuelpump.fill", color: .orange) {
+                    showFuelLog = true
+                }
+                actionButton("Report Issue", icon: "wrench.and.screwdriver.fill", color: .red.opacity(0.8)) {
+                    showMaintenanceRequest = true
                 }
 
             case .completed:

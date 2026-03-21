@@ -31,12 +31,10 @@ struct DriverTripsListView: View {
             .sorted { $0.scheduledDate > $1.scheduledDate }
     }
 
-    var body: some View {
-        VStack(spacing: 0) {
-            filterChips
-                .padding(.vertical, 8)
-                .background(Color(.systemGroupedBackground))
+    private var isFilterActive: Bool { selectedStatus != nil }
 
+    var body: some View {
+        Group {
             if filtered.isEmpty {
                 emptyState
             } else {
@@ -59,6 +57,38 @@ struct DriverTripsListView: View {
         .toolbarTitleDisplayMode(.inlineLarge)
         .toolbarBackground(.hidden, for: .navigationBar)
         .searchable(text: $searchText, prompt: "Search task ID, origin…")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Section("Status") {
+                        Button {
+                            selectedStatus = nil
+                        } label: {
+                            Label("All Statuses", systemImage: selectedStatus == nil ? "checkmark" : "")
+                        }
+                        ForEach(TripStatus.allCases, id: \.self) { status in
+                            Button {
+                                selectedStatus = status
+                            } label: {
+                                Label(status.rawValue, systemImage: selectedStatus == status ? "checkmark" : "")
+                            }
+                        }
+                    }
+                    if isFilterActive {
+                        Divider()
+                        Button(role: .destructive) {
+                            selectedStatus = nil
+                        } label: {
+                            Label("Clear Filters", systemImage: "xmark.circle")
+                        }
+                    }
+                } label: {
+                    Image(systemName: isFilterActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(isFilterActive ? .orange : .primary)
+                }
+            }
+        }
         // navigationDestination is declared by the parent NavigationStack in DriverTabView.
         // Declaring it here too causes the "declared earlier on the stack" SwiftUI warning.
         .task {
@@ -71,34 +101,7 @@ struct DriverTripsListView: View {
         }
     }
 
-    // MARK: - Filter Chips
 
-    private var filterChips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                chip("All", isSelected: selectedStatus == nil) { selectedStatus = nil }
-                ForEach(TripStatus.allCases, id: \.self) { status in
-                    chip(status.rawValue, isSelected: selectedStatus == status) {
-                        selectedStatus = status
-                    }
-                }
-            }
-            .padding(.horizontal, 16)
-        }
-    }
-
-    private func chip(_ label: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(isSelected ? .white : .primary)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 7)
-                .background(isSelected ? Color.orange : .clear, in: Capsule())
-                .overlay(Capsule().strokeBorder(isSelected ? .clear : Color(.separator), lineWidth: 1))
-        }
-        .buttonStyle(.plain)
-    }
 
     // MARK: - Trip Row
 

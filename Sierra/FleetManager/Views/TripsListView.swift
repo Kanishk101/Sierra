@@ -52,7 +52,6 @@ struct TripsListView: View {
         .navigationTitle("Trips")
         .toolbarTitleDisplayMode(.inlineLarge)
         .toolbarBackground(.hidden, for: .navigationBar)
-        .searchable(text: $searchText, prompt: "Search task ID, origin…")
         .navigationDestination(for: UUID.self) { id in
             TripDetailView(tripId: id)
         }

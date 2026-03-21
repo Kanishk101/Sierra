@@ -1,65 +1,29 @@
 import SwiftUI
 
 struct StaffTabView: View {
-    @State private var mode: StaffMode = .staff
+    @Environment(AppDataStore.self) private var store
+    @State private var segment: StaffSegment = .drivers
     @State private var searchText = ""
+    @State private var selectedStaffMember: StaffMember?
+    @State private var showCreateStaff = false
 
-    enum StaffMode: String, CaseIterable {
-        case staff = "Staff"
+    enum StaffSegment: String, CaseIterable {
+        case drivers      = "Drivers"
+        case maintenance  = "Maintenance"
         case applications = "Applications"
     }
 
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                // Segmented Control
-                Picker("Mode", selection: $mode) {
-                    ForEach(StaffMode.allCases, id: \.self) { m in
-                        Text(m.rawValue).tag(m)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 8)
+    // MARK: - Filtered staff
 
-                // Content
-                switch mode {
-                case .staff:
-                    StaffDirectoryView(searchText: $searchText)
-                case .applications:
-                    ApplicationsListView()
-                }
-            }
-            .background(Color(.systemGroupedBackground).ignoresSafeArea())
-            .navigationTitle("Staff")
-            .toolbarTitleDisplayMode(.inlineLarge)
-            .toolbarBackground(.hidden, for: .navigationBar)
-            .searchable(text: $searchText, prompt: "Search staff…")
-            .animation(.easeInOut(duration: 0.2), value: mode)
-        }
-    }
-}
-
-// MARK: - Staff Directory
-
-private struct StaffDirectoryView: View {
-    @Environment(AppDataStore.self) private var store
-    @Binding var searchText: String
-
-    enum RoleFilter: String, CaseIterable {
-        case all = "All"
-        case drivers = "Drivers"
-        case maintenance = "Maintenance"
-    }
-
-    @State private var roleFilter: RoleFilter = .all
-
-    private func staffForRole(_ role: UserRole) -> [StaffMember] {
+    private func staffFor(_ segment: StaffSegment) -> [StaffMember] {
+        let role: UserRole = segment == .drivers ? .driver : .maintenancePersonnel
         let all = store.staff.filter {
             $0.role == role
-            && $0.status != .pendingApproval
             && $0.isApproved
+            && $0.status != .pendingApproval
         }
+        .sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+
         guard !searchText.isEmpty else { return all }
         let q = searchText.lowercased()
         return all.filter {
@@ -68,56 +32,92 @@ private struct StaffDirectoryView: View {
         }
     }
 
-    private var drivers: [StaffMember] { staffForRole(.driver) }
-    private var maintenance: [StaffMember] { staffForRole(.maintenancePersonnel) }
-    private var fleetManagers: [StaffMember] { staffForRole(.fleetManager) }
-
-    private var showDrivers: Bool { roleFilter == .all || roleFilter == .drivers }
-    private var showMaintenance: Bool { roleFilter == .all || roleFilter == .maintenance }
-    private var showFMs: Bool { roleFilter == .all }
+    private var visibleStaff: [StaffMember] {
+        staffFor(segment)
+    }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Role filter
-            Picker("Role", selection: $roleFilter) {
-                ForEach(RoleFilter.allCases, id: \.self) { f in
-                    Text(f.rawValue).tag(f)
+        NavigationStack {
+            VStack(spacing: 0) {
+                // Single 3-segment control
+                Picker("Segment", selection: $segment) {
+                    ForEach(StaffSegment.allCases, id: \.self) { s in
+                        if s == .applications {
+                            let count = store.pendingCount
+                            Text(count > 0 ? "\(s.rawValue) (\(count))" : s.rawValue).tag(s)
+                        } else {
+                            Text(s.rawValue).tag(s)
+                        }
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 8)
+
+                // Content
+                switch segment {
+                case .drivers, .maintenance:
+                    staffListContent
+                case .applications:
+                    ApplicationsListView()
                 }
             }
-            .pickerStyle(.segmented)
-            .padding(.horizontal, 20)
-            .padding(.vertical, 8)
-
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    if showFMs && !fleetManagers.isEmpty {
-                        sectionBlock("Fleet Managers", icon: "shield.fill", members: fleetManagers, allowSuspend: false)
-                    }
-                    if showDrivers && !drivers.isEmpty {
-                        sectionBlock("Drivers", icon: "car.fill", members: drivers, allowSuspend: true)
-                    }
-                    if showMaintenance && !maintenance.isEmpty {
-                        sectionBlock("Maintenance", icon: "wrench.and.screwdriver.fill", members: maintenance, allowSuspend: true)
-                    }
-
-                    let visibleDrivers = showDrivers ? drivers : []
-                    let visibleMaint = showMaintenance ? maintenance : []
-                    let visibleFMs = showFMs ? fleetManagers : []
-                    if visibleDrivers.isEmpty && visibleMaint.isEmpty && visibleFMs.isEmpty {
-                        VStack(spacing: 16) {
-                            Spacer(minLength: 60)
-                            Image(systemName: "person.2.slash")
-                                .font(.system(size: 44, weight: .light))
-                                .foregroundStyle(.secondary)
-                            Text(searchText.isEmpty ? "No staff members yet" : "No results for \"\(searchText)\"")
-                                .font(.body)
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                        }
-                        .frame(maxWidth: .infinity)
+            .background(Color(.systemGroupedBackground).ignoresSafeArea())
+            .navigationTitle("Staff")
+            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .animation(.easeInOut(duration: 0.2), value: segment)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showCreateStaff = true
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.body.weight(.semibold))
                     }
                 }
-                .padding(.bottom, 32)
+            }
+            .sheet(isPresented: $showCreateStaff) {
+                NavigationStack {
+                    CreateStaffView()
+                }
+            }
+            .sheet(item: $selectedStaffMember) { member in
+                StaffDetailSheet(member: member)
+                    .environment(AppDataStore.shared)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+            }
+        }
+    }
+
+    // MARK: - Staff List Content
+
+    private var staffListContent: some View {
+        Group {
+            if visibleStaff.isEmpty {
+                VStack(spacing: 16) {
+                    Spacer(minLength: 60)
+                    Image(systemName: "person.2.slash")
+                        .font(.system(size: 44, weight: .light))
+                        .foregroundStyle(.secondary)
+                    Text(searchText.isEmpty ? "No \(segment.rawValue.lowercased()) yet" : "No results for \"\(searchText)\"")
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        sectionBlock(
+                            segment.rawValue,
+                            icon: segment == .drivers ? "car.fill" : "wrench.and.screwdriver.fill",
+                            members: visibleStaff
+                        )
+                    }
+                    .padding(.bottom, 32)
+                }
             }
         }
         .task {
@@ -128,7 +128,9 @@ private struct StaffDirectoryView: View {
         }
     }
 
-    private func sectionBlock(_ title: String, icon: String, members: [StaffMember], allowSuspend: Bool) -> some View {
+    // MARK: - Section Block
+
+    private func sectionBlock(_ title: String, icon: String, members: [StaffMember]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Image(systemName: icon)
@@ -151,27 +153,31 @@ private struct StaffDirectoryView: View {
             ForEach(members) { member in
                 staffRow(member)
                     .padding(.horizontal, 20)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        selectedStaffMember = member
+                    }
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        if allowSuspend && member.role != .fleetManager {
-                            if member.status == .active {
-                                Button(role: .destructive) {
-                                    Task { await toggleSuspend(member, suspend: true) }
-                                } label: {
-                                    Label("Suspend", systemImage: "person.slash")
-                                }
-                            } else if member.status == .suspended {
-                                Button {
-                                    Task { await toggleSuspend(member, suspend: false) }
-                                } label: {
-                                    Label("Reactivate", systemImage: "person.badge.plus")
-                                }
-                                .tint(.green)
+                        if member.status == .active {
+                            Button(role: .destructive) {
+                                Task { await toggleSuspend(member, suspend: true) }
+                            } label: {
+                                Label("Suspend", systemImage: "person.slash")
                             }
+                        } else if member.status == .suspended {
+                            Button {
+                                Task { await toggleSuspend(member, suspend: false) }
+                            } label: {
+                                Label("Reactivate", systemImage: "person.badge.plus")
+                            }
+                            .tint(.green)
                         }
                     }
             }
         }
     }
+
+    // MARK: - Staff Row
 
     private func staffRow(_ member: StaffMember) -> some View {
         HStack(spacing: 14) {
@@ -188,16 +194,9 @@ private struct StaffDirectoryView: View {
                 Text(member.displayName)
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(.primary)
-                HStack(spacing: 6) {
-                    Text(member.email)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(member.displayRole)
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 5).padding(.vertical, 1)
-                        .background(roleBadgeColor(member.role), in: Capsule())
-                }
+                Text(member.email)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Spacer()
@@ -238,14 +237,6 @@ private struct StaffDirectoryView: View {
             foregroundColor: fgColor,
             size: .compact
         )
-    }
-
-    private func roleBadgeColor(_ role: UserRole) -> Color {
-        switch role {
-        case .fleetManager:         .purple
-        case .driver:               .blue
-        case .maintenancePersonnel: .orange
-        }
     }
 
     // MARK: - Suspend / Reactivate

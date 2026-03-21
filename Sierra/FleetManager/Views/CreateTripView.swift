@@ -1,4 +1,5 @@
 import SwiftUI
+import MapKit
 
 
 /// 3-step trip creation wizard.
@@ -20,6 +21,14 @@ struct CreateTripView: View {
     @State private var scheduledEndDate: Date = Date().addingTimeInterval(3600 * 8)
     @State private var priority: TripPriority = .normal
     @State private var notes = ""
+
+    // Geocoded addresses
+    @State private var selectedOrigin: GeocodedAddress?
+    @State private var selectedDestination: GeocodedAddress?
+    @State private var stops: [GeocodedAddress] = []
+    @State private var showOriginSearch = false
+    @State private var showDestinationSearch = false
+    @State private var showStopSearch = false
 
     // Step 2 — Driver
     @State private var selectedDriverId: UUID?
@@ -141,34 +150,99 @@ struct CreateTripView: View {
         VStack(spacing: 0) {
             Form {
                 Section("Route") {
-                    VStack(alignment: .leading, spacing: 4) {
-                        TextField("Origin *", text: $origin)
-                            .onChange(of: origin) { _, newValue in
-                                let filtered = String(newValue.filter { !$0.isNumber })
-                                if filtered != newValue { origin = filtered }
-                                originError = routeFieldValidationError(for: filtered)
+                    // Origin
+                    Button {
+                        showOriginSearch = true
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "circle.fill")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.green)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Origin")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Text(origin.isEmpty ? "Search origin address…" : origin)
+                                    .font(.subheadline)
+                                    .foregroundStyle(origin.isEmpty ? .tertiary : .primary)
+                                    .lineLimit(2)
                             }
-                        if let err = originError {
-                            Text(err)
-                                .font(.caption2)
-                                .foregroundStyle(.red)
+                            Spacer()
+                            Image(systemName: "magnifyingglass")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+
+                    // Stops
+                    ForEach(Array(stops.enumerated()), id: \.element.id) { index, stop in
+                        HStack(spacing: 12) {
+                            Image(systemName: "\(index + 1).circle.fill")
+                                .font(.system(size: 14))
+                                .foregroundStyle(.orange)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Stop \(index + 1)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Text(stop.shortName)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.primary)
+                            }
+                            Spacer()
+                            Button {
+                                stops.remove(at: index)
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 16))
+                                    .foregroundStyle(.red.opacity(0.7))
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
 
-                    VStack(alignment: .leading, spacing: 4) {
-                        TextField("Destination *", text: $destination)
-                            .onChange(of: destination) { _, newValue in
-                                let filtered = String(newValue.filter { !$0.isNumber })
-                                if filtered != newValue { destination = filtered }
-                                destinationError = routeFieldValidationError(for: filtered)
-                            }
-                        if let err = destinationError {
-                            Text(err)
-                                .font(.caption2)
+                    // Add Stop button
+                    Button {
+                        showStopSearch = true
+                    } label: {
+                        Label("Add Stop", systemImage: "plus.circle")
+                            .font(.subheadline)
+                            .foregroundStyle(.orange)
+                    }
+
+                    // Destination
+                    Button {
+                        showDestinationSearch = true
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "mappin.circle.fill")
+                                .font(.system(size: 14))
                                 .foregroundStyle(.red)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Destination")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Text(destination.isEmpty ? "Search destination address…" : destination)
+                                    .font(.subheadline)
+                                    .foregroundStyle(destination.isEmpty ? .tertiary : .primary)
+                                    .lineLimit(2)
+                            }
+                            Spacer()
+                            Image(systemName: "magnifyingglass")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                     }
+                    .buttonStyle(.plain)
                 }
+
+                // Map Preview
+                if selectedOrigin != nil || selectedDestination != nil {
+                    Section("Route Preview") {
+                        routeMapPreview
+                    }
+                }
+
                 Section("Schedule") {
                     DatePicker("Departure *",
                                selection: $scheduledDate,
@@ -188,6 +262,23 @@ struct CreateTripView: View {
             .scrollContentBackground(.hidden)
             .onChange(of: scheduledDate) { _, newDate in
                 scheduledEndDate = newDate.addingTimeInterval(3600 * 8)
+            }
+            .sheet(isPresented: $showOriginSearch) {
+                AddressSearchSheet(placeholder: "Search origin address…") { result in
+                    selectedOrigin = result
+                    origin = result.displayName
+                }
+            }
+            .sheet(isPresented: $showDestinationSearch) {
+                AddressSearchSheet(placeholder: "Search destination address…") { result in
+                    selectedDestination = result
+                    destination = result.displayName
+                }
+            }
+            .sheet(isPresented: $showStopSearch) {
+                AddressSearchSheet(placeholder: "Search stop address…") { result in
+                    stops.append(result)
+                }
             }
 
             // Next button
@@ -209,6 +300,44 @@ struct CreateTripView: View {
             .padding(.horizontal, 20)
             .padding(.bottom, 12)
         }
+    }
+
+    // MARK: - Route Map Preview
+
+    private var routeMapPreview: some View {
+        Map {
+            if let o = selectedOrigin {
+                Annotation(o.shortName, coordinate: o.coordinate) {
+                    Image(systemName: "circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.green)
+                        .background(.white, in: Circle())
+                        .shadow(radius: 2)
+                }
+            }
+            ForEach(Array(stops.enumerated()), id: \.element.id) { index, stop in
+                Annotation("Stop \(index + 1)", coordinate: stop.coordinate) {
+                    Text("\(index + 1)")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 22, height: 22)
+                        .background(.orange, in: Circle())
+                        .shadow(radius: 2)
+                }
+            }
+            if let d = selectedDestination {
+                Annotation(d.shortName, coordinate: d.coordinate) {
+                    Image(systemName: "mappin.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundStyle(.red)
+                        .background(.white, in: Circle())
+                        .shadow(radius: 2)
+                }
+            }
+        }
+        .frame(height: 200)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
     }
 
     // MARK: - Step 2: Assign Driver
@@ -462,10 +591,19 @@ struct CreateTripView: View {
               let vehicleId = selectedVehicleId else { return }
 
         isCreating = true
-        // Geocode both addresses concurrently before creating the trip
-        async let originResult = geocodeAddress(origin.trimmingCharacters(in: .whitespaces))
-        async let destResult = geocodeAddress(destination.trimmingCharacters(in: .whitespaces))
-        let (originCoords, destCoords) = await (originResult, destResult)
+        // Use geocoded coordinates if available, otherwise fall back to geocoding
+        let originCoords: (Double, Double)?
+        if let o = selectedOrigin {
+            originCoords = (o.latitude, o.longitude)
+        } else {
+            originCoords = await geocodeAddress(origin.trimmingCharacters(in: .whitespaces))
+        }
+        let destCoords: (Double, Double)?
+        if let d = selectedDestination {
+            destCoords = (d.latitude, d.longitude)
+        } else {
+            destCoords = await geocodeAddress(destination.trimmingCharacters(in: .whitespaces))
+        }
         do {
             // Re-validate driver freshness
             guard let latestDriver = try await StaffMemberService.fetchStaffMember(id: driverId) else {

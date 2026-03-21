@@ -56,14 +56,6 @@ struct MaintenanceDashboardView: View {
     private var tasksTab: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Filter bar
-                filterBar
-
-                // Vehicle chips
-                if !viewModel.uniqueVehicleIds.isEmpty {
-                    vehicleChips
-                }
-
                 // Task list
                 if viewModel.isLoading && viewModel.assignedTasks.isEmpty {
                     Spacer()
@@ -90,6 +82,52 @@ struct MaintenanceDashboardView: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
                     .background(Color.orange.opacity(0.1), in: Capsule())
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Section("Status") {
+                            ForEach(MaintenanceDashboardViewModel.TaskFilter.allCases, id: \.self) { f in
+                                Button {
+                                    viewModel.filterByStatus(f)
+                                } label: {
+                                    Label(f.rawValue, systemImage: viewModel.selectedFilter == f ? "checkmark" : "")
+                                }
+                            }
+                        }
+                        if !viewModel.uniqueVehicleIds.isEmpty {
+                            Section("Vehicle") {
+                                Button {
+                                    viewModel.filterByVehicle(nil)
+                                } label: {
+                                    Label("All Vehicles", systemImage: viewModel.selectedVehicleFilter == nil ? "checkmark" : "")
+                                }
+                                ForEach(viewModel.uniqueVehicleIds, id: \.self) { vId in
+                                    let vehicle = store.vehicles.first(where: { $0.id == vId })
+                                    Button {
+                                        viewModel.filterByVehicle(vId)
+                                    } label: {
+                                        Label(vehicle?.licensePlate ?? vId.uuidString.prefix(8).description,
+                                              systemImage: viewModel.selectedVehicleFilter == vId ? "checkmark" : "")
+                                    }
+                                }
+                            }
+                        }
+                        if isTaskFilterActive {
+                            Divider()
+                            Button(role: .destructive) {
+                                viewModel.filterByStatus(.all)
+                                viewModel.filterByVehicle(nil)
+                            } label: {
+                                Label("Clear Filters", systemImage: "xmark.circle")
+                            }
+                        }
+                    } label: {
+                        Image(systemName: isTaskFilterActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(isTaskFilterActive ? .orange : .primary)
+                    }
                 }
             }
             .task {
@@ -126,54 +164,8 @@ struct MaintenanceDashboardView: View {
         }
     }
 
-    // MARK: - Filter Bar
-
-    private var filterBar: some View {
-        Picker("Filter", selection: Binding(
-            get: { viewModel.selectedFilter },
-            set: { viewModel.filterByStatus($0) }
-        )) {
-            ForEach(MaintenanceDashboardViewModel.TaskFilter.allCases, id: \.self) { f in
-                Text(f.rawValue).tag(f)
-            }
-        }
-        .pickerStyle(.segmented)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-    }
-
-    // MARK: - Vehicle Chips
-
-    private var vehicleChips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                chipButton(label: "All Vehicles", isSelected: viewModel.selectedVehicleFilter == nil) {
-                    viewModel.filterByVehicle(nil)
-                }
-                ForEach(viewModel.uniqueVehicleIds, id: \.self) { vId in
-                    let vehicle = store.vehicles.first(where: { $0.id == vId })
-                    chipButton(
-                        label: vehicle?.licensePlate ?? vId.uuidString.prefix(8).description,
-                        isSelected: viewModel.selectedVehicleFilter == vId
-                    ) {
-                        viewModel.filterByVehicle(vId)
-                    }
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 8)
-        }
-    }
-
-    private func chipButton(label: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(label)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(isSelected ? .white : .primary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(isSelected ? Color.orange : Color(.secondarySystemBackground), in: Capsule())
-        }
+    private var isTaskFilterActive: Bool {
+        viewModel.selectedFilter != .all || viewModel.selectedVehicleFilter != nil
     }
 
     // MARK: - Task List
@@ -607,77 +599,202 @@ struct MaintenanceDashboardView: View {
 
     private var profileTab: some View {
         NavigationStack {
-            VStack(spacing: 24) {
-                Spacer(minLength: 40)
-                let user = AuthManager.shared.currentUser
-                let initials = (user?.name ?? "M").prefix(2).uppercased()
-                Circle()
-                    .fill(Color(.systemGray5))
-                    .frame(width: 80, height: 80)
-                    .overlay(
-                        Text(initials)
-                            .font(.system(size: 28, weight: .bold, design: .rounded))
+            ScrollView {
+                VStack(spacing: 20) {
+                    // Gradient Header
+                    ZStack {
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.95, green: 0.55, blue: 0.10),
+                                Color(red: 0.85, green: 0.35, blue: 0.08)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+
+                        RadialGradient(
+                            colors: [Color.white.opacity(0.2), .clear],
+                            center: .topLeading,
+                            startRadius: 20,
+                            endRadius: 300
+                        )
+
+                        VStack(spacing: 12) {
+                            let user = AuthManager.shared.currentUser
+                            let initials = (user?.name ?? "M").prefix(2).uppercased()
+                            Circle()
+                                .fill(.white.opacity(0.2))
+                                .frame(width: 80, height: 80)
+                                .overlay(
+                                    Text(initials)
+                                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                                        .foregroundStyle(.white)
+                                )
+
+                            Text(user?.name ?? "Maintenance Staff")
+                                .font(.title3.weight(.bold))
+                                .foregroundStyle(.white)
+                            Text(user?.email ?? "")
+                                .font(.caption)
+                                .foregroundStyle(.white.opacity(0.8))
+                        }
+                        .padding(.top, 30)
+                        .padding(.bottom, 24)
+                    }
+                    .clipShape(
+                        UnevenRoundedRectangle(
+                            topLeadingRadius: 0,
+                            bottomLeadingRadius: 28,
+                            bottomTrailingRadius: 28,
+                            topTrailingRadius: 0,
+                            style: .continuous
+                        )
                     )
-                VStack(spacing: 6) {
-                    Text(user?.name ?? "Maintenance Staff").font(.title3.weight(.semibold))
-                    Text(user?.email ?? "").font(.caption).foregroundStyle(.secondary)
-                }
-                HStack(spacing: 6) {
-                    Image(systemName: "wrench.fill").font(.caption2)
-                    Text("Maintenance Personnel").font(.caption)
-                }
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 14).padding(.vertical, 7)
-                .background(Color.blue.opacity(0.06), in: Capsule())
+                    .padding(.top, -8)
 
-                HStack(spacing: 8) {
-                    Image(systemName: user?.isApproved == true ? "checkmark.seal.fill" : "clock.fill")
-                        .foregroundStyle(user?.isApproved == true ? .green : .orange)
-                    Text(user?.isApproved == true ? "Approved" : "Pending Approval").font(.subheadline)
-                }
-                .padding(16).frame(maxWidth: .infinity)
-                .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
-                .padding(.horizontal, 24)
+                    // Role & Approval Badge
+                    VStack(spacing: 12) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "wrench.fill").font(.caption2)
+                            Text("Maintenance Personnel").font(.caption)
+                        }
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 14).padding(.vertical, 7)
+                        .background(Color.blue.opacity(0.06), in: Capsule())
 
-                NavigationLink {
-                    ChangePasswordView()
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "lock.rotation")
-                        Text("Change Password")
+                        let user = AuthManager.shared.currentUser
+                        HStack(spacing: 8) {
+                            Image(systemName: user?.isApproved == true ? "checkmark.seal.fill" : "clock.fill")
+                                .foregroundStyle(user?.isApproved == true ? .green : .orange)
+                            Text(user?.isApproved == true ? "Approved" : "Pending Approval").font(.subheadline)
+                        }
+                        .padding(16).frame(maxWidth: .infinity)
+                        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
                     }
-                    .font(.subheadline)
-                    .foregroundStyle(.primary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .frame(height: 48)
-                    .padding(.horizontal, 16)
-                    .background(Color(.secondarySystemGroupedBackground),
-                                in: RoundedRectangle(cornerRadius: 14))
-                }
-                .padding(.horizontal, 24)
+                    .padding(.horizontal, 24)
 
-                Spacer()
-                Button {
-                    AuthManager.shared.signOut()
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "rectangle.portrait.and.arrow.right").font(.caption)
-                        Text("Sign Out").font(.subheadline)
+                    // Stats Card
+                    let tasksCompleted = store.workOrders.filter { $0.assignedToId == currentUserId && $0.status == .closed }.count
+                    HStack(spacing: 0) {
+                        profileStatCell(value: "\(tasksCompleted)", label: "Completed", icon: "checkmark.circle.fill", color: .green)
+                        Divider().frame(height: 40)
+                        profileStatCell(value: "\(myWorkOrders.count)", label: "Work Orders", icon: "doc.text.fill", color: .blue)
+                        Divider().frame(height: 40)
+                        profileStatCell(value: "\(viewModel.assignedTasks.count)", label: "Tasks", icon: "list.clipboard.fill", color: .orange)
                     }
-                    .foregroundStyle(.red.opacity(0.7))
-                    .frame(maxWidth: .infinity).frame(height: 48)
-                    .background(.red.opacity(0.06), in: RoundedRectangle(cornerRadius: 14))
+                    .padding(.vertical, 16)
+                    .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+                    .padding(.horizontal, 24)
+
+                    // Certification Info
+                    if let profile = store.maintenanceProfile(for: currentUserId) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("CERTIFICATION").font(.caption.weight(.bold)).foregroundStyle(.secondary).kerning(1)
+
+                            profileInfoRow("Type", profile.certificationType)
+                            profileInfoRow("Expiry", profile.certificationExpiry)
+                            profileInfoRow("Experience", "\(profile.yearsOfExperience) years")
+
+                            if !profile.specializations.isEmpty {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Specializations").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                                    FlowLayout(spacing: 6) {
+                                        ForEach(profile.specializations, id: \.self) { spec in
+                                            Text(spec)
+                                                .font(.system(size: 11, weight: .medium))
+                                                .foregroundStyle(.orange)
+                                                .padding(.horizontal, 10)
+                                                .padding(.vertical, 5)
+                                                .background(Color.orange.opacity(0.1), in: Capsule())
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        .padding(16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+                        .padding(.horizontal, 24)
+                    }
+
+                    // Actions
+                    VStack(spacing: 0) {
+                        NavigationLink {
+                            ChangePasswordView()
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "lock.rotation")
+                                    .foregroundStyle(.orange)
+                                    .frame(width: 28)
+                                Text("Change Password")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.primary)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 14)
+                        }
+
+                        Divider().padding(.leading, 56)
+
+                        Button {
+                            showEditProfile = true
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "pencil")
+                                    .foregroundStyle(.orange)
+                                    .frame(width: 28)
+                                Text("Edit Profile")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.primary)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 14)
+                        }
+                    }
+                    .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+                    .padding(.horizontal, 24)
+
+                    // Sign Out
+                    Button {
+                        AuthManager.shared.signOut()
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "rectangle.portrait.and.arrow.right").font(.caption)
+                            Text("Sign Out").font(.subheadline)
+                        }
+                        .foregroundStyle(.red.opacity(0.7))
+                        .frame(maxWidth: .infinity).frame(height: 48)
+                        .background(.red.opacity(0.06), in: RoundedRectangle(cornerRadius: 14))
+                    }
+                    .padding(.horizontal, 24).padding(.bottom, 24)
                 }
-                .padding(.horizontal, 24).padding(.bottom, 24)
             }
-            .frame(maxWidth: .infinity)
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
             .navigationTitle("Profile")
             .toolbarTitleDisplayMode(.inlineLarge)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Edit") { showEditProfile = true }
-                        .fontWeight(.semibold)
+                    Button { showNotifications = true } label: {
+                        ZStack(alignment: .topTrailing) {
+                            Image(systemName: "bell.fill").font(.body).foregroundStyle(.primary)
+                            if store.unreadNotificationCount > 0 {
+                                Text("\(store.unreadNotificationCount)")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .padding(3)
+                                    .background(.red, in: Circle())
+                                    .offset(x: 6, y: -6)
+                            }
+                        }
+                    }
                 }
             }
             .sheet(isPresented: $showEditProfile) {
@@ -685,6 +802,33 @@ struct MaintenanceDashboardView: View {
                     MaintenanceProfileEditView()
                 }
             }
+        }
+    }
+
+    // MARK: - Profile Helpers
+
+    private func profileStatCell(value: String, label: String, icon: String, color: Color) -> some View {
+        VStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.caption)
+                .foregroundStyle(color)
+            Text(value)
+                .font(.headline.weight(.bold))
+            Text(label)
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func profileInfoRow(_ label: String, _ value: String) -> some View {
+        HStack {
+            Text(label)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(value)
+                .font(.subheadline.weight(.medium))
         }
     }
 }
@@ -717,6 +861,24 @@ private class ScannerViewController: UIViewController, AVCaptureMetadataOutputOb
         super.viewDidLoad()
         view.backgroundColor = .black
 
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            setupCamera()
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
+                DispatchQueue.main.async {
+                    if granted { self?.setupCamera() }
+                    else { self?.showPermissionDeniedUI() }
+                }
+            }
+        case .denied, .restricted:
+            showPermissionDeniedUI()
+        @unknown default:
+            showPermissionDeniedUI()
+        }
+    }
+
+    private func setupCamera() {
         guard let device = AVCaptureDevice.default(for: .video),
               let input = try? AVCaptureDeviceInput(device: device) else {
             showFallback("Camera not available")
@@ -740,6 +902,41 @@ private class ScannerViewController: UIViewController, AVCaptureMetadataOutputOb
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             self?.session.startRunning()
+        }
+    }
+
+    private func showPermissionDeniedUI() {
+        view.backgroundColor = UIColor.systemBackground
+
+        let label = UILabel()
+        label.text = "Camera access denied.\nGo to Settings > Sierra to enable camera access."
+        label.numberOfLines = 0
+        label.textAlignment = .center
+        label.textColor = .secondaryLabel
+        label.font = .systemFont(ofSize: 15)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 32),
+            label.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -32),
+            label.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: -20)
+        ])
+
+        let settingsButton = UIButton(type: .system)
+        settingsButton.setTitle("Open Settings", for: .normal)
+        settingsButton.titleLabel?.font = .systemFont(ofSize: 16, weight: .semibold)
+        settingsButton.addTarget(self, action: #selector(openSettings), for: .touchUpInside)
+        settingsButton.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(settingsButton)
+        NSLayoutConstraint.activate([
+            settingsButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            settingsButton.topAnchor.constraint(equalTo: label.bottomAnchor, constant: 20)
+        ])
+    }
+
+    @objc private func openSettings() {
+        if let url = URL(string: UIApplication.openSettingsURLString) {
+            UIApplication.shared.open(url)
         }
     }
 

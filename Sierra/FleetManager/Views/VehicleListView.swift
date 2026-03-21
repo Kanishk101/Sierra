@@ -69,7 +69,6 @@ struct VehicleListView: View {
             .navigationTitle("Vehicles")
             .toolbarTitleDisplayMode(.inlineLarge)
             .toolbarBackground(.hidden, for: .navigationBar)
-            .searchable(text: $searchText, prompt: "Search vehicles\u{2026}")
             .navigationDestination(for: UUID.self) { id in
                 VehicleDetailView(vehicleId: id)
             }

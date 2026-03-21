@@ -65,14 +65,11 @@ final class MaintenanceTaskDetailViewModel {
         }
         isStartingWork = true
 
-        do {
-            if let existing = try await WorkOrderService.fetchWorkOrder(maintenanceTaskId: task.id) {
-                hydrateFromWorkOrder(existing)
-                isStartingWork = false
-                return
-            }
-        } catch {
-            // continue to create a new one
+        // Check if a work order already exists
+        if let existing = AppDataStore.shared.workOrder(forMaintenanceTask: task.id) {
+            hydrateFromWorkOrder(existing)
+            isStartingWork = false
+            return
         }
 
         do {
@@ -95,8 +92,13 @@ final class MaintenanceTaskDetailViewModel {
                 createdAt: Date(),
                 updatedAt: Date()
             )
-            try await WorkOrderService.addWorkOrder(newWO)
-            try await MaintenanceTaskService.updateMaintenanceTaskStatus(id: task.id, status: .inProgress)
+            try await AppDataStore.shared.addWorkOrder(newWO)
+
+            // Update task status in-memory via AppDataStore
+            var updatedTask = task
+            updatedTask.status = .inProgress
+            try await AppDataStore.shared.updateMaintenanceTask(updatedTask)
+
             workOrder = newWO
         } catch {
             errorMessage = "Failed to start work: \(error.localizedDescription)"
@@ -152,10 +154,10 @@ final class MaintenanceTaskDetailViewModel {
                 wo.completedAt = Date()
                 wo.estimatedCompletionAt = estimatedCompletion
                 wo.status = .completed
-                try await WorkOrderService.updateWorkOrder(wo)
+                try await AppDataStore.shared.updateWorkOrder(wo)
             }
 
-            try await MaintenanceTaskService.updateMaintenanceTaskStatus(id: task.id, status: .completed)
+            try await AppDataStore.shared.completeMaintenanceTask(id: task.id)
 
             do {
                 try await NotificationService.insertNotification(

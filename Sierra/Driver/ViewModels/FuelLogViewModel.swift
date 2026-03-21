@@ -69,7 +69,7 @@ final class FuelLogViewModel {
                 loggedAt: Date(),
                 createdAt: Date()
             )
-            try await FuelLogService.addFuelLog(log)
+            try await AppDataStore.shared.addFuelLog(log)
             submitSuccess = true
         } catch {
             submitError = error.localizedDescription

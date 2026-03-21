@@ -5,6 +5,7 @@ struct SparePartsRequestSheet: View {
 
     let maintenanceTaskId: UUID
     let workOrderId: UUID
+    @Environment(AppDataStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
     @State private var partName = ""
@@ -87,11 +88,7 @@ struct SparePartsRequestSheet: View {
                 }
             }
             .task {
-                do {
-                    existingRequests = try await SparePartsRequestService.fetchRequests(for: maintenanceTaskId)
-                } catch {
-                    print("[SpareParts] Fetch error: \(error)")
-                }
+                existingRequests = store.sparePartsRequests(forTask: maintenanceTaskId)
             }
             .alert("Error", isPresented: $showError) {
                 Button("OK") {}
@@ -109,7 +106,8 @@ struct SparePartsRequestSheet: View {
     private func submitRequest() async {
         isSubmitting = true
         do {
-            try await SparePartsRequestService.submitRequest(
+            let request = SparePartsRequest(
+                id: UUID(),
                 maintenanceTaskId: maintenanceTaskId,
                 workOrderId: workOrderId,
                 requestedById: currentUserId,
@@ -118,10 +116,18 @@ struct SparePartsRequestSheet: View {
                 quantity: quantity,
                 estimatedUnitCost: estimatedCost,
                 supplier: supplier.isEmpty ? nil : supplier,
-                reason: reason
+                reason: reason,
+                status: .pending,
+                reviewedBy: nil,
+                reviewedAt: nil,
+                rejectionReason: nil,
+                fulfilledAt: nil,
+                createdAt: Date(),
+                updatedAt: Date()
             )
-            // Refresh list
-            existingRequests = try await SparePartsRequestService.fetchRequests(for: maintenanceTaskId)
+            try await store.addSparePartsRequest(request)
+            // Refresh from store
+            existingRequests = store.sparePartsRequests(forTask: maintenanceTaskId)
             // Clear form
             partName = ""; partNumber = ""; quantity = 1; estimatedCost = nil; supplier = ""; reason = ""
         } catch {
