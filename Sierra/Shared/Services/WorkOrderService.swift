@@ -179,4 +179,13 @@ struct WorkOrderService {
             .eq("id", value: workOrderId.uuidString)
             .execute()
     }
+
+    static func setVinScanned(workOrderId: UUID) async throws {
+        struct P: Encodable { let vin_scanned: Bool }
+        try await supabase
+            .from("work_orders")
+            .update(P(vin_scanned: true))
+            .eq("id", value: workOrderId.uuidString)
+            .execute()
+    }
 }

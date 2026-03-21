@@ -11,7 +11,7 @@ struct StaffListView: View {
         let byRole = store.staff.filter {
             $0.role != .fleetManager
             && $0.role == selectedSegment
-            && $0.status == .active
+            && $0.status != .pendingApproval
             && $0.isApproved
         }
         guard !searchText.isEmpty else { return byRole }
@@ -57,6 +57,24 @@ struct StaffListView: View {
                                     staffRow(member)
                                 }
                                 .buttonStyle(.plain)
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    if member.role != .fleetManager {
+                                        if member.status == .active {
+                                            Button(role: .destructive) {
+                                                Task { await toggleSuspend(member, suspend: true) }
+                                            } label: {
+                                                Label("Suspend", systemImage: "person.slash")
+                                            }
+                                        } else if member.status == .suspended {
+                                            Button {
+                                                Task { await toggleSuspend(member, suspend: false) }
+                                            } label: {
+                                                Label("Reactivate", systemImage: "person.badge.plus")
+                                            }
+                                            .tint(.green)
+                                        }
+                                    }
+                                }
                                 .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                                 .listRowSeparator(.hidden)
                                 .listRowBackground(Color.clear)
@@ -120,7 +138,15 @@ struct StaffListView: View {
             Spacer()
 
             VStack(alignment: .trailing, spacing: 4) {
-                availabilityBadge(member.availability)
+                if member.status == .suspended {
+                    Text("Suspended")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(.red, in: Capsule())
+                } else {
+                    availabilityBadge(member.availability)
+                }
                 Image(systemName: "chevron.right")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.tertiary)
@@ -128,6 +154,7 @@ struct StaffListView: View {
         }
         .padding(16)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .opacity(member.status == .suspended ? 0.6 : 1.0)
         .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
     }
 
@@ -154,6 +181,19 @@ struct StaffListView: View {
         case .driver:               SierraAvatarView.driver()
         case .maintenancePersonnel: SierraAvatarView.maintenance()
         case .fleetManager:         SierraAvatarView.driver()
+        }
+    }
+
+    // MARK: - Suspend / Reactivate
+
+    private func toggleSuspend(_ member: StaffMember, suspend: Bool) async {
+        guard member.role != .fleetManager else { return }
+        var updated = member
+        updated.status = suspend ? .suspended : .active
+        do {
+            try await store.updateStaffMember(updated)
+        } catch {
+            print("[StaffList] toggleSuspend error: \(error)")
         }
     }
 }

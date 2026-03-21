@@ -3,6 +3,13 @@ import Charts
 
 // MARK: - AnalyticsDashboardViewModel
 
+enum DriverSortField: String, CaseIterable {
+    case name       = "Name"
+    case trips      = "Trips"
+    case distance   = "Distance"
+    case deviations = "Deviations"
+}
+
 @Observable
 final class AnalyticsDashboardViewModel {
     var selectedFleetStatus: VehicleStatus? = nil
@@ -13,6 +20,11 @@ final class AnalyticsDashboardViewModel {
     var rawFleetAngle:  Double? = nil
     var rawTripAngle:   Double? = nil
     var rawStaffAngle:  Double? = nil
+
+    // Driver Activity Reports — sort & filter
+    var driverSortField: DriverSortField = .name
+    var driverSortAscending: Bool = true
+    var driverNameFilter: String = ""
 }
 
 // MARK: - Slice Models
@@ -44,6 +56,19 @@ struct MonthlyTripData: Identifiable {
     let year:  Int
     let count: Int
     let date:  Date
+}
+
+struct DriverActivityRow: Identifiable {
+    let id: UUID
+    let name: String
+    let tripsCompleted: Int
+    let totalDistanceKm: Double
+    let avgDurationMinutes: Double?
+    let onTimeRate: Double?
+    let deviationCount: Int
+    let totalLitres: Double
+    let totalFuelKm: Double
+    let kmPerLitre: Double?
 }
 
 // MARK: - AnalyticsDashboardView
@@ -95,6 +120,12 @@ struct AnalyticsDashboardView: View {
                     sectionCard(title: "Document Health",
                                 subtitle: "Vehicle documents by validity status") {
                         documentHealthSection
+                    }
+
+                    // 7. Driver Activity Reports (FMS1-21)
+                    sectionCard(title: "Driver Activity Reports",
+                                subtitle: "Per-driver performance breakdown") {
+                        driverActivitySection
                     }
 
                     Spacer(minLength: 32)
@@ -205,6 +236,81 @@ struct AnalyticsDashboardView: View {
         }
         guard !durations.isEmpty else { return nil }
         return durations.reduce(0, +) / Double(durations.count)
+    }
+
+    // MARK: - Driver Activity Rows (FMS1-21)
+
+    private var driverActivityRows: [DriverActivityRow] {
+        let drivers = store.staff.filter { $0.role == .driver && $0.status == .active }
+        let allCompleted = store.trips.filter { $0.status == .completed }
+
+        var rows = drivers.compactMap { driver -> DriverActivityRow? in
+            let idStr = driver.id.uuidString
+            let dTrips = allCompleted.filter { $0.driverId == idStr }
+
+            // Distance
+            let totalDist = dTrips.compactMap { trip -> Double? in
+                guard let e = trip.endMileage, let s = trip.startMileage else { return nil }
+                return max(0, e - s)
+            }.reduce(0, +)
+
+            // Avg duration
+            let durations = dTrips.compactMap { trip -> Double? in
+                guard let s = trip.actualStartDate, let e = trip.actualEndDate else { return nil }
+                return e.timeIntervalSince(s) / 60
+            }
+            let avgDur: Double? = durations.isEmpty ? nil : durations.reduce(0, +) / Double(durations.count)
+
+            // On-time rate
+            let tripsWithScheduledEnd = dTrips.filter { $0.scheduledEndDate != nil }
+            let onTime: Double? = tripsWithScheduledEnd.isEmpty ? nil : {
+                let onTimeCount = tripsWithScheduledEnd.filter { trip in
+                    guard let actual = trip.actualEndDate, let scheduled = trip.scheduledEndDate else { return false }
+                    return actual <= scheduled
+                }.count
+                return Double(onTimeCount) / Double(tripsWithScheduledEnd.count)
+            }()
+
+            // Deviations
+            let devCount = store.routeDeviationEvents.filter { $0.driverId == driver.id }.count
+
+            // Fuel
+            let driverFuelLogs = store.fuelLogs.filter { $0.driverId == driver.id }
+            let totalLitres = driverFuelLogs.reduce(0) { $0 + $1.fuelQuantityLitres }
+            let kmpl: Double? = totalLitres > 0 ? totalDist / totalLitres : nil
+
+            return DriverActivityRow(
+                id: driver.id,
+                name: driver.name ?? "Unknown",
+                tripsCompleted: dTrips.count,
+                totalDistanceKm: totalDist,
+                avgDurationMinutes: avgDur,
+                onTimeRate: onTime,
+                deviationCount: devCount,
+                totalLitres: totalLitres,
+                totalFuelKm: totalDist,
+                kmPerLitre: kmpl
+            )
+        }
+
+        // Filter
+        if !viewModel.driverNameFilter.isEmpty {
+            rows = rows.filter { $0.name.localizedCaseInsensitiveContains(viewModel.driverNameFilter) }
+        }
+
+        // Sort
+        rows.sort { a, b in
+            let result: Bool
+            switch viewModel.driverSortField {
+            case .name:       result = a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
+            case .trips:      result = a.tripsCompleted < b.tripsCompleted
+            case .distance:   result = a.totalDistanceKm < b.totalDistanceKm
+            case .deviations: result = a.deviationCount < b.deviationCount
+            }
+            return viewModel.driverSortAscending ? result : !result
+        }
+
+        return rows
     }
 
     // MARK: - Chart 1: Fleet Status
@@ -551,6 +657,152 @@ struct AnalyticsDashboardView: View {
                 .frame(height: 180)
             }
         }
+    }
+
+    // MARK: - Section 7: Driver Activity Reports (FMS1-21)
+
+    private var driverActivitySection: some View {
+        VStack(spacing: 14) {
+            // Search field
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                TextField("Filter by driver name", text: $viewModel.driverNameFilter)
+                    .textFieldStyle(.plain)
+                    .font(.subheadline)
+                if !viewModel.driverNameFilter.isEmpty {
+                    Button {
+                        viewModel.driverNameFilter = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color(.tertiarySystemGroupedBackground),
+                        in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+            // Sort controls
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(DriverSortField.allCases, id: \.self) { field in
+                        let isActive = viewModel.driverSortField == field
+                        Button {
+                            withAnimation(.spring(duration: 0.25)) {
+                                if viewModel.driverSortField == field {
+                                    viewModel.driverSortAscending.toggle()
+                                } else {
+                                    viewModel.driverSortField = field
+                                    viewModel.driverSortAscending = true
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(field.rawValue)
+                                    .font(.caption.weight(isActive ? .bold : .medium))
+                                if isActive {
+                                    Image(systemName: viewModel.driverSortAscending ? "chevron.up" : "chevron.down")
+                                        .font(.caption2.weight(.bold))
+                                }
+                            }
+                            .foregroundStyle(isActive ? .white : .secondary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(
+                                isActive ? Color.accentColor : Color(.tertiarySystemGroupedBackground),
+                                in: Capsule()
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            // Table
+            let rows = driverActivityRows
+            if rows.isEmpty {
+                ContentUnavailableView("No Matching Drivers",
+                                       systemImage: "person.slash",
+                                       description: Text(viewModel.driverNameFilter.isEmpty
+                                                         ? "No active drivers found."
+                                                         : "No drivers match \"\(viewModel.driverNameFilter)\"."))
+                    .frame(height: 120)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    VStack(spacing: 0) {
+                        // Header
+                        driverTableHeader
+
+                        ForEach(rows) { row in
+                            driverTableRow(row)
+                            if row.id != rows.last?.id {
+                                Divider().padding(.leading, 12)
+                            }
+                        }
+                    }
+                    .background(Color(.tertiarySystemGroupedBackground),
+                                in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+            }
+        }
+    }
+
+    private var driverTableHeader: some View {
+        HStack(spacing: 0) {
+            Text("Driver").frame(width: 110, alignment: .leading)
+            Text("Trips").frame(width: 50, alignment: .trailing)
+            Text("Distance").frame(width: 72, alignment: .trailing)
+            Text("Avg Dur.").frame(width: 66, alignment: .trailing)
+            Text("On-time").frame(width: 62, alignment: .trailing)
+            Text("Devs").frame(width: 48, alignment: .trailing)
+            Text("km/L").frame(width: 52, alignment: .trailing)
+        }
+        .font(.caption2.weight(.bold))
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color(.secondarySystemGroupedBackground))
+    }
+
+    private func driverTableRow(_ row: DriverActivityRow) -> some View {
+        HStack(spacing: 0) {
+            Text(row.name)
+                .font(.caption)
+                .lineLimit(1)
+                .frame(width: 110, alignment: .leading)
+
+            Text("\(row.tripsCompleted)")
+                .font(.caption.monospacedDigit())
+                .frame(width: 50, alignment: .trailing)
+
+            Text(String(format: "%.0f km", row.totalDistanceKm))
+                .font(.caption.monospacedDigit())
+                .frame(width: 72, alignment: .trailing)
+
+            Text(row.avgDurationMinutes.map { String(format: "%.0f min", $0) } ?? "—")
+                .font(.caption.monospacedDigit())
+                .frame(width: 66, alignment: .trailing)
+
+            Text(row.onTimeRate.map { String(format: "%.0f%%", $0 * 100) } ?? "—")
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(row.onTimeRate.map { $0 >= 0.8 ? Color.green : ($0 >= 0.5 ? Color.orange : Color.red) } ?? Color.secondary)
+                .frame(width: 62, alignment: .trailing)
+
+            Text("\(row.deviationCount)")
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(row.deviationCount == 0 ? Color.secondary : Color.orange)
+                .frame(width: 48, alignment: .trailing)
+
+            Text(row.kmPerLitre.map { String(format: "%.1f", $0) } ?? "—")
+                .font(.caption.monospacedDigit())
+                .frame(width: 52, alignment: .trailing)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
     }
 
     // MARK: - Chart 5: Document Health

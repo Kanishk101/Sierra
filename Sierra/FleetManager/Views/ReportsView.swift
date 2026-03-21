@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 /// Full reports view with CSV export via UIActivityViewController.
 /// Safeguard 1: stats computed from AppDataStore in-memory.
@@ -24,6 +25,25 @@ struct ReportsView: View {
     @State private var selectedTab: ReportTab = .fleet
     @State private var selectedRange: DateRange = .month
     @State private var selectedDriverId: UUID?
+    @State private var showExportSheet = false
+
+    private var csvDateFormatter: DateFormatter {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd HH:mm"
+        return f
+    }
+
+    private func csvDate(_ date: Date?) -> String {
+        guard let d = date else { return "" }
+        return csvDateFormatter.string(from: d)
+    }
+
+    private func csvEscape(_ value: String) -> String {
+        if value.contains(",") || value.contains("\"") || value.contains("\n") {
+            return "\"\(value.replacingOccurrences(of: "\"", with: "\"\""))\""
+        }
+        return value
+    }
 
     private var cutoffDate: Date {
         let days: Int
@@ -83,6 +103,19 @@ struct ReportsView: View {
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Reports")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showExportSheet = true } label: {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                }
+            }
+            .confirmationDialog("Export Report", isPresented: $showExportSheet, titleVisibility: .visible) {
+                Button("Export Trips")       { shareCSV(generateFleetCSV(), filename: "trips_report.csv") }
+                Button("Export Fuel Logs")   { shareCSV(generateFuelCSV(), filename: "fuel_report.csv") }
+                Button("Export Maintenance") { shareCSV(generateMaintenanceCSV(), filename: "maintenance_report.csv") }
+                Button("Cancel", role: .cancel) {}
+            }
         }
     }
 
@@ -271,38 +304,66 @@ struct ReportsView: View {
     // MARK: - CSV Generators (Safeguard 3: in-memory string, shared via UIActivityViewController)
 
     private func generateFleetCSV() -> String {
-        var csv = "Trip ID,Origin,Destination,Status,Driver,Distance (km),Start Date,End Date\n"
-        for trip in completedTripsInRange {
+        var csv = "Task ID,Driver,Vehicle Plate,Origin,Destination,Scheduled Date,Actual Start,Actual End,Distance (km),Status,Priority\n"
+        for trip in tripsInRange {
             let driver = store.staff.first(where: { $0.id.uuidString == trip.driverId })?.name ?? ""
+            let vehicle = store.vehicles.first(where: { $0.id.uuidString == (trip.vehicleId ?? "") })
+            let plate = vehicle?.licensePlate ?? ""
             let dist = (trip.endMileage ?? 0) - (trip.startMileage ?? 0)
-            csv += "\(trip.taskId),\(trip.origin),\(trip.destination),\(trip.status.rawValue),\(driver),\(Int(dist)),\(trip.actualStartDate?.ISO8601Format() ?? ""),\(trip.actualEndDate?.ISO8601Format() ?? "")\n"
+            csv += "\(csvEscape(trip.taskId)),\(csvEscape(driver)),\(csvEscape(plate)),\(csvEscape(trip.origin)),\(csvEscape(trip.destination)),\(csvDate(trip.scheduledDate)),\(csvDate(trip.actualStartDate)),\(csvDate(trip.actualEndDate)),\(Int(dist)),\(trip.status.rawValue),\(trip.priority.rawValue)\n"
         }
         return csv
     }
 
     private func generateDriverCSV(_ trips: [Trip]) -> String {
-        var csv = "Trip ID,Origin,Destination,Distance (km),Duration (h),Rating\n"
+        var csv = "Task ID,Origin,Destination,Distance (km),Duration (h),Rating\n"
         for trip in trips {
             let dist = (trip.endMileage ?? 0) - (trip.startMileage ?? 0)
             let dur = (trip.actualEndDate?.timeIntervalSince(trip.actualStartDate ?? Date()) ?? 0) / 3600
-            csv += "\(trip.taskId),\(trip.origin),\(trip.destination),\(Int(dist)),\(String(format: "%.1f", dur)),\(trip.driverRating.map(String.init) ?? "N/A")\n"
+            csv += "\(csvEscape(trip.taskId)),\(csvEscape(trip.origin)),\(csvEscape(trip.destination)),\(Int(dist)),\(String(format: "%.1f", dur)),\(trip.driverRating.map(String.init) ?? "N/A")\n"
+        }
+        return csv
+    }
+
+    private func generateFuelCSV() -> String {
+        var csv = "Date,Driver,Vehicle Plate,Litres,Cost,Price/Litre,Odometer,Fuel Station\n"
+        let logsInRange = store.fuelLogs.filter { $0.loggedAt >= cutoffDate }
+        for log in logsInRange {
+            let driver = store.staffMember(for: log.driverId)?.name ?? ""
+            let vehicle = store.vehicle(for: log.vehicleId)
+            let plate = vehicle?.licensePlate ?? ""
+            csv += "\(csvDate(log.loggedAt)),\(csvEscape(driver)),\(csvEscape(plate)),\(String(format: "%.1f", log.fuelQuantityLitres)),\(String(format: "%.0f", log.fuelCost)),\(String(format: "%.2f", log.pricePerLitre)),\(String(format: "%.0f", log.odometerAtFill)),\(csvEscape(log.fuelStation ?? ""))\n"
         }
         return csv
     }
 
     private func generateMaintenanceCSV() -> String {
-        var csv = "Title,Type,Priority,Status,Created,Completed,Due Date\n"
+        var csv = "Title,Vehicle,Vehicle Plate,Assigned To,Priority,Status,Due Date,Completed,Labour Cost,Parts Cost,Total Cost\n"
         for task in maintenanceTasksInRange {
-            csv += "\(task.title),\(task.taskType.rawValue),\(task.priority.rawValue),\(task.status.rawValue),\(task.createdAt.ISO8601Format()),\(task.completedAt?.ISO8601Format() ?? ""),\(task.dueDate.ISO8601Format())\n"
+            let vehicle = store.vehicles.first(where: { $0.id == task.vehicleId })
+            let assignee = task.assignedToId.flatMap { store.staffMember(for: $0) }
+            // Look up costs from matching maintenance record
+            let record = store.maintenanceRecords.first(where: { $0.maintenanceTaskId == task.id })
+            let labourCost = record.map { String(format: "%.0f", $0.labourCost) } ?? ""
+            let partsCost  = record.map { String(format: "%.0f", $0.partsCost) } ?? ""
+            let totalCost  = record.map { String(format: "%.0f", $0.totalCost) } ?? ""
+            csv += "\(csvEscape(task.title)),\(csvEscape(vehicle?.name ?? "")),\(csvEscape(vehicle?.licensePlate ?? "")),\(csvEscape(assignee?.name ?? "")),\(task.priority.rawValue),\(task.status.rawValue),\(csvDate(task.dueDate)),\(csvDate(task.completedAt)),\(labourCost),\(partsCost),\(totalCost)\n"
         }
         return csv
     }
 
-    // Safeguard 3: UIActivityViewController, no file writes
-    private func shareCSV(_ csv: String) {
+    // Safeguard 3: temp file shared via UIActivityViewController
+    private func shareCSV(_ csv: String, filename: String = "report.csv") {
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+        do {
+            try csv.write(to: tempURL, atomically: true, encoding: .utf8)
+        } catch {
+            print("[ReportsView] CSV write error: \(error)")
+            return
+        }
         guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
               let root = scene.windows.first?.rootViewController else { return }
-        let activityVC = UIActivityViewController(activityItems: [csv], applicationActivities: nil)
+        let activityVC = UIActivityViewController(activityItems: [tempURL], applicationActivities: nil)
         activityVC.popoverPresentationController?.sourceView = root.view
         root.present(activityVC, animated: true)
     }

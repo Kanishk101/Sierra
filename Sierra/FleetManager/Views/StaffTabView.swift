@@ -46,10 +46,18 @@ private struct StaffDirectoryView: View {
     @Environment(AppDataStore.self) private var store
     @Binding var searchText: String
 
-    private var drivers: [StaffMember] {
+    enum RoleFilter: String, CaseIterable {
+        case all = "All"
+        case drivers = "Drivers"
+        case maintenance = "Maintenance"
+    }
+
+    @State private var roleFilter: RoleFilter = .all
+
+    private func staffForRole(_ role: UserRole) -> [StaffMember] {
         let all = store.staff.filter {
-            $0.role == .driver
-            && $0.status == .active
+            $0.role == role
+            && $0.status != .pendingApproval
             && $0.isApproved
         }
         guard !searchText.isEmpty else { return all }
@@ -60,44 +68,57 @@ private struct StaffDirectoryView: View {
         }
     }
 
-    private var maintenance: [StaffMember] {
-        let all = store.staff.filter {
-            $0.role == .maintenancePersonnel
-            && $0.status == .active
-            && $0.isApproved
-        }
-        guard !searchText.isEmpty else { return all }
-        let q = searchText.lowercased()
-        return all.filter {
-            $0.displayName.lowercased().contains(q) ||
-            $0.email.lowercased().contains(q)
-        }
-    }
+    private var drivers: [StaffMember] { staffForRole(.driver) }
+    private var maintenance: [StaffMember] { staffForRole(.maintenancePersonnel) }
+    private var fleetManagers: [StaffMember] { staffForRole(.fleetManager) }
+
+    private var showDrivers: Bool { roleFilter == .all || roleFilter == .drivers }
+    private var showMaintenance: Bool { roleFilter == .all || roleFilter == .maintenance }
+    private var showFMs: Bool { roleFilter == .all }
 
     var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 0) {
-                if !drivers.isEmpty {
-                    sectionBlock("Drivers", icon: "car.fill", members: drivers)
-                }
-                if !maintenance.isEmpty {
-                    sectionBlock("Maintenance", icon: "wrench.and.screwdriver.fill", members: maintenance)
-                }
-                if drivers.isEmpty && maintenance.isEmpty {
-                    VStack(spacing: 16) {
-                        Spacer(minLength: 60)
-                        Image(systemName: "person.2.slash")
-                            .font(.system(size: 44, weight: .light))
-                            .foregroundStyle(.secondary)
-                        Text(searchText.isEmpty ? "No staff members yet" : "No results for \"\(searchText)\"")
-                            .font(.body)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                    }
-                    .frame(maxWidth: .infinity)
+        VStack(spacing: 0) {
+            // Role filter
+            Picker("Role", selection: $roleFilter) {
+                ForEach(RoleFilter.allCases, id: \.self) { f in
+                    Text(f.rawValue).tag(f)
                 }
             }
-            .padding(.bottom, 32)
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 8)
+
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    if showFMs && !fleetManagers.isEmpty {
+                        sectionBlock("Fleet Managers", icon: "shield.fill", members: fleetManagers, allowSuspend: false)
+                    }
+                    if showDrivers && !drivers.isEmpty {
+                        sectionBlock("Drivers", icon: "car.fill", members: drivers, allowSuspend: true)
+                    }
+                    if showMaintenance && !maintenance.isEmpty {
+                        sectionBlock("Maintenance", icon: "wrench.and.screwdriver.fill", members: maintenance, allowSuspend: true)
+                    }
+
+                    let visibleDrivers = showDrivers ? drivers : []
+                    let visibleMaint = showMaintenance ? maintenance : []
+                    let visibleFMs = showFMs ? fleetManagers : []
+                    if visibleDrivers.isEmpty && visibleMaint.isEmpty && visibleFMs.isEmpty {
+                        VStack(spacing: 16) {
+                            Spacer(minLength: 60)
+                            Image(systemName: "person.2.slash")
+                                .font(.system(size: 44, weight: .light))
+                                .foregroundStyle(.secondary)
+                            Text(searchText.isEmpty ? "No staff members yet" : "No results for \"\(searchText)\"")
+                                .font(.body)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                }
+                .padding(.bottom, 32)
+            }
         }
         .task {
             if store.staff.isEmpty { await store.loadAll() }
@@ -107,7 +128,7 @@ private struct StaffDirectoryView: View {
         }
     }
 
-    private func sectionBlock(_ title: String, icon: String, members: [StaffMember]) -> some View {
+    private func sectionBlock(_ title: String, icon: String, members: [StaffMember], allowSuspend: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Image(systemName: icon)
@@ -130,6 +151,24 @@ private struct StaffDirectoryView: View {
             ForEach(members) { member in
                 staffRow(member)
                     .padding(.horizontal, 20)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        if allowSuspend && member.role != .fleetManager {
+                            if member.status == .active {
+                                Button(role: .destructive) {
+                                    Task { await toggleSuspend(member, suspend: true) }
+                                } label: {
+                                    Label("Suspend", systemImage: "person.slash")
+                                }
+                            } else if member.status == .suspended {
+                                Button {
+                                    Task { await toggleSuspend(member, suspend: false) }
+                                } label: {
+                                    Label("Reactivate", systemImage: "person.badge.plus")
+                                }
+                                .tint(.green)
+                            }
+                        }
+                    }
             }
         }
     }
@@ -149,17 +188,33 @@ private struct StaffDirectoryView: View {
                 Text(member.displayName)
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(.primary)
-                Text(member.email)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    Text(member.email)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(member.displayRole)
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 5).padding(.vertical, 1)
+                        .background(roleBadgeColor(member.role), in: Capsule())
+                }
             }
 
             Spacer()
 
-            availabilityBadge(member.availability)
+            if member.status == .suspended {
+                Text("Suspended")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(.red, in: Capsule())
+            } else {
+                availabilityBadge(member.availability)
+            }
         }
         .padding(16)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .opacity(member.status == .suspended ? 0.6 : 1.0)
         .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
     }
 
@@ -183,6 +238,27 @@ private struct StaffDirectoryView: View {
             foregroundColor: fgColor,
             size: .compact
         )
+    }
+
+    private func roleBadgeColor(_ role: UserRole) -> Color {
+        switch role {
+        case .fleetManager:         .purple
+        case .driver:               .blue
+        case .maintenancePersonnel: .orange
+        }
+    }
+
+    // MARK: - Suspend / Reactivate
+
+    private func toggleSuspend(_ member: StaffMember, suspend: Bool) async {
+        guard member.role != .fleetManager else { return }
+        var updated = member
+        updated.status = suspend ? .suspended : .active
+        do {
+            try await store.updateStaffMember(updated)
+        } catch {
+            print("[StaffTab] toggleSuspend error: \(error)")
+        }
     }
 }
 
