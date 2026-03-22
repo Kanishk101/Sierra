@@ -60,8 +60,15 @@ final class AppDataStore {
 
     // MARK: - loadAll (Fleet Manager)
     // Every array has its own try/catch so no single failure blocks the rest.
+    //
+    // Re-entry guard: both restoreSession() and completeAuthentication() (and
+    // biometric reauth) call loadAll() independently. Without this guard the two
+    // concurrent calls fire all 40 Supabase requests simultaneously, the HTTP/2
+    // connection pool gets overwhelmed, and NSURLErrorDomain -999 cancelled
+    // floods fill the logs. The guard ensures only one load runs at a time.
 
     func loadAll() async {
+        guard !isLoading else { return }
         await tearDownRealtimeChannels()
         isLoading = true
         loadError = nil
@@ -744,7 +751,7 @@ final class AppDataStore {
 
     /// Returns the driver's current actionable trip — any status where the driver
     /// still has work to do. Covers the full Phase 3 lifecycle:
-    /// pendingAcceptance → accepted → active (→ completed / cancelled are terminal).
+    /// pendingAcceptance -> accepted -> active (-> completed / cancelled are terminal).
     func activeTrip(forDriverId driverId: UUID) -> Trip? {
         trips.first {
             $0.driverId?.lowercased() == driverId.uuidString.lowercased()
