@@ -23,8 +23,6 @@ enum StaffMemberServiceError: LocalizedError {
 }
 
 // MARK: - StaffMemberInsertPayload
-// Used only by the create-staff-account edge function flow (addStaffMember).
-// Includes id (client-generated UUID) and all fields for a new staff row.
 
 struct StaffMemberInsertPayload: Encodable {
     let id: String
@@ -71,14 +69,7 @@ struct StaffMemberInsertPayload: Encodable {
 }
 
 // MARK: - StaffMemberUpdatePayload
-// Profile-only fields. Intentionally excludes `role` and `email`:
-//   - `role`  is admin-controlled: only the create-staff-account edge fn or
-//             setApprovalStatus() should change it. Including it here would
-//             allow any authenticated user to promote themselves to fleetManager
-//             by PATCHing their own staff_members row.
-//   - `email` is an auth.users identity field; changing it here without also
-//             changing auth.users.email creates a split-brain between the two
-//             tables. Email changes must go through Supabase Auth.
+// Profile-only fields. Intentionally excludes `role` and `email`.
 
 struct StaffMemberUpdatePayload: Encodable {
     let name: String?
@@ -326,30 +317,55 @@ struct StaffMemberService {
     }
 
     // MARK: - Set Approval Status
+    //
+    // CRITICAL: when approving a driver or maintenance person, we MUST also set
+    // `availability = 'Available'`. The DB default is 'Unavailable', which means
+    // newly-approved staff members are invisible to availableDrivers() / any trip
+    // assignment flow, making the entire trip creation wizard show "No available
+    // drivers" forever regardless of how many approved drivers exist.
 
     static func setApprovalStatus(
         staffId: UUID,
         approved: Bool,
         rejectionReason: String? = nil
     ) async throws {
-        struct Payload: Encodable {
+        struct ApprovePayload: Encodable {
+            let is_approved: Bool
+            let status: String
+            let rejection_reason: String?
+            let availability: String     // set to Available on approval
+        }
+        struct RejectPayload: Encodable {
             let is_approved: Bool
             let status: String
             let rejection_reason: String?
         }
-        try await supabase
-            .from("staff_members")
-            .update(Payload(
-                is_approved:      approved,
-                status:           approved ? StaffStatus.active.rawValue : StaffStatus.suspended.rawValue,
-                rejection_reason: rejectionReason
-            ))
-            .eq("id", value: staffId.uuidString.lowercased())
-            .execute()
+
+        if approved {
+            try await supabase
+                .from("staff_members")
+                .update(ApprovePayload(
+                    is_approved:      true,
+                    status:           StaffStatus.active.rawValue,
+                    rejection_reason: nil,
+                    availability:     StaffAvailability.available.rawValue
+                ))
+                .eq("id", value: staffId.uuidString.lowercased())
+                .execute()
+        } else {
+            try await supabase
+                .from("staff_members")
+                .update(RejectPayload(
+                    is_approved:      false,
+                    status:           StaffStatus.suspended.rawValue,
+                    rejection_reason: rejectionReason
+                ))
+                .eq("id", value: staffId.uuidString.lowercased())
+                .execute()
+        }
     }
 
     // MARK: - Set Status (admin-only: suspend / reactivate)
-    // Separate from StaffMemberUpdatePayload to prevent self-promotion.
 
     static func setStatus(staffId: UUID, status: StaffStatus) async throws {
         struct Payload: Encodable { let status: String }
