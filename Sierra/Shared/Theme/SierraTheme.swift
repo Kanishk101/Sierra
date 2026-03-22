@@ -135,3 +135,20 @@ extension View {
         self.shadow(color: shadow.color, radius: shadow.radius, x: shadow.x, y: shadow.y)
     }
 }
+
+// MARK: - Semantic Status Colors
+
+extension Color {
+    /// Vehicle active, trip in-progress, driver available
+    static let statusActive    = SierraTheme.Colors.alpineMint
+    /// Vehicle idle, paused
+    static let statusIdle      = Color.gray
+    /// Trip scheduled, awaiting
+    static let statusScheduled = SierraTheme.Colors.info
+    /// Expiring docs, pending review, in-maintenance
+    static let statusWarning   = SierraTheme.Colors.warning
+    /// Cancelled, expired, emergency, breakdown
+    static let statusDanger    = SierraTheme.Colors.danger
+    /// Trip completed, resolved
+    static let statusCompleted = Color.secondary
+}

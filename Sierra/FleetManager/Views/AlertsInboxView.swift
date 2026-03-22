@@ -83,7 +83,7 @@ struct AlertsInboxView: View {
         }
         .listStyle(.insetGrouped)
         .navigationTitle("Alerts")
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
         .task {
             await vm.load()
         }

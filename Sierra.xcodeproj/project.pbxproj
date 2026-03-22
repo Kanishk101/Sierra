@@ -302,11 +302,18 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Sierra/Info.plist;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Sierra uses the camera to photograph vehicle condition during inspections and capture proof of delivery.";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "Sierra uses Face ID to securely unlock the app and protect fleet data.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Sierra tracks your location in the background during active trips so the fleet manager can monitor delivery progress in real time.";
+				INFOPLIST_KEY_NSLocationAlwaysUsageDescription = "Sierra tracks your location in the background during active trips so the fleet manager can monitor delivery progress in real time.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Sierra uses your location to navigate routes and track trip progress.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Sierra saves inspection and delivery photos to your photo library.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Sierra accesses your photo library to attach vehicle inspection photos and delivery proof.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -335,11 +342,18 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Sierra/Info.plist;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Sierra uses the camera to photograph vehicle condition during inspections and capture proof of delivery.";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "Sierra uses Face ID to securely unlock the app and protect fleet data.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Sierra tracks your location in the background during active trips so the fleet manager can monitor delivery progress in real time.";
+				INFOPLIST_KEY_NSLocationAlwaysUsageDescription = "Sierra tracks your location in the background during active trips so the fleet manager can monitor delivery progress in real time.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Sierra uses your location to navigate routes and track trip progress.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Sierra saves inspection and delivery photos to your photo library.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Sierra accesses your photo library to attach vehicle inspection photos and delivery proof.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

@@ -24,7 +24,68 @@ final class FleetLiveMapViewModel {
 
     // Breadcrumb for selected vehicle
     var breadcrumbCoordinates: [CLLocationCoordinate2D] = []
+    var breadcrumbHistory: [VehicleLocationHistory] = []
     var isFetchingBreadcrumb = false
+
+    // MARK: - Speed Segments
+
+    struct SpeedSegment: Identifiable {
+        let id = UUID()
+        let coordinates: [CLLocationCoordinate2D]
+        let avgSpeedKmh: Double
+        var speedColor: Color {
+            switch avgSpeedKmh {
+            case 0..<20: return .red
+            case 20..<60: return .orange
+            case 60..<100: return .yellow
+            default: return .green
+            }
+        }
+    }
+
+    var speedSegments: [SpeedSegment] {
+        guard breadcrumbHistory.count >= 2 else { return [] }
+        var segments: [SpeedSegment] = []
+        var currentCoords: [CLLocationCoordinate2D] = []
+        var currentSpeedSum: Double = 0
+        var currentCount: Int = 0
+        var lastBucket: Int = -1
+
+        for entry in breadcrumbHistory {
+            let speed = entry.speedKmh ?? 0
+            let bucket: Int
+            switch speed {
+            case 0..<20: bucket = 0
+            case 20..<60: bucket = 1
+            case 60..<100: bucket = 2
+            default: bucket = 3
+            }
+            let coord = CLLocationCoordinate2D(latitude: entry.latitude, longitude: entry.longitude)
+
+            if bucket != lastBucket && !currentCoords.isEmpty {
+                // Close previous segment
+                let avgSpeed = currentCount > 0 ? currentSpeedSum / Double(currentCount) : 0
+                segments.append(SpeedSegment(coordinates: currentCoords, avgSpeedKmh: avgSpeed))
+                // Start new segment from last point of previous for continuity
+                currentCoords = [currentCoords.last!]
+                currentSpeedSum = 0
+                currentCount = 0
+            }
+
+            currentCoords.append(coord)
+            currentSpeedSum += speed
+            currentCount += 1
+            lastBucket = bucket
+        }
+
+        // Close final segment
+        if currentCoords.count >= 2 {
+            let avgSpeed = currentCount > 0 ? currentSpeedSum / Double(currentCount) : 0
+            segments.append(SpeedSegment(coordinates: currentCoords, avgSpeedKmh: avgSpeed))
+        }
+
+        return segments
+    }
 
     // MARK: - Filtered Vehicles (Safeguard 7: computed, never mutates source)
 
@@ -50,13 +111,48 @@ final class FleetLiveMapViewModel {
         return CLLocationCoordinate2D(latitude: avgLat, longitude: avgLng)
     }
 
+    // MARK: - Dynamic Camera Framing
+
+    func fitAllActiveVehicles(vehicles: [Vehicle]) -> MapCameraPosition {
+        let active = vehicles.compactMap { v -> CLLocationCoordinate2D? in
+            guard let lat = v.currentLatitude, let lng = v.currentLongitude else { return nil }
+            return CLLocationCoordinate2D(latitude: lat, longitude: lng)
+        }
+        guard !active.isEmpty else {
+            return .region(MKCoordinateRegion(
+                center: CLLocationCoordinate2D(latitude: 20.5937, longitude: 78.9629),
+                latitudinalMeters: 2_000_000, longitudinalMeters: 2_000_000
+            ))
+        }
+        if active.count == 1 {
+            return .region(MKCoordinateRegion(
+                center: active[0], latitudinalMeters: 5000, longitudinalMeters: 5000
+            ))
+        }
+        let lats = active.map { $0.latitude }
+        let lngs = active.map { $0.longitude }
+        let minLat = lats.min()!, maxLat = lats.max()!
+        let minLng = lngs.min()!, maxLng = lngs.max()!
+        let center = CLLocationCoordinate2D(
+            latitude: (minLat + maxLat) / 2,
+            longitude: (minLng + maxLng) / 2
+        )
+        let span = MKCoordinateSpan(
+            latitudeDelta: max(0.01, (maxLat - minLat) * 1.4),
+            longitudeDelta: max(0.01, (maxLng - minLng) * 1.4)
+        )
+        return .region(MKCoordinateRegion(center: center, span: span))
+    }
+
     // MARK: - Breadcrumb (Safeguard 5: only on vehicle tap)
 
     func fetchBreadcrumb(vehicleId: UUID, tripId: UUID) async {
         isFetchingBreadcrumb = true
         breadcrumbCoordinates = []
+        breadcrumbHistory = []
         do {
             let history = try await VehicleLocationService.fetchLocationHistory(vehicleId: vehicleId, tripId: tripId)
+            breadcrumbHistory = history
             breadcrumbCoordinates = history.map {
                 CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
             }
@@ -68,6 +164,7 @@ final class FleetLiveMapViewModel {
 
     func clearBreadcrumb() {
         breadcrumbCoordinates = []
+        breadcrumbHistory = []
         selectedVehicleId = nil
     }
 }

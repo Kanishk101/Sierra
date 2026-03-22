@@ -81,57 +81,43 @@ struct AnalyticsDashboardView: View {
     @State private var viewModel = AnalyticsDashboardViewModel()
     @State private var appeared  = false
     @State private var selectedDays: Int = 30   // date range filter: 7, 30, 90
+    @State private var selectedPage = 0
+
+    private let pages = ["Fleet", "Trips", "Maintenance", "Drivers", "Fuel & Cost"]
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 20) {
-                    // 1. Fleet Status Donut
-                    sectionCard(title: "Fleet Status",
-                                subtitle: "Vehicle distribution by operational state") {
-                        fleetStatusChart
+            VStack(spacing: 0) {
+                // Page indicator pills
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(Array(pages.enumerated()), id: \.offset) { i, label in
+                            Button { withAnimation(.easeInOut(duration: 0.25)) { selectedPage = i } } label: {
+                                Text(label)
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(selectedPage == i ? .white : .primary)
+                                    .padding(.horizontal, 14).padding(.vertical, 7)
+                                    .background(
+                                        selectedPage == i ? Color.orange : Color.primary.opacity(0.08),
+                                        in: Capsule()
+                                    )
+                            }
+                        }
                     }
-
-                    // 2. Trip Status Donut
-                    sectionCard(title: "Trip Overview",
-                                subtitle: "All trips by current status") {
-                        tripStatusChart
-                    }
-
-                    // 3. Staff Distribution Donut
-                    sectionCard(title: "Staff Distribution",
-                                subtitle: "Team breakdown by role and status") {
-                        staffDistributionChart
-                    }
-
-                    // 4. Monthly Trip Volume Bar Chart
-                    sectionCard(title: "Monthly Trip Volume",
-                                subtitle: "Trips scheduled over the past 6 months") {
-                        monthlyTripBarChart
-                    }
-
-                    // 5. Completed Trips Summary (date-range filtered)
-                    sectionCard(title: "Completed Trips Summary",
-                                subtitle: "Aggregated stats for completed trips — filtered client-side") {
-                        completedTripsSummarySection
-                    }
-
-                    // 6. Document Health
-                    sectionCard(title: "Document Health",
-                                subtitle: "Vehicle documents by validity status") {
-                        documentHealthSection
-                    }
-
-                    // 7. Driver Activity Reports (FMS1-21)
-                    sectionCard(title: "Driver Activity Reports",
-                                subtitle: "Per-driver performance breakdown") {
-                        driverActivitySection
-                    }
-
-                    Spacer(minLength: 32)
+                    .padding(.horizontal, 20).padding(.vertical, 10)
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 16)
+
+                Divider()
+
+                TabView(selection: $selectedPage) {
+                    fleetPage.tag(0)
+                    tripsPage.tag(1)
+                    maintenancePage.tag(2)
+                    driverActivityPage.tag(3)
+                    fuelCostPage.tag(4)
+                }
+                .tabViewStyle(.page(indexDisplayMode: .never))
+                .animation(.easeInOut(duration: 0.25), value: selectedPage)
             }
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
             .navigationTitle("Fleet Analytics")
@@ -154,6 +140,96 @@ struct AnalyticsDashboardView: View {
                     appeared = true
                 }
             }
+        }
+    }
+
+    // MARK: - Pages
+
+    private var fleetPage: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                sectionCard(title: "Fleet Status",
+                            subtitle: "Vehicle distribution by operational state") {
+                    fleetStatusChart
+                }
+                sectionCard(title: "Staff Distribution",
+                            subtitle: "Team breakdown by role and status") {
+                    staffDistributionChart
+                }
+                Spacer(minLength: 32)
+            }
+            .padding(.horizontal, 20).padding(.top, 16)
+        }
+    }
+
+    private var tripsPage: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                sectionCard(title: "Trip Overview",
+                            subtitle: "All trips by current status") {
+                    tripStatusChart
+                }
+                sectionCard(title: "Monthly Trip Volume",
+                            subtitle: "Trips scheduled over the past 6 months") {
+                    monthlyTripBarChart
+                }
+                sectionCard(title: "Completed Trips Summary",
+                            subtitle: "Aggregated stats for completed trips — filtered client-side") {
+                    completedTripsSummarySection
+                }
+                Spacer(minLength: 32)
+            }
+            .padding(.horizontal, 20).padding(.top, 16)
+        }
+    }
+
+    private var maintenancePage: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                sectionCard(title: "Document Health",
+                            subtitle: "Vehicle documents by validity status") {
+                    documentHealthSection
+                }
+                Spacer(minLength: 32)
+            }
+            .padding(.horizontal, 20).padding(.top, 16)
+        }
+    }
+
+    private var driverActivityPage: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                sectionCard(title: "Driver Activity Reports",
+                            subtitle: "Per-driver performance breakdown") {
+                    driverActivitySection
+                }
+                Spacer(minLength: 32)
+            }
+            .padding(.horizontal, 20).padding(.top, 16)
+        }
+    }
+
+    private var fuelCostPage: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                // Placeholder — extend with fuel/cost analytics as data becomes available
+                VStack(spacing: 12) {
+                    Image(systemName: "fuelpump.fill")
+                        .font(.system(size: 40))
+                        .foregroundStyle(.orange.opacity(0.4))
+                    Text("Fuel & Cost Analytics")
+                        .font(.headline)
+                    Text("Detailed fuel consumption and cost breakdowns will appear here once trip fuel data is recorded.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 60)
+                Spacer(minLength: 32)
+            }
+            .padding(.horizontal, 20).padding(.top, 16)
         }
     }
 

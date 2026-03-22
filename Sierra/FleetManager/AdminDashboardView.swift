@@ -14,6 +14,12 @@ struct AdminDashboardView: View {
     @State private var showGeofences     = false
     @State private var showNotifications = false
 
+    // Creation sheets — hoisted from QuickActionsSheet to avoid dismiss race condition
+    @State private var showCreateTrip        = false
+    @State private var showAddVehicle        = false
+    @State private var showCreateStaff       = false
+    @State private var showCreateMaintenance = false
+
     var body: some View {
         TabView(selection: $selectedTab) {
             Tab("Dashboard", systemImage: "square.grid.2x2.fill", value: 0) {
@@ -66,9 +72,6 @@ struct AdminDashboardView: View {
         }
         .tint(.orange)
         // ── Data load on first appear ─────────────────────────────────────────
-        // Without this, store.vehicles / store.trips / store.staff are all empty
-        // when the admin first lands here, meaning the fleet map shows no vehicles
-        // and the dashboard KPI cards show zeros.
         .task {
             if store.vehicles.isEmpty || store.staff.isEmpty {
                 await store.loadAll()
@@ -99,11 +102,19 @@ struct AdminDashboardView: View {
                 case .notifications:
                     showNotifications = true
                 }
+            } onCreation: { tag in
+                switch tag {
+                case "trip":        showCreateTrip = true
+                case "vehicle":     showAddVehicle = true
+                case "staff":       showCreateStaff = true
+                case "maintenance": showCreateMaintenance = true
+                default: break
+                }
             }
             .presentationDetents([.fraction(0.65)])
             .presentationDragIndicator(.visible)
         }
-        // Navigation destinations from QuickActionsSheet — presented at root level, no double-stacking
+        // Navigation destinations from QuickActionsSheet — presented at root level
         .sheet(isPresented: $showAlerts) {
             NavigationStack {
                 AlertsInboxView()
@@ -124,6 +135,25 @@ struct AdminDashboardView: View {
         }
         .sheet(isPresented: $showNotifications) {
             NotificationCentreView()
+        }
+        // Creation sheets — attached at root, opened via onCreation callback
+        .sheet(isPresented: $showCreateTrip) {
+            CreateTripView()
+                .presentationDetents([.large])
+        }
+        .sheet(isPresented: $showAddVehicle) {
+            AddVehicleView()
+                .presentationDetents([.large])
+        }
+        .sheet(isPresented: $showCreateStaff) {
+            CreateStaffView()
+                .presentationDetents([.large])
+        }
+        .sheet(isPresented: $showCreateMaintenance) {
+            NavigationStack {
+                MaintenanceRequestsView()
+            }
+            .presentationDetents([.large])
         }
     }
 }

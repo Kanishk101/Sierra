@@ -26,8 +26,10 @@ struct FleetLiveMapView: View {
                 floatingButton(icon: "line.3.horizontal.decrease.circle.fill") {
                     viewModel.showFilterPicker = true
                 }
-                floatingButton(icon: "plus.circle.fill") {
-                    viewModel.showCreateGeofence = true
+                floatingButton(icon: "arrow.up.left.and.arrow.down.right.circle.fill") {
+                    withAnimation(.easeInOut(duration: 0.5)) {
+                        cameraPosition = viewModel.fitAllActiveVehicles(vehicles: store.vehicles)
+                    }
                 }
             }
             .padding(.top, 60)
@@ -38,12 +40,7 @@ struct FleetLiveMapView: View {
         .onAppear {
             if !hasSetInitialRegion {
                 hasSetInitialRegion = true
-                let center = viewModel.fleetCentroid(vehicles: store.vehicles)
-                cameraPosition = .region(MKCoordinateRegion(
-                    center: center,
-                    latitudinalMeters: 50000,
-                    longitudinalMeters: 50000
-                ))
+                cameraPosition = viewModel.fitAllActiveVehicles(vehicles: store.vehicles)
             }
         }
         .sheet(isPresented: $viewModel.showVehicleDetail) {
@@ -53,9 +50,6 @@ struct FleetLiveMapView: View {
                     viewModel.showVehicleDetail = false
                 }
             }
-        }
-        .sheet(isPresented: $viewModel.showCreateGeofence) {
-            CreateGeofenceSheet()
         }
         .sheet(isPresented: $viewModel.showFilterPicker) {
             filterSheet
@@ -99,18 +93,51 @@ struct FleetLiveMapView: View {
                 }
             }
 
-            // Geofence circle overlays (Safeguard 4: only rendered from store.geofences, not re-added per state change)
-            ForEach(store.geofences) { geofence in
-                MapCircle(center: CLLocationCoordinate2D(
+            // Enhanced geofence circle overlays
+            ForEach(store.geofences.filter { $0.isActive }) { geofence in
+                let center = CLLocationCoordinate2D(
                     latitude: geofence.latitude,
                     longitude: geofence.longitude
-                ), radius: geofence.radiusMeters)
-                .foregroundStyle(geofenceColor(geofence.geofenceType).opacity(0.2))
-                .stroke(geofenceColor(geofence.geofenceType), lineWidth: 1.5)
+                )
+
+                // Check for recent violations (triggered in last 5 minutes)
+                let isViolated = store.geofenceEvents.contains {
+                    $0.geofenceId == geofence.id &&
+                    $0.triggeredAt > Date().addingTimeInterval(-300)
+                }
+
+                MapCircle(center: center, radius: geofence.radiusMeters)
+                    .foregroundStyle(geofenceColor(geofence.geofenceType).opacity(isViolated ? 0.35 : 0.15))
+                    .stroke(
+                        geofenceColor(geofence.geofenceType).opacity(0.8),
+                        style: StrokeStyle(
+                            lineWidth: isViolated ? 3 : 1.5,
+                            dash: geofence.geofenceType == .restrictedZone ? [8, 4] : []
+                        )
+                    )
+
+                // Geofence name label at center
+                Annotation("", coordinate: center) {
+                    Text(geofence.name)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(geofenceColor(geofence.geofenceType))
+                        .padding(.horizontal, 6).padding(.vertical, 3)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .shadow(radius: 2)
+                }
+                .annotationTitles(.hidden)
             }
 
-            // Breadcrumb polyline for selected vehicle
-            if viewModel.breadcrumbCoordinates.count >= 2 {
+            // Speed-colored breadcrumb trail for selected vehicle
+            if !viewModel.speedSegments.isEmpty {
+                ForEach(viewModel.speedSegments) { segment in
+                    if segment.coordinates.count >= 2 {
+                        MapPolyline(coordinates: segment.coordinates)
+                            .stroke(segment.speedColor, lineWidth: 4)
+                    }
+                }
+            } else if viewModel.breadcrumbCoordinates.count >= 2 {
+                // Fallback: uniform breadcrumb
                 MapPolyline(coordinates: viewModel.breadcrumbCoordinates)
                     .stroke(SierraTheme.Colors.ember, lineWidth: 3)
             }

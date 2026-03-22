@@ -1,19 +1,14 @@
 import LocalAuthentication
 
 enum BiometricAuthManager {
-    private static let key = "sierra.biometric.enabled"
 
     static var isEnabled: Bool {
-        UserDefaults.standard.bool(forKey: key)
+        get { BiometricPreference.isEnabled }
+        set { BiometricPreference.isEnabled = newValue }
     }
 
-    static func enable() {
-        UserDefaults.standard.set(true, forKey: key)
-    }
-
-    static func disable() {
-        UserDefaults.standard.set(false, forKey: key)
-    }
+    static func enable()  { BiometricPreference.isEnabled = true }
+    static func disable() { BiometricPreference.isEnabled = false }
 
     /// Performs biometric authentication. Returns true on success.
     static func authenticate(reason: String) async -> Bool {

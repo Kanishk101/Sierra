@@ -31,11 +31,13 @@ final class CreateStaffViewModel {
 
     // MARK: - UI State
 
-    var isLoading:        Bool    = false
-    var errorMessage:     String?
-    var showSuccess:      Bool    = false
-    var createdStaffName: String  = ""
-    var successMessage:   String  = ""
+    var isLoading:           Bool    = false
+    var errorMessage:        String?
+    var showSuccess:         Bool    = false
+    var createdStaffName:    String  = ""
+    var createdStaffEmail:   String  = ""       // shown in confirmation
+    var createdTempPassword: String? = nil      // non-nil only if email delivery failed
+    var emailDelivered:      Bool    = true     // false → show password fallback
 
     // MARK: - Validation
 
@@ -75,11 +77,9 @@ final class CreateStaffViewModel {
         let trimmedName  = fullName.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
 
+        // ── Phase 1: Create account (atomic — auth user + staff_members row) ──
+        // This is fatal: if it fails, nothing was created.
         do {
-            // Step 1: Provision Supabase Auth user + staff_members row via edge function.
-            // The edge function (create-staff-account, verify_jwt: true) verifies the
-            // caller is a fleet manager and does an atomic auth.admin.createUser() +
-            // staff_members insert with rollback on DB failure.
             let payload = CreateStaffAccountPayload(
                 email: trimmedEmail,
                 password: tempPassword,
@@ -93,42 +93,55 @@ final class CreateStaffViewModel {
             guard UUID(uuidString: created.id) != nil else {
                 throw URLError(.badServerResponse)
             }
+        } catch {
+            isLoading = false
+            errorMessage = error.localizedDescription.contains("already registered")
+                ? "An account with this email already exists."
+                : "Failed to create account: \(error.localizedDescription)"
+            return
+        }
 
-            // Step 2: Email login credentials to the new staff member.
-            // Uses the send-email edge function which relays through Gmail SMTP
-            // (credentials stored as Supabase secrets, never in source code).
+        // ── Phase 2: Send credentials (non-fatal — account IS already created) ──
+        // If email fails, admin sees the temp password and can share it manually.
+        var emailSent = false
+        do {
             try await EmailService.sendCredentials(
                 to:       trimmedEmail,
                 name:     trimmedName,
                 password: tempPassword,
                 role:     role
             )
-
-            isLoading        = false
-            createdStaffName = trimmedName
-            showSuccess      = true
-            successMessage   = "Account created for \(trimmedName)"
-
-            NotificationCenter.default.post(
-                name: .staffCreated,
-                object: nil,
-                userInfo: ["name": trimmedName, "email": trimmedEmail, "role": role.rawValue]
-            )
+            emailSent = true
         } catch {
-            isLoading    = false
-            errorMessage = "Failed to create staff account. Please try again."
+            // Log but don't fail — account exists, admin shares credentials manually
+            print("[CreateStaff] Email delivery failed (non-fatal): \(error)")
         }
+
+        isLoading            = false
+        createdStaffName     = trimmedName
+        createdStaffEmail    = trimmedEmail
+        createdTempPassword  = emailSent ? nil : tempPassword  // show password if email failed
+        emailDelivered       = emailSent
+        showSuccess          = true
+
+        NotificationCenter.default.post(
+            name: .staffCreated,
+            object: nil,
+            userInfo: ["name": trimmedName, "email": trimmedEmail, "role": role.rawValue]
+        )
     }
 
     func reset() {
-        selectedRole     = nil
-        fullName         = ""
-        email            = ""
-        isLoading        = false
-        errorMessage     = nil
-        showSuccess      = false
-        createdStaffName = ""
-        successMessage   = ""
+        selectedRole         = nil
+        fullName             = ""
+        email                = ""
+        isLoading            = false
+        errorMessage         = nil
+        showSuccess          = false
+        createdStaffName     = ""
+        createdStaffEmail    = ""
+        createdTempPassword  = nil
+        emailDelivered       = true
     }
 
     // MARK: - Private

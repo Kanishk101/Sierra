@@ -188,10 +188,9 @@ struct StaffListView: View {
 
     private func toggleSuspend(_ member: StaffMember, suspend: Bool) async {
         guard member.role != .fleetManager else { return }
-        var updated = member
-        updated.status = suspend ? .suspended : .active
+        let newStatus: StaffStatus = suspend ? .suspended : .active
         do {
-            try await store.updateStaffMember(updated)
+            try await store.setStaffStatus(staffId: member.id, status: newStatus)
         } catch {
             print("[StaffList] toggleSuspend error: \(error)")
         }

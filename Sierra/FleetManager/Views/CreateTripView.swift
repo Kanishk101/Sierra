@@ -1,8 +1,19 @@
 import SwiftUI
 import MapKit
 
+// MARK: - GeofenceCandidate
 
-/// 3-step trip creation wizard.
+struct GeofenceCandidate: Identifiable {
+    let id = UUID()
+    var name: String
+    var latitude: Double
+    var longitude: Double
+    var radiusMeters: Double = 500
+    var alertOnEntry: Bool = true
+    var alertOnExit: Bool = true
+}
+
+/// 4-step trip creation wizard.
 struct CreateTripView: View {
 
     @Environment(\.dismiss) private var dismiss
@@ -29,6 +40,9 @@ struct CreateTripView: View {
     @State private var showOriginSearch = false
     @State private var showDestinationSearch = false
     @State private var showStopSearch = false
+
+    // Step 4 — Geofences (optional)
+    @State private var tripGeofences: [GeofenceCandidate] = []
 
     // Step 2 — Driver
     @State private var selectedDriverId: UUID?
@@ -74,6 +88,7 @@ struct CreateTripView: View {
                         case 1:  step1View
                         case 2:  step2View
                         case 3:  step3View
+                        case 4:  step4View
                         default: EmptyView()
                         }
                     }
@@ -113,7 +128,7 @@ struct CreateTripView: View {
 
     private var stepIndicator: some View {
         HStack(spacing: 0) {
-            ForEach(1...3, id: \.self) { step in
+            ForEach(1...4, id: \.self) { step in
                 Circle()
                     .fill(step <= currentStep ? Color.orange : Color.gray.opacity(0.3))
                     .frame(width: 12, height: 12)
@@ -124,7 +139,7 @@ struct CreateTripView: View {
                                 .foregroundStyle(.white)
                         }
                     }
-                if step < 3 {
+                if step < 4 {
                     Rectangle()
                         .fill(step < currentStep ? Color.orange : Color.gray.opacity(0.2))
                         .frame(height: 2)
@@ -132,7 +147,7 @@ struct CreateTripView: View {
                 }
             }
         }
-        .padding(.horizontal, 60)
+        .padding(.horizontal, 40)
     }
 
     // MARK: - Step 1: Trip Details
@@ -140,10 +155,8 @@ struct CreateTripView: View {
     private func routeFieldValidationError(for value: String) -> String? {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { return "This field is required." }
-        if trimmed.range(of: "[0-9]", options: .regularExpression) != nil {
-            return "Numbers are not allowed."
-        }
-        return nil
+        if trimmed.count < 3 { return "Address is too short." }
+        return nil  // Numbers are valid in addresses (e.g. "12 MG Road", "Plot 5, Sector 17")
     }
 
     private var step1View: some View {
@@ -517,7 +530,82 @@ struct CreateTripView: View {
                 .scrollContentBackground(.hidden)
             }
 
-            // Create button
+            // Next button — proceed to Step 4 (Geofences)
+            Button {
+                withAnimation(.easeInOut) { currentStep = 4 }
+            } label: {
+                HStack {
+                    Text("Next: Add Geofences")
+                    Image(systemName: "arrow.right")
+                }
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 50)
+                .background(Color.orange, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+            .disabled(!step3Valid)
+            .opacity(step3Valid ? 1 : 0.5)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 12)
+        }
+    }
+
+    // MARK: - Step 4: Add Geofences (Optional)
+
+    private var step4View: some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 4) {
+                Text("Add Geofences (Optional)")
+                    .font(.system(size: 18, weight: .bold))
+                Text("Define zones to monitor during this trip")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            .padding(.top, 8).padding(.bottom, 12)
+
+            List {
+                // Route markers as suggested starting points
+                Section("Suggested Zones") {
+                    if let o = selectedOrigin {
+                        geofenceSuggestionRow(name: "Origin: \(o.shortName)",
+                                              lat: o.latitude, lng: o.longitude)
+                    }
+                    ForEach(Array(stops.enumerated()), id: \.element.id) { i, stop in
+                        geofenceSuggestionRow(name: "Stop \(i+1): \(stop.shortName)",
+                                              lat: stop.latitude, lng: stop.longitude)
+                    }
+                    if let d = selectedDestination {
+                        geofenceSuggestionRow(name: "Destination: \(d.shortName)",
+                                              lat: d.latitude, lng: d.longitude)
+                    }
+                    if selectedOrigin == nil && selectedDestination == nil && stops.isEmpty {
+                        Text("No geocoded addresses available")
+                            .font(.caption).foregroundStyle(.tertiary)
+                    }
+                }
+                if !tripGeofences.isEmpty {
+                    Section("Added Geofences (\(tripGeofences.count))") {
+                        ForEach(tripGeofences) { gf in
+                            HStack {
+                                Image(systemName: "mappin.circle.fill")
+                                    .foregroundStyle(.teal)
+                                Text(gf.name).font(.subheadline)
+                                Spacer()
+                                Text("\(Int(gf.radiusMeters))m")
+                                    .font(.caption).foregroundStyle(.secondary)
+                                Button { tripGeofences.removeAll { $0.id == gf.id } } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundStyle(.red.opacity(0.6))
+                                }.buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+            }
+            .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
+
+            // Create Trip button
             Button {
                 Task { await createTrip() }
             } label: {
@@ -531,15 +619,32 @@ struct CreateTripView: View {
                 }
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .frame(height: 50)
+                .frame(maxWidth: .infinity).frame(height: 50)
                 .background(.green, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
-            .disabled(!step3Valid || isCreating)
-            .opacity(step3Valid && !isCreating ? 1 : 0.5)
-            .padding(.horizontal, 20)
-            .padding(.bottom, 12)
+            .disabled(isCreating)
+            .padding(.horizontal, 20).padding(.bottom, 12)
         }
+    }
+
+    private func geofenceSuggestionRow(name: String, lat: Double, lng: Double) -> some View {
+        let alreadyAdded = tripGeofences.contains { $0.latitude == lat && $0.longitude == lng }
+        return Button {
+            tripGeofences.append(GeofenceCandidate(
+                name: name, latitude: lat, longitude: lng
+            ))
+        } label: {
+            HStack {
+                Image(systemName: alreadyAdded ? "checkmark.circle.fill" : "plus.circle")
+                    .foregroundStyle(alreadyAdded ? .green : .teal)
+                Text(name).font(.subheadline).foregroundStyle(.primary)
+                Spacer()
+                Text(alreadyAdded ? "Added" : "Add")
+                    .font(.caption).foregroundStyle(alreadyAdded ? .green : .teal)
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(alreadyAdded)
     }
 
     // MARK: - Color Dot Helper
@@ -682,6 +787,17 @@ struct CreateTripView: View {
 
             let adminId = AuthManager.shared.currentUser?.id ?? UUID()
             let now = Date()
+
+            // Convert UI stops to RouteStop models
+            let routeStops: [RouteStop] = stops.enumerated().map { index, addr in
+                RouteStop(
+                    name: addr.shortName,
+                    latitude: addr.latitude,
+                    longitude: addr.longitude,
+                    order: index + 1
+                )
+            }
+
             let trip = Trip(
                 id: UUID(),
                 taskId: TripService.newTaskId(),
@@ -695,6 +811,7 @@ struct CreateTripView: View {
                 destinationLatitude: destCoords?.0,
                 destinationLongitude: destCoords?.1,
                 routePolyline: nil,
+                routeStops: routeStops.isEmpty ? nil : routeStops,
                 deliveryInstructions: "",
                 scheduledDate: scheduledDate,
                 scheduledEndDate: scheduledEndDate,
@@ -735,6 +852,28 @@ struct CreateTripView: View {
             }
 
             createdTrip = trip
+
+            // Persist geofences for this trip (non-fatal)
+            let creatorId = adminId
+            for gf in tripGeofences {
+                let geofence = Geofence(
+                    id: UUID(),
+                    name: gf.name,
+                    description: "Auto-created for trip \(trip.taskId)",
+                    latitude: gf.latitude,
+                    longitude: gf.longitude,
+                    radiusMeters: gf.radiusMeters,
+                    isActive: true,
+                    createdByAdminId: creatorId,
+                    alertOnEntry: gf.alertOnEntry,
+                    alertOnExit: gf.alertOnExit,
+                    geofenceType: .custom,
+                    createdAt: Date(),
+                    updatedAt: Date()
+                )
+                try? await store.addGeofence(geofence)
+            }
+
             withAnimation(.spring(duration: 0.4)) { showSuccess = true }
         } catch {
             errorMessage = error.localizedDescription

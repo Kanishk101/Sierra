@@ -300,7 +300,7 @@ struct CreateStaffView: View {
                     .font(.title2.weight(.bold))
                     .foregroundStyle(.primary)
 
-                Text("An invitation has been sent to")
+                Text("Account created for")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
 
@@ -317,6 +317,39 @@ struct CreateStaffView: View {
                         .background(Color.orange.opacity(0.1), in: Capsule())
                         .padding(.top, 4)
                 }
+            }
+
+            // Email delivery result
+            if !viewModel.emailDelivered {
+                VStack(spacing: 8) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                        Text("Email delivery failed")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.orange)
+                    }
+                    Text("Share these credentials manually:")
+                        .font(.caption).foregroundStyle(.secondary)
+                    if let pwd = viewModel.createdTempPassword {
+                        VStack(spacing: 4) {
+                            Text(viewModel.createdStaffEmail)
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundStyle(.primary)
+                            Text(pwd)
+                                .font(.system(.caption, design: .monospaced).weight(.bold))
+                                .foregroundStyle(.orange)
+                        }
+                        .padding(12)
+                        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                    }
+                }
+                .padding(.horizontal, 24)
+            } else {
+                Text("Credentials emailed to \(viewModel.createdStaffEmail)")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
             }
 
             Spacer()

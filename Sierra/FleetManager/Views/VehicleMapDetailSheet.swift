@@ -1,4 +1,5 @@
 import SwiftUI
+import MapKit
 
 /// Bottom sheet showing vehicle details when admin taps an annotation.
 struct VehicleMapDetailSheet: View {
@@ -113,6 +114,10 @@ struct VehicleMapDetailSheet: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
 
+            // Mini route preview map
+            routePreviewMap(trip)
+
+
             // Driver info
             if let driver = assignedDriver {
                 HStack(spacing: 12) {
@@ -187,6 +192,49 @@ struct VehicleMapDetailSheet: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 24)
+    }
+
+    // MARK: - Route Preview Mini Map
+
+    @ViewBuilder
+    private func routePreviewMap(_ trip: Trip) -> some View {
+        Map {
+            // Origin marker
+            if let oLat = trip.originLatitude, let oLng = trip.originLongitude {
+                Annotation("Origin", coordinate: CLLocationCoordinate2D(latitude: oLat, longitude: oLng)) {
+                    Image(systemName: "circle.fill")
+                        .foregroundStyle(.green)
+                        .font(.title3)
+                }
+            }
+
+            // Current vehicle position
+            if let lat = vehicle.currentLatitude, let lng = vehicle.currentLongitude {
+                Annotation(vehicle.licensePlate, coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lng)) {
+                    Image(systemName: "truck.box.fill")
+                        .foregroundStyle(.orange)
+                        .font(.title3)
+                }
+            }
+
+            // Destination marker
+            if let dLat = trip.destinationLatitude, let dLng = trip.destinationLongitude {
+                Annotation("Destination", coordinate: CLLocationCoordinate2D(latitude: dLat, longitude: dLng)) {
+                    Image(systemName: "mappin.circle.fill")
+                        .foregroundStyle(.red)
+                        .font(.title3)
+                }
+            }
+
+            // Breadcrumb trail
+            if viewModel.breadcrumbCoordinates.count >= 2 {
+                MapPolyline(coordinates: viewModel.breadcrumbCoordinates)
+                    .stroke(.orange, lineWidth: 3)
+            }
+        }
+        .frame(height: 220)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .allowsHitTesting(false)
     }
 
     // MARK: - Helpers

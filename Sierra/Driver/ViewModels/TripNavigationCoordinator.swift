@@ -19,6 +19,9 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     var estimatedArrivalTime: Date?
     var currentSpeedKmh: Double = 0
     var hasDeviated: Bool = false
+    var hasArrived: Bool = false
+    var currentSpeedLimit: Int?
+    var currentStepManeuver: String = ""
     var avoidTolls: Bool = false
     var avoidHighways: Bool = false
     let trip: Trip
@@ -168,6 +171,8 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         options.includesAlternativeRoutes = true
         options.routeShapeResolution = .full
         options.shapeFormat = .polyline6
+        options.profileIdentifier = .automobileAvoidingTraffic
+        options.attributeOptions = [.congestionLevel, .expectedTravelTime, .speed]
         if trip.scheduledDate > Date() {
             options.departAt = trip.scheduledDate
         }
@@ -299,7 +304,14 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         guard let route = currentRoute, let leg = route.legs.first else { return }
         if let lastCoord = decodedRouteCoordinates.last {
             let destLoc = CLLocation(latitude: lastCoord.latitude, longitude: lastCoord.longitude)
-            distanceRemainingMetres = location.distance(from: destLoc)
+            let distToDest = location.distance(from: destLoc)
+            distanceRemainingMetres = distToDest
+
+            // Arrival detection: within 50m of destination
+            if distToDest < 50 && !hasArrived {
+                hasArrived = true
+                NotificationCenter.default.post(name: .tripArrivedAtDestination, object: nil)
+            }
         }
         let avgSpeed = route.distance / route.expectedTravelTime
         let remainingTime = avgSpeed > 0 ? distanceRemainingMetres / avgSpeed : 0
@@ -311,6 +323,12 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
                 if stepLoc.distance(from: location) < 100 && idx >= currentStepIndex {
                     currentStepIndex = idx
                     currentStepInstruction = step.instructions
+
+                    // Extract maneuver type for HUD icon
+                    currentStepManeuver = step.maneuverType.rawValue
+
+                    // speedLimit is not available on RouteStep in this SDK version.
+                    currentSpeedLimit = nil
                     break
                 }
             }
@@ -424,4 +442,5 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
 // MARK: - Notification.Name extension
 extension Notification.Name {
     static let locationPermissionDenied = Notification.Name("locationPermissionDenied")
+    static let tripArrivedAtDestination = Notification.Name("tripArrivedAtDestination")
 }

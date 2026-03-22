@@ -2,16 +2,12 @@ import SwiftUI
 
 
 /// One-time sheet asking the user to enable Face ID after first successful login.
-/// Stores the preference and prompt flag in Keychain.
+/// Preference is stored via BiometricPreference (single Keychain key, persists across sessions).
 struct BiometricEnrollmentSheet: View {
 
     @Environment(\.dismiss) private var dismiss
 
     private let biometric = BiometricManager.shared
-
-    // Keychain keys
-    private static let kBiometricEnabled = "com.fleetOS.biometricEnabled"
-    private static let kHasPrompted = "com.fleetOS.hasPromptedBiometric"
 
     var body: some View {
         VStack(spacing: 24) {
@@ -70,47 +66,30 @@ struct BiometricEnrollmentSheet: View {
         .interactiveDismissDisabled(true)
         .onAppear {
             // Mark as prompted so we never show again
-            Self.markAsPrompted()
+            BiometricPreference.markPrompted()
         }
     }
 
     // MARK: - Actions
 
     private func enableBiometric() {
-        Self.setBiometricEnabled(true)
+        BiometricPreference.isEnabled = true
         dismiss()
     }
 
     private func skipBiometric() {
-        Self.setBiometricEnabled(false)
+        BiometricPreference.isEnabled = false
         dismiss()
     }
 
-    // MARK: - Keychain Helpers
+    // MARK: - Static Helpers (used by LoginViewModel and ContentView)
 
     static func shouldPrompt() -> Bool {
-        let prompted = KeychainService.load(key: kHasPrompted) != nil
-        return !prompted
+        !BiometricPreference.hasBeenPrompted
     }
 
     static func isBiometricEnabled() -> Bool {
-        guard let data = KeychainService.load(key: kBiometricEnabled),
-              let str = String(data: data, encoding: .utf8) else {
-            return false
-        }
-        return str == "true"
-    }
-
-    private static func setBiometricEnabled(_ enabled: Bool) {
-        if let data = (enabled ? "true" : "false").data(using: .utf8) {
-            _ = KeychainService.save(data, forKey: kBiometricEnabled)
-        }
-    }
-
-    private static func markAsPrompted() {
-        if let data = "true".data(using: .utf8) {
-            _ = KeychainService.save(data, forKey: kHasPrompted)
-        }
+        BiometricPreference.isEnabled
     }
 }
 

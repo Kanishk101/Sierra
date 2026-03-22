@@ -347,6 +347,18 @@ struct StaffMemberService {
             .eq("id", value: staffId.uuidString.lowercased())
             .execute()
     }
+
+    // MARK: - Set Status (admin-only: suspend / reactivate)
+    // Separate from StaffMemberUpdatePayload to prevent self-promotion.
+
+    static func setStatus(staffId: UUID, status: StaffStatus) async throws {
+        struct Payload: Encodable { let status: String }
+        try await supabase
+            .from("staff_members")
+            .update(Payload(status: status.rawValue))
+            .eq("id", value: staffId.uuidString.lowercased())
+            .execute()
+    }
 }
 
 // MARK: - StaffMember → AuthUser Mapper

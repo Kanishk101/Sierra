@@ -299,6 +299,24 @@ final class AppDataStore {
         if let si = staff.firstIndex(where: { $0.id == app.staffMemberId }) {
             staff[si].isApproved = true; staff[si].status = .active
         }
+        // Notify the approved staff member
+        try? await NotificationService.insertNotification(
+            recipientId: app.staffMemberId,
+            type: .general,
+            title: "Application Approved",
+            body: "Your Sierra FMS application has been approved. Complete your profile to get started.",
+            entityType: "staff_application",
+            entityId: id
+        )
+    }
+
+    // MARK: - Set Staff Status (admin: suspend / reactivate)
+
+    func setStaffStatus(staffId: UUID, status: StaffStatus) async throws {
+        try await StaffMemberService.setStatus(staffId: staffId, status: status)
+        if let idx = staff.firstIndex(where: { $0.id == staffId }) {
+            staff[idx].status = status
+        }
     }
 
     func rejectStaffApplication(id: UUID, reason: String, reviewedBy adminId: UUID) async throws {
@@ -425,6 +443,8 @@ final class AppDataStore {
         if let tripIdx = trips.firstIndex(where: { $0.id == pod.tripId }) {
             trips[tripIdx].proofOfDeliveryId = pod.id
             try await TripService.updateTrip(trips[tripIdx])
+            // Auto-complete the trip after POD submission
+            try await updateTripStatus(id: pod.tripId, status: .completed)
         }
     }
 
@@ -505,6 +525,12 @@ final class AppDataStore {
         order.status = .closed; order.completedAt = Date()
         try await WorkOrderService.updateWorkOrder(order)
         workOrders[idx] = order
+        // Cascade: mark parent MaintenanceTask as completed
+        if let taskIdx = maintenanceTasks.firstIndex(where: { $0.id == order.maintenanceTaskId }) {
+            maintenanceTasks[taskIdx].status = .completed
+            maintenanceTasks[taskIdx].completedAt = Date()
+            try? await MaintenanceTaskService.updateMaintenanceTask(maintenanceTasks[taskIdx])
+        }
     }
 
     // MARK: - Maintenance Records
@@ -787,6 +813,22 @@ final class AppDataStore {
                 self.notifications.insert(newNotification, at: 0)
             }
         }
+    }
+
+    func markNotificationRead(id: UUID) async throws {
+        try await NotificationService.markAsRead(id: id)
+        if let idx = notifications.firstIndex(where: { $0.id == id }) {
+            notifications[idx].isRead = true
+        }
+    }
+
+    func clearAllNotifications(userId: UUID) async throws {
+        try await supabase
+            .from("notifications")
+            .delete()
+            .eq("recipient_id", value: userId.uuidString)
+            .execute()
+        notifications = []
     }
 
     // MARK: - Location Publishing

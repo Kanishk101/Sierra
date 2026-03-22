@@ -2,36 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-
-    <key>NSFaceIDUsageDescription</key>
-    <string>Sierra uses Face ID to securely unlock the app and protect fleet data.</string>
-
-    <key>MBXAccessToken</key>
-    <string></string>
-
-    <key>NSLocationWhenInUseUsageDescription</key>
-    <string>Sierra uses your location to navigate routes and track trip progress.</string>
-
-    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-    <string>Sierra tracks your location in the background during active trips so the fleet manager can monitor delivery progress in real time.</string>
-
-    <key>NSLocationAlwaysUsageDescription</key>
-    <string>Sierra tracks your location in the background during active trips so the fleet manager can monitor delivery progress in real time.</string>
-
-    <key>NSCameraUsageDescription</key>
-    <string>Sierra uses the camera to photograph vehicle condition during inspections and capture proof of delivery.</string>
-
-    <key>NSPhotoLibraryUsageDescription</key>
-    <string>Sierra accesses your photo library to attach vehicle inspection photos and delivery proof.</string>
-
-    <key>NSPhotoLibraryAddUsageDescription</key>
-    <string>Sierra saves inspection and delivery photos to your photo library.</string>
-
-    <key>UIBackgroundModes</key>
-    <array>
-        <string>location</string>
-        <string>fetch</string>
-    </array>
-
+	<key>MBXAccessToken</key>
+	<string></string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+		<string>fetch</string>
+	</array>
 </dict>
 </plist>

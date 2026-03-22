@@ -41,7 +41,7 @@ final class LoginViewModel {
     var showBiometricButton: Bool {
         BiometricManager.shared.canUseBiometrics()
             && AuthManager.shared.hasSessionToken()
-            && BiometricEnrollmentSheet.isBiometricEnabled()
+            && BiometricPreference.isEnabled
     }
 
     var biometricLabel: String { "Sign in with \(BiometricManager.shared.biometricDisplayName)" }
@@ -180,32 +180,33 @@ final class LoginViewModel {
     func biometricSignIn() async {
         authState = .loading
 
-        if let user = AuthManager.shared.currentUser {
-            Task.detached {
-                switch user.role {
-                case .fleetManager:
-                    await AppDataStore.shared.loadAll()
-                case .driver:
-                    await AppDataStore.shared.loadDriverData(driverId: user.id)
-                case .maintenancePersonnel:
-                    await AppDataStore.shared.loadMaintenanceData(staffId: user.id)
-                }
-            }
-        }
-
         do {
             try await BiometricManager.shared.authenticate()
 
             guard AuthManager.shared.hasSessionToken(),
-                  AuthManager.shared.currentUser != nil else {
+                  let user = AuthManager.shared.currentUser else {
                 authState = .error("Session expired. Please sign in with your password.")
                 AuthManager.shared.signOut()
                 return
             }
 
+            // Prefetch AFTER successful auth, not before
+            Task.detached {
+                switch user.role {
+                case .fleetManager:         await AppDataStore.shared.loadAll()
+                case .driver:               await AppDataStore.shared.loadDriverData(driverId: user.id)
+                case .maintenancePersonnel: await AppDataStore.shared.loadMaintenanceData(staffId: user.id)
+                }
+            }
+
             AuthManager.shared.completeAuthentication()
             AuthManager.shared.reauthCompleted()
-            authState = .idle
+
+            // CRITICAL FIX: explicitly set .authenticated so LoginView's onChange
+            // actually navigates — setting .idle did nothing when isAuthenticated
+            // was already true, causing the Face ID loop.
+            let dest = AuthManager.shared.destination(for: user)
+            authState = .authenticated(destination: dest)
 
         } catch {
             if let bioError = error as? BiometricError {

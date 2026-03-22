@@ -16,10 +16,9 @@ struct QuickActionsSheet: View {
     /// Called when the user selects a navigation-only action (Alerts, Reports, Geofences, Notifications).
     var onNavigate: (QuickActionDestination) -> Void
 
-    @State private var showCreateTrip        = false
-    @State private var showAddVehicle        = false
-    @State private var showCreateStaff       = false
-    @State private var showCreateMaintenance = false
+    /// Called when the user selects a creation action (trip, vehicle, staff, maintenance).
+    /// The parent (AdminDashboardView) handles presenting the actual sheet.
+    var onCreation: (String) -> Void
 
     private struct QuickAction: Identifiable {
         let id = UUID()
@@ -89,25 +88,6 @@ struct QuickActionsSheet: View {
             Spacer()
         }
         .background(Color(.systemGroupedBackground).ignoresSafeArea())
-        // Creation sheets — shown after dismiss delay to avoid double-sheet jitter
-        .sheet(isPresented: $showCreateTrip) {
-            CreateTripView()
-                .presentationDetents([.large])
-        }
-        .sheet(isPresented: $showAddVehicle) {
-            AddVehicleView()
-                .presentationDetents([.large])
-        }
-        .sheet(isPresented: $showCreateStaff) {
-            CreateStaffView()
-                .presentationDetents([.large])
-        }
-        .sheet(isPresented: $showCreateMaintenance) {
-            NavigationStack {
-                MaintenanceRequestsView()
-            }
-            .presentationDetents([.large])
-        }
     }
 
     // MARK: - Action Handler
@@ -140,31 +120,15 @@ struct QuickActionsSheet: View {
                 onNavigate(.notifications)
             }
 
-        // Creation actions — dismiss self, then present the creation sheet after a brief delay
-        case "trip":
+        // Creation actions — dismiss self, parent handles sheet presentation
+        case "trip", "vehicle", "staff", "maintenance":
+            let creationTag = tag
             dismiss()
             Task {
-                try? await Task.sleep(for: .milliseconds(300))
-                showCreateTrip = true
+                try? await Task.sleep(for: .milliseconds(350))
+                onCreation(creationTag)
             }
-        case "vehicle":
-            dismiss()
-            Task {
-                try? await Task.sleep(for: .milliseconds(300))
-                showAddVehicle = true
-            }
-        case "staff":
-            dismiss()
-            Task {
-                try? await Task.sleep(for: .milliseconds(300))
-                showCreateStaff = true
-            }
-        case "maintenance":
-            dismiss()
-            Task {
-                try? await Task.sleep(for: .milliseconds(300))
-                showCreateMaintenance = true
-            }
+
         default:
             dismiss()
         }
@@ -172,6 +136,6 @@ struct QuickActionsSheet: View {
 }
 
 #Preview {
-    QuickActionsSheet(onNavigate: { _ in })
+    QuickActionsSheet(onNavigate: { _ in }, onCreation: { _ in })
         .environment(AppDataStore.shared)
 }

@@ -27,8 +27,7 @@ final class AuthManager {
         static let backgroundTS      = "com.fleetOS.backgroundTimestamp"
         static let sessionToken      = "com.fleetOS.sessionToken"
         static let hashedCred        = "com.fleetOS.hashedCredential"
-        static let biometricOn       = "com.fleetOS.biometricEnabled"
-        static let biometricPrompted = "com.fleetOS.hasPromptedBiometric"
+        // biometricOn + biometricPrompted moved to BiometricPreference (single canonical keys)
     }
 
     // MARK: - State
@@ -274,8 +273,9 @@ final class AuthManager {
         KeychainService.delete(key: Keys.hashedCred)
         KeychainService.delete(key: Keys.sessionToken)
         KeychainService.delete(key: Keys.backgroundTS)
-        KeychainService.delete(key: Keys.biometricOn)
-        KeychainService.delete(key: Keys.biometricPrompted)
+        // Biometric preference is intentionally NOT cleared on signOut —
+        // keeping it enables the biometric button to reappear on next login.
+        // See BiometricPreference.clearSessionData() for rationale.
         AppDataStore.shared.unsubscribeAll()
         Task { try? await supabase.auth.signOut() }
     }

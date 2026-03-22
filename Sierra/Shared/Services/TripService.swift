@@ -50,6 +50,7 @@ struct TripInsertPayload: Encodable {
     let destinationLatitude: Double?
     let destinationLongitude: Double?
     let routePolyline: String?
+    let routeStops: String?          // JSON-encoded [RouteStop] for route_stops JSONB column
 
     enum CodingKeys: String, CodingKey {
         case taskId               = "task_id"
@@ -70,6 +71,7 @@ struct TripInsertPayload: Encodable {
         case destinationLatitude  = "destination_latitude"
         case destinationLongitude = "destination_longitude"
         case routePolyline        = "route_polyline"
+        case routeStops           = "route_stops"
     }
 
     init(from t: Trip) {
@@ -94,6 +96,13 @@ struct TripInsertPayload: Encodable {
         destinationLatitude  = t.destinationLatitude
         destinationLongitude = t.destinationLongitude
         routePolyline        = t.routePolyline
+        // Encode route stops as JSON string for the JSONB column
+        if let stops = t.routeStops, !stops.isEmpty,
+           let data = try? JSONEncoder().encode(stops) {
+            routeStops = String(data: data, encoding: .utf8)
+        } else {
+            routeStops = nil
+        }
     }
 }
 

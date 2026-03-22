@@ -32,9 +32,12 @@ struct NavigationHUDOverlay: View {
             // Stats row
             statsRow
 
-            // Speed badge (bottom left aligned via HStack)
+            // Speed badge + speed limit
             HStack {
                 speedBadge
+                if let limit = coordinator.currentSpeedLimit {
+                    speedLimitSign(limit)
+                }
                 Spacer()
             }
             .padding(.horizontal, 16)
@@ -68,19 +71,54 @@ struct NavigationHUDOverlay: View {
     // MARK: - Instruction Banner
 
     private var instructionBanner: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "arrow.turn.up.right")
-                .font(.title2.weight(.bold))
+        HStack(spacing: 14) {
+            // Maneuver icon — resolves from instruction text
+            Image(systemName: maneuverIcon(for: coordinator.currentStepManeuver.isEmpty
+                                           ? coordinator.currentStepInstruction
+                                           : coordinator.currentStepManeuver))
+                .font(.system(size: 28, weight: .bold))
                 .foregroundStyle(.white)
-            Text(coordinator.currentStepInstruction)
-                .font(.headline)
-                .foregroundStyle(.white)
-                .lineLimit(2)
+                .frame(width: 52, height: 52)
+                .background(Color.orange, in: RoundedRectangle(cornerRadius: 14))
+
+            VStack(alignment: .leading, spacing: 3) {
+                // Distance to next turn
+                Text(formatDistance(coordinator.distanceRemainingMetres))
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                Text(coordinator.currentStepInstruction)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .lineLimit(2)
+            }
             Spacer()
         }
+        .padding(16)
+        .background(.ultraThinMaterial.opacity(0.9))
+        .background(Color.black.opacity(0.7))
+        .clipShape(RoundedRectangle(cornerRadius: 20))
         .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .background(.black.opacity(0.85))
+        .padding(.top, 60)
+    }
+
+    private func maneuverIcon(for instruction: String) -> String {
+        let lower = instruction.lowercased()
+        if lower.contains("left")    { return "arrow.turn.up.left" }
+        if lower.contains("right")   { return "arrow.turn.up.right" }
+        if lower.contains("u-turn")  { return "arrow.uturn.left" }
+        if lower.contains("merge")   { return "arrow.merge" }
+        if lower.contains("exit")    { return "arrow.triangle.turn.up.right.circle" }
+        if lower.contains("arrive")  { return "mappin.circle.fill" }
+        if lower.contains("depart")  { return "arrow.up.circle.fill" }
+        return "arrow.up"
+    }
+
+    private func formatDistance(_ metres: Double) -> String {
+        if metres >= 1000 {
+            return String(format: "%.1f km", metres / 1000)
+        } else {
+            return String(format: "%.0f m", metres)
+        }
     }
 
     // MARK: - Deviation Banner
@@ -153,6 +191,22 @@ struct NavigationHUDOverlay: View {
         .frame(width: 60, height: 60)
         .background(.ultraThinMaterial, in: Circle())
         .overlay(Circle().strokeBorder(Color.white.opacity(0.3), lineWidth: 1))
+    }
+
+    // MARK: - Speed Limit Sign
+
+    private func speedLimitSign(_ limit: Int) -> some View {
+        VStack(spacing: 2) {
+            Circle()
+                .stroke(.red, lineWidth: 4)
+                .frame(width: 52, height: 52)
+                .overlay(
+                    Text("\(limit)")
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundStyle(.primary)
+                )
+            Text("km/h").font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary)
+        }
     }
 
     // MARK: - Action Bar

@@ -342,7 +342,6 @@ struct ReportsView: View {
 
                 let completed = maintenanceTasksInRange.filter { $0.status == .completed }
                 let inProgress = maintenanceTasksInRange.filter { $0.status == .inProgress }
-                let pending = maintenanceTasksInRange.filter { $0.status == .pending || $0.status == .assigned }
                 let overdue = maintenanceTasksInRange.filter { t in
                     t.dueDate < Date() && t.status != .completed && t.status != .cancelled
                 }

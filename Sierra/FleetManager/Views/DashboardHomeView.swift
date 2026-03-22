@@ -11,6 +11,11 @@ struct DashboardHomeView: View {
     @State private var showAnalytics = false
     @State private var showNotifications = false
 
+    // Sheets for fleet management (replaces NavigationLink push to avoid nested nav conflicts)
+    @State private var showReportsSheet   = false
+    @State private var showAlertsSheet    = false
+    @State private var showGeofencesSheet = false
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -427,10 +432,7 @@ struct DashboardHomeView: View {
                 )
             }
 
-            NavigationLink {
-                ReportsView()
-                    .environment(AppDataStore.shared)
-            } label: {
+            Button { showReportsSheet = true } label: {
                 managementCard(
                     icon: "chart.bar.fill",
                     title: "Reports & Analytics",
@@ -439,10 +441,7 @@ struct DashboardHomeView: View {
                 )
             }
 
-            NavigationLink {
-                AlertsInboxView()
-                    .environment(AppDataStore.shared)
-            } label: {
+            Button { showAlertsSheet = true } label: {
                 managementCard(
                     icon: "bell.badge.fill",
                     title: "Alerts Inbox",
@@ -451,10 +450,7 @@ struct DashboardHomeView: View {
                 )
             }
 
-            NavigationLink {
-                GeofenceListView()
-                    .environment(AppDataStore.shared)
-            } label: {
+            Button { showGeofencesSheet = true } label: {
                 managementCard(
                     icon: "mappin.and.ellipse",
                     title: "Geofences",
@@ -462,6 +458,27 @@ struct DashboardHomeView: View {
                     color: .teal
                 )
             }
+        }
+        .sheet(isPresented: $showReportsSheet) {
+            NavigationStack {
+                ReportsView()
+                    .environment(AppDataStore.shared)
+            }
+            .presentationDetents([.large])
+        }
+        .sheet(isPresented: $showAlertsSheet) {
+            NavigationStack {
+                AlertsInboxView()
+                    .environment(AppDataStore.shared)
+            }
+            .presentationDetents([.large])
+        }
+        .sheet(isPresented: $showGeofencesSheet) {
+            NavigationStack {
+                GeofenceListView()
+                    .environment(AppDataStore.shared)
+            }
+            .presentationDetents([.large])
         }
     }
 

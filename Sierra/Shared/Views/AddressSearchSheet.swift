@@ -113,10 +113,14 @@ struct AddressSearchSheet: View {
     @MainActor
     private func search(_ text: String) async {
         guard let token = Bundle.main.object(forInfoDictionaryKey: "MBXAccessToken") as? String,
-              !token.isEmpty else { return }
+              !token.isEmpty else {
+            // Fallback to MKLocalSearch if no Mapbox token
+            await searchAppleMaps(text)
+            return
+        }
 
         let encoded = text.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
-        let urlString = "https://api.mapbox.com/geocoding/v5/mapbox.places/\(encoded).json?access_token=\(token)&limit=5&country=IN"
+        let urlString = "https://api.mapbox.com/geocoding/v5/mapbox.places/\(encoded).json?access_token=\(token)&limit=8&country=IN&language=en&proximity=77.2090,28.6139"
         guard let url = URL(string: urlString) else { return }
 
         isSearching = true
@@ -142,6 +146,36 @@ struct AddressSearchSheet: View {
             }
         } catch {
             print("[AddressSearch] Geocoding error: \(error)")
+            // Fallback to Apple Maps on error
+            await searchAppleMaps(text)
+        }
+    }
+
+    // MARK: - Apple Maps Fallback
+
+    @MainActor
+    private func searchAppleMaps(_ text: String) async {
+        isSearching = true
+        defer { isSearching = false }
+
+        let request = MKLocalSearch.Request()
+        request.naturalLanguageQuery = text
+        request.region = MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: 20.5937, longitude: 78.9629),
+            latitudinalMeters: 3_000_000, longitudinalMeters: 3_000_000
+        )
+        let search = MKLocalSearch(request: request)
+        if let response = try? await search.start() {
+            results = response.mapItems.map { item in
+                let coordinate = item.location.coordinate
+                return GeocodedAddress(
+                    displayName: item.name ?? "Unknown location",
+                    shortName: item.name ?? "",
+                    latitude: coordinate.latitude,
+                    longitude: coordinate.longitude
+                )
+            }
+        } else {
             results = []
         }
     }

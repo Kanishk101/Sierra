@@ -52,7 +52,7 @@ struct GeofenceListView: View {
         }
         .listStyle(.insetGrouped)
         .navigationTitle("Geofences")
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
