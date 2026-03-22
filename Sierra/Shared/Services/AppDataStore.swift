@@ -124,6 +124,15 @@ final class AppDataStore {
 
         isLoading = false
 
+        // Background housekeeping: purge stale breadcrumbs and expired password
+        // reset tokens via SECURITY DEFINER Postgres functions. Non-fatal.
+        Task.detached(priority: .background) {
+            struct PurgeParams: Encodable { let days_to_keep: Int }
+            try? await supabase.rpc("purge_old_location_history",
+                                    params: PurgeParams(days_to_keep: 30)).execute()
+            try? await supabase.rpc("purge_expired_password_reset_tokens").execute()
+        }
+
         subscribeToEmergencyAlerts()
         subscribeToStaffMemberUpdates()
         subscribeToVehicleUpdates()
@@ -138,8 +147,12 @@ final class AppDataStore {
     // Each field isolated with its own try/catch — a single decode failure
     // (e.g. vehicleInspections JSONB double-encoding) never blocks trips or
     // driverProfile from loading.
+    //
+    // Re-entry guard matches loadAll(): prevents concurrent calls (e.g. session
+    // restore + biometric reauth) from firing duplicate request batches.
 
     func loadDriverData(driverId: UUID) async {
+        guard !isLoading else { return }
         await tearDownRealtimeChannels()
         isLoading = true
 
@@ -182,8 +195,11 @@ final class AppDataStore {
     // Per-field try/catch matching loadDriverData pattern.
     // sparePartsRequests is now fetched here so SparePartsRequestSheet
     // does not show empty lists every session.
+    //
+    // Re-entry guard matches loadAll(): prevents concurrent call duplicates.
 
     func loadMaintenanceData(staffId: UUID) async {
+        guard !isLoading else { return }
         await tearDownRealtimeChannels()
         isLoading = true
 
@@ -249,8 +265,6 @@ final class AppDataStore {
     }
 
     func deleteStaffMember(id: UUID) async throws {
-        // Use the edge function so auth.users is deleted atomically with staff_members row.
-        // The edge function (delete-staff-member) runs with service-role key.
         struct Payload: Encodable { let staffMemberId: String }
         try await supabase.functions.invoke(
             "delete-staff-member",
@@ -325,8 +339,6 @@ final class AppDataStore {
         )
     }
 
-    // MARK: - Set Staff Status (admin: suspend / reactivate)
-
     func setStaffStatus(staffId: UUID, status: StaffStatus) async throws {
         try await StaffMemberService.setStatus(staffId: staffId, status: status)
         if let idx = staff.firstIndex(where: { $0.id == staffId }) {
@@ -394,11 +406,6 @@ final class AppDataStore {
     func addTrip(_ trip: Trip) async throws {
         try await TripService.addTrip(trip)
         trips.insert(trip, at: 0)
-
-        // Phase 5 — C-05 fix: Notify the assigned driver immediately.
-        // The in-app notification is inserted here; the DB trigger
-        // trg_push_on_notification will then fire send-push-notification
-        // so the driver receives an APNs alert even when the app is closed.
         if let driverIdStr = trip.driverId, let driverUUID = UUID(uuidString: driverIdStr) {
             let dateStr = trip.scheduledDate.formatted(.dateTime.month().day().hour().minute())
             try? await NotificationService.insertNotification(
@@ -473,12 +480,6 @@ final class AppDataStore {
         proofOfDeliveries.append(pod)
         if let tripIdx = trips.firstIndex(where: { $0.id == pod.tripId }) {
             trips[tripIdx].proofOfDeliveryId = pod.id
-            // Persist proofOfDeliveryId on the trip row only.
-            // Do NOT auto-complete the trip here — it stays .active until the
-            // driver finishes post-trip inspection and taps "End Trip" in
-            // TripDetailDriverView, which calls endTrip(tripId:endMileage:).
-            // Auto-completing here orphaned the post-inspection step and released
-            // driver/vehicle before the workflow was genuinely finished (Phase 3 fix).
             try await TripService.updateTrip(trips[tripIdx])
         }
     }
@@ -488,15 +489,12 @@ final class AppDataStore {
     func addEmergencyAlert(_ alert: EmergencyAlert) async throws {
         try await EmergencyAlertService.addEmergencyAlert(alert)
         emergencyAlerts.insert(alert, at: 0)
-
-        // Phase 5 — H-11 fix: Notify ALL admin users about the SOS alert.
-        // Non-fatal: if notification insert fails, the alert is still in the DB.
         let driverName = staff.first { $0.id == alert.driverId }?.displayName ?? "A driver"
         for admin in staff.filter({ $0.role == .fleetManager }) {
             try? await NotificationService.insertNotification(
                 recipientId: admin.id,
                 type: .emergency,
-                title: "🚨 Emergency Alert",
+                title: "\u{1F6A8} Emergency Alert",
                 body: "\(driverName) has triggered an SOS alert. Tap to act now.",
                 entityType: "emergency_alert",
                 entityId: alert.id
@@ -542,14 +540,10 @@ final class AppDataStore {
             maintenanceTasks[idx].status = .completed; maintenanceTasks[idx].completedAt = Date()
             let vehicleId = maintenanceTasks[idx].vehicleId
             if vehicles.firstIndex(where: { $0.id == vehicleId }) != nil {
-                // Use edge function to bypass RLS — maintenance users cannot write
-                // vehicles directly. The edge function validates the caller is assigned
-                // to a maintenance task for this vehicle.
                 try? await supabase.functions.invoke(
                     "update-vehicle-status",
                     options: .init(body: ["vehicleId": vehicleId.uuidString, "status": "Idle"])
                 )
-                // Update local cache optimistically
                 if let vIdx = vehicles.firstIndex(where: { $0.id == vehicleId }) {
                     vehicles[vIdx].status = .idle
                 }
@@ -580,13 +574,10 @@ final class AppDataStore {
         order.status = .closed; order.completedAt = Date()
         try await WorkOrderService.updateWorkOrder(order)
         workOrders[idx] = order
-        // Cascade: mark parent MaintenanceTask as completed
         if let taskIdx = maintenanceTasks.firstIndex(where: { $0.id == order.maintenanceTaskId }) {
             maintenanceTasks[taskIdx].status = .completed
             maintenanceTasks[taskIdx].completedAt = Date()
             try? await MaintenanceTaskService.updateMaintenanceTask(maintenanceTasks[taskIdx])
-
-            // Notify the admin who created the maintenance task
             let task = maintenanceTasks[taskIdx]
             let vehicleName = vehicle(for: task.vehicleId)?.name ?? "Unknown"
             try? await NotificationService.insertNotification(
@@ -749,9 +740,6 @@ final class AppDataStore {
     func availableDrivers() -> [StaffMember] { staff.filter { $0.role == .driver && $0.status == .active && $0.availability == .available } }
     func availableVehicles() -> [Vehicle] { vehicles.filter { $0.status == .idle && $0.assignedDriverId == nil } }
 
-    /// Returns the driver's current actionable trip — any status where the driver
-    /// still has work to do. Covers the full Phase 3 lifecycle:
-    /// pendingAcceptance -> accepted -> active (-> completed / cancelled are terminal).
     func activeTrip(forDriverId driverId: UUID) -> Trip? {
         trips.first {
             $0.driverId?.lowercased() == driverId.uuidString.lowercased()
@@ -767,7 +755,6 @@ final class AppDataStore {
     // MARK: - Computed Aggregates
 
     var pendingCount: Int { pendingApplicationsCount }
-    /// Counts all in-progress trips for the admin KPI card (active + pending acceptance + accepted).
     var activeTripsCount: Int { trips.filter { $0.status.isActionable }.count }
     var vehiclesInMaintenance: [Vehicle] { vehicles.filter { $0.status == .inMaintenance } }
     var overdueTrips: [Trip] { trips.filter { $0.isOverdue } }
@@ -876,13 +863,11 @@ final class AppDataStore {
         NotificationService.shared.unsubscribeFromNotifications()
         subscribedNotificationsUserId = userId
         notifications = []
-
         do {
             notifications = try await NotificationService.fetchNotifications(for: userId)
         } catch {
             print("[AppDataStore] Failed to fetch notifications: \(error)")
         }
-
         NotificationService.shared.subscribeToNotifications(for: userId) { [weak self] newNotification in
             guard let self else { return }
             Task { @MainActor in
@@ -942,12 +927,6 @@ final class AppDataStore {
         }
     }
 
-
-    /// Completes the active trip. Calls TripService.completeTrip which triggers
-    /// the DB trigger trg_trip_status_change — this releases driver + vehicle
-    /// resources atomically in Postgres (SECURITY DEFINER).
-    /// Only called from TripDetailDriverView "End Trip" button, which is gated
-    /// behind postInspectionId being set. This is the correct completion point.
     func endTrip(tripId: UUID, endMileage: Double) async throws {
         try await TripService.completeTrip(tripId: tripId, endMileage: endMileage)
         if let idx = trips.firstIndex(where: { $0.id == tripId }) {
