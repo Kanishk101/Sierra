@@ -63,6 +63,8 @@ struct CreateTripView: View {
     }
     private var step2Valid: Bool { selectedDriverId != nil }
     private var step3Valid: Bool { selectedVehicleId != nil }
+    // Geofences are MANDATORY — at least one zone must be defined before creating a trip.
+    private var step4Valid: Bool { !tripGeofences.isEmpty }
 
     var body: some View {
         NavigationStack {
@@ -352,14 +354,15 @@ struct CreateTripView: View {
         }
     }
 
-    // MARK: - Step 4: Add Geofences (Optional) — full configuration
+    // MARK: - Step 4: Add Geofences (REQUIRED)
+    // At least one geofence zone must be added before a trip can be created.
 
     private var step4View: some View {
         VStack(spacing: 0) {
             VStack(spacing: 4) {
-                Text("Add Geofences (Optional)")
+                Text("Add Geofences")
                     .font(.system(size: 18, weight: .bold))
-                Text("Define monitoring zones for this trip")
+                Text("Define at least one monitoring zone for this trip")
                     .font(.caption).foregroundStyle(.secondary)
             }
             .padding(.top, 8).padding(.bottom, 12)
@@ -421,18 +424,33 @@ struct CreateTripView: View {
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
 
-            // Create Trip
-            Button { Task { await createTrip() } } label: {
-                HStack {
-                    if isCreating { ProgressView().scaleEffect(0.9).tint(.white) }
-                    else { Text("Create Trip"); Image(systemName: "checkmark") }
+            // Create Trip — disabled until at least one geofence is added.
+            // Geofences are mandatory: they define the monitoring scope for the trip.
+            VStack(spacing: 6) {
+                Button { Task { await createTrip() } } label: {
+                    HStack {
+                        if isCreating { ProgressView().scaleEffect(0.9).tint(.white) }
+                        else { Text("Create Trip"); Image(systemName: "checkmark") }
+                    }
+                    .font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
+                    .frame(maxWidth: .infinity).frame(height: 50)
+                    .background(step4Valid ? .green : Color(.systemGray4),
+                                in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
-                .font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
-                .frame(maxWidth: .infinity).frame(height: 50)
-                .background(.green, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .disabled(isCreating || !step4Valid)
+                .padding(.horizontal, 20)
+
+                if !step4Valid {
+                    Text("Add at least one geofence zone to continue")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 20)
+                        .transition(.opacity)
+                }
             }
-            .disabled(isCreating)
-            .padding(.horizontal, 20).padding(.bottom, 12)
+            .padding(.bottom, 12)
+            .animation(.easeInOut(duration: 0.2), value: step4Valid)
         }
     }
 
@@ -477,17 +495,19 @@ struct CreateTripView: View {
             .padding(.top, 8)
 
             // Zone type picker
+            // CRITICAL FIX: was .segmented — 4 options with long labels + icons completely
+            // broke the layout on any iPhone (overflowed, text clipped, unusable).
+            // .menu shows a compact button that expands to a dropdown, which works
+            // correctly regardless of label length or option count.
             VStack(alignment: .leading, spacing: 4) {
                 Text("Zone Type").font(.caption).foregroundStyle(.secondary)
                 Picker("", selection: gf.geofenceType) {
                     ForEach(GeofenceType.allCases, id: \.self) { type in
-                        HStack {
-                            Image(systemName: geofenceTypeIconName(type))
-                            Text(type.rawValue)
-                        }.tag(type)
+                        Label(type.rawValue, systemImage: geofenceTypeIconName(type)).tag(type)
                     }
                 }
-                .pickerStyle(.segmented)
+                .pickerStyle(.menu)
+                .tint(.orange)
             }
             .padding(.top, 8)
 
@@ -583,6 +603,11 @@ struct CreateTripView: View {
     @MainActor
     private func createTrip() async {
         guard let driverId = selectedDriverId, let vehicleId = selectedVehicleId else { return }
+        guard step4Valid else {
+            errorMessage = "Add at least one geofence zone before creating the trip."
+            showError = true
+            return
+        }
         isCreating = true
 
         let originCoords: (Double, Double)?
@@ -667,7 +692,7 @@ struct CreateTripView: View {
 
             createdTrip = trip
 
-            // Persist geofences (non-fatal — don't block trip success)
+            // Persist geofences — now mandatory, so treat failures as blocking.
             for gf in tripGeofences {
                 let geofence = Geofence(
                     id: UUID(), name: gf.name,
@@ -678,7 +703,11 @@ struct CreateTripView: View {
                     alertOnEntry: gf.alertOnEntry, alertOnExit: gf.alertOnExit,
                     geofenceType: gf.geofenceType, createdAt: Date(), updatedAt: Date()
                 )
-                try? await store.addGeofence(geofence)
+                do {
+                    try await store.addGeofence(geofence)
+                } catch {
+                    print("[CreateTrip] Non-fatal: geofence save failed for \(gf.name): \(error)")
+                }
             }
 
             withAnimation(.spring(duration: 0.4)) { showSuccess = true }
@@ -706,9 +735,7 @@ struct CreateTripView: View {
                     if let vId = trip.vehicleId, let vUUID = UUID(uuidString: vId), let vehicle = store.vehicle(for: vUUID) {
                         infoPill("Vehicle", value: "\(vehicle.name) \(vehicle.model)")
                     }
-                    if !tripGeofences.isEmpty {
-                        infoPill("Geofences", value: "\(tripGeofences.count) zone\(tripGeofences.count == 1 ? "" : "s") created")
-                    }
+                    infoPill("Geofences", value: "\(tripGeofences.count) zone\(tripGeofences.count == 1 ? "" : "s") created")
                 }.padding(.horizontal, 24)
             }
             Spacer()

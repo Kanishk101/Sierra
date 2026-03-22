@@ -9,9 +9,6 @@ struct LoginView: View {
     @State private var twoFactorVM: TwoFactorViewModel?
     @State private var showTwoFactor = false
 
-    @State private var resolvedDestination: AuthDestination?
-    @State private var showDestination = false
-
     var body: some View {
         ZStack {
             loginContentLayer
@@ -28,13 +25,6 @@ struct LoginView: View {
                 cardAppeared = true
             }
         }
-        .fullScreenCover(isPresented: $showDestination) {
-            if let dest = resolvedDestination {
-                destinationView(for: dest)
-                    .environment(AppDataStore.shared)
-                    .environment(AuthManager.shared)
-            }
-        }
         .sheet(isPresented: $showForgotPassword) {
             ForgotPasswordView()
         }
@@ -46,12 +36,19 @@ struct LoginView: View {
                     context: ctx,
                     service: viewModel.otpService,
                     onVerified: {
+                        // CRITICAL FIX: do NOT set showDestination = true here.
+                        // Previously this fired LoginView's fullScreenCover which stacked
+                        // a second copy of the dashboard on top of ContentView's dashboard,
+                        // burying the BiometricEnrollmentSheet underneath the cover so it
+                        // was never visible to the user.
+                        //
+                        // completeAuthentication() sets isAuthenticated = true.
+                        // ContentView observes this change and routes to the correct
+                        // destination cleanly — no separate navigation from LoginView needed.
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                             showTwoFactor = false
                             twoFactorVM = nil
                             AuthManager.shared.completeAuthentication()
-                            resolvedDestination = ctx.authDestination
-                            showDestination = true
                         }
                     },
                     onCancelled: {
@@ -66,10 +63,6 @@ struct LoginView: View {
                     to: nil, from: nil, for: nil
                 )
                 showTwoFactor = true
-
-            case .authenticated(let destination):
-                resolvedDestination = destination
-                showDestination = true
 
             default: break
             }
@@ -136,11 +129,6 @@ struct LoginView: View {
     }
 
     // MARK: - Form
-
-    // Uses the Settings-app / Contacts idiom:
-    //   • Inset grouped card (systemBackground fill, cornerRadius 12)
-    //   • Full-height tappable rows separated by hairline dividers
-    //   • Zero custom chrome — tint drives all interactive colour
 
     private var formSection: some View {
         VStack(spacing: 16) {
@@ -232,7 +220,7 @@ struct LoginView: View {
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .padding(.horizontal, 20)
 
-            // Forgot password – right-aligned, native color
+            // Forgot password
             Button {
                 showForgotPassword = true
             } label: {
@@ -343,22 +331,6 @@ struct LoginView: View {
         }
         .transition(.opacity)
         .animation(.easeInOut(duration: 0.2), value: viewModel.isLoading)
-    }
-
-    // MARK: - Routing
-
-    @ViewBuilder
-    private func destinationView(for destination: AuthDestination) -> some View {
-        switch destination {
-        case .fleetManagerDashboard:  AdminDashboardView()
-        case .changePassword:         ForcePasswordChangeView()
-        case .driverOnboarding:       DriverProfileSetupView()
-        case .maintenanceOnboarding:  MaintenanceProfileSetupView()
-        case .pendingApproval:        PendingApprovalView()
-        case .rejected:               RejectedView()
-        case .driverDashboard:        DriverTabView()
-        case .maintenanceDashboard:   MaintenanceDashboardView()
-        }
     }
 }
 

@@ -38,10 +38,20 @@ final class LoginViewModel {
 
     // MARK: - Biometric
 
+    /// Show the biometric button when:
+    ///  • Device supports biometrics
+    ///  • User previously enabled it (BiometricPreference, Keychain-persisted)
+    ///  • There is a cached session token (i.e. user was previously authenticated)
+    ///
+    /// NOTE: hasSessionToken() is intentionally kept here — it ensures the button
+    /// only shows when there is a valid cached session to resume, not on a brand-new
+    /// install. The session token is stored in Keychain and survives force-close but
+    /// is cleared by explicit signOut(). This is correct: after signOut, there is no
+    /// cached identity to biometric-authenticate as.
     var showBiometricButton: Bool {
         BiometricManager.shared.canUseBiometrics()
-            && AuthManager.shared.hasSessionToken()
             && BiometricPreference.isEnabled
+            && AuthManager.shared.hasSessionToken()
     }
 
     var biometricLabel: String { "Sign in with \(BiometricManager.shared.biometricDisplayName)" }
@@ -111,6 +121,10 @@ final class LoginViewModel {
                 #if DEBUG
                 print("🖥️ [LoginViewModel.signIn] ⏩ Skipping 2FA (non-dashboard destination)")
                 #endif
+                // Let ContentView handle routing via isAuthenticated transition.
+                // Do NOT set authState = .authenticated here — that would fire
+                // LoginView's fullScreenCover which conflicts with ContentView's
+                // own routing and buries the BiometricEnrollmentSheet.
                 AuthManager.shared.completeAuthentication()
                 return
             }
@@ -149,7 +163,6 @@ final class LoginViewModel {
             authState = .requiresTwoFactor(context: context)
 
         } catch let authError as AuthError {
-            // ⚠️ IMPORTANT: surface the REAL error — not a generic "Invalid credentials"
             #if DEBUG
             let vmMs = Int(Date().timeIntervalSince(vmStart) * 1000)
             print("🖥️ [LoginViewModel.signIn] ❌ AuthError after \(vmMs)ms: \(authError)")
@@ -160,7 +173,6 @@ final class LoginViewModel {
             authState = .error(authError.localizedDescription)
 
         } catch {
-            // Unexpected non-AuthError — still show something useful
             #if DEBUG
             let vmMs = Int(Date().timeIntervalSince(vmStart) * 1000)
             print("🖥️ [LoginViewModel.signIn] ❌ Unexpected error after \(vmMs)ms")
@@ -183,10 +195,13 @@ final class LoginViewModel {
         do {
             try await BiometricManager.shared.authenticate()
 
-            guard AuthManager.shared.hasSessionToken(),
-                  let user = AuthManager.shared.currentUser else {
+            // CRITICAL FIX: do NOT call signOut() when the guard fails.
+            // Previously, if currentUser was nil or hasSessionToken() was false,
+            // signOut() was called — wiping all Keychain credentials and making
+            // the Face ID button permanently disappear on the next cold start.
+            // Now we simply show an error and let the user try with password.
+            guard let user = AuthManager.shared.currentUser else {
                 authState = .error("Session expired. Please sign in with your password.")
-                AuthManager.shared.signOut()
                 return
             }
 
@@ -202,11 +217,13 @@ final class LoginViewModel {
             AuthManager.shared.completeAuthentication()
             AuthManager.shared.reauthCompleted()
 
-            // CRITICAL FIX: explicitly set .authenticated so LoginView's onChange
-            // actually navigates — setting .idle did nothing when isAuthenticated
-            // was already true, causing the Face ID loop.
-            let dest = AuthManager.shared.destination(for: user)
-            authState = .authenticated(destination: dest)
+            // CRITICAL FIX: do NOT set authState = .authenticated.
+            // Previously this triggered LoginView's .fullScreenCover, stacking a second
+            // copy of the dashboard on top of ContentView's dashboard — which buried
+            // the BiometricEnrollmentSheet (attached to ContentView) so it was never
+            // visible. completeAuthentication() already sets isAuthenticated = true,
+            // which ContentView observes and routes to the correct destination cleanly.
+            authState = .idle
 
         } catch {
             if let bioError = error as? BiometricError {

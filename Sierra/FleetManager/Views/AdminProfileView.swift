@@ -3,8 +3,11 @@ import LocalAuthentication
 
 struct AdminProfileView: View {
     @Environment(\.dismiss) private var dismiss
+    private var authManager = AuthManager.shared
 
-    @State private var isBiometricEnabled: Bool = BiometricAuthManager.isEnabled
+    // Initialized from the canonical Keychain-backed preference.
+    // Updated via onChange which writes back to the same store.
+    @State private var isBiometricEnabled: Bool = BiometricPreference.isEnabled
 
     var body: some View {
         VStack(spacing: 24) {
@@ -19,17 +22,17 @@ struct AdminProfileView: View {
                 .fill(Color(.systemGray5))
                 .frame(width: 72, height: 72)
                 .overlay(
-                    Text("FA")
+                    Text(initials)
                         .font(.system(size: 24, weight: .bold, design: .rounded))
                         .foregroundStyle(.primary)
                 )
 
             VStack(spacing: 4) {
-                Text("Fleet Admin")
+                Text(authManager.currentUser?.name ?? "Fleet Manager")
                     .font(.title3.weight(.semibold))
                     .foregroundStyle(.primary)
 
-                Text("admin@fleeeos.com")
+                Text(authManager.currentUser?.email ?? "")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
 
@@ -53,11 +56,11 @@ struct AdminProfileView: View {
 
                 Toggle(isOn: $isBiometricEnabled) {
                     HStack(spacing: 12) {
-                        Image(systemName: LAContext().biometryType == .faceID ? "faceid" : "touchid")
-                            .foregroundStyle(.blue)
+                        Image(systemName: biometricIcon)
+                            .foregroundStyle(.orange)
                             .frame(width: 28)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(LAContext().biometryType == .faceID ? "Face ID" : "Touch ID")
+                            Text(biometricName)
                                 .font(.body)
                             Text("Sign in without typing your password")
                                 .font(.caption)
@@ -70,19 +73,14 @@ struct AdminProfileView: View {
                 .padding(.vertical, 12)
                 .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
                 .padding(.horizontal, 16)
+                // CRITICAL FIX: do NOT require a Face ID authentication challenge
+                // just to SET the preference. The challenge is required when USING
+                // Face ID to sign in, not when enabling the setting. Previously the
+                // LAContext challenge fired here — any failure (wrong face, cancel,
+                // simulator) silently reverted the toggle to false, making it
+                // impossible to enable biometrics on a device with Face ID issues.
                 .onChange(of: isBiometricEnabled) { _, enabled in
-                    if enabled {
-                        Task {
-                            let ok = await BiometricAuthManager.authenticate(reason: "Enable biometric sign-in for Sierra")
-                            if ok {
-                                BiometricAuthManager.enable()
-                            } else {
-                                isBiometricEnabled = false
-                            }
-                        }
-                    } else {
-                        BiometricAuthManager.disable()
-                    }
+                    BiometricPreference.isEnabled = enabled
                 }
             }
 
@@ -111,6 +109,37 @@ struct AdminProfileView: View {
             .padding(.bottom, 16)
         }
         .background(Color(.systemGroupedBackground).ignoresSafeArea())
+        // Sync toggle state when the sheet re-appears (e.g. user dismissed another
+        // sheet that may have changed the preference).
+        .onAppear {
+            isBiometricEnabled = BiometricPreference.isEnabled
+        }
+    }
+
+    // MARK: - Helpers
+
+    private var initials: String {
+        let name = authManager.currentUser?.name ?? "FM"
+        let parts = name.split(separator: " ")
+        let first = parts.first?.prefix(1) ?? ""
+        let last  = parts.dropFirst().first?.prefix(1) ?? ""
+        return "\(first)\(last)".uppercased()
+    }
+
+    private var biometricIcon: String {
+        switch LAContext().biometryType {
+        case .faceID:  return "faceid"
+        case .touchID: return "touchid"
+        default:       return "lock.fill"
+        }
+    }
+
+    private var biometricName: String {
+        switch LAContext().biometryType {
+        case .faceID:  return "Face ID"
+        case .touchID: return "Touch ID"
+        default:       return "Biometrics"
+        }
     }
 }
 
