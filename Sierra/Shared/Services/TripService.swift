@@ -23,9 +23,6 @@ enum TripServiceError: LocalizedError {
 }
 
 // MARK: - TripInsertPayload
-// Full payload for INSERT — includes geocoordinates.
-// NOTE: TripUpdatePayload is a SEPARATE struct (not a typealias) so that
-// updateTrip() never sends NULL for coordinates that are already stored.
 
 struct TripInsertPayload: Encodable {
     let taskId: String
@@ -44,13 +41,12 @@ struct TripInsertPayload: Encodable {
     let notes: String
     let status: String
     let priority: String
-    // Coordinates included at insert time (geocoded during trip creation)
     let originLatitude: Double?
     let originLongitude: Double?
     let destinationLatitude: Double?
     let destinationLongitude: Double?
     let routePolyline: String?
-    let routeStops: String?          // JSON-encoded [RouteStop] for route_stops JSONB column
+    let routeStops: String?
 
     enum CodingKeys: String, CodingKey {
         case taskId               = "task_id"
@@ -96,7 +92,6 @@ struct TripInsertPayload: Encodable {
         destinationLatitude  = t.destinationLatitude
         destinationLongitude = t.destinationLongitude
         routePolyline        = t.routePolyline
-        // Encode route stops as JSON string for the JSONB column
         if let stops = t.routeStops, !stops.isEmpty,
            let data = try? JSONEncoder().encode(stops) {
             routeStops = String(data: data, encoding: .utf8)
@@ -107,10 +102,6 @@ struct TripInsertPayload: Encodable {
 }
 
 // MARK: - TripUpdatePayload
-// Separate from TripInsertPayload — intentionally omits coordinates.
-// Coordinates are set at creation and updated explicitly via
-// TripService.updateTripCoordinates(). Sending them in every general
-// update would risk overwriting stored geocoding data with nil.
 
 struct TripUpdatePayload: Encodable {
     let taskId: String
@@ -198,7 +189,7 @@ struct TripService {
             .from("trips")
             .select()
             .order("scheduled_date", ascending: false)
-            .limit(500)  // pagination guard — prevents unbounded response
+            .limit(500)
             .execute()
             .value
     }
@@ -255,7 +246,6 @@ struct TripService {
     }
 
     // MARK: Update
-    // Uses TripUpdatePayload (NOT TripInsertPayload) to avoid nulling coordinates.
 
     static func updateTrip(_ trip: Trip) async throws {
         try await supabase
@@ -285,7 +275,6 @@ struct TripService {
     }
 
     // MARK: Task ID Helper
-    // Uses UUID prefix to avoid collision: 16^8 = 4.3 billion possibilities
 
     static func newTaskId() -> String { generateTaskId() }
 
@@ -297,7 +286,11 @@ struct TripService {
         return "TRP-\(datePart)-\(suffix)"
     }
 
-    // MARK: - Busy Status Helpers
+    // MARK: - Resource Overlap Check
+    // IMPORTANT: Uses FunctionInvokeOptions(body: body) NOT pre-encoded Data.
+    // Passing Data to the Supabase Swift SDK re-encodes it as base64 in JSON,
+    // corrupting the payload. Pass the Encodable struct directly.
+    // check-resource-overlap is deployed with verify_jwt: false (uses service role key).
 
     static func checkOverlap(
         driverId: UUID,
@@ -324,6 +317,7 @@ struct TripService {
             }
         }
 
+        // CRITICAL FIX: pass struct directly — NOT pre-encoded Data
         let body = OverlapRequest(
             driver_id:        driverId.uuidString.lowercased(),
             vehicle_id:       vehicleId.uuidString.lowercased(),
@@ -331,13 +325,14 @@ struct TripService {
             end:              iso.string(from: end),
             exclude_trip_id:  excludingTripId?.uuidString.lowercased()
         )
-        let bodyData = try JSONEncoder().encode(body)
         let result: OverlapResult = try await supabase.functions.invoke(
             "check-resource-overlap",
-            options: .init(body: bodyData)
+            options: FunctionInvokeOptions(body: body)
         )
         return (result.driverConflict, result.vehicleConflict)
     }
+
+    // MARK: - Busy Status Helpers
 
     static func markResourcesBusy(driverId: UUID, vehicleId: UUID) async throws {
         struct AvailabilityPayload: Encodable { let availability: String }
@@ -381,8 +376,6 @@ struct TripService {
     }
 
     // MARK: - Trip Lifecycle
-    // Note: DB trigger trg_trip_status_change handles resource state transitions
-    // atomically when status changes. These methods update status only.
 
     static func startTrip(tripId: UUID, startMileage: Double) async throws {
         struct Payload: Encodable {
@@ -416,7 +409,6 @@ struct TripService {
             ))
             .eq("id", value: tripId.uuidString)
             .execute()
-        // DB trigger fn_trip_status_change fires automatically to release resources.
     }
 
     static func cancelTrip(tripId: UUID) async throws {
@@ -426,17 +418,14 @@ struct TripService {
             .update(Payload(status: TripStatus.cancelled.rawValue))
             .eq("id", value: tripId.uuidString)
             .execute()
-        // DB trigger fn_trip_status_change fires automatically to release resources.
     }
 
     // MARK: - Coordinates & Rating
 
     static func updateTripCoordinates(
         tripId: UUID,
-        originLat: Double,
-        originLng: Double,
-        destLat: Double,
-        destLng: Double,
+        originLat: Double, originLng: Double,
+        destLat: Double, destLng: Double,
         routePolyline: String
     ) async throws {
         struct Payload: Encodable {
@@ -478,15 +467,9 @@ struct TripService {
             .execute()
     }
 
-    // MARK: - Reassign Vehicle
-
     static func reassignVehicle(tripId: UUID, newVehicleId: UUID) async throws {
         struct Payload: Encodable { let vehicle_id: String }
-        struct Row: Decodable {
-            let id: UUID
-            let vehicle_id: UUID?
-        }
-
+        struct Row: Decodable { let id: UUID; let vehicle_id: UUID? }
         let rows: [Row] = try await supabase
             .from("trips")
             .update(Payload(vehicle_id: newVehicleId.uuidString))
@@ -494,9 +477,6 @@ struct TripService {
             .select("id, vehicle_id")
             .execute()
             .value
-
-        guard !rows.isEmpty else {
-            throw TripServiceError.tripNotFound(tripId)
-        }
+        guard !rows.isEmpty else { throw TripServiceError.tripNotFound(tripId) }
     }
 }

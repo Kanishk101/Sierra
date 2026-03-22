@@ -2,8 +2,6 @@ import SwiftUI
 import MapKit
 
 /// Admin fleet live map: vehicle annotations + geofence circle overlays.
-/// Safeguard 1: ViewModel persisted at parent level (AdminDashboardView).
-/// Safeguard 2: annotations updated in-place via identifiable struct array.
 struct FleetLiveMapView: View {
 
     @Environment(AppDataStore.self) private var store
@@ -18,58 +16,71 @@ struct FleetLiveMapView: View {
         ZStack(alignment: .topTrailing) {
             mapContent
 
-            // Floating buttons
+            // Floating controls — search + filter only (no geofence create here)
             VStack(spacing: 12) {
-                floatingButton(icon: "magnifyingglass.circle.fill") {
-                    showVehicleSearch = true
-                }
-                floatingButton(icon: "line.3.horizontal.decrease.circle.fill") {
-                    viewModel.showFilterPicker = true
-                }
-                floatingButton(icon: "arrow.up.left.and.arrow.down.right.circle.fill") {
-                    withAnimation(.easeInOut(duration: 0.5)) {
-                        cameraPosition = viewModel.fitAllActiveVehicles(vehicles: store.vehicles)
-                    }
-                }
+                floatingButton(icon: "magnifyingglass.circle.fill") { showVehicleSearch = true }
+                floatingButton(icon: "line.3.horizontal.decrease.circle.fill") { viewModel.showFilterPicker = true }
+                floatingButton(icon: "arrow.up.left.and.arrow.down.right.circle.fill") { fitAllVehicles() }
             }
-            .padding(.top, 60)
-            .padding(.trailing, 16)
+            .padding(.top, 60).padding(.trailing, 16)
         }
         .navigationTitle("Fleet Map")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             if !hasSetInitialRegion {
                 hasSetInitialRegion = true
-                cameraPosition = viewModel.fitAllActiveVehicles(vehicles: store.vehicles)
+                fitAllVehicles()
             }
         }
         .sheet(isPresented: $viewModel.showVehicleDetail) {
             if let vehicleId = viewModel.selectedVehicleId,
                let vehicle = store.vehicles.first(where: { $0.id == vehicleId }) {
-                VehicleMapDetailSheet(vehicle: vehicle, viewModel: viewModel) {
-                    viewModel.showVehicleDetail = false
-                }
+                VehicleMapDetailSheet(vehicle: vehicle, viewModel: viewModel) { viewModel.showVehicleDetail = false }
             }
         }
-        .sheet(isPresented: $viewModel.showFilterPicker) {
-            filterSheet
-        }
-        .sheet(isPresented: $showVehicleSearch) {
-            vehicleSearchSheet
-        }
+        .sheet(isPresented: $viewModel.showFilterPicker) { filterSheet }
+        .sheet(isPresented: $showVehicleSearch) { vehicleSearchSheet }
         .onChange(of: viewModel.selectedVehicleId) { _, newId in
             guard let newId,
-                  let vehicle = store.vehicles.first(where: { $0.id == newId }),
-                  let lat = vehicle.currentLatitude,
-                  let lng = vehicle.currentLongitude else { return }
-            withAnimation(.easeInOut(duration: 0.5)) {
-                cameraPosition = .region(MKCoordinateRegion(
-                    center: CLLocationCoordinate2D(latitude: lat, longitude: lng),
-                    latitudinalMeters: 2000,
-                    longitudinalMeters: 2000
-                ))
+                  let vehicle = store.vehicles.first(where: { $0.id == newId }) else { return }
+            if let lat = vehicle.currentLatitude, let lng = vehicle.currentLongitude {
+                withAnimation(.easeInOut(duration: 0.5)) {
+                    cameraPosition = .region(MKCoordinateRegion(
+                        center: CLLocationCoordinate2D(latitude: lat, longitude: lng),
+                        latitudinalMeters: 2000, longitudinalMeters: 2000
+                    ))
+                }
+            } else {
+                // No GPS — show vehicle detail sheet even without map movement
+                viewModel.showVehicleDetail = true
             }
         }
+    }
+
+    // MARK: - Fit All Vehicles
+
+    private func fitAllVehicles() {
+        let active = store.vehicles.compactMap { v -> CLLocationCoordinate2D? in
+            guard let lat = v.currentLatitude, let lng = v.currentLongitude else { return nil }
+            return CLLocationCoordinate2D(latitude: lat, longitude: lng)
+        }
+        if active.isEmpty {
+            // Default to India centre if no live vehicles
+            cameraPosition = .region(MKCoordinateRegion(
+                center: CLLocationCoordinate2D(latitude: 20.5937, longitude: 78.9629),
+                latitudinalMeters: 3_000_000, longitudinalMeters: 3_000_000
+            ))
+            return
+        }
+        if active.count == 1 {
+            cameraPosition = .region(MKCoordinateRegion(center: active[0], latitudinalMeters: 5000, longitudinalMeters: 5000))
+            return
+        }
+        let lats = active.map(\.latitude)
+        let lngs = active.map(\.longitude)
+        let center = CLLocationCoordinate2D(latitude: (lats.min()! + lats.max()!) / 2, longitude: (lngs.min()! + lngs.max()!) / 2)
+        let span = MKCoordinateSpan(latitudeDelta: (lats.max()! - lats.min()!) * 1.4 + 0.01, longitudeDelta: (lngs.max()! - lngs.min()!) * 1.4 + 0.01)
+        cameraPosition = .region(MKCoordinateRegion(center: center, span: span))
     }
 
     // MARK: - Map Content
@@ -79,11 +90,9 @@ struct FleetLiveMapView: View {
         let displayedVehicles = viewModel.filteredVehicles(from: store.vehicles)
 
         Map(position: $cameraPosition) {
-            // Vehicle annotations (Safeguard 2: using Identifiable, updated in-place by MapKit)
             ForEach(displayedVehicles) { vehicle in
                 if let lat = vehicle.currentLatitude, let lng = vehicle.currentLongitude {
-                    Annotation(vehicle.licensePlate,
-                               coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lng)) {
+                    Annotation(vehicle.licensePlate, coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lng)) {
                         vehicleAnnotationView(vehicle)
                             .onTapGesture {
                                 viewModel.selectedVehicleId = vehicle.id
@@ -93,60 +102,22 @@ struct FleetLiveMapView: View {
                 }
             }
 
-            // Enhanced geofence circle overlays
             ForEach(store.geofences.filter { $0.isActive }) { geofence in
-                let center = CLLocationCoordinate2D(
-                    latitude: geofence.latitude,
-                    longitude: geofence.longitude
+                MapCircle(
+                    center: CLLocationCoordinate2D(latitude: geofence.latitude, longitude: geofence.longitude),
+                    radius: geofence.radiusMeters
                 )
-
-                // Check for recent violations (triggered in last 5 minutes)
-                let isViolated = store.geofenceEvents.contains {
-                    $0.geofenceId == geofence.id &&
-                    $0.triggeredAt > Date().addingTimeInterval(-300)
-                }
-
-                MapCircle(center: center, radius: geofence.radiusMeters)
-                    .foregroundStyle(geofenceColor(geofence.geofenceType).opacity(isViolated ? 0.35 : 0.15))
-                    .stroke(
-                        geofenceColor(geofence.geofenceType).opacity(0.8),
-                        style: StrokeStyle(
-                            lineWidth: isViolated ? 3 : 1.5,
-                            dash: geofence.geofenceType == .restrictedZone ? [8, 4] : []
-                        )
-                    )
-
-                // Geofence name label at center
-                Annotation("", coordinate: center) {
-                    Text(geofence.name)
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(geofenceColor(geofence.geofenceType))
-                        .padding(.horizontal, 6).padding(.vertical, 3)
-                        .background(.ultraThinMaterial, in: Capsule())
-                        .shadow(radius: 2)
-                }
-                .annotationTitles(.hidden)
+                .foregroundStyle(geofenceColor(geofence.geofenceType).opacity(0.18))
+                .stroke(geofenceColor(geofence.geofenceType).opacity(0.8), lineWidth: 1.5)
             }
 
-            // Speed-colored breadcrumb trail for selected vehicle
-            if !viewModel.speedSegments.isEmpty {
-                ForEach(viewModel.speedSegments) { segment in
-                    if segment.coordinates.count >= 2 {
-                        MapPolyline(coordinates: segment.coordinates)
-                            .stroke(segment.speedColor, lineWidth: 4)
-                    }
-                }
-            } else if viewModel.breadcrumbCoordinates.count >= 2 {
-                // Fallback: uniform breadcrumb
+            if viewModel.breadcrumbCoordinates.count >= 2 {
                 MapPolyline(coordinates: viewModel.breadcrumbCoordinates)
-                    .stroke(SierraTheme.Colors.ember, lineWidth: 3)
+                    .stroke(.orange, lineWidth: 3)
             }
         }
         .mapStyle(.standard)
-        .mapControls {
-            MapCompass()
-            MapScaleView()
-        }
+        .mapControls { MapCompass(); MapScaleView() }
     }
 
     // MARK: - Vehicle Annotation
@@ -154,18 +125,12 @@ struct FleetLiveMapView: View {
     private func vehicleAnnotationView(_ vehicle: Vehicle) -> some View {
         VStack(spacing: 2) {
             Image(systemName: annotationIcon(for: vehicle.status))
-                .font(.system(size: 16, weight: .bold))
-                .foregroundStyle(.white)
-                .frame(width: 32, height: 32)
-                .background(annotationColor(for: vehicle.status), in: Circle())
+                .font(.system(size: 16, weight: .bold)).foregroundStyle(.white)
+                .frame(width: 32, height: 32).background(annotationColor(for: vehicle.status), in: Circle())
                 .shadow(color: .black.opacity(0.2), radius: 3, y: 1)
-
             Text(vehicle.licensePlate)
-                .font(.system(size: 8, weight: .bold, design: .monospaced))
-                .foregroundStyle(.primary)
-                .padding(.horizontal, 4)
-                .padding(.vertical, 1)
-                .background(.ultraThinMaterial, in: Capsule())
+                .font(.system(size: 8, weight: .bold, design: .monospaced)).foregroundStyle(.primary)
+                .padding(.horizontal, 4).padding(.vertical, 1).background(.ultraThinMaterial, in: Capsule())
         }
     }
 
@@ -178,21 +143,19 @@ struct FleetLiveMapView: View {
 
     private func annotationColor(for status: VehicleStatus) -> Color {
         switch status {
-        case .active, .busy: return SierraTheme.Colors.info
+        case .active, .busy: return .blue
         case .idle: return .gray
         case .inMaintenance: return .orange
-        case .outOfService, .decommissioned: return SierraTheme.Colors.danger
+        case .outOfService, .decommissioned: return .red
         }
     }
-
-    // MARK: - Geofence Colors
 
     private func geofenceColor(_ type: GeofenceType) -> Color {
         switch type {
         case .warehouse: return .blue
         case .deliveryPoint: return .green
         case .restrictedZone: return .red
-        case .custom: return .gray
+        case .custom: return .teal
         }
     }
 
@@ -200,11 +163,9 @@ struct FleetLiveMapView: View {
 
     private func floatingButton(icon: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: icon)
-                .font(.title2)
-                .foregroundStyle(.white)
+            Image(systemName: icon).font(.title2).foregroundStyle(.white)
                 .frame(width: 44, height: 44)
-                .background(SierraTheme.Colors.summitNavy.opacity(0.9), in: Circle())
+                .background(.regularMaterial, in: Circle())
                 .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
         }
     }
@@ -220,23 +181,18 @@ struct FleetLiveMapView: View {
                         viewModel.showFilterPicker = false
                     } label: {
                         HStack {
-                            Text(filter.rawValue)
-                                .foregroundStyle(.primary)
+                            Text(filter.rawValue).foregroundStyle(.primary)
                             Spacer()
                             if filter == viewModel.selectedFilter {
-                                Image(systemName: "checkmark")
-                                    .foregroundStyle(SierraTheme.Colors.ember)
+                                Image(systemName: "checkmark").foregroundStyle(.orange)
                             }
                         }
                     }
                 }
             }
-            .navigationTitle("Filter Vehicles")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Filter Vehicles").navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { viewModel.showFilterPicker = false }
-                }
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { viewModel.showFilterPicker = false } }
             }
         }
         .presentationDetents([.medium])
@@ -246,26 +202,21 @@ struct FleetLiveMapView: View {
 
     private var vehicleSearchSheet: some View {
         NavigationStack {
-            let matches = store.vehicles.filter { v in
+            let matches = store.vehicles.filter {
                 guard !vehicleSearchText.isEmpty else { return true }
-                let q = vehicleSearchText.lowercased()
-                return v.name.localizedCaseInsensitiveContains(q)
-                    || v.licensePlate.localizedCaseInsensitiveContains(q)
+                return $0.name.localizedCaseInsensitiveContains(vehicleSearchText)
+                    || $0.licensePlate.localizedCaseInsensitiveContains(vehicleSearchText)
+                    || $0.model.localizedCaseInsensitiveContains(vehicleSearchText)
             }
-
             List {
                 if matches.isEmpty {
                     HStack {
                         Spacer()
                         VStack(spacing: 6) {
-                            Image(systemName: "car.fill")
-                                .font(.title2)
-                                .foregroundStyle(.tertiary)
-                            Text("No vehicles matched")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(.vertical, 30)
+                            Image(systemName: "car.fill").font(.title2).foregroundStyle(.tertiary)
+                            Text(vehicleSearchText.isEmpty ? "No vehicles in fleet" : "No matches for \"\(vehicleSearchText)\"")
+                                .font(.subheadline).foregroundStyle(.secondary)
+                        }.padding(.vertical, 30)
                         Spacer()
                     }
                     .listRowSeparator(.hidden)
@@ -274,6 +225,8 @@ struct FleetLiveMapView: View {
                         Button {
                             viewModel.selectedVehicleId = vehicle.id
                             showVehicleSearch = false
+                            // Camera will snap in onChange(of: selectedVehicleId)
+                            viewModel.showVehicleDetail = true
                         } label: {
                             HStack(spacing: 12) {
                                 Image(systemName: "car.fill")
@@ -281,45 +234,28 @@ struct FleetLiveMapView: View {
                                     .foregroundStyle(annotationColor(for: vehicle.status))
                                     .frame(width: 36, height: 36)
                                     .background(annotationColor(for: vehicle.status).opacity(0.12), in: Circle())
-
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(vehicle.name)
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(.primary)
-                                    Text(vehicle.licensePlate)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
+                                    Text(vehicle.name).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                                    Text(vehicle.licensePlate).font(.caption).foregroundStyle(.secondary)
+                                    if vehicle.currentLatitude == nil {
+                                        Text("No live location").font(.caption2).foregroundStyle(.orange)
+                                    }
                                 }
-
                                 Spacer()
-
                                 SierraBadge(vehicle.status, size: .compact)
-
-                                if store.trips.contains(where: {
-                                    $0.vehicleId == vehicle.id.uuidString && $0.status == .active
-                                }) {
-                                    Text("On Trip")
-                                        .font(.system(size: 10, weight: .bold))
-                                        .foregroundStyle(.green)
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 2)
-                                        .background(.green.opacity(0.1), in: Capsule())
-                                }
                             }
                         }
                     }
                 }
             }
             .listStyle(.plain)
-            .navigationTitle("Find Vehicle")
-            .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $vehicleSearchText, prompt: "Search by name or plate…")
+            .navigationTitle("Find Vehicle").navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $vehicleSearchText, prompt: "Name, plate or model…")
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { showVehicleSearch = false }
-                }
+                ToolbarItem(placement: .cancellationAction) { Button("Done") { showVehicleSearch = false } }
             }
         }
-        .presentationDetents([.medium])
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 }

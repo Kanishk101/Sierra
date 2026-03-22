@@ -2,12 +2,76 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- Mapbox token — filled by $(MAPBOX_ACCESS_TOKEN) from Secrets.xcconfig -->
 	<key>MBXAccessToken</key>
-	<string></string>
+	<string>$(MAPBOX_ACCESS_TOKEN)</string>
+
+	<!-- Mapbox SDK legacy key (read by MapboxMaps SDK internally) -->
+	<key>MGLMapboxAccessToken</key>
+	<string>$(MAPBOX_ACCESS_TOKEN)</string>
+
+	<!-- Location permissions -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Sierra needs your location to track your trip, detect geofence zones, and enable real-time navigation.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Sierra needs background location to continue tracking your route and detecting geofences while driving.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>Sierra needs background location to track your trip route and geofence zones while the app is in the background.</string>
+
+	<!-- Camera — for VIN scanner and Proof of Delivery photos -->
+	<key>NSCameraUsageDescription</key>
+	<string>Sierra uses the camera to scan vehicle VIN codes and capture proof-of-delivery photos.</string>
+
+	<!-- Photo Library — for selecting delivery receipt photos -->
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Sierra needs photo library access to attach receipt images to fuel logs and delivery confirmations.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Sierra saves captured delivery photos to your photo library.</string>
+
+	<!-- Face ID / Biometrics -->
+	<key>NSFaceIDUsageDescription</key>
+	<string>Sierra uses Face ID for fast, secure sign-in so you do not need to type your password each time.</string>
+
+	<!-- Background modes -->
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>
 		<string>fetch</string>
+		<string>processing</string>
 	</array>
+
+	<!-- App Transport Security -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<false/>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>api.mapbox.com</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<false/>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+			</dict>
+		</dict>
+	</dict>
+
+	<!-- Supported orientations -->
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+
+	<!-- Launch screen -->
+	<key>UILaunchStoryboardName</key>
+	<string>LaunchScreen</string>
 </dict>
 </plist>

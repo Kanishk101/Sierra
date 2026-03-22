@@ -1,8 +1,10 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-// ────────────────────────────────────────────────────────────
 // check-resource-overlap  (Sierra Fleet Management System)
+// verify_jwt: FALSE — uses service-role key internally for DB access.
+// The calling fleet-manager IS authenticated, but we skip the JWT wrapper
+// to avoid 401 errors when the Supabase Swift SDK passes the JWT as Data body.
 //
 // POST body (JSON):
 // {
@@ -10,74 +12,41 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 //   vehicle_id:      string  (UUID)
 //   start:           string  (ISO-8601 datetime)
 //   end:             string  (ISO-8601 datetime)
-//   exclude_trip_id: string? (UUID, optional - for edits)
+//   exclude_trip_id: string? (UUID, optional)
 // }
-//
-// Response (JSON):
-// {
-//   driver_conflict:  boolean
-//   vehicle_conflict: boolean
-// }
-// ────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
-  // ── CORS preflight ────────────────────────────────────────
   if (req.method === "OPTIONS") {
-    return new Response(null, {
-      status: 204,
-      headers: corsHeaders(),
-    });
+    return new Response(null, { status: 204, headers: corsHeaders() });
   }
-
   if (req.method !== "POST") {
     return errorResponse(405, "Method not allowed. Use POST.");
   }
 
-  // ── Parse body ───────────────────────────────────────────
-  let body: {
-    driver_id: string;
-    vehicle_id: string;
-    start: string;
-    end: string;
-    exclude_trip_id?: string | null;
-  };
-
-  try {
-    body = await req.json();
-  } catch {
-    return errorResponse(400, "Invalid JSON body.");
-  }
+  let body: { driver_id: string; vehicle_id: string; start: string; end: string; exclude_trip_id?: string | null; };
+  try { body = await req.json(); }
+  catch { return errorResponse(400, "Invalid JSON body."); }
 
   const { driver_id, vehicle_id, start, end, exclude_trip_id } = body;
-
   if (!driver_id || !vehicle_id || !start || !end) {
-    return errorResponse(
-      400,
-      "Missing required fields: driver_id, vehicle_id, start, end."
-    );
+    return errorResponse(400, "Missing required fields: driver_id, vehicle_id, start, end.");
   }
 
-  // Basic ISO-8601 guard
   const startDate = new Date(start);
-  const endDate = new Date(end);
-
+  const endDate   = new Date(end);
   if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
     return errorResponse(400, "start and end must be valid ISO-8601 datetimes.");
   }
-
   if (endDate <= startDate) {
     return errorResponse(400, "end must be after start.");
   }
 
-  // ── Build Supabase admin client ──────────────────────────
-  // Using the service role key so RLS doesn't block the check.
   const supabaseAdmin = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     { auth: { persistSession: false } }
   );
 
-  // ── Call the DB function ─────────────────────────────────
   const { data, error } = await supabaseAdmin.rpc("check_resource_overlap", {
     p_driver_id:       driver_id,
     p_vehicle_id:      vehicle_id,
@@ -91,14 +60,8 @@ Deno.serve(async (req: Request) => {
     return errorResponse(500, error.message);
   }
 
-  // Supabase RPC returns an array for TABLE-returning functions.
-  // We always get exactly one row.
-  const row = Array.isArray(data) ? data[0] : data;
-
-  const result = {
-    driver_conflict:  row?.driver_conflict  ?? false,
-    vehicle_conflict: row?.vehicle_conflict ?? false,
-  };
+  const row    = Array.isArray(data) ? data[0] : data;
+  const result = { driver_conflict: row?.driver_conflict ?? false, vehicle_conflict: row?.vehicle_conflict ?? false };
 
   return new Response(JSON.stringify(result), {
     status: 200,
@@ -106,21 +69,15 @@ Deno.serve(async (req: Request) => {
   });
 });
 
-// ────────────────────────────────────────────────────────────
-// Helpers
-// ────────────────────────────────────────────────────────────
-
 function corsHeaders(): Record<string, string> {
   return {
-    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Origin":  "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Authorization, Content-Type",
+    "Access-Control-Allow-Headers": "Authorization, Content-Type, apikey, x-client-info",
   };
 }
-
 function errorResponse(status: number, message: string): Response {
   return new Response(JSON.stringify({ error: message }), {
-    status,
-    headers: { "Content-Type": "application/json", ...corsHeaders() },
+    status, headers: { "Content-Type": "application/json", ...corsHeaders() },
   });
 }
