@@ -177,7 +177,7 @@ extension StaffMemberDB {
     }
 }
 
-// MARK: - Edge function response type
+// MARK: - Edge function response types
 
 private struct DeleteStaffResponse: Decodable {
     let success: Bool?
@@ -235,11 +235,7 @@ struct StaffMemberService {
         return rows.map { $0.toStaffMember() }
     }
 
-    // MARK: Insert
-    // NOTE: New staff creation goes through the `create-staff-account` edge
-    // function (called from CreateStaffViewModel), which atomically creates
-    // the auth user + DB row with rollback on failure. This direct method
-    // remains for internal/test use only.
+    // MARK: Insert (internal/test only — real creation goes through create-staff-account edge fn)
 
     static func addStaffMember(_ member: StaffMember) async throws {
         try await supabase
@@ -258,7 +254,14 @@ struct StaffMemberService {
             .execute()
     }
 
-    // MARK: - Targeted availability-only update with verification
+    // MARK: - Availability update
+    //
+    // DRIVER-SIDE: drivers call this on their own row (RLS allows id = auth.uid()).
+    // FLEET-MANAGER-SIDE: called via AppDataStore on behalf of any driver.
+    //
+    // targetAvailability is the desired StaffAvailability raw value string.
+    // This replaces the old Bool-only API so callers can set any availability
+    // state (Available, Unavailable, Busy) rather than just toggling two values.
 
     static func updateAvailability(staffId: UUID, available: Bool) async throws -> String {
         struct Row: Decodable { let id: UUID; let availability: String }
@@ -268,6 +271,12 @@ struct StaffMemberService {
         struct Payload: Encodable { let availability: String }
 
         let idLower = staffId.uuidString.lowercased()
+
+        #if DEBUG
+        print("🔄 [StaffMemberService.updateAvailability] staffId=\(idLower) target=\(value)")
+        let t = Date()
+        #endif
+
         let rows: [Row] = try await supabase
             .from("staff_members")
             .update(Payload(availability: value))
@@ -276,30 +285,51 @@ struct StaffMemberService {
             .execute()
             .value
 
+        #if DEBUG
+        let ms = Int(Date().timeIntervalSince(t) * 1000)
+        if rows.isEmpty {
+            print("🔄 [StaffMemberService.updateAvailability] ❌ No rows updated in \(ms)ms — RLS or ID mismatch")
+        } else {
+            print("🔄 [StaffMemberService.updateAvailability] ✅ Updated in \(ms)ms — confirmed=\(rows[0].availability)")
+        }
+        #endif
+
         if rows.isEmpty {
             throw StaffMemberServiceError.availabilityTargetMissing(staffId)
         }
         return rows[0].availability
     }
 
-    // MARK: - Delete (via edge function — fixes C-07: orphaned auth users)
+    // MARK: - Delete (via edge function)
     //
-    // Previously this did a direct DB delete leaving auth.users entries alive.
-    // Deleted staff members could still authenticate but would crash on app load.
-    //
-    // The `delete-staff-member` edge function:
-    //   1. Verifies the caller is a fleet manager
-    //   2. Prevents self-deletion and inter-manager deletion
-    //   3. Deletes staff_members row (blocks app access immediately)
-    //   4. Deletes Supabase Auth user via admin API (non-fatal if it fails)
+    // FIX: Now uses SupabaseManager.functionOptions() to inject the user JWT
+    // as the Authorization header. Previously used raw supabase.functions.invoke()
+    // which sent the anon key, causing 401s on the delete-staff-member edge function
+    // (which has verify_jwt: true).
 
     static func deleteStaffMember(id: UUID) async throws {
         struct Payload: Encodable { let staffMemberId: String }
 
+        #if DEBUG
+        print("🗑️  [StaffMemberService.deleteStaffMember] Deleting staff id=\(id.uuidString)")
+        await SierraDebugLogger.logSessionState(context: "StaffMemberService.deleteStaffMember")
+        let t = Date()
+        #endif
+
+        // CRITICAL: must use SupabaseManager.functionOptions to inject user JWT.
+        // Raw supabase.functions.invoke() sends the anon key → 401.
+        let options = try await SupabaseManager.functionOptions(
+            body: Payload(staffMemberId: id.uuidString)
+        )
         let response: DeleteStaffResponse = try await supabase.functions.invoke(
             "delete-staff-member",
-            options: FunctionInvokeOptions(body: Payload(staffMemberId: id.uuidString))
+            options: options
         )
+
+        #if DEBUG
+        let ms = Int(Date().timeIntervalSince(t) * 1000)
+        print("🗑️  [StaffMemberService.deleteStaffMember] invoke returned in \(ms)ms success=\(response.success ?? false) error=\(response.error ?? "nil")")
+        #endif
 
         if let errorMsg = response.error {
             throw StaffMemberServiceError.deleteFailed(errorMsg)
@@ -349,11 +379,8 @@ struct StaffMemberService {
 
     // MARK: - Set Approval Status
     //
-    // CRITICAL: when approving a driver or maintenance person, we MUST also set
-    // `availability = 'Available'`. The DB default is 'Unavailable', which means
-    // newly-approved staff members are invisible to availableDrivers() / any trip
-    // assignment flow, making the entire trip creation wizard show "No available
-    // drivers" forever regardless of how many approved drivers exist.
+    // When approving, always sets availability = 'Available' so the driver
+    // immediately appears in the trip assignment wizard.
 
     static func setApprovalStatus(
         staffId: UUID,
