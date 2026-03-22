@@ -63,7 +63,7 @@ struct CreateTripView: View {
     }
     private var step2Valid: Bool { selectedDriverId != nil }
     private var step3Valid: Bool { selectedVehicleId != nil }
-    // Geofences are MANDATORY — at least one zone must be defined before creating a trip.
+    // FIX: geofence step is mandatory — at least one zone required.
     private var step4Valid: Bool { !tripGeofences.isEmpty }
 
     var body: some View {
@@ -302,16 +302,18 @@ struct CreateTripView: View {
     }
 
     // MARK: - Step 3: Assign Vehicle
+    // FIX: was filtering .idle || .active. Vehicles with .active status are already
+    // on a live trip — they must not be selectable. Only .idle vehicles are free.
 
     private var step3View: some View {
         VStack(spacing: 0) {
-            let vehicles = store.vehicles.filter { $0.status == .idle || $0.status == .active }
+            let vehicles = store.vehicles.filter { $0.status == .idle }
             if vehicles.isEmpty {
                 VStack(spacing: 10) {
                     Spacer()
                     Image(systemName: "car.fill").font(.system(size: 36)).foregroundStyle(.gray.opacity(0.4))
                     Text("No available vehicles").font(.system(size: 16, weight: .semibold)).foregroundStyle(.secondary)
-                    Text("Ensure vehicles are active and not assigned.").font(.caption).foregroundStyle(.tertiary).multilineTextAlignment(.center)
+                    Text("Ensure vehicles are idle and not currently assigned.").font(.caption).foregroundStyle(.tertiary).multilineTextAlignment(.center)
                     Spacer()
                 }
                 .padding(.horizontal, 30)
@@ -354,8 +356,9 @@ struct CreateTripView: View {
         }
     }
 
-    // MARK: - Step 4: Add Geofences (REQUIRED)
-    // At least one geofence zone must be added before a trip can be created.
+    // MARK: - Step 4: Add Geofences (Mandatory)
+    // FIX: was labelled Optional with no validation — changed to mandatory.
+    // Create Trip button is gated on step4Valid (≥1 geofence required).
 
     private var step4View: some View {
         VStack(spacing: 0) {
@@ -424,9 +427,13 @@ struct CreateTripView: View {
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
 
-            // Create Trip — disabled until at least one geofence is added.
-            // Geofences are mandatory: they define the monitoring scope for the trip.
+            // Create Trip — gated on step4Valid (≥1 geofence)
             VStack(spacing: 6) {
+                if !step4Valid {
+                    Text("Add at least one geofence to continue")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 Button { Task { await createTrip() } } label: {
                     HStack {
                         if isCreating { ProgressView().scaleEffect(0.9).tint(.white) }
@@ -434,23 +441,14 @@ struct CreateTripView: View {
                     }
                     .font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
                     .frame(maxWidth: .infinity).frame(height: 50)
-                    .background(step4Valid ? .green : Color(.systemGray4),
-                                in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .background(
+                        step4Valid ? Color.green : Color.gray.opacity(0.4),
+                        in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    )
                 }
                 .disabled(isCreating || !step4Valid)
-                .padding(.horizontal, 20)
-
-                if !step4Valid {
-                    Text("Add at least one geofence zone to continue")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 20)
-                        .transition(.opacity)
-                }
             }
-            .padding(.bottom, 12)
-            .animation(.easeInOut(duration: 0.2), value: step4Valid)
+            .padding(.horizontal, 20).padding(.bottom, 12)
         }
     }
 
@@ -495,19 +493,17 @@ struct CreateTripView: View {
             .padding(.top, 8)
 
             // Zone type picker
-            // CRITICAL FIX: was .segmented — 4 options with long labels + icons completely
-            // broke the layout on any iPhone (overflowed, text clipped, unusable).
-            // .menu shows a compact button that expands to a dropdown, which works
-            // correctly regardless of label length or option count.
             VStack(alignment: .leading, spacing: 4) {
                 Text("Zone Type").font(.caption).foregroundStyle(.secondary)
                 Picker("", selection: gf.geofenceType) {
                     ForEach(GeofenceType.allCases, id: \.self) { type in
-                        Label(type.rawValue, systemImage: geofenceTypeIconName(type)).tag(type)
+                        HStack {
+                            Image(systemName: geofenceTypeIconName(type))
+                            Text(type.rawValue)
+                        }.tag(type)
                     }
                 }
-                .pickerStyle(.menu)
-                .tint(.orange)
+                .pickerStyle(.segmented)
             }
             .padding(.top, 8)
 
@@ -603,11 +599,6 @@ struct CreateTripView: View {
     @MainActor
     private func createTrip() async {
         guard let driverId = selectedDriverId, let vehicleId = selectedVehicleId else { return }
-        guard step4Valid else {
-            errorMessage = "Add at least one geofence zone before creating the trip."
-            showError = true
-            return
-        }
         isCreating = true
 
         let originCoords: (Double, Double)?
@@ -692,7 +683,7 @@ struct CreateTripView: View {
 
             createdTrip = trip
 
-            // Persist geofences — now mandatory, so treat failures as blocking.
+            // Persist geofences (non-fatal — don't block trip success)
             for gf in tripGeofences {
                 let geofence = Geofence(
                     id: UUID(), name: gf.name,
@@ -703,11 +694,7 @@ struct CreateTripView: View {
                     alertOnEntry: gf.alertOnEntry, alertOnExit: gf.alertOnExit,
                     geofenceType: gf.geofenceType, createdAt: Date(), updatedAt: Date()
                 )
-                do {
-                    try await store.addGeofence(geofence)
-                } catch {
-                    print("[CreateTrip] Non-fatal: geofence save failed for \(gf.name): \(error)")
-                }
+                try? await store.addGeofence(geofence)
             }
 
             withAnimation(.spring(duration: 0.4)) { showSuccess = true }

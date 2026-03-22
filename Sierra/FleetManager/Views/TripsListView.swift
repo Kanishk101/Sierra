@@ -79,6 +79,9 @@ struct TripsListView: View {
     }
 
     // MARK: - Filter Chips
+    // FIX: unselected chips had Color.clear background — invisible against
+    // systemGroupedBackground. Changed to secondarySystemGroupedBackground
+    // so unselected chips are visible as pill cards.
 
     private var filterChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -86,7 +89,9 @@ struct TripsListView: View {
                 chip("All", isSelected: selectedStatus == nil) { selectedStatus = nil }
                 ForEach(TripStatus.allCases, id: \.self) { status in
                     chip(status.rawValue, isSelected: selectedStatus == status) {
-                        selectedStatus = status
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            selectedStatus = status
+                        }
                     }
                 }
             }
@@ -97,14 +102,25 @@ struct TripsListView: View {
     private func chip(_ label: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
-                .font(.caption)
+                .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
                 .foregroundStyle(isSelected ? .white : .primary)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 7)
-                .background(isSelected ? Color.orange : .clear, in: Capsule())
-                .overlay(Capsule().strokeBorder(isSelected ? .clear : Color(.separator), lineWidth: 1))
+                .background(
+                    isSelected
+                        ? Color.orange
+                        : Color(.secondarySystemGroupedBackground),
+                    in: Capsule()
+                )
+                .overlay(
+                    Capsule().strokeBorder(
+                        isSelected ? Color.clear : Color(.separator),
+                        lineWidth: 1
+                    )
+                )
         }
         .buttonStyle(.plain)
+        .contentShape(Capsule())
     }
 
     // MARK: - Trip Row

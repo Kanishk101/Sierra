@@ -37,21 +37,16 @@ final class LoginViewModel {
     }
 
     // MARK: - Biometric
+    // FIX: was guarding on hasSessionToken() which is always false after signOut().
+    // The session token check is irrelevant here — we need to know if we have a
+    // cached user identity (currentUser) and that the user previously opted in.
+    // hasSessionToken() is only meaningful inside the app (auto-lock reauth),
+    // not on the LoginView login screen.
 
-    /// Show the biometric button when:
-    ///  • Device supports biometrics
-    ///  • User previously enabled it (BiometricPreference, Keychain-persisted)
-    ///  • There is a cached session token (i.e. user was previously authenticated)
-    ///
-    /// NOTE: hasSessionToken() is intentionally kept here — it ensures the button
-    /// only shows when there is a valid cached session to resume, not on a brand-new
-    /// install. The session token is stored in Keychain and survives force-close but
-    /// is cleared by explicit signOut(). This is correct: after signOut, there is no
-    /// cached identity to biometric-authenticate as.
     var showBiometricButton: Bool {
         BiometricManager.shared.canUseBiometrics()
+            && AuthManager.shared.currentUser != nil
             && BiometricPreference.isEnabled
-            && AuthManager.shared.hasSessionToken()
     }
 
     var biometricLabel: String { "Sign in with \(BiometricManager.shared.biometricDisplayName)" }
@@ -121,10 +116,6 @@ final class LoginViewModel {
                 #if DEBUG
                 print("🖥️ [LoginViewModel.signIn] ⏩ Skipping 2FA (non-dashboard destination)")
                 #endif
-                // Let ContentView handle routing via isAuthenticated transition.
-                // Do NOT set authState = .authenticated here — that would fire
-                // LoginView's fullScreenCover which conflicts with ContentView's
-                // own routing and buries the BiometricEnrollmentSheet.
                 AuthManager.shared.completeAuthentication()
                 return
             }
@@ -187,6 +178,9 @@ final class LoginViewModel {
     }
 
     // MARK: - Biometric Sign In
+    // FIX: removed hasSessionToken() guard — the session token is cleared by
+    // signOut() so it is always absent on the login screen. currentUser is
+    // persisted in the Keychain independently and is the correct identity check.
 
     @MainActor
     func biometricSignIn() async {
@@ -195,13 +189,9 @@ final class LoginViewModel {
         do {
             try await BiometricManager.shared.authenticate()
 
-            // CRITICAL FIX: do NOT call signOut() when the guard fails.
-            // Previously, if currentUser was nil or hasSessionToken() was false,
-            // signOut() was called — wiping all Keychain credentials and making
-            // the Face ID button permanently disappear on the next cold start.
-            // Now we simply show an error and let the user try with password.
             guard let user = AuthManager.shared.currentUser else {
-                authState = .error("Session expired. Please sign in with your password.")
+                authState = .error("No cached session. Please sign in with your password.")
+                AuthManager.shared.signOut()
                 return
             }
 
@@ -217,13 +207,11 @@ final class LoginViewModel {
             AuthManager.shared.completeAuthentication()
             AuthManager.shared.reauthCompleted()
 
-            // CRITICAL FIX: do NOT set authState = .authenticated.
-            // Previously this triggered LoginView's .fullScreenCover, stacking a second
-            // copy of the dashboard on top of ContentView's dashboard — which buried
-            // the BiometricEnrollmentSheet (attached to ContentView) so it was never
-            // visible. completeAuthentication() already sets isAuthenticated = true,
-            // which ContentView observes and routes to the correct destination cleanly.
-            authState = .idle
+            // CRITICAL: explicitly set .authenticated so LoginView's onChange
+            // actually navigates — setting .idle did nothing when isAuthenticated
+            // was already true, causing the Face ID loop.
+            let dest = AuthManager.shared.destination(for: user)
+            authState = .authenticated(destination: dest)
 
         } catch {
             if let bioError = error as? BiometricError {

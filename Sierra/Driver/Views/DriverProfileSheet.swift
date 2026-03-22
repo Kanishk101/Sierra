@@ -7,7 +7,12 @@ struct DriverProfileSheet: View {
     @Environment(AppDataStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
-    @State private var isBiometricEnabled = BiometricAuthManager.isEnabled
+    // FIX: initialise from the canonical single source of truth.
+    // Previously BiometricAuthManager.isEnabled routed through here fine,
+    // but the onChange triggered a Face ID challenge just to SET the preference.
+    // AdminProfileView documents this as a bug and avoids it — driver sheet
+    // now uses the same correct pattern: write preference directly, no challenge.
+    @State private var isBiometricEnabled = BiometricPreference.isEnabled
 
     private var biometricLabel: String {
         let context = LAContext()
@@ -26,6 +31,7 @@ struct DriverProfileSheet: View {
         }
         return context.biometryType == .faceID ? "faceid" : "touchid"
     }
+
     @State private var showChangePassword = false
 
     private var user: AuthUser? { AuthManager.shared.currentUser }
@@ -167,19 +173,14 @@ struct DriverProfileSheet: View {
                         Label(biometricLabel, systemImage: biometricIcon)
                             .font(.subheadline)
                     }
+                    .tint(.orange)
+                    // FIX: do NOT trigger a biometric challenge just to SET the preference.
+                    // The challenge happens at sign-in time, not at settings-change time.
+                    // Previously this called BiometricAuthManager.authenticate() which
+                    // silently reverted the toggle to false on any Face ID failure —
+                    // making it impossible to enable biometrics. Match AdminProfileView.
                     .onChange(of: isBiometricEnabled) { _, enabled in
-                        if enabled {
-                            Task {
-                                let ok = await BiometricAuthManager.authenticate(reason: "Enable biometric sign-in for Sierra")
-                                if ok {
-                                    BiometricAuthManager.enable()
-                                } else {
-                                    isBiometricEnabled = false
-                                }
-                            }
-                        } else {
-                            BiometricAuthManager.disable()
-                        }
+                        BiometricPreference.isEnabled = enabled
                     }
 
                     NavigationLink {
@@ -213,6 +214,8 @@ struct DriverProfileSheet: View {
                 }
             }
         }
+        // Sync toggle when sheet re-appears
+        .onAppear { isBiometricEnabled = BiometricPreference.isEnabled }
     }
 }
 

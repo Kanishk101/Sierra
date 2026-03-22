@@ -46,7 +46,10 @@ struct TripInsertPayload: Encodable {
     let destinationLatitude: Double?
     let destinationLongitude: Double?
     let routePolyline: String?
-    let routeStops: String?
+    // FIX: was String? — when nil, serialised as JSON null which violated
+    // trips.route_stops jsonb NOT NULL, silently crashing every trip insert.
+    // Now always String, defaults to '[]' for no stops.
+    let routeStops: String
 
     enum CodingKeys: String, CodingKey {
         case taskId               = "task_id"
@@ -92,11 +95,13 @@ struct TripInsertPayload: Encodable {
         destinationLatitude  = t.destinationLatitude
         destinationLongitude = t.destinationLongitude
         routePolyline        = t.routePolyline
+        // Always send a valid JSON array — never null.
         if let stops = t.routeStops, !stops.isEmpty,
-           let data = try? JSONEncoder().encode(stops) {
-            routeStops = String(data: data, encoding: .utf8)
+           let data = try? JSONEncoder().encode(stops),
+           let str  = String(data: data, encoding: .utf8) {
+            routeStops = str
         } else {
-            routeStops = nil
+            routeStops = "[]"
         }
     }
 }

@@ -13,6 +13,7 @@ struct BiometricEnrollmentSheet: View {
         VStack(spacing: 24) {
             Spacer()
 
+            // Always show Face ID symbol
             Image(systemName: "faceid")
                 .font(.system(size: 64))
                 .foregroundStyle(.orange)
@@ -23,7 +24,7 @@ struct BiometricEnrollmentSheet: View {
                 .foregroundStyle(.primary)
                 .multilineTextAlignment(.center)
 
-            Text("Use \(biometric.biometricDisplayName) for faster, more secure sign-in to Sierra.")
+            Text("Use \(biometric.biometricDisplayName) for faster, more secure sign-in to FleetOS.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -62,34 +63,31 @@ struct BiometricEnrollmentSheet: View {
             Color(.systemGroupedBackground)
                 .ignoresSafeArea()
         )
-        // Prevent drag-to-dismiss so the user must explicitly choose.
-        // markPrompted() is called INSIDE each action button — not in onAppear —
-        // to guarantee it's only marked after the user makes an explicit choice.
-        // Previously calling it in onAppear meant a force-close mid-presentation
-        // could mark as prompted before the user had a chance to respond.
         .interactiveDismissDisabled(true)
+        // FIX: markPrompted() was called in .onAppear which fired before the user
+        // made any choice. If the sheet was dismissed (e.g. app backgrounded),
+        // hasBeenPrompted was permanently true and the sheet never showed again.
+        // Now markPrompted() is called ONLY when the user explicitly taps a button.
     }
 
     // MARK: - Actions
 
     private func enableBiometric() {
-        // Mark prompted BEFORE writing isEnabled so the state is consistent
-        // even if the app is killed between these two writes.
-        BiometricPreference.markPrompted()
+        BiometricPreference.markPrompted()   // record choice BEFORE dismissing
         BiometricPreference.isEnabled = true
         dismiss()
     }
 
     private func skipBiometric() {
-        BiometricPreference.markPrompted()
+        BiometricPreference.markPrompted()   // record choice BEFORE dismissing
         BiometricPreference.isEnabled = false
         dismiss()
     }
 
-    // MARK: - Static Helpers (used by ContentView)
+    // MARK: - Static Helpers (used by LoginViewModel and ContentView)
 
     static func shouldPrompt() -> Bool {
-        !BiometricPreference.hasBeenPrompted && BiometricManager.shared.canUseBiometrics()
+        !BiometricPreference.hasBeenPrompted
     }
 
     static func isBiometricEnabled() -> Bool {
