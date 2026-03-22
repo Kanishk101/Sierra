@@ -13,6 +13,10 @@ struct MaintenanceTaskDetailView: View {
     @State private var repairImageItems: [PhotosPickerItem] = []
     @State private var showError = false
     @State private var showSparePartsSheet = false
+    @State private var showVINScanner = false
+    @State private var scannedVIN = ""
+    @State private var vinLookupError: String?
+    @State private var vinLookupVehicle: Vehicle?
 
     init(task: MaintenanceTask) {
         self.task = task
@@ -52,6 +56,22 @@ struct MaintenanceTaskDetailView: View {
         .sheet(isPresented: $showSparePartsSheet) {
             if let wo = viewModel.workOrder {
                 SparePartsRequestSheet(maintenanceTaskId: task.id, workOrderId: wo.id)
+            }
+        }
+        .sheet(isPresented: $showVINScanner) {
+            NavigationStack {
+                VINScannerView(scannedVIN: $scannedVIN)
+            }
+        }
+        .onChange(of: scannedVIN) { _, vin in
+            if !vin.isEmpty {
+                if let vehicle = store.vehicles.first(where: { $0.vin.uppercased() == vin.uppercased() }) {
+                    vinLookupVehicle = vehicle
+                    vinLookupError = nil
+                } else {
+                    vinLookupVehicle = nil
+                    vinLookupError = "No vehicle found with VIN: \(vin)"
+                }
             }
         }
     }
@@ -118,6 +138,27 @@ struct MaintenanceTaskDetailView: View {
                 }
                 Spacer()
             }
+
+            // VIN Scanner
+            HStack(spacing: 8) {
+                Button {
+                    showVINScanner = true
+                } label: {
+                    Label("Scan VIN", systemImage: "barcode.viewfinder")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12).padding(.vertical, 6)
+                        .background(.orange, in: Capsule())
+                }
+
+                if let v = vinLookupVehicle {
+                    Label("\(v.name) matched", systemImage: "checkmark.circle.fill")
+                        .font(.caption2).foregroundStyle(.green)
+                }
+                if let err = vinLookupError {
+                    Text(err).font(.caption2).foregroundStyle(.red)
+                }
+            }.padding(.top, 4)
         }
         .padding(16)
         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))

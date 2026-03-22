@@ -442,6 +442,8 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
                 triggeredAt: Date(), createdAt: Date()
             ))
         } catch { print("[NavCoordinator] Geofence event insert failed: \(error)") }
+        // ROLE NOTE: UserRole.fleetManager.rawValue == "fleetManager" which matches
+        // the value stored in staff_members.role column — no mismatch risk here.
         let fmIds = AppDataStore.shared.staff.filter { $0.role == .fleetManager && $0.status == .active }.map { $0.id }
         for fmId in fmIds {
             try? await NotificationService.insertNotification(

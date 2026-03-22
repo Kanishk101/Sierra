@@ -2,11 +2,16 @@ import Foundation
 import Supabase
 
 // MARK: - TripAcceptanceService
-// Handles direct DB updates for trip accept/reject.
-// NOTE: AppDataStore+TripAcceptance.swift uses these internally.
-// Both acceptTrip and rejectTrip include a server-side driver_id equality
-// filter so a driver can only accept/reject trips assigned to them.
-// RLS on the trips table enforces the same constraint at the DB level.
+// ⚠️ DEPRECATED — DO NOT USE.
+// This service previously handled accept/reject trip DB updates directly.
+// All call sites now route through:
+//   AppDataStore+TripAcceptance.acceptTrip() / .rejectTrip()
+//   which internally call TripService.acceptTrip() / TripService.rejectTrip()
+//   with the same driver_id equality filter and RLS enforcement.
+//
+// Kept here (not deleted) to avoid requiring Xcode project file edits.
+// The @available deprecation attribute will surface a build warning if
+// anyone accidentally attempts to call this directly.
 
 private let iso8601: ISO8601DateFormatter = {
     let f = ISO8601DateFormatter()
@@ -14,6 +19,7 @@ private let iso8601: ISO8601DateFormatter = {
     return f
 }()
 
+@available(*, deprecated, renamed: "TripService", message: "Use TripService via AppDataStore+TripAcceptance instead.")
 struct TripAcceptanceService {
 
     static func acceptTrip(tripId: UUID, driverId: UUID) async throws {

@@ -19,6 +19,7 @@ enum NotificationType: String, Codable, CaseIterable {
     case documentExpiry        = "Document Expiry"
     case inspectionFailed      = "Inspection Failed"
     case emergency             = "Emergency"
+    case maintenanceComplete   = "Maintenance Complete"
     case general               = "General"
 }
 

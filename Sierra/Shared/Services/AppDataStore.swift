@@ -534,12 +534,18 @@ final class AppDataStore {
         if let idx = maintenanceTasks.firstIndex(where: { $0.id == id }) {
             maintenanceTasks[idx].status = .completed; maintenanceTasks[idx].completedAt = Date()
             let vehicleId = maintenanceTasks[idx].vehicleId
-            if let vIdx = vehicles.firstIndex(where: { $0.id == vehicleId }) {
-                vehicles[vIdx].status = .idle
-                // DB trigger (SECURITY DEFINER) handles vehicle release atomically.
-                // try? here is intentional — maintenance personnel cannot write vehicles
-                // via RLS, but the trigger fires regardless.
-                try? await VehicleService.updateVehicle(vehicles[vIdx])
+            if vehicles.firstIndex(where: { $0.id == vehicleId }) != nil {
+                // Use edge function to bypass RLS — maintenance users cannot write
+                // vehicles directly. The edge function validates the caller is assigned
+                // to a maintenance task for this vehicle.
+                try? await supabase.functions.invoke(
+                    "update-vehicle-status",
+                    options: .init(body: ["vehicleId": vehicleId.uuidString, "status": "Idle"])
+                )
+                // Update local cache optimistically
+                if let vIdx = vehicles.firstIndex(where: { $0.id == vehicleId }) {
+                    vehicles[vIdx].status = .idle
+                }
             }
         }
     }
@@ -572,6 +578,18 @@ final class AppDataStore {
             maintenanceTasks[taskIdx].status = .completed
             maintenanceTasks[taskIdx].completedAt = Date()
             try? await MaintenanceTaskService.updateMaintenanceTask(maintenanceTasks[taskIdx])
+
+            // Notify the admin who created the maintenance task
+            let task = maintenanceTasks[taskIdx]
+            let vehicleName = vehicle(for: task.vehicleId)?.name ?? "Unknown"
+            try? await NotificationService.insertNotification(
+                recipientId: task.createdByAdminId,
+                type: .maintenanceComplete,
+                title: "Work Order Completed",
+                body: "Work order for vehicle \(vehicleName) has been closed.",
+                entityType: "work_order",
+                entityId: order.id
+            )
         }
     }
 

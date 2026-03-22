@@ -108,6 +108,7 @@ struct NotificationCentreView: View {
         case .inspectionFailed: return "doc.text.fill"
         case .documentExpiry: return "calendar.badge.exclamationmark"
         case .emergency: return "exclamationmark.octagon.fill"
+        case .maintenanceComplete: return "wrench.and.screwdriver.fill"
         case .general: return "bell.fill"
         }
     }
@@ -120,6 +121,7 @@ struct NotificationCentreView: View {
         case .tripAssigned, .tripAccepted, .vehicleAssigned: return .blue
         case .maintenanceApproved: return .green
         case .tripCancelled, .maintenanceRejected: return .red
+        case .maintenanceComplete: return .green
         case .general: return .gray
         }
     }

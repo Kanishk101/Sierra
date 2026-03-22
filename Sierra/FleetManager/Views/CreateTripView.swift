@@ -15,56 +15,13 @@ struct GeofenceCandidate: Identifiable {
 }
 
 /// 4-step trip creation wizard.
+/// Phase 13: UI only — all state and logic in CreateTripViewModel.
 struct CreateTripView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(AppDataStore.self) private var store
 
-    @State private var currentStep = 1
-
-    // Step 1
-    @State private var origin = ""
-    @State private var destination = ""
-    @State private var scheduledDate = Date()
-    @State private var scheduledEndDate: Date = Date().addingTimeInterval(3600 * 8)
-    @State private var priority: TripPriority = .normal
-    @State private var notes = ""
-    @State private var selectedOrigin: GeocodedAddress?
-    @State private var selectedDestination: GeocodedAddress?
-    @State private var stops: [GeocodedAddress] = []
-    @State private var showOriginSearch = false
-    @State private var showDestinationSearch = false
-    @State private var showStopSearch = false
-
-    // Step 2
-    @State private var selectedDriverId: UUID?
-
-    // Step 3
-    @State private var selectedVehicleId: UUID?
-
-    // Step 4
-    @State private var tripGeofences: [GeofenceCandidate] = []
-    @State private var editingGeofenceId: UUID?
-
-    // Submit
-    @State private var createdTrip: Trip?
-    @State private var showSuccess = false
-    @State private var isCreating = false
-    @State private var errorMessage: String?
-    @State private var showError = false
-
-    // MARK: - Validation
-
-    private var step1Valid: Bool {
-        !origin.trimmingCharacters(in: .whitespaces).isEmpty
-            && !destination.trimmingCharacters(in: .whitespaces).isEmpty
-            && routeFieldValidationError(for: origin) == nil
-            && routeFieldValidationError(for: destination) == nil
-    }
-    private var step2Valid: Bool { selectedDriverId != nil }
-    private var step3Valid: Bool { selectedVehicleId != nil }
-    // FIX: geofence step is mandatory — at least one zone required.
-    private var step4Valid: Bool { !tripGeofences.isEmpty }
+    @State private var vm = CreateTripViewModel()
 
     var body: some View {
         NavigationStack {
@@ -72,10 +29,10 @@ struct CreateTripView: View {
                 Color(.systemGroupedBackground).ignoresSafeArea()
                 VStack(spacing: 0) {
                     stepIndicator.padding(.top, 20).padding(.bottom, 16)
-                    if showSuccess {
+                    if vm.showSuccess {
                         successCard
                     } else {
-                        switch currentStep {
+                        switch vm.currentStep {
                         case 1: step1View
                         case 2: step2View
                         case 3: step3View
@@ -89,11 +46,11 @@ struct CreateTripView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    if !showSuccess { Button("Cancel") { dismiss() } }
+                    if !vm.showSuccess { Button("Cancel") { dismiss() } }
                 }
                 ToolbarItem(placement: .topBarLeading) {
-                    if currentStep > 1 && !showSuccess {
-                        Button { withAnimation { currentStep -= 1 } } label: {
+                    if vm.currentStep > 1 && !vm.showSuccess {
+                        Button { withAnimation { vm.currentStep -= 1 } } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: "chevron.left").font(.caption)
                                 Text("Back")
@@ -103,10 +60,10 @@ struct CreateTripView: View {
                 }
             }
         }
-        .alert("Error", isPresented: $showError) {
+        .alert("Error", isPresented: $vm.showError) {
             Button("OK", role: .cancel) {}
         } message: {
-            Text(errorMessage ?? "An unknown error occurred.")
+            Text(vm.errorMessage ?? "An unknown error occurred.")
         }
     }
 
@@ -116,15 +73,15 @@ struct CreateTripView: View {
         HStack(spacing: 0) {
             ForEach(1...4, id: \.self) { step in
                 Circle()
-                    .fill(step <= currentStep ? Color.orange : Color.gray.opacity(0.3))
+                    .fill(step <= vm.currentStep ? Color.orange : Color.gray.opacity(0.3))
                     .frame(width: 12, height: 12)
                     .overlay {
-                        if step < currentStep {
+                        if step < vm.currentStep {
                             Image(systemName: "checkmark").font(.system(size: 7, weight: .bold)).foregroundStyle(.white)
                         }
                     }
                 if step < 4 {
-                    Rectangle().fill(step < currentStep ? Color.orange : Color.gray.opacity(0.2)).frame(height: 2).frame(maxWidth: 60)
+                    Rectangle().fill(step < vm.currentStep ? Color.orange : Color.gray.opacity(0.2)).frame(height: 2).frame(maxWidth: 60)
                 }
             }
         }
@@ -133,31 +90,24 @@ struct CreateTripView: View {
 
     // MARK: - Step 1: Trip Details
 
-    private func routeFieldValidationError(for value: String) -> String? {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty { return "This field is required." }
-        if trimmed.count < 3 { return "Address is too short." }
-        return nil
-    }
-
     private var step1View: some View {
         VStack(spacing: 0) {
             Form {
                 Section("Route") {
-                    Button { showOriginSearch = true } label: {
+                    Button { vm.showOriginSearch = true } label: {
                         HStack(spacing: 12) {
                             Image(systemName: "circle.fill").font(.system(size: 10)).foregroundStyle(.green)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Origin").font(.caption).foregroundStyle(.secondary)
-                                Text(origin.isEmpty ? "Search origin address…" : origin)
-                                    .font(.subheadline).foregroundStyle(origin.isEmpty ? .tertiary : .primary).lineLimit(2)
+                                Text(vm.origin.isEmpty ? "Search origin address…" : vm.origin)
+                                    .font(.subheadline).foregroundStyle(vm.origin.isEmpty ? .tertiary : .primary).lineLimit(2)
                             }
                             Spacer()
                             Image(systemName: "magnifyingglass").font(.caption).foregroundStyle(.secondary)
                         }
                     }.buttonStyle(.plain)
 
-                    ForEach(Array(stops.enumerated()), id: \.element.id) { index, stop in
+                    ForEach(Array(vm.stops.enumerated()), id: \.element.id) { index, stop in
                         HStack(spacing: 12) {
                             Image(systemName: "\(index + 1).circle.fill").font(.system(size: 14)).foregroundStyle(.orange)
                             VStack(alignment: .leading, spacing: 2) {
@@ -165,23 +115,23 @@ struct CreateTripView: View {
                                 Text(stop.shortName).font(.subheadline).foregroundStyle(.primary)
                             }
                             Spacer()
-                            Button { stops.remove(at: index) } label: {
+                            Button { vm.stops.remove(at: index) } label: {
                                 Image(systemName: "xmark.circle.fill").font(.system(size: 16)).foregroundStyle(.red.opacity(0.7))
                             }.buttonStyle(.plain)
                         }
                     }
 
-                    Button { showStopSearch = true } label: {
+                    Button { vm.showStopSearch = true } label: {
                         Label("Add Stop", systemImage: "plus.circle").font(.subheadline).foregroundStyle(.orange)
                     }
 
-                    Button { showDestinationSearch = true } label: {
+                    Button { vm.showDestinationSearch = true } label: {
                         HStack(spacing: 12) {
                             Image(systemName: "mappin.circle.fill").font(.system(size: 14)).foregroundStyle(.red)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Destination").font(.caption).foregroundStyle(.secondary)
-                                Text(destination.isEmpty ? "Search destination address…" : destination)
-                                    .font(.subheadline).foregroundStyle(destination.isEmpty ? .tertiary : .primary).lineLimit(2)
+                                Text(vm.destination.isEmpty ? "Search destination address…" : vm.destination)
+                                    .font(.subheadline).foregroundStyle(vm.destination.isEmpty ? .tertiary : .primary).lineLimit(2)
                             }
                             Spacer()
                             Image(systemName: "magnifyingglass").font(.caption).foregroundStyle(.secondary)
@@ -189,33 +139,33 @@ struct CreateTripView: View {
                     }.buttonStyle(.plain)
                 }
 
-                if selectedOrigin != nil || selectedDestination != nil {
+                if vm.selectedOrigin != nil || vm.selectedDestination != nil {
                     Section("Route Preview") { routeMapPreview }
                 }
 
                 Section("Schedule") {
-                    DatePicker("Departure *", selection: $scheduledDate, in: Date()..., displayedComponents: [.date, .hourAndMinute])
-                    Picker("Priority", selection: $priority) {
+                    DatePicker("Departure *", selection: $vm.scheduledDate, in: Date()..., displayedComponents: [.date, .hourAndMinute])
+                    Picker("Priority", selection: $vm.priority) {
                         ForEach(TripPriority.allCases, id: \.self) { p in Text(p.rawValue).tag(p) }
                     }
                 }
                 Section("Notes") {
-                    TextEditor(text: $notes).frame(minHeight: 60)
+                    TextEditor(text: $vm.notes).frame(minHeight: 60)
                 }
             }
             .scrollContentBackground(.hidden)
-            .onChange(of: scheduledDate) { _, newDate in scheduledEndDate = newDate.addingTimeInterval(3600 * 8) }
-            .sheet(isPresented: $showOriginSearch) {
-                AddressSearchSheet(placeholder: "Search origin address…") { result in selectedOrigin = result; origin = result.displayName }
+            .onChange(of: vm.scheduledDate) { _, newDate in vm.scheduledEndDate = newDate.addingTimeInterval(3600 * 8) }
+            .sheet(isPresented: $vm.showOriginSearch) {
+                AddressSearchSheet(placeholder: "Search origin address…") { result in vm.selectedOrigin = result; vm.origin = result.displayName }
             }
-            .sheet(isPresented: $showDestinationSearch) {
-                AddressSearchSheet(placeholder: "Search destination address…") { result in selectedDestination = result; destination = result.displayName }
+            .sheet(isPresented: $vm.showDestinationSearch) {
+                AddressSearchSheet(placeholder: "Search destination address…") { result in vm.selectedDestination = result; vm.destination = result.displayName }
             }
-            .sheet(isPresented: $showStopSearch) {
-                AddressSearchSheet(placeholder: "Search stop address…") { result in stops.append(result) }
+            .sheet(isPresented: $vm.showStopSearch) {
+                AddressSearchSheet(placeholder: "Search stop address…") { result in vm.stops.append(result) }
             }
 
-            Button { withAnimation(.easeInOut) { currentStep = 2 } } label: {
+            Button { withAnimation(.easeInOut) { vm.currentStep = 2 } } label: {
                 HStack {
                     Text("Next: Assign Driver")
                     Image(systemName: "arrow.right")
@@ -224,7 +174,7 @@ struct CreateTripView: View {
                 .frame(maxWidth: .infinity).frame(height: 50)
                 .background(Color.orange, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
-            .disabled(!step1Valid).opacity(step1Valid ? 1 : 0.5)
+            .disabled(!vm.step1Valid).opacity(vm.step1Valid ? 1 : 0.5)
             .padding(.horizontal, 20).padding(.bottom, 12)
         }
     }
@@ -233,17 +183,17 @@ struct CreateTripView: View {
 
     private var routeMapPreview: some View {
         Map {
-            if let o = selectedOrigin {
+            if let o = vm.selectedOrigin {
                 Annotation(o.shortName, coordinate: o.coordinate) {
                     Image(systemName: "circle.fill").font(.system(size: 12)).foregroundStyle(.green).background(.white, in: Circle()).shadow(radius: 2)
                 }
             }
-            ForEach(Array(stops.enumerated()), id: \.element.id) { index, stop in
+            ForEach(Array(vm.stops.enumerated()), id: \.element.id) { index, stop in
                 Annotation("Stop \(index + 1)", coordinate: stop.coordinate) {
                     Text("\(index + 1)").font(.system(size: 10, weight: .bold)).foregroundStyle(.white).frame(width: 22, height: 22).background(.orange, in: Circle()).shadow(radius: 2)
                 }
             }
-            if let d = selectedDestination {
+            if let d = vm.selectedDestination {
                 Annotation(d.shortName, coordinate: d.coordinate) {
                     Image(systemName: "mappin.circle.fill").font(.system(size: 16)).foregroundStyle(.red).background(.white, in: Circle()).shadow(radius: 2)
                 }
@@ -265,13 +215,12 @@ struct CreateTripView: View {
                     Text("No available drivers").font(.system(size: 16, weight: .semibold)).foregroundStyle(.secondary)
                     Text("Ensure drivers are approved and set to Available.").font(.caption).foregroundStyle(.tertiary).multilineTextAlignment(.center)
                     Spacer()
-                }
-                .padding(.horizontal, 30)
+                }.padding(.horizontal, 30)
             } else {
                 Text("Select Driver").font(.system(size: 18, weight: .bold)).padding(.top, 4)
                 List {
                     ForEach(drivers) { driver in
-                        Button { selectedDriverId = driver.id } label: {
+                        Button { vm.selectedDriverId = driver.id } label: {
                             HStack(spacing: 12) {
                                 Circle().fill(Color.blue.opacity(0.12)).frame(width: 40, height: 40)
                                     .overlay(Text(driver.initials).font(.system(size: 14, weight: .bold)).foregroundStyle(.blue))
@@ -280,30 +229,27 @@ struct CreateTripView: View {
                                     Text(driver.phone ?? "No phone").font(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer()
-                                if selectedDriverId == driver.id {
+                                if vm.selectedDriverId == driver.id {
                                     Image(systemName: "checkmark.circle.fill").font(.system(size: 20)).foregroundStyle(.orange)
                                 }
                             }
                         }
-                        .listRowBackground(selectedDriverId == driver.id ? Color.orange.opacity(0.06) : Color.clear)
+                        .listRowBackground(vm.selectedDriverId == driver.id ? Color.orange.opacity(0.06) : Color.clear)
                     }
-                }
-                .listStyle(.plain).scrollContentBackground(.hidden)
+                }.listStyle(.plain).scrollContentBackground(.hidden)
             }
-            Button { withAnimation(.easeInOut) { currentStep = 3 } } label: {
+            Button { withAnimation(.easeInOut) { vm.currentStep = 3 } } label: {
                 HStack { Text("Next: Assign Vehicle"); Image(systemName: "arrow.right") }
                     .font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
                     .frame(maxWidth: .infinity).frame(height: 50)
                     .background(Color.orange, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
-            .disabled(!step2Valid).opacity(step2Valid ? 1 : 0.5)
+            .disabled(!vm.step2Valid).opacity(vm.step2Valid ? 1 : 0.5)
             .padding(.horizontal, 20).padding(.bottom, 12)
         }
     }
 
     // MARK: - Step 3: Assign Vehicle
-    // FIX: was filtering .idle || .active. Vehicles with .active status are already
-    // on a live trip — they must not be selectable. Only .idle vehicles are free.
 
     private var step3View: some View {
         VStack(spacing: 0) {
@@ -315,13 +261,12 @@ struct CreateTripView: View {
                     Text("No available vehicles").font(.system(size: 16, weight: .semibold)).foregroundStyle(.secondary)
                     Text("Ensure vehicles are idle and not currently assigned.").font(.caption).foregroundStyle(.tertiary).multilineTextAlignment(.center)
                     Spacer()
-                }
-                .padding(.horizontal, 30)
+                }.padding(.horizontal, 30)
             } else {
                 Text("Select Vehicle").font(.system(size: 18, weight: .bold)).padding(.top, 4)
                 List {
                     ForEach(vehicles) { vehicle in
-                        Button { selectedVehicleId = vehicle.id } label: {
+                        Button { vm.selectedVehicleId = vehicle.id } label: {
                             HStack(spacing: 12) {
                                 Circle().fill(colorDot(vehicle.color)).frame(width: 10, height: 10)
                                 VStack(alignment: .leading, spacing: 2) {
@@ -335,146 +280,118 @@ struct CreateTripView: View {
                                     }
                                 }
                                 Spacer()
-                                if selectedVehicleId == vehicle.id {
+                                if vm.selectedVehicleId == vehicle.id {
                                     Image(systemName: "checkmark.circle.fill").font(.system(size: 20)).foregroundStyle(.orange)
                                 }
                             }
                         }
-                        .listRowBackground(selectedVehicleId == vehicle.id ? Color.orange.opacity(0.06) : Color.clear)
+                        .listRowBackground(vm.selectedVehicleId == vehicle.id ? Color.orange.opacity(0.06) : Color.clear)
                     }
-                }
-                .listStyle(.plain).scrollContentBackground(.hidden)
+                }.listStyle(.plain).scrollContentBackground(.hidden)
             }
-            Button { withAnimation(.easeInOut) { currentStep = 4 } } label: {
+            Button { withAnimation(.easeInOut) { vm.currentStep = 4 } } label: {
                 HStack { Text("Next: Add Geofences"); Image(systemName: "arrow.right") }
                     .font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
                     .frame(maxWidth: .infinity).frame(height: 50)
                     .background(Color.orange, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
-            .disabled(!step3Valid).opacity(step3Valid ? 1 : 0.5)
+            .disabled(!vm.step3Valid).opacity(vm.step3Valid ? 1 : 0.5)
             .padding(.horizontal, 20).padding(.bottom, 12)
         }
     }
 
-    // MARK: - Step 4: Add Geofences (Mandatory)
-    // FIX: was labelled Optional with no validation — changed to mandatory.
-    // Create Trip button is gated on step4Valid (≥1 geofence required).
+    // MARK: - Step 4: Add Geofences
 
     private var step4View: some View {
         VStack(spacing: 0) {
             VStack(spacing: 4) {
-                Text("Add Geofences")
-                    .font(.system(size: 18, weight: .bold))
-                Text("Define at least one monitoring zone for this trip")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            .padding(.top, 8).padding(.bottom, 12)
+                Text("Add Geofences").font(.system(size: 18, weight: .bold))
+                Text("Define at least one monitoring zone for this trip").font(.caption).foregroundStyle(.secondary)
+            }.padding(.top, 8).padding(.bottom, 12)
 
             List {
-                // Suggested zones from route
                 Section {
-                    let suggestions: [(String, Double, Double)] = buildSuggestions()
+                    let suggestions = vm.buildSuggestions()
                     if suggestions.isEmpty {
                         Text("Select origin and destination in Step 1 to get zone suggestions.")
                             .font(.caption).foregroundStyle(.tertiary)
                     } else {
                         ForEach(suggestions, id: \.0) { name, lat, lng in
-                            let alreadyAdded = tripGeofences.contains { $0.latitude == lat && $0.longitude == lng }
+                            let alreadyAdded = vm.tripGeofences.contains { $0.latitude == lat && $0.longitude == lng }
                             Button {
                                 if !alreadyAdded {
-                                    tripGeofences.append(GeofenceCandidate(name: name, latitude: lat, longitude: lng))
+                                    vm.tripGeofences.append(GeofenceCandidate(name: name, latitude: lat, longitude: lng))
                                 }
                             } label: {
                                 HStack(spacing: 10) {
                                     Image(systemName: alreadyAdded ? "checkmark.circle.fill" : "plus.circle")
-                                        .foregroundStyle(alreadyAdded ? .green : .teal)
-                                        .font(.system(size: 18))
+                                        .foregroundStyle(alreadyAdded ? .green : .teal).font(.system(size: 18))
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(name).font(.subheadline).foregroundStyle(.primary)
-                                        Text("Tap to add 500m monitoring zone")
-                                            .font(.caption2).foregroundStyle(.tertiary)
+                                        Text("Tap to add 500m monitoring zone").font(.caption2).foregroundStyle(.tertiary)
                                     }
                                     Spacer()
-                                    if alreadyAdded {
-                                        Text("Added").font(.caption.weight(.semibold)).foregroundStyle(.green)
-                                    }
+                                    if alreadyAdded { Text("Added").font(.caption.weight(.semibold)).foregroundStyle(.green) }
                                 }
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(alreadyAdded)
+                            }.buttonStyle(.plain).disabled(alreadyAdded)
                         }
                     }
-                } header: {
-                    Text("Suggested from Route")
-                }
+                } header: { Text("Suggested from Route") }
 
-                // Added geofences with full config
-                if !tripGeofences.isEmpty {
+                if !vm.tripGeofences.isEmpty {
                     Section {
-                        ForEach($tripGeofences) { $gf in
+                        ForEach($vm.tripGeofences) { $gf in
                             geofenceConfigRow(gf: $gf)
                         }
                     } header: {
                         HStack {
                             Text("Added Geofences")
                             Spacer()
-                            Text("\(tripGeofences.count) zone\(tripGeofences.count == 1 ? "" : "s")")
+                            Text("\(vm.tripGeofences.count) zone\(vm.tripGeofences.count == 1 ? "" : "s")")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     }
                 }
-            }
-            .listStyle(.insetGrouped)
-            .scrollContentBackground(.hidden)
+            }.listStyle(.insetGrouped).scrollContentBackground(.hidden)
 
-            // Create Trip — gated on step4Valid (≥1 geofence)
             VStack(spacing: 6) {
-                if !step4Valid {
-                    Text("Add at least one geofence to continue")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                if !vm.step4Valid {
+                    Text("Add at least one geofence to continue").font(.caption).foregroundStyle(.secondary)
                 }
-                Button { Task { await createTrip() } } label: {
+                Button { Task { await vm.createTrip(store: store) } } label: {
                     HStack {
-                        if isCreating { ProgressView().scaleEffect(0.9).tint(.white) }
+                        if vm.isCreating { ProgressView().scaleEffect(0.9).tint(.white) }
                         else { Text("Create Trip"); Image(systemName: "checkmark") }
                     }
                     .font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
                     .frame(maxWidth: .infinity).frame(height: 50)
-                    .background(
-                        step4Valid ? Color.green : Color.gray.opacity(0.4),
-                        in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    )
-                }
-                .disabled(isCreating || !step4Valid)
-            }
-            .padding(.horizontal, 20).padding(.bottom, 12)
+                    .background(vm.step4Valid ? Color.green : Color.gray.opacity(0.4),
+                                in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }.disabled(vm.isCreating || !vm.step4Valid)
+            }.padding(.horizontal, 20).padding(.bottom, 12)
         }
     }
 
-    // Individual geofence config row with expandable settings
+    // MARK: - Geofence Config Row
+
     @ViewBuilder
     private func geofenceConfigRow(gf: Binding<GeofenceCandidate>) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header row
             HStack(spacing: 10) {
                 geofenceTypeIcon(gf.wrappedValue.geofenceType)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(gf.wrappedValue.name)
-                        .font(.subheadline.weight(.medium)).foregroundStyle(.primary)
+                    Text(gf.wrappedValue.name).font(.subheadline.weight(.medium)).foregroundStyle(.primary)
                     Text("\(Int(gf.wrappedValue.radiusMeters))m • \(gf.wrappedValue.geofenceType.rawValue)")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button { tripGeofences.removeAll { $0.id == gf.wrappedValue.id } } label: {
+                Button { vm.tripGeofences.removeAll { $0.id == gf.wrappedValue.id } } label: {
                     Image(systemName: "minus.circle.fill").foregroundStyle(.red.opacity(0.7))
                 }.buttonStyle(.plain)
-            }
-            .padding(.vertical, 8)
+            }.padding(.vertical, 8)
 
             Divider().padding(.leading, 38)
 
-            // Radius slider
             VStack(spacing: 6) {
                 HStack {
                     Text("Radius").font(.caption).foregroundStyle(.secondary)
@@ -482,54 +399,38 @@ struct CreateTripView: View {
                     Text("\(Int(gf.wrappedValue.radiusMeters)) m")
                         .font(.system(.caption, design: .monospaced).weight(.semibold)).foregroundStyle(.orange)
                 }
-                Slider(value: gf.radiusMeters, in: 100...5000, step: 50)
-                    .tint(.orange)
+                Slider(value: gf.radiusMeters, in: 100...5000, step: 50).tint(.orange)
                 HStack {
                     Text("100m").font(.caption2).foregroundStyle(.tertiary)
                     Spacer()
                     Text("5km").font(.caption2).foregroundStyle(.tertiary)
                 }
-            }
-            .padding(.top, 8)
+            }.padding(.top, 8)
 
-            // Zone type picker
             VStack(alignment: .leading, spacing: 4) {
                 Text("Zone Type").font(.caption).foregroundStyle(.secondary)
                 Picker("", selection: gf.geofenceType) {
                     ForEach(GeofenceType.allCases, id: \.self) { type in
-                        HStack {
-                            Image(systemName: geofenceTypeIconName(type))
-                            Text(type.rawValue)
-                        }.tag(type)
+                        HStack { Image(systemName: geofenceTypeIconName(type)); Text(type.rawValue) }.tag(type)
                     }
-                }
-                .pickerStyle(.segmented)
-            }
-            .padding(.top, 8)
+                }.pickerStyle(.segmented)
+            }.padding(.top, 8)
 
-            // Alert toggles
             HStack(spacing: 16) {
                 Toggle(isOn: gf.alertOnEntry) {
-                    Label("Entry Alert", systemImage: "arrow.down.circle")
-                        .font(.caption)
-                }
-                .toggleStyle(.switch).tint(.orange)
-
+                    Label("Entry Alert", systemImage: "arrow.down.circle").font(.caption)
+                }.toggleStyle(.switch).tint(.orange)
                 Toggle(isOn: gf.alertOnExit) {
-                    Label("Exit Alert", systemImage: "arrow.up.circle")
-                        .font(.caption)
-                }
-                .toggleStyle(.switch).tint(.orange)
-            }
-            .padding(.top, 8).padding(.bottom, 4)
+                    Label("Exit Alert", systemImage: "arrow.up.circle").font(.caption)
+                }.toggleStyle(.switch).tint(.orange)
+            }.padding(.top, 8).padding(.bottom, 4)
         }
     }
 
     @ViewBuilder
     private func geofenceTypeIcon(_ type: GeofenceType) -> some View {
         Image(systemName: geofenceTypeIconName(type))
-            .font(.system(size: 18))
-            .foregroundStyle(geofenceTypeColor(type))
+            .font(.system(size: 18)).foregroundStyle(geofenceTypeColor(type))
             .frame(width: 28, height: 28)
             .background(geofenceTypeColor(type).opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
     }
@@ -552,16 +453,6 @@ struct CreateTripView: View {
         }
     }
 
-    private func buildSuggestions() -> [(String, Double, Double)] {
-        var list: [(String, Double, Double)] = []
-        if let o = selectedOrigin  { list.append(("Origin: \(o.shortName)", o.latitude, o.longitude)) }
-        for (i, stop) in stops.enumerated() { list.append(("Stop \(i+1): \(stop.shortName)", stop.latitude, stop.longitude)) }
-        if let d = selectedDestination { list.append(("Destination: \(d.shortName)", d.latitude, d.longitude)) }
-        return list
-    }
-
-    // MARK: - Color Dot Helper
-
     private func colorDot(_ colorName: String) -> Color {
         switch colorName.lowercased() {
         case "white":        .gray.opacity(0.3)
@@ -576,135 +467,6 @@ struct CreateTripView: View {
         }
     }
 
-    // MARK: - Busy-Resource Validation
-
-    private func busyResourceValidationError(resourceLabel: String, trips: [Trip], newTripStart: Date) -> String? {
-        let blockingTrips = trips.filter { $0.status == .active || $0.status == .scheduled }
-        guard !blockingTrips.isEmpty else {
-            return "Selected \(resourceLabel) is marked Busy. Please resolve the current assignment first."
-        }
-        let explicitEndTimes = blockingTrips.compactMap { $0.actualEndDate ?? $0.scheduledEndDate }
-        guard let latestEnd = explicitEndTimes.max() else {
-            return "Selected \(resourceLabel) is Busy and has no explicit trip end time."
-        }
-        if latestEnd > newTripStart {
-            let endText = latestEnd.formatted(.dateTime.day().month(.abbreviated).year().hour().minute())
-            return "Selected \(resourceLabel) is Busy until \(endText). Choose another or a later departure."
-        }
-        return nil
-    }
-
-    // MARK: - Create Trip
-
-    @MainActor
-    private func createTrip() async {
-        guard let driverId = selectedDriverId, let vehicleId = selectedVehicleId else { return }
-        isCreating = true
-
-        let originCoords: (Double, Double)?
-        if let o = selectedOrigin { originCoords = (o.latitude, o.longitude) }
-        else { originCoords = await geocodeAddress(origin.trimmingCharacters(in: .whitespaces)) }
-
-        let destCoords: (Double, Double)?
-        if let d = selectedDestination { destCoords = (d.latitude, d.longitude) }
-        else { destCoords = await geocodeAddress(destination.trimmingCharacters(in: .whitespaces)) }
-
-        do {
-            guard let latestDriver = try await StaffMemberService.fetchStaffMember(id: driverId) else {
-                errorMessage = "Selected driver no longer exists."; showError = true; isCreating = false; return
-            }
-            guard latestDriver.status == .active else {
-                errorMessage = "Selected driver is not active."; showError = true; isCreating = false; return
-            }
-            if latestDriver.availability != .available && latestDriver.availability != .busy {
-                errorMessage = "Selected driver is unavailable."; showError = true; isCreating = false; return
-            }
-            if latestDriver.availability == .busy {
-                let driverTrips = try await TripService.fetchTrips(driverId: driverId)
-                if let err = busyResourceValidationError(resourceLabel: "driver", trips: driverTrips, newTripStart: scheduledDate) {
-                    errorMessage = err; showError = true; isCreating = false; return
-                }
-            }
-
-            guard let latestVehicle = try await VehicleService.fetchVehicle(id: vehicleId) else {
-                errorMessage = "Selected vehicle no longer exists."; showError = true; isCreating = false; return
-            }
-            if latestVehicle.status == .busy {
-                let vehicleTrips = try await TripService.fetchTrips(vehicleId: vehicleId)
-                if let err = busyResourceValidationError(resourceLabel: "vehicle", trips: vehicleTrips, newTripStart: scheduledDate) {
-                    errorMessage = err; showError = true; isCreating = false; return
-                }
-            }
-
-            let conflict = try await TripService.checkOverlap(
-                driverId: driverId, vehicleId: vehicleId,
-                start: scheduledDate, end: scheduledEndDate
-            )
-            if conflict.driverConflict {
-                errorMessage = "This driver already has a trip in that time slot."; showError = true; isCreating = false; return
-            }
-            if conflict.vehicleConflict {
-                errorMessage = "This vehicle is already assigned in that time slot."; showError = true; isCreating = false; return
-            }
-
-            let adminId = AuthManager.shared.currentUser?.id ?? UUID()
-            let now = Date()
-
-            let routeStops: [RouteStop] = stops.enumerated().map { index, addr in
-                RouteStop(name: addr.shortName, latitude: addr.latitude, longitude: addr.longitude, order: index + 1)
-            }
-
-            let trip = Trip(
-                id: UUID(), taskId: TripService.newTaskId(),
-                driverId: driverId.uuidString, vehicleId: vehicleId.uuidString,
-                createdByAdminId: adminId.uuidString,
-                origin: origin.trimmingCharacters(in: .whitespaces),
-                destination: destination.trimmingCharacters(in: .whitespaces),
-                originLatitude: originCoords?.0, originLongitude: originCoords?.1,
-                destinationLatitude: destCoords?.0, destinationLongitude: destCoords?.1,
-                routePolyline: nil, routeStops: routeStops.isEmpty ? nil : routeStops,
-                deliveryInstructions: "",
-                scheduledDate: scheduledDate, scheduledEndDate: scheduledEndDate,
-                actualStartDate: nil, actualEndDate: nil,
-                startMileage: nil, endMileage: nil,
-                notes: notes, status: .scheduled, priority: priority,
-                proofOfDeliveryId: nil, preInspectionId: nil, postInspectionId: nil,
-                driverRating: nil, driverRatingNote: nil, ratedById: nil, ratedAt: nil,
-                createdAt: now, updatedAt: now
-            )
-
-            try await store.addTrip(trip)
-
-            if scheduledDate <= now {
-                try await TripService.markResourcesBusy(driverId: driverId, vehicleId: vehicleId)
-                if var v = store.vehicle(for: vehicleId) { v.status = .busy; v.assignedDriverId = driverId.uuidString; try? await store.updateVehicle(v) }
-                if var d = store.staffMember(for: driverId) { d.availability = .busy; try? await store.updateStaffMember(d) }
-            }
-
-            createdTrip = trip
-
-            // Persist geofences (non-fatal — don't block trip success)
-            for gf in tripGeofences {
-                let geofence = Geofence(
-                    id: UUID(), name: gf.name,
-                    description: "Trip \(trip.taskId) — \(gf.geofenceType.rawValue) zone",
-                    latitude: gf.latitude, longitude: gf.longitude,
-                    radiusMeters: gf.radiusMeters, isActive: true,
-                    createdByAdminId: adminId,
-                    alertOnEntry: gf.alertOnEntry, alertOnExit: gf.alertOnExit,
-                    geofenceType: gf.geofenceType, createdAt: Date(), updatedAt: Date()
-                )
-                try? await store.addGeofence(geofence)
-            }
-
-            withAnimation(.spring(duration: 0.4)) { showSuccess = true }
-        } catch {
-            errorMessage = error.localizedDescription
-            showError = true
-        }
-        isCreating = false
-    }
-
     // MARK: - Success Card
 
     private var successCard: some View {
@@ -712,7 +474,7 @@ struct CreateTripView: View {
             Spacer()
             AnimatedCheckmarkView(size: 80).padding(.bottom, 8)
             Text("Trip Created!").font(.title2.weight(.bold)).foregroundStyle(.primary)
-            if let trip = createdTrip {
+            if let trip = vm.createdTrip {
                 VStack(spacing: 10) {
                     infoPill("Task ID", value: trip.taskId)
                     infoPill("Route", value: "\(trip.origin) → \(trip.destination)")
@@ -722,7 +484,7 @@ struct CreateTripView: View {
                     if let vId = trip.vehicleId, let vUUID = UUID(uuidString: vId), let vehicle = store.vehicle(for: vUUID) {
                         infoPill("Vehicle", value: "\(vehicle.name) \(vehicle.model)")
                     }
-                    infoPill("Geofences", value: "\(tripGeofences.count) zone\(tripGeofences.count == 1 ? "" : "s") created")
+                    infoPill("Geofences", value: "\(vm.tripGeofences.count) zone\(vm.tripGeofences.count == 1 ? "" : "s") created")
                 }.padding(.horizontal, 24)
             }
             Spacer()
@@ -730,8 +492,7 @@ struct CreateTripView: View {
                 Text("Done").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
                     .frame(maxWidth: .infinity).frame(height: 50)
                     .background(Color.orange, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            }
-            .padding(.horizontal, 20).padding(.bottom, 20)
+            }.padding(.horizontal, 20).padding(.bottom, 20)
         }
         .transition(.opacity.combined(with: .scale(scale: 0.95)))
     }
@@ -742,28 +503,6 @@ struct CreateTripView: View {
             Text(value).font(.subheadline).foregroundStyle(.primary)
             Spacer()
         }
-    }
-
-    // MARK: - Geocoding
-
-    private func geocodeAddress(_ address: String) async -> (Double, Double)? {
-        guard !address.isEmpty,
-              let token = Bundle.main.object(forInfoDictionaryKey: "MBXAccessToken") as? String,
-              !token.isEmpty else { return nil }
-        let encoded = address.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
-        let urlString = "https://api.mapbox.com/geocoding/v5/mapbox.places/\(encoded).json?access_token=\(token)&limit=1&country=IN"
-        guard let url = URL(string: urlString) else { return nil }
-        do {
-            let (data, _) = try await URLSession.shared.data(from: url)
-            let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-            let features = json?["features"] as? [[String: Any]]
-            let geometry = features?.first?["geometry"] as? [String: Any]
-            let coords = geometry?["coordinates"] as? [Double]
-            if let lng = coords?[0], let lat = coords?[1] { return (lat, lng) }
-        } catch {
-            print("[CreateTrip] Geocoding failed: \(error)")
-        }
-        return nil
     }
 }
 
