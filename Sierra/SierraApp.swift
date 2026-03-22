@@ -1,55 +1,42 @@
-//
-//  SierraApp.swift
-//  Sierra
-//
-//  Created by kan on 09/03/26.
-//
-
 import SwiftUI
 import UserNotifications
 
-// MARK: - AppDelegate (APNs)
-/// Handles APNs device token registration.
-/// The token is sent to Supabase `push_tokens` so `send-push-notification`
-/// edge function can deliver alerts when the app is backgrounded.
+// MARK: - AppDelegate
+// Handles local notification permission only.
+// APNs (remote push) requires a paid Apple Developer Program membership
+// and is not used in this build. All notification banners are delivered
+// via UNUserNotificationCenter local notifications instead, triggered
+// by the Supabase Realtime events that already fire for every role.
 
-final class SierraAppDelegate: NSObject, UIApplicationDelegate {
+final class SierraAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
 
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
-        // Request push notification permission on first launch.
-        // Permission prompt appears after the user logs in (via ContentView),
-        // but we register the delegate path here so token delivery works.
+        // Set ourselves as the UNUserNotificationCenter delegate so banners
+        // appear even when the app is in the foreground.
+        UNUserNotificationCenter.current().delegate = self
+
+        // Request local notification permission (no APNs — no paid account needed).
         UNUserNotificationCenter.current().requestAuthorization(
             options: [.alert, .sound, .badge]
-        ) { granted, _ in
-            if granted {
-                DispatchQueue.main.async {
-                    UIApplication.shared.registerForRemoteNotifications()
-                }
-            }
+        ) { granted, error in
+            if let error { print("[Notifications] Permission error: \(error.localizedDescription)") }
+            #if DEBUG
+            print("[Notifications] Permission granted: \(granted)")
+            #endif
         }
         return true
     }
 
-    func application(
-        _ application: UIApplication,
-        didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
+    // Show banners even when app is foregrounded.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
-        let token = deviceToken.map { String(format: "%02.2hhx", $0) }.joined()
-        // Persist locally so we can unregister on sign-out
-        UserDefaults.standard.set(token, forKey: "sierra.devicePushToken")
-        Task { await PushTokenService.registerToken(token) }
-    }
-
-    func application(
-        _ application: UIApplication,
-        didFailToRegisterForRemoteNotificationsWithError error: Error
-    ) {
-        // Non-fatal: in-app notifications still work. APNs fails in Simulator.
-        print("[APNs] Failed to register for remote notifications: \(error.localizedDescription)")
+        completionHandler([.banner, .sound, .badge])
     }
 }
 
@@ -63,14 +50,11 @@ struct SierraApp: App {
     private var lifecycle = AppLifecycleMonitor.shared
 
     init() {
-        // Mapbox SDK v3 reads MBXAccessToken from Info.plist automatically — no code needed.
-        // Keychain persists across app reinstalls on iOS.
         // On first launch after a fresh install, clear stale Keychain data
         // so Face ID / session tokens from a previous install don't carry over.
         let hasLaunchedKey = "sierra.hasLaunchedBefore"
         if !UserDefaults.standard.bool(forKey: hasLaunchedKey) {
             UserDefaults.standard.set(true, forKey: hasLaunchedKey)
-            // Clear all stale Keychain entries
             KeychainService.delete(key: "com.sierra.sessionToken")
             KeychainService.delete(key: "com.sierra.currentUser")
             KeychainService.delete(key: "com.sierra.hashedCredential")
@@ -83,8 +67,8 @@ struct SierraApp: App {
     var body: some Scene {
         WindowGroup {
             ZStack {
-            ContentView()
-                .applySierraTheme()
+                ContentView()
+                    .applySierraTheme()
 
                 // Biometric lock overlay - covers all roles
                 if lifecycle.showBiometricLock {
@@ -102,7 +86,6 @@ struct SierraApp: App {
                 to: newPhase,
                 hasSession: AuthManager.shared.currentUser != nil
             )
-            // Also update AuthManager auto-lock timestamps
             switch newPhase {
             case .background:
                 AuthManager.shared.appDidEnterBackground()
