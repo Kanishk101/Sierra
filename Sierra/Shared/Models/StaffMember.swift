@@ -60,8 +60,13 @@ struct StaffMember: Identifiable, Codable {
     var availability: StaffAvailability
 
     // MARK: Personal information (nullable — populated after onboarding)
+    // dateOfBirth is kept as String? deliberately.
+    // PostgREST returns PostgreSQL DATE columns as "YYYY-MM-DD" which is NOT
+    // a valid ISO8601 datetime string, so the Supabase decoder's ISO8601
+    // strategy would throw trying to parse it as Date. Keeping it as String?
+    // avoids the decode crash. Use dateOfBirthDate / age for Date arithmetic.
     var dateOfBirth: String?
-    var gender: String?          
+    var gender: String?
     var address: String?
     var emergencyContactName: String?
     var emergencyContactPhone: String?
@@ -77,7 +82,11 @@ struct StaffMember: Identifiable, Codable {
     var rejectionReason: String?
 
     // MARK: Security
-    var failedLoginAttempts: Int = 0
+    // These MUST be in CodingKeys so account-lockout state written by the
+    // backend (sign-in edge function incrementing failed_login_attempts) is
+    // actually read back. Without CodingKeys entries the fields always decoded
+    // to their default values (0 / nil), making lockout invisible to the app.
+    var failedLoginAttempts: Int
     var accountLockedUntil: Date?
 
     // MARK: Timestamps
@@ -99,6 +108,8 @@ struct StaffMember: Identifiable, Codable {
         case isProfileComplete        = "is_profile_complete"
         case isApproved               = "is_approved"
         case rejectionReason          = "rejection_reason"
+        case failedLoginAttempts      = "failed_login_attempts"
+        case accountLockedUntil       = "account_locked_until"
         case joinedDate               = "joined_date"
         case createdAt                = "created_at"
         case updatedAt                = "updated_at"
@@ -121,6 +132,35 @@ struct StaffMember: Identifiable, Codable {
         case .driver:               "Driver"
         case .maintenancePersonnel: "Maintenance"
         }
+    }
+
+    // MARK: - Date of Birth helpers
+    // PostgREST returns DATE as "YYYY-MM-DD". Parse on demand rather than
+    // storing as Date to avoid ISO8601 decoder mismatch.
+
+    private static let dobFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(secondsFromGMT: 0)
+        return f
+    }()
+
+    /// The date of birth as a proper Date, parsed from the "YYYY-MM-DD" string.
+    var dateOfBirthDate: Date? {
+        dateOfBirth.flatMap { Self.dobFormatter.date(from: $0) }
+    }
+
+    /// Calculated age in whole years, or nil if date of birth is not set.
+    var age: Int? {
+        guard let dob = dateOfBirthDate else { return nil }
+        return Calendar.current.dateComponents([.year], from: dob, to: Date()).year
+    }
+
+    /// Returns the dateOfBirth formatted for display (e.g. "12 May 1990").
+    var dateOfBirthDisplayString: String? {
+        guard let date = dateOfBirthDate else { return dateOfBirth }
+        return date.formatted(.dateTime.day().month(.wide).year())
     }
 
     // MARK: - Mock Data
