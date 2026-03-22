@@ -51,9 +51,6 @@ struct TripInsertPayload: Encodable {
     let destinationLatitude: Double?
     let destinationLongitude: Double?
     let routePolyline: String?
-    // [RouteStop] encodes directly to a JSON array, which PostgREST stores
-    // as native JSONB. This replaces the previous String serialisation that
-    // was storing the JSON as a string literal ("[]") instead of an array ([]).
     let routeStops: [RouteStop]
 
     enum CodingKeys: String, CodingKey {
@@ -100,14 +97,11 @@ struct TripInsertPayload: Encodable {
         destinationLatitude  = t.destinationLatitude
         destinationLongitude = t.destinationLongitude
         routePolyline        = t.routePolyline
-        // Send array directly — PostgREST stores it as native JSONB []
         routeStops           = t.routeStops ?? []
     }
 }
 
 // MARK: - TripUpdatePayload
-// Includes ALL mutable trip columns so a general updateTrip() call
-// never silently wipes fields that aren't in the payload.
 
 struct TripUpdatePayload: Encodable {
     let taskId: String
@@ -131,17 +125,13 @@ struct TripUpdatePayload: Encodable {
     let destinationLatitude: Double?
     let destinationLongitude: Double?
     let routePolyline: String?
-    // Same fix as TripInsertPayload: [RouteStop] -> native JSONB array
     let routeStops: [RouteStop]
-    // Related records
     let proofOfDeliveryId: String?
     let preInspectionId: String?
     let postInspectionId: String?
-    // Acceptance lifecycle
     let acceptedAt: String?
     let acceptanceDeadline: String?
     let rejectedReason: String?
-    // Rating
     let driverRating: Int?
     let driverRatingNote: String?
     let ratedById: String?
@@ -276,20 +266,73 @@ struct TripService {
     // MARK: Insert
 
     static func addTrip(_ trip: Trip) async throws {
-        try await supabase
-            .from("trips")
-            .insert(TripInsertPayload(from: trip))
-            .execute()
+        #if DEBUG
+        SierraDebugLogger.banner("TripService.addTrip")
+        print("🗺️  [TripService.addTrip] Starting INSERT for trip:")
+        print("🗺️    ID          : \(trip.id.uuidString)")
+        print("🗺️    TaskID      : \(trip.taskId)")
+        print("🗺️    DriverID    : \(trip.driverId ?? "nil")")
+        print("🗺️    VehicleID   : \(trip.vehicleId ?? "nil")")
+        print("🗺️    AdminID     : \(trip.createdByAdminId)")
+        print("🗺️    Origin      : \(trip.origin)")
+        print("🗺️    Destination : \(trip.destination)")
+        print("🗺️    Status      : \(trip.status.rawValue)")
+        print("🗺️    Priority    : \(trip.priority.rawValue)")
+        print("🗺️    ScheduledAt : \(trip.scheduledDate)")
+        await SierraDebugLogger.logSessionState(context: "TripService.addTrip")
+        await SierraDebugLogger.logRLSRole(context: "TripService.addTrip")
+        let payload = TripInsertPayload(from: trip)
+        SierraDebugLogger.logPayload(label: "TripInsertPayload", payload: payload)
+        let t = Date()
+        #endif
+
+        do {
+            try await supabase
+                .from("trips")
+                .insert(TripInsertPayload(from: trip))
+                .execute()
+            #if DEBUG
+            let ms = Int(Date().timeIntervalSince(t) * 1000)
+            print("🗺️  [TripService.addTrip] ✅ INSERT succeeded in \(ms)ms")
+            #endif
+        } catch {
+            #if DEBUG
+            let ms = Int(Date().timeIntervalSince(t) * 1000)
+            print("🗺️  [TripService.addTrip] ❌ INSERT FAILED in \(ms)ms")
+            SierraDebugLogger.logPostgRESTError(
+                context: "TripService.addTrip",
+                error: error,
+                table: "trips",
+                operation: "INSERT"
+            )
+            #endif
+            throw error
+        }
     }
 
     // MARK: Update
 
     static func updateTrip(_ trip: Trip) async throws {
-        try await supabase
-            .from("trips")
-            .update(TripUpdatePayload(from: trip))
-            .eq("id", value: trip.id.uuidString)
-            .execute()
+        #if DEBUG
+        print("🗺️  [TripService.updateTrip] UPDATE trip ID=\(trip.id.uuidString) status=\(trip.status.rawValue)")
+        let t = Date()
+        #endif
+
+        do {
+            try await supabase
+                .from("trips")
+                .update(TripUpdatePayload(from: trip))
+                .eq("id", value: trip.id.uuidString)
+                .execute()
+            #if DEBUG
+            print("🗺️  [TripService.updateTrip] ✅ succeeded in \(Int(Date().timeIntervalSince(t) * 1000))ms")
+            #endif
+        } catch {
+            #if DEBUG
+            SierraDebugLogger.logPostgRESTError(context: "TripService.updateTrip", error: error, table: "trips", operation: "UPDATE")
+            #endif
+            throw error
+        }
     }
 
     static func updateTripStatus(id: UUID, status: TripStatus) async throws {
@@ -324,9 +367,6 @@ struct TripService {
     }
 
     // MARK: - Acceptance Lifecycle
-    // Both methods include .eq("driver_id") as a server-side security
-    // filter -- drivers cannot accept/reject trips assigned to someone else.
-    // The RLS policy on trips also enforces this at the DB level.
 
     static func acceptTrip(tripId: UUID, driverId: UUID) async throws {
         struct Payload: Encodable {
@@ -367,6 +407,15 @@ struct TripService {
     }
 
     // MARK: - Resource Overlap Check
+    //
+    // FIX: Explicitly injects Authorization header.
+    // The SDK's FunctionsClient uses a synchronous _headers fallback that
+    // sends the anon key when the async session can't be awaited.
+    // SupabaseManager.functionOptions() gets the real user access token
+    // via async `supabase.auth.session` and injects it correctly.
+    //
+    // DB FIX also applied: Dropped the uuid overload of check_resource_overlap
+    // to resolve the PostgREST "function is not unique" 500 error.
 
     static func checkOverlap(
         driverId: UUID,
@@ -400,11 +449,47 @@ struct TripService {
             end:              iso.string(from: end),
             exclude_trip_id:  excludingTripId?.uuidString.lowercased()
         )
-        let result: OverlapResult = try await supabase.functions.invoke(
-            "check-resource-overlap",
-            options: FunctionInvokeOptions(body: body)
-        )
-        return (result.driverConflict, result.vehicleConflict)
+
+        #if DEBUG
+        SierraDebugLogger.banner("TripService.checkOverlap")
+        print("🗺️  [TripService.checkOverlap] Calling check-resource-overlap edge function")
+        print("🗺️    driver_id      : \(body.driver_id)")
+        print("🗺️    vehicle_id     : \(body.vehicle_id)")
+        print("🗺️    start          : \(body.start)")
+        print("🗺️    end            : \(body.end)")
+        print("🗺️    exclude_trip_id: \(body.exclude_trip_id ?? "nil")")
+        await SierraDebugLogger.logSessionState(context: "TripService.checkOverlap")
+        let t = Date()
+        #endif
+
+        // CRITICAL FIX: use SupabaseManager.functionOptions() to inject user JWT
+        let options = try await SupabaseManager.functionOptions(body: body)
+
+        do {
+            let result: OverlapResult = try await supabase.functions.invoke(
+                "check-resource-overlap",
+                options: options
+            )
+            #if DEBUG
+            let ms = Int(Date().timeIntervalSince(t) * 1000)
+            print("🗺️  [TripService.checkOverlap] ✅ succeeded in \(ms)ms")
+            print("🗺️    driverConflict : \(result.driverConflict)")
+            print("🗺️    vehicleConflict: \(result.vehicleConflict)")
+            #endif
+            return (result.driverConflict, result.vehicleConflict)
+        } catch {
+            #if DEBUG
+            let ms = Int(Date().timeIntervalSince(t) * 1000)
+            print("🗺️  [TripService.checkOverlap] ❌ FAILED in \(ms)ms")
+            SierraDebugLogger.logEdgeFunctionError(
+                context: "TripService.checkOverlap",
+                functionName: "check-resource-overlap",
+                error: error,
+                elapsedMs: ms
+            )
+            #endif
+            throw error
+        }
     }
 
     // MARK: - Busy / Release Helpers

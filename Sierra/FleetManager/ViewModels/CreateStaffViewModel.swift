@@ -77,8 +77,32 @@ final class CreateStaffViewModel {
         let trimmedName  = fullName.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
 
+        // ─────────────────────────────────────────────────────────────────────
         // ── Phase 1: Create account (atomic — auth user + staff_members row) ──
-        // This is fatal: if it fails, nothing was created.
+        //
+        // FIX: The 401 was caused by the Supabase Swift SDK sending the anon key
+        // (not the user session JWT) to functions.invoke(). Supabase's gateway
+        // rejects this in ~100-400ms before Deno even starts.
+        //
+        // Confirmed from edge function logs:
+        //   create-staff-account v4: all 127-392ms 401s = gateway-level rejections
+        //   create-staff-account v5: 2644ms 401 = function ran but callerClient.auth.getUser() failed
+        //
+        // SOLUTION: Explicitly get the user access token via supabase.auth.session
+        // (async, correct) and pass it as the Authorization header directly.
+        // ─────────────────────────────────────────────────────────────────────
+
+        #if DEBUG
+        SierraDebugLogger.banner("CreateStaffViewModel.createStaff")
+        print("👤 [CreateStaff] Starting staff creation")
+        print("👤   Role  : \(role.rawValue)")
+        print("👤   Name  : \(trimmedName)")
+        print("👤   Email : \(trimmedEmail)")
+        await SierraDebugLogger.logSessionState(context: "CreateStaffViewModel.createStaff — BEFORE edge fn")
+        await SierraDebugLogger.logRLSRole(context: "CreateStaffViewModel.createStaff")
+        let t = Date()
+        #endif
+
         do {
             let payload = CreateStaffAccountPayload(
                 email: trimmedEmail,
@@ -86,14 +110,48 @@ final class CreateStaffViewModel {
                 name: trimmedName,
                 role: role.rawValue
             )
+
+            #if DEBUG
+            SierraDebugLogger.logPayload(label: "CreateStaffAccountPayload", payload: payload)
+            print("👤 [CreateStaff] Getting session access token for Authorization header...")
+            #endif
+
+            // CRITICAL FIX: inject the real user JWT, not the anon key
+            let options = try await SupabaseManager.functionOptions(body: payload)
+
+            #if DEBUG
+            print("👤 [CreateStaff] Calling create-staff-account edge function (verify_jwt: true)...")
+            #endif
+
             let created: CreateStaffAccountResponse = try await supabase.functions.invoke(
                 "create-staff-account",
-                options: FunctionInvokeOptions(body: payload)
+                options: options
             )
+
+            #if DEBUG
+            let ms = Int(Date().timeIntervalSince(t) * 1000)
+            print("👤 [CreateStaff] ✅ create-staff-account succeeded in \(ms)ms")
+            print("👤   Created ID    : \(created.id)")
+            print("👤   Created Email : \(created.email)")
+            #endif
+
             guard UUID(uuidString: created.id) != nil else {
+                #if DEBUG
+                print("👤 [CreateStaff] ❌ created.id is not a valid UUID: '\(created.id)'")
+                #endif
                 throw URLError(.badServerResponse)
             }
         } catch {
+            #if DEBUG
+            let ms = Int(Date().timeIntervalSince(t) * 1000)
+            print("👤 [CreateStaff] ❌ Phase 1 FAILED in \(ms)ms")
+            SierraDebugLogger.logEdgeFunctionError(
+                context: "CreateStaffViewModel.createStaff Phase 1",
+                functionName: "create-staff-account",
+                error: error,
+                elapsedMs: ms
+            )
+            #endif
             isLoading = false
             errorMessage = error.localizedDescription.contains("already registered")
                 ? "An account with this email already exists."
@@ -102,7 +160,6 @@ final class CreateStaffViewModel {
         }
 
         // ── Phase 2: Send credentials (non-fatal — account IS already created) ──
-        // If email fails, admin sees the temp password and can share it manually.
         var emailSent = false
         do {
             try await EmailService.sendCredentials(
@@ -112,15 +169,19 @@ final class CreateStaffViewModel {
                 role:     role
             )
             emailSent = true
+            #if DEBUG
+            print("👤 [CreateStaff] ✅ Credential email sent to \(trimmedEmail)")
+            #endif
         } catch {
-            // Log but don't fail — account exists, admin shares credentials manually
-            print("[CreateStaff] Email delivery failed (non-fatal): \(error)")
+            #if DEBUG
+            print("👤 [CreateStaff] ⚠️  Email delivery failed (non-fatal): \(error)")
+            #endif
         }
 
         isLoading            = false
         createdStaffName     = trimmedName
         createdStaffEmail    = trimmedEmail
-        createdTempPassword  = emailSent ? nil : tempPassword  // show password if email failed
+        createdTempPassword  = emailSent ? nil : tempPassword
         emailDelivered       = emailSent
         showSuccess          = true
 

@@ -48,8 +48,6 @@ final class AppDataStore {
     var loadError: String?
 
     // MARK: - loadAll (Fleet Manager)
-    // Re-entry guard: prevents concurrent loadAll() calls from restoreSession()
-    // and completeAuthentication() firing 40 simultaneous Supabase requests.
 
     func loadAll() async {
         guard !isLoading else { return }
@@ -123,7 +121,6 @@ final class AppDataStore {
     }
 
     // MARK: - loadDriverData
-    // Re-entry guard prevents concurrent session-restore + biometric-reauth duplicates.
 
     func loadDriverData(driverId: UUID) async {
         guard !isLoading else { return }
@@ -154,7 +151,6 @@ final class AppDataStore {
     }
 
     // MARK: - loadMaintenanceData
-    // Re-entry guard prevents concurrent call duplicates.
 
     func loadMaintenanceData(staffId: UUID) async {
         guard !isLoading else { return }
@@ -207,15 +203,57 @@ final class AppDataStore {
         try await StaffMemberService.updateStaffMember(member)
         if let idx = staff.firstIndex(where: { $0.id == member.id }) { staff[idx] = member }
     }
+
+    // MARK: deleteStaffMember
+    //
+    // FIX: The original call had no return type annotation on functions.invoke(),
+    // which is undefined behavior in the Supabase Swift SDK. Now properly typed.
+    // Also: the 401 was caused by anon key injection (same root cause as all other
+    // edge function calls). Fixed by using SupabaseManager.functionOptions().
+
     func deleteStaffMember(id: UUID) async throws {
         struct Payload: Encodable { let staffMemberId: String }
-        try await supabase.functions.invoke("delete-staff-member",
-            options: FunctionInvokeOptions(body: Payload(staffMemberId: id.uuidString)))
+        struct DeleteStaffResponse: Decodable {
+            let success: Bool?
+            let deletedId: String?
+            let error: String?
+        }
+
+        #if DEBUG
+        SierraDebugLogger.banner("AppDataStore.deleteStaffMember")
+        print("👤 [AppDataStore.deleteStaffMember] Deleting staff ID=\(id.uuidString)")
+        await SierraDebugLogger.logSessionState(context: "AppDataStore.deleteStaffMember")
+        let t = Date()
+        #endif
+
+        let options = try await SupabaseManager.functionOptions(body: Payload(staffMemberId: id.uuidString))
+        let response: DeleteStaffResponse = try await supabase.functions.invoke(
+            "delete-staff-member",
+            options: options
+        )
+
+        #if DEBUG
+        let ms = Int(Date().timeIntervalSince(t) * 1000)
+        print("👤 [AppDataStore.deleteStaffMember] ✅ invoke succeeded in \(ms)ms")
+        print("👤   success  : \(response.success ?? false)")
+        print("👤   deletedId: \(response.deletedId ?? "nil")")
+        print("👤   error    : \(response.error ?? "nil")")
+        #endif
+
+        if let errorMsg = response.error {
+            throw NSError(
+                domain: "SierraDeleteStaff",
+                code: 500,
+                userInfo: [NSLocalizedDescriptionKey: errorMsg]
+            )
+        }
+
         staff.removeAll               { $0.id == id }
         driverProfiles.removeAll      { $0.staffMemberId == id }
         maintenanceProfiles.removeAll { $0.staffMemberId == id }
         staffApplications.removeAll   { $0.staffMemberId == id }
     }
+
     func updateDriverAvailability(staffId: UUID, available: Bool) async throws {
         let confirmedValue = try await StaffMemberService.updateAvailability(staffId: staffId, available: available)
         let confirmedAvailability = StaffAvailability(rawValue: confirmedValue) ?? (available ? .available : .unavailable)
@@ -261,7 +299,6 @@ final class AppDataStore {
             body: "Your Sierra FMS application has been approved. Complete your profile to get started.",
             entityType: "staff_application", entityId: id
         )
-        // Local banner for the admin confirming approval was recorded
         LocalNotificationService.notifyApplicationApproved()
     }
     func setStaffStatus(staffId: UUID, status: StaffStatus) async throws {
@@ -319,14 +356,12 @@ final class AppDataStore {
         trips.insert(trip, at: 0)
         if let driverIdStr = trip.driverId, let driverUUID = UUID(uuidString: driverIdStr) {
             let dateStr = trip.scheduledDate.formatted(.dateTime.month().day().hour().minute())
-            // Supabase notification (persisted, shows in notification bell)
             try? await NotificationService.insertNotification(
                 recipientId: driverUUID, type: .tripAssigned,
                 title: "New Trip Assigned: \(trip.taskId)",
                 body: "Trip from \(trip.origin) to \(trip.destination) on \(dateStr)",
                 entityType: "trip", entityId: trip.id
             )
-            // Local banner for the admin so they see immediate confirmation
             LocalNotificationService.notifyTripAssigned(
                 taskId: trip.taskId, origin: trip.origin,
                 destination: trip.destination, tripId: trip.id
@@ -397,7 +432,6 @@ final class AppDataStore {
         try await EmergencyAlertService.addEmergencyAlert(alert)
         emergencyAlerts.insert(alert, at: 0)
         let driverName = staff.first { $0.id == alert.driverId }?.displayName ?? "A driver"
-        // Supabase notification for each admin (persisted + banner via Realtime)
         for admin in staff.filter({ $0.role == .fleetManager }) {
             try? await NotificationService.insertNotification(
                 recipientId: admin.id, type: .emergency,
@@ -406,7 +440,6 @@ final class AppDataStore {
                 entityType: "emergency_alert", entityId: alert.id
             )
         }
-        // Local banner fires immediately even before Realtime round-trips
         LocalNotificationService.notifyEmergencyAlert(driverName: driverName, alertId: alert.id)
     }
     func acknowledgeAlert(id: UUID, acknowledgedBy adminId: UUID) async throws {
@@ -438,18 +471,66 @@ final class AppDataStore {
         try await MaintenanceTaskService.updateMaintenanceTask(task)
         if let idx = maintenanceTasks.firstIndex(where: { $0.id == task.id }) { maintenanceTasks[idx] = task }
     }
+
+    // MARK: completeMaintenanceTask
+    //
+    // FIX 1: update-vehicle-status has verify_jwt: true. The original call used
+    //        a raw [String: String] dict body AND try?, silently failing with 401
+    //        because the anon key was being sent. Now uses SupabaseManager.functionOptions()
+    //        with a typed Encodable payload and explicit error logging.
+    // FIX 2: Body key name confirmed against edge function: "vehicleId" (camelCase).
+
     func completeMaintenanceTask(id: UUID) async throws {
         try await MaintenanceTaskService.updateMaintenanceTaskStatus(id: id, status: .completed)
         if let idx = maintenanceTasks.firstIndex(where: { $0.id == id }) {
             maintenanceTasks[idx].status = .completed; maintenanceTasks[idx].completedAt = Date()
             let vehicleId = maintenanceTasks[idx].vehicleId
             if vehicles.firstIndex(where: { $0.id == vehicleId }) != nil {
-                try? await supabase.functions.invoke("update-vehicle-status",
-                    options: .init(body: ["vehicleId": vehicleId.uuidString, "status": "Idle"]))
-                if let vIdx = vehicles.firstIndex(where: { $0.id == vehicleId }) { vehicles[vIdx].status = .idle }
+
+                struct VehicleStatusPayload: Encodable {
+                    let vehicleId: String
+                    let status: String
+                }
+
+                #if DEBUG
+                print("🔧 [AppDataStore.completeMaintenanceTask] Calling update-vehicle-status")
+                print("🔧   vehicleId: \(vehicleId.uuidString)")
+                await SierraDebugLogger.logSessionState(context: "AppDataStore.completeMaintenanceTask")
+                let t = Date()
+                #endif
+
+                do {
+                    let opts = try await SupabaseManager.functionOptions(
+                        body: VehicleStatusPayload(vehicleId: vehicleId.uuidString, status: "Idle")
+                    )
+                    struct VSResponse: Decodable { let success: Bool? }
+                    let _: VSResponse = try await supabase.functions.invoke(
+                        "update-vehicle-status",
+                        options: opts
+                    )
+                    #if DEBUG
+                    let ms = Int(Date().timeIntervalSince(t) * 1000)
+                    print("🔧 [AppDataStore.completeMaintenanceTask] ✅ update-vehicle-status succeeded in \(ms)ms")
+                    #endif
+                    if let vIdx = vehicles.firstIndex(where: { $0.id == vehicleId }) { vehicles[vIdx].status = .idle }
+                } catch {
+                    #if DEBUG
+                    let ms = Int(Date().timeIntervalSince(t) * 1000)
+                    print("🔧 [AppDataStore.completeMaintenanceTask] ❌ update-vehicle-status FAILED in \(ms)ms")
+                    SierraDebugLogger.logEdgeFunctionError(
+                        context: "AppDataStore.completeMaintenanceTask",
+                        functionName: "update-vehicle-status",
+                        error: error,
+                        elapsedMs: ms
+                    )
+                    #endif
+                    // Non-fatal: task is marked complete; vehicle status update is best-effort
+                    print("[AppDataStore.completeMaintenanceTask] Non-fatal: vehicle status update failed: \(error)")
+                }
             }
         }
     }
+
     func deleteMaintenanceTask(id: UUID) async throws {
         try await MaintenanceTaskService.deleteMaintenanceTask(id: id)
         maintenanceTasks.removeAll { $0.id == id }
@@ -734,11 +815,6 @@ final class AppDataStore {
     }
 
     // MARK: - Notifications
-    // loadAndSubscribeNotifications subscribes to the Supabase Realtime channel
-    // for the notifications table. When a new notification arrives via Realtime,
-    // it is inserted into the local array AND fired as a local UNUserNotificationCenter
-    // banner via LocalNotificationService — so the user sees an on-device banner
-    // immediately without needing APNs.
 
     func loadAndSubscribeNotifications(for userId: UUID) async {
         if subscribedNotificationsUserId == userId { return }
@@ -754,9 +830,6 @@ final class AppDataStore {
             guard let self else { return }
             Task { @MainActor in
                 self.notifications.insert(newNotification, at: 0)
-                // Fire a local banner so the user sees it even when the app is
-                // foregrounded. UNUserNotificationCenter.delegate = self in
-                // SierraAppDelegate ensures banners show in-foreground.
                 LocalNotificationService.notifyFromSierraNotification(newNotification)
             }
         }
@@ -831,7 +904,6 @@ final class AppDataStore {
                     body: "Task \"\(task.title)\" is past its due date.",
                     entityType: "maintenance_task", entityId: task.id
                 )
-                // Also fire a local banner immediately
                 LocalNotificationService.notifyMaintenanceOverdue(taskTitle: task.title, taskId: task.id)
             } catch {
                 print("[AppDataStore] Non-fatal: overdue notification failed: \(error)")
