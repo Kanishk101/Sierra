@@ -11,13 +11,18 @@ private let iso: ISO8601DateFormatter = {
     return f
 }()
 
+// MARK: - StaffMemberServiceError
+
 enum StaffMemberServiceError: LocalizedError {
     case availabilityTargetMissing(UUID)
+    case deleteFailed(String)
 
     var errorDescription: String? {
         switch self {
         case .availabilityTargetMissing(let id):
             return "No staff_members row found for id \(id.uuidString.lowercased())"
+        case .deleteFailed(let reason):
+            return "Staff member deletion failed: \(reason)"
         }
     }
 }
@@ -172,6 +177,14 @@ extension StaffMemberDB {
     }
 }
 
+// MARK: - Edge function response type
+
+private struct DeleteStaffResponse: Decodable {
+    let success: Bool?
+    let deletedId: String?
+    let error: String?
+}
+
 // MARK: - StaffMemberService
 
 struct StaffMemberService {
@@ -223,6 +236,10 @@ struct StaffMemberService {
     }
 
     // MARK: Insert
+    // NOTE: New staff creation goes through the `create-staff-account` edge
+    // function (called from CreateStaffViewModel), which atomically creates
+    // the auth user + DB row with rollback on failure. This direct method
+    // remains for internal/test use only.
 
     static func addStaffMember(_ member: StaffMember) async throws {
         try await supabase
@@ -265,14 +282,29 @@ struct StaffMemberService {
         return rows[0].availability
     }
 
-    // MARK: Delete
+    // MARK: - Delete (via edge function — fixes C-07: orphaned auth users)
+    //
+    // Previously this did a direct DB delete leaving auth.users entries alive.
+    // Deleted staff members could still authenticate but would crash on app load.
+    //
+    // The `delete-staff-member` edge function:
+    //   1. Verifies the caller is a fleet manager
+    //   2. Prevents self-deletion and inter-manager deletion
+    //   3. Deletes staff_members row (blocks app access immediately)
+    //   4. Deletes Supabase Auth user via admin API (non-fatal if it fails)
 
     static func deleteStaffMember(id: UUID) async throws {
-        try await supabase
-            .from("staff_members")
-            .delete()
-            .eq("id", value: id.uuidString.lowercased())
-            .execute()
+        struct Payload: Encodable { let staffMemberId: String }
+
+        let response: DeleteStaffResponse = try await supabase.functions.invoke(
+            "delete-staff-member",
+            options: FunctionInvokeOptions(body: Payload(staffMemberId: id.uuidString))
+        )
+
+        // Belt-and-suspenders: surface any error message from the function body
+        if let errorMsg = response.error {
+            throw StaffMemberServiceError.deleteFailed(errorMsg)
+        }
     }
 
     // MARK: - Mark Profile Complete
@@ -333,7 +365,7 @@ struct StaffMemberService {
             let is_approved: Bool
             let status: String
             let rejection_reason: String?
-            let availability: String     // set to Available on approval
+            let availability: String
         }
         struct RejectPayload: Encodable {
             let is_approved: Bool
