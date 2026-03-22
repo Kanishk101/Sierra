@@ -1,28 +1,44 @@
 -- ============================================================
--- Migration: Fix push_tokens schema + rewrite push trigger
+-- Migration: Fix push_tokens schema (column rename + constraint)
 -- Sierra Fleet Management System
--- Date: 2026-03-22 (seq 005)
+-- Date: 2026-03-22 (seq 005) — REVISED
 --
--- Issues found in migration 20260322000002:
+-- WHAT THIS MIGRATION DOES:
+--   1. Renames push_tokens.token -> push_tokens.device_token
+--      (matches Swift PushTokenService INSERT + onConflict field name)
+--   2. Fixes the unique constraint to reference the renamed column
+--   3. REMOVES the broken pg_net push trigger entirely
 --
--- 1. Column name mismatch
---    Migration created:        token TEXT
---    Swift PushTokenService uses: device_token (INSERT + onConflict)
---    -> Every token registration fails: "column device_token does not exist"
+-- WHY THE TRIGGER WAS REMOVED:
+--   The previous version tried to call the send-push-notification edge
+--   function from inside a Postgres trigger using pg_net + a service role
+--   key stored via ALTER DATABASE SET. This was wrong for two reasons:
 --
--- 2. Wrong pg_setting key
---    Trigger reads: current_setting('app.settings.supabase_url', true)
---    Manual step sets: app.supabase_url
---    -> Setting always NULL -> push silently skipped for every notification
+--   a) Supabase does not grant ALTER DATABASE SET to project users.
+--      Running it throws: "permission denied to set parameter app.supabase_url"
 --
--- 3. No Authorization header
---    Edge function send-push-notification validates auth internally.
---    Trigger sends no Authorization header -> 401 -> zero pushes delivered.
+--   b) Storing secrets as database GUC settings is bad practice regardless.
 --
--- 4. Payload shape mismatch
---    Trigger sends: { notificationId, recipientId }
---    Edge function expects: { recipientId, title, body, data? }
---    -> Edge function returns 400 missing fields -> no push sent
+-- CORRECT ARCHITECTURE FOR PUSH DELIVERY:
+--   Push notifications are already delivered correctly without any DB trigger.
+--   The flow is:
+--
+--     iOS admin taps action
+--       -> AppDataStore inserts notification row via NotificationService
+--       -> Supabase Realtime broadcasts INSERT to all subscribed clients
+--       -> Each recipient client's NotificationService subscription fires
+--       -> In-app banner shown immediately
+--
+--   For background push (when app is closed), use Supabase Dashboard Webhooks:
+--     Dashboard -> Database -> Webhooks -> Create webhook
+--       Table:   notifications
+--       Event:   INSERT
+--       URL:     https://<ref>.supabase.co/functions/v1/send-push-notification
+--       Method:  POST
+--       Headers: Authorization: Bearer <service-role-key>
+--
+--   Database Webhooks are configured in the Dashboard (not in SQL migrations)
+--   and Supabase manages the auth automatically. No secrets in DB code.
 -- ============================================================
 
 -- ------------------------------------------------------------
@@ -52,11 +68,12 @@ END;
 $$;
 
 -- ------------------------------------------------------------
--- 2. Fix unique constraint (column name changed)
+-- 2. Fix unique constraint (references old column name)
 -- ------------------------------------------------------------
 DO $$
 DECLARE cname TEXT;
 BEGIN
+    -- Find and drop whatever unique constraint exists on this table
     SELECT con.conname INTO cname
       FROM pg_constraint con
       JOIN pg_class      rel ON rel.oid = con.conrelid
@@ -82,77 +99,23 @@ DROP INDEX IF EXISTS push_tokens_staff_id_idx;
 CREATE INDEX IF NOT EXISTS idx_push_tokens_staff_id ON public.push_tokens (staff_id);
 
 -- ------------------------------------------------------------
--- 3. Rewrite fn_send_push_on_notification_insert
---    Fixes: setting key, Authorization header, payload shape
+-- 3. Remove the broken pg_net push trigger from migration 002
+--    (it required ALTER DATABASE SET which Supabase doesn't permit)
 -- ------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.fn_send_push_on_notification_insert()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-    _supabase_url     TEXT;
-    _service_role_key TEXT;
-BEGIN
-    -- Read project settings. Set these once via:
-    --   ALTER DATABASE postgres SET app.supabase_url = 'https://<ref>.supabase.co';
-    --   ALTER DATABASE postgres SET app.service_role_key = '<your-service-role-key>';
-    _supabase_url     := current_setting('app.supabase_url',     true);
-    _service_role_key := current_setting('app.service_role_key', true);
-
-    IF _supabase_url IS NULL OR _supabase_url = '' THEN
-        RAISE NOTICE 'fn_send_push_on_notification_insert: app.supabase_url not configured — push skipped';
-        RETURN NEW;
-    END IF;
-
-    -- pg_net fire-and-forget HTTP POST
-    -- The edge function reads push_tokens WHERE staff_id = recipientId
-    -- and sends one APNs request per registered device token.
-    PERFORM net.http_post(
-        url     := _supabase_url || '/functions/v1/send-push-notification',
-        headers := jsonb_build_object(
-            'Content-Type',  'application/json',
-            'Authorization', 'Bearer ' || COALESCE(_service_role_key, '')
-        ),
-        body := jsonb_build_object(
-            'recipientId', NEW.recipient_id,
-            'title',       NEW.title,
-            'body',        NEW.body,
-            'data',        jsonb_build_object(
-                'type',       NEW.type,
-                'entityType', COALESCE(NEW.entity_type, ''),
-                'entityId',   COALESCE(NEW.entity_id::text, '')
-            )
-        )::text
-    );
-
-    RETURN NEW;
-EXCEPTION WHEN OTHERS THEN
-    -- Non-fatal: the in-app notification row was already inserted.
-    -- APNs delivery is best-effort.
-    RAISE NOTICE 'fn_send_push_on_notification_insert: pg_net error — %', SQLERRM;
-    RETURN NEW;
-END;
-$$;
-
--- Re-attach trigger (idempotent)
 DROP TRIGGER IF EXISTS trg_send_push_on_notification_insert ON public.notifications;
+DROP FUNCTION IF EXISTS public.fn_send_push_on_notification_insert();
 
-CREATE TRIGGER trg_send_push_on_notification_insert
-    AFTER INSERT ON public.notifications
-    FOR EACH ROW
-    EXECUTE FUNCTION public.fn_send_push_on_notification_insert();
+RAISE NOTICE '=== push_tokens schema fixed ===';
+RAISE NOTICE 'Column: token -> device_token';
+RAISE NOTICE 'Unique constraint: staff_id + device_token';
+RAISE NOTICE 'Broken pg_net trigger: removed';
+RAISE NOTICE '';
+RAISE NOTICE 'For background push delivery, configure a Supabase Database Webhook:';
+RAISE NOTICE '  Dashboard -> Database -> Webhooks -> Create new webhook';
+RAISE NOTICE '  Table: notifications | Event: INSERT';
+RAISE NOTICE '  URL: https://<ref>.supabase.co/functions/v1/send-push-notification';
+RAISE NOTICE '================================';
 
 -- ============================================================
 -- END OF MIGRATION 005
---
--- REQUIRED MANUAL STEPS (run once in Supabase SQL editor — NOT in migration,
--- because they contain production secrets):
---
---   ALTER DATABASE postgres SET app.supabase_url = 'https://ldqcdngdlbbiojlnbnjg.supabase.co';
---   ALTER DATABASE postgres SET app.service_role_key = '<your-service-role-key>';
---
--- After setting these, push notifications will flow for all new
--- notification row inserts.
 -- ============================================================
