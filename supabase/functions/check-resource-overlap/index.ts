@@ -2,9 +2,10 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 // check-resource-overlap  (Sierra Fleet Management System)
-// verify_jwt: FALSE — uses service-role key internally for DB access.
-// The calling fleet-manager IS authenticated, but we skip the JWT wrapper
-// to avoid 401 errors when the Supabase Swift SDK passes the JWT as Data body.
+//
+// verify_jwt: FALSE — the Supabase Swift SDK serialises JWT tokens as a Data
+// body which causes 401s when verify_jwt is true. Manual JWT verification is
+// performed below instead, giving equivalent security without the SDK issue.
 //
 // POST body (JSON):
 // {
@@ -22,6 +23,27 @@ Deno.serve(async (req: Request) => {
   if (req.method !== "POST") {
     return errorResponse(405, "Method not allowed. Use POST.");
   }
+
+  // ── Manual JWT verification ──────────────────────────────────────────────
+  // Extract the Authorization header and validate it against Supabase Auth.
+  // This replaces the verify_jwt=true gateway check that is broken by the SDK.
+  const authHeader = req.headers.get("Authorization") ?? "";
+  const jwt = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
+  if (!jwt) {
+    return errorResponse(401, "Missing Authorization header.");
+  }
+
+  // Use anon key client to validate the token — getUser() verifies signature.
+  const supabaseAnon = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_ANON_KEY")!,
+    { global: { headers: { Authorization: `Bearer ${jwt}` } }, auth: { persistSession: false } }
+  );
+  const { data: { user }, error: authError } = await supabaseAnon.auth.getUser();
+  if (authError || !user) {
+    return errorResponse(401, "Invalid or expired token.");
+  }
+  // ────────────────────────────────────────────────────────────────────────
 
   let body: { driver_id: string; vehicle_id: string; start: string; end: string; exclude_trip_id?: string | null; };
   try { body = await req.json(); }

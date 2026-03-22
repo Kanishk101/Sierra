@@ -8,28 +8,17 @@ final class AppDataStore {
     static let shared = AppDataStore()
 
     // MARK: - init
-    // Realtime subscriptions are NOT started here.
-    // They start in loadAll/loadDriverData/loadMaintenanceData after the user
-    // has authenticated so channels open with a valid session JWT.
-    // Previously subscribing in init() caused all 4 channels to fail silently
-    // (no valid session yet) and never reconnect for the entire login session.
-
     private init() {}
 
-    // MARK: - Realtime channels (started post-auth)
-
+    // MARK: - Realtime channels
     private var emergencyAlertsChannel: RealtimeChannelV2?
     private var staffMembersChannel:   RealtimeChannelV2?
     private var vehiclesChannel:        RealtimeChannelV2?
     private var tripsChannel:           RealtimeChannelV2?
     private var notificationsChannel:   RealtimeChannelV2?
-
-    // Tracks which user's notifications are subscribed so we
-    // re-subscribe correctly on role/user switch.
     private var subscribedNotificationsUserId: UUID?
 
     // MARK: - Data Arrays
-
     var staff: [StaffMember] = []
     var driverProfiles: [DriverProfile] = []
     var maintenanceProfiles: [MaintenanceProfile] = []
@@ -59,13 +48,8 @@ final class AppDataStore {
     var loadError: String?
 
     // MARK: - loadAll (Fleet Manager)
-    // Every array has its own try/catch so no single failure blocks the rest.
-    //
-    // Re-entry guard: both restoreSession() and completeAuthentication() (and
-    // biometric reauth) call loadAll() independently. Without this guard the two
-    // concurrent calls fire all 40 Supabase requests simultaneously, the HTTP/2
-    // connection pool gets overwhelmed, and NSURLErrorDomain -999 cancelled
-    // floods fill the logs. The guard ensures only one load runs at a time.
+    // Re-entry guard: prevents concurrent loadAll() calls from restoreSession()
+    // and completeAuthentication() firing 40 simultaneous Supabase requests.
 
     func loadAll() async {
         guard !isLoading else { return }
@@ -95,7 +79,6 @@ final class AppDataStore {
         async let sparePartsTask   = SparePartsRequestService.fetchAllSparePartsRequests()
 
         var errors: [String] = []
-
         do { staff               = try await staffTask }        catch { errors.append("staff: \(error.localizedDescription)") }
         do { driverProfiles      = try await driverProfsTask }  catch { errors.append("driverProfiles: \(error.localizedDescription)") }
         do { maintenanceProfiles = try await maintProfsTask }   catch { errors.append("maintenanceProfiles: \(error.localizedDescription)") }
@@ -121,15 +104,12 @@ final class AppDataStore {
             loadError = "Partial load failure: \(errors.joined(separator: "; "))"
             print("[AppDataStore.loadAll] Partial errors: \(errors)")
         }
-
         isLoading = false
 
-        // Background housekeeping: purge stale breadcrumbs and expired password
-        // reset tokens via SECURITY DEFINER Postgres functions. Non-fatal.
+        // Background housekeeping
         Task.detached(priority: .background) {
             struct PurgeParams: Encodable { let days_to_keep: Int }
-            try? await supabase.rpc("purge_old_location_history",
-                                    params: PurgeParams(days_to_keep: 30)).execute()
+            try? await supabase.rpc("purge_old_location_history", params: PurgeParams(days_to_keep: 30)).execute()
             try? await supabase.rpc("purge_expired_password_reset_tokens").execute()
         }
 
@@ -137,19 +117,13 @@ final class AppDataStore {
         subscribeToStaffMemberUpdates()
         subscribeToVehicleUpdates()
         subscribeToTripUpdates()
-
         if let userId = AuthManager.shared.currentUser?.id {
             await loadAndSubscribeNotifications(for: userId)
         }
     }
 
     // MARK: - loadDriverData
-    // Each field isolated with its own try/catch — a single decode failure
-    // (e.g. vehicleInspections JSONB double-encoding) never blocks trips or
-    // driverProfile from loading.
-    //
-    // Re-entry guard matches loadAll(): prevents concurrent calls (e.g. session
-    // restore + biometric reauth) from firing duplicate request batches.
+    // Re-entry guard prevents concurrent session-restore + biometric-reauth duplicates.
 
     func loadDriverData(driverId: UUID) async {
         guard !isLoading else { return }
@@ -164,39 +138,23 @@ final class AppDataStore {
         async let driverProfTask  = DriverProfileService.fetchDriverProfile(staffMemberId: driverId)
 
         do { if let m = try await selfMemberTask { staff = [m] } }
-            catch { print("[AppDataStore.loadDriverData] [non-fatal] staff error: \(error)") }
-
-        do { vehicles = try await vehiclesTask }
-            catch { print("[AppDataStore.loadDriverData] [non-fatal] vehicles error: \(error)") }
-
-        do { trips = try await tripsTask }
-            catch { print("[AppDataStore.loadDriverData] [non-fatal] trips error: \(error)") }
-
-        do { fuelLogs = try await fuelLogsTask }
-            catch { print("[AppDataStore.loadDriverData] [non-fatal] fuelLogs error: \(error)") }
-
-        // vehicleInspections: RLS scopes this to the driver's own records.
-        // Custom init(from:) in VehicleInspection handles JSONB double-encoding.
-        do { vehicleInspections = try await inspectionsTask }
-            catch { print("[AppDataStore.loadDriverData] [non-fatal] inspections error: \(error)") }
-
+            catch { print("[loadDriverData] staff: \(error)") }
+        do { vehicles = try await vehiclesTask }           catch { print("[loadDriverData] vehicles: \(error)") }
+        do { trips = try await tripsTask }                 catch { print("[loadDriverData] trips: \(error)") }
+        do { fuelLogs = try await fuelLogsTask }           catch { print("[loadDriverData] fuelLogs: \(error)") }
+        do { vehicleInspections = try await inspectionsTask } catch { print("[loadDriverData] inspections: \(error)") }
         do { if let p = try await driverProfTask { driverProfiles = [p] } }
-            catch { print("[AppDataStore.loadDriverData] [non-fatal] driverProfile error: \(error)") }
+            catch { print("[loadDriverData] driverProfile: \(error)") }
 
         isLoading = false
         subscribeToTripUpdates()
         await loadAndSubscribeNotifications(for: driverId)
-        // Schedule local reminders for upcoming trips (Phase 7)
         await TripReminderService.shared.requestAuthorizationIfNeeded()
         await TripReminderService.shared.scheduleReminders(for: trips)
     }
 
     // MARK: - loadMaintenanceData
-    // Per-field try/catch matching loadDriverData pattern.
-    // sparePartsRequests is now fetched here so SparePartsRequestSheet
-    // does not show empty lists every session.
-    //
-    // Re-entry guard matches loadAll(): prevents concurrent call duplicates.
+    // Re-entry guard prevents concurrent call duplicates.
 
     func loadMaintenanceData(staffId: UUID) async {
         guard !isLoading else { return }
@@ -213,28 +171,15 @@ final class AppDataStore {
         async let sparePartsTask = SparePartsRequestService.fetchAllRequests(requestedById: staffId)
 
         do { if let m = try await selfMemberTask { staff = [m] } }
-            catch { print("[AppDataStore.loadMaintenanceData] [non-fatal] staff error: \(error)") }
-
-        do { vehicles = try await vehiclesTask }
-            catch { print("[AppDataStore.loadMaintenanceData] [non-fatal] vehicles error: \(error)") }
-
-        do { workOrders = try await workOrdersTask }
-            catch { print("[AppDataStore.loadMaintenanceData] [non-fatal] workOrders error: \(error)") }
-
-        do { maintenanceTasks = try await maintTasksTask }
-            catch { print("[AppDataStore.loadMaintenanceData] [non-fatal] maintenanceTasks error: \(error)") }
-
-        do { maintenanceRecords = try await maintRecsTask }
-            catch { print("[AppDataStore.loadMaintenanceData] [non-fatal] maintenanceRecords error: \(error)") }
-
-        do { partsUsed = try await partsTask }
-            catch { print("[AppDataStore.loadMaintenanceData] [non-fatal] partsUsed error: \(error)") }
-
+            catch { print("[loadMaintenanceData] staff: \(error)") }
+        do { vehicles = try await vehiclesTask }              catch { print("[loadMaintenanceData] vehicles: \(error)") }
+        do { workOrders = try await workOrdersTask }          catch { print("[loadMaintenanceData] workOrders: \(error)") }
+        do { maintenanceTasks = try await maintTasksTask }    catch { print("[loadMaintenanceData] maintenanceTasks: \(error)") }
+        do { maintenanceRecords = try await maintRecsTask }   catch { print("[loadMaintenanceData] maintenanceRecords: \(error)") }
+        do { partsUsed = try await partsTask }                catch { print("[loadMaintenanceData] partsUsed: \(error)") }
         do { if let p = try await maintProfTask { maintenanceProfiles = [p] } }
-            catch { print("[AppDataStore.loadMaintenanceData] [non-fatal] maintenanceProfile error: \(error)") }
-
-        do { sparePartsRequests = try await sparePartsTask }
-            catch { print("[AppDataStore.loadMaintenanceData] [non-fatal] sparePartsRequests error: \(error)") }
+            catch { print("[loadMaintenanceData] maintenanceProfile: \(error)") }
+        do { sparePartsRequests = try await sparePartsTask }  catch { print("[loadMaintenanceData] sparePartsRequests: \(error)") }
 
         isLoading = false
         await loadAndSubscribeNotifications(for: staffId)
@@ -258,49 +203,34 @@ final class AppDataStore {
         try await StaffMemberService.addStaffMember(member)
         staff.append(member)
     }
-
     func updateStaffMember(_ member: StaffMember) async throws {
         try await StaffMemberService.updateStaffMember(member)
         if let idx = staff.firstIndex(where: { $0.id == member.id }) { staff[idx] = member }
     }
-
     func deleteStaffMember(id: UUID) async throws {
         struct Payload: Encodable { let staffMemberId: String }
-        try await supabase.functions.invoke(
-            "delete-staff-member",
-            options: FunctionInvokeOptions(body: Payload(staffMemberId: id.uuidString))
-        )
+        try await supabase.functions.invoke("delete-staff-member",
+            options: FunctionInvokeOptions(body: Payload(staffMemberId: id.uuidString)))
         staff.removeAll               { $0.id == id }
         driverProfiles.removeAll      { $0.staffMemberId == id }
         maintenanceProfiles.removeAll { $0.staffMemberId == id }
         staffApplications.removeAll   { $0.staffMemberId == id }
     }
-
     func updateDriverAvailability(staffId: UUID, available: Bool) async throws {
-        let confirmedValue = try await StaffMemberService.updateAvailability(
-            staffId: staffId, available: available
-        )
+        let confirmedValue = try await StaffMemberService.updateAvailability(staffId: staffId, available: available)
         let confirmedAvailability = StaffAvailability(rawValue: confirmedValue) ?? (available ? .available : .unavailable)
-        if let idx = staff.firstIndex(where: { $0.id == staffId }) {
-            staff[idx].availability = confirmedAvailability
-        }
+        if let idx = staff.firstIndex(where: { $0.id == staffId }) { staff[idx].availability = confirmedAvailability }
     }
-
     func addDriverProfile(_ profile: DriverProfile) async throws {
-        try await DriverProfileService.addDriverProfile(profile)
-        driverProfiles.append(profile)
+        try await DriverProfileService.addDriverProfile(profile); driverProfiles.append(profile)
     }
-
     func updateDriverProfile(_ profile: DriverProfile) async throws {
         try await DriverProfileService.updateDriverProfile(profile)
         if let idx = driverProfiles.firstIndex(where: { $0.id == profile.id }) { driverProfiles[idx] = profile }
     }
-
     func addMaintenanceProfile(_ profile: MaintenanceProfile) async throws {
-        try await MaintenanceProfileService.addMaintenanceProfile(profile)
-        maintenanceProfiles.append(profile)
+        try await MaintenanceProfileService.addMaintenanceProfile(profile); maintenanceProfiles.append(profile)
     }
-
     func updateMaintenanceProfile(_ profile: MaintenanceProfile) async throws {
         try await MaintenanceProfileService.updateMaintenanceProfile(profile)
         if let idx = maintenanceProfiles.firstIndex(where: { $0.id == profile.id }) { maintenanceProfiles[idx] = profile }
@@ -309,20 +239,16 @@ final class AppDataStore {
     // MARK: - Staff Applications
 
     func addStaffApplication(_ app: StaffApplication) async throws {
-        try await StaffApplicationService.addStaffApplication(app)
-        staffApplications.insert(app, at: 0)
+        try await StaffApplicationService.addStaffApplication(app); staffApplications.insert(app, at: 0)
     }
-
     func updateStaffApplication(_ app: StaffApplication) async throws {
         try await StaffApplicationService.updateStaffApplication(app)
         if let idx = staffApplications.firstIndex(where: { $0.id == app.id }) { staffApplications[idx] = app }
     }
-
     func approveStaffApplication(id: UUID, reviewedBy adminId: UUID) async throws {
         guard let idx = staffApplications.firstIndex(where: { $0.id == id }) else { return }
         var app = staffApplications[idx]
-        app.status = .approved; app.rejectionReason = nil
-        app.reviewedBy = adminId; app.reviewedAt = Date()
+        app.status = .approved; app.rejectionReason = nil; app.reviewedBy = adminId; app.reviewedAt = Date()
         try await StaffApplicationService.updateStaffApplication(app)
         staffApplications[idx] = app
         try await StaffMemberService.setApprovalStatus(staffId: app.staffMemberId, approved: true, rejectionReason: nil)
@@ -330,27 +256,22 @@ final class AppDataStore {
             staff[si].isApproved = true; staff[si].status = .active
         }
         try? await NotificationService.insertNotification(
-            recipientId: app.staffMemberId,
-            type: .general,
+            recipientId: app.staffMemberId, type: .general,
             title: "Application Approved",
             body: "Your Sierra FMS application has been approved. Complete your profile to get started.",
-            entityType: "staff_application",
-            entityId: id
+            entityType: "staff_application", entityId: id
         )
+        // Local banner for the admin confirming approval was recorded
+        LocalNotificationService.notifyApplicationApproved()
     }
-
     func setStaffStatus(staffId: UUID, status: StaffStatus) async throws {
         try await StaffMemberService.setStatus(staffId: staffId, status: status)
-        if let idx = staff.firstIndex(where: { $0.id == staffId }) {
-            staff[idx].status = status
-        }
+        if let idx = staff.firstIndex(where: { $0.id == staffId }) { staff[idx].status = status }
     }
-
     func rejectStaffApplication(id: UUID, reason: String, reviewedBy adminId: UUID) async throws {
         guard let idx = staffApplications.firstIndex(where: { $0.id == id }) else { return }
         var app = staffApplications[idx]
-        app.status = .rejected; app.rejectionReason = reason
-        app.reviewedBy = adminId; app.reviewedAt = Date()
+        app.status = .rejected; app.rejectionReason = reason; app.reviewedBy = adminId; app.reviewedAt = Date()
         try await StaffApplicationService.updateStaffApplication(app)
         staffApplications[idx] = app
         try await StaffMemberService.setApprovalStatus(staffId: app.staffMemberId, approved: false, rejectionReason: reason)
@@ -358,44 +279,34 @@ final class AppDataStore {
             staff[si].isApproved = false; staff[si].rejectionReason = reason; staff[si].status = .suspended
         }
     }
-
     var pendingApplicationsCount: Int { staffApplications.filter { $0.status == .pending }.count }
 
     // MARK: - Vehicle CRUD
 
     func addVehicle(_ vehicle: Vehicle) async throws {
-        try await VehicleService.addVehicle(vehicle)
-        vehicles.append(vehicle)
+        try await VehicleService.addVehicle(vehicle); vehicles.append(vehicle)
     }
-
     func updateVehicle(_ vehicle: Vehicle) async throws {
         try await VehicleService.updateVehicle(vehicle)
         if let idx = vehicles.firstIndex(where: { $0.id == vehicle.id }) { vehicles[idx] = vehicle }
     }
-
     func deleteVehicle(id: UUID) async throws {
         try await VehicleService.deleteVehicle(id: id)
-        vehicles.removeAll { $0.id == id }
-        vehicleDocuments.removeAll { $0.vehicleId == id }
+        vehicles.removeAll { $0.id == id }; vehicleDocuments.removeAll { $0.vehicleId == id }
     }
-
     func assignVehicleToDriver(vehicleId: UUID, driverId: UUID?) async throws {
         try await VehicleService.assignDriver(vehicleId: vehicleId, driverId: driverId)
         if let idx = vehicles.firstIndex(where: { $0.id == vehicleId }) {
             vehicles[idx].assignedDriverId = driverId?.uuidString
         }
     }
-
     func addVehicleDocument(_ doc: VehicleDocument) async throws {
-        try await VehicleDocumentService.addVehicleDocument(doc)
-        vehicleDocuments.append(doc)
+        try await VehicleDocumentService.addVehicleDocument(doc); vehicleDocuments.append(doc)
     }
-
     func updateVehicleDocument(_ doc: VehicleDocument) async throws {
         try await VehicleDocumentService.updateVehicleDocument(doc)
         if let idx = vehicleDocuments.firstIndex(where: { $0.id == doc.id }) { vehicleDocuments[idx] = doc }
     }
-
     func deleteVehicleDocument(id: UUID) async throws {
         try await VehicleDocumentService.deleteVehicleDocument(id: id)
         vehicleDocuments.removeAll { $0.id == id }
@@ -408,22 +319,24 @@ final class AppDataStore {
         trips.insert(trip, at: 0)
         if let driverIdStr = trip.driverId, let driverUUID = UUID(uuidString: driverIdStr) {
             let dateStr = trip.scheduledDate.formatted(.dateTime.month().day().hour().minute())
+            // Supabase notification (persisted, shows in notification bell)
             try? await NotificationService.insertNotification(
-                recipientId: driverUUID,
-                type: .tripAssigned,
+                recipientId: driverUUID, type: .tripAssigned,
                 title: "New Trip Assigned: \(trip.taskId)",
                 body: "Trip from \(trip.origin) to \(trip.destination) on \(dateStr)",
-                entityType: "trip",
-                entityId: trip.id
+                entityType: "trip", entityId: trip.id
+            )
+            // Local banner for the admin so they see immediate confirmation
+            LocalNotificationService.notifyTripAssigned(
+                taskId: trip.taskId, origin: trip.origin,
+                destination: trip.destination, tripId: trip.id
             )
         }
     }
-
     func updateTrip(_ trip: Trip) async throws {
         try await TripService.updateTrip(trip)
         if let idx = trips.firstIndex(where: { $0.id == trip.id }) { trips[idx] = trip }
     }
-
     func updateTripStatus(id: UUID, status: TripStatus) async throws {
         try await TripService.updateTripStatus(id: id, status: status)
         if let idx = trips.firstIndex(where: { $0.id == id }) {
@@ -432,22 +345,17 @@ final class AppDataStore {
             if status == .completed { trips[idx].actualEndDate   = Date() }
         }
     }
-
     func deleteTrip(id: UUID) async throws {
-        try await TripService.deleteTrip(id: id)
-        trips.removeAll { $0.id == id }
+        try await TripService.deleteTrip(id: id); trips.removeAll { $0.id == id }
     }
 
     // MARK: - Fuel Logs
 
     func addFuelLog(_ log: FuelLog) async throws {
-        try await FuelLogService.addFuelLog(log)
-        fuelLogs.insert(log, at: 0)
+        try await FuelLogService.addFuelLog(log); fuelLogs.insert(log, at: 0)
     }
-
     func deleteFuelLog(id: UUID) async throws {
-        try await FuelLogService.deleteFuelLog(id: id)
-        fuelLogs.removeAll { $0.id == id }
+        try await FuelLogService.deleteFuelLog(id: id); fuelLogs.removeAll { $0.id == id }
     }
 
     // MARK: - Vehicle Inspections
@@ -467,7 +375,6 @@ final class AppDataStore {
             try? await VehicleService.updateVehicle(vehicles[vIdx])
         }
     }
-
     func updateVehicleInspection(_ inspection: VehicleInspection) async throws {
         try await VehicleInspectionService.updateInspection(inspection)
         if let idx = vehicleInspections.firstIndex(where: { $0.id == inspection.id }) { vehicleInspections[idx] = inspection }
@@ -490,18 +397,18 @@ final class AppDataStore {
         try await EmergencyAlertService.addEmergencyAlert(alert)
         emergencyAlerts.insert(alert, at: 0)
         let driverName = staff.first { $0.id == alert.driverId }?.displayName ?? "A driver"
+        // Supabase notification for each admin (persisted + banner via Realtime)
         for admin in staff.filter({ $0.role == .fleetManager }) {
             try? await NotificationService.insertNotification(
-                recipientId: admin.id,
-                type: .emergency,
+                recipientId: admin.id, type: .emergency,
                 title: "\u{1F6A8} Emergency Alert",
                 body: "\(driverName) has triggered an SOS alert. Tap to act now.",
-                entityType: "emergency_alert",
-                entityId: alert.id
+                entityType: "emergency_alert", entityId: alert.id
             )
         }
+        // Local banner fires immediately even before Realtime round-trips
+        LocalNotificationService.notifyEmergencyAlert(driverName: driverName, alertId: alert.id)
     }
-
     func acknowledgeAlert(id: UUID, acknowledgedBy adminId: UUID) async throws {
         try await EmergencyAlertService.acknowledgeAlert(id: id, acknowledgedBy: adminId)
         if let idx = emergencyAlerts.firstIndex(where: { $0.id == id }) {
@@ -510,7 +417,6 @@ final class AppDataStore {
             emergencyAlerts[idx].acknowledgedAt = Date()
         }
     }
-
     func resolveAlert(id: UUID) async throws {
         try await EmergencyAlertService.resolveAlert(id: id)
         if let idx = emergencyAlerts.firstIndex(where: { $0.id == id }) {
@@ -528,29 +434,22 @@ final class AppDataStore {
             try? await VehicleService.updateVehicle(vehicles[idx])
         }
     }
-
     func updateMaintenanceTask(_ task: MaintenanceTask) async throws {
         try await MaintenanceTaskService.updateMaintenanceTask(task)
         if let idx = maintenanceTasks.firstIndex(where: { $0.id == task.id }) { maintenanceTasks[idx] = task }
     }
-
     func completeMaintenanceTask(id: UUID) async throws {
         try await MaintenanceTaskService.updateMaintenanceTaskStatus(id: id, status: .completed)
         if let idx = maintenanceTasks.firstIndex(where: { $0.id == id }) {
             maintenanceTasks[idx].status = .completed; maintenanceTasks[idx].completedAt = Date()
             let vehicleId = maintenanceTasks[idx].vehicleId
             if vehicles.firstIndex(where: { $0.id == vehicleId }) != nil {
-                try? await supabase.functions.invoke(
-                    "update-vehicle-status",
-                    options: .init(body: ["vehicleId": vehicleId.uuidString, "status": "Idle"])
-                )
-                if let vIdx = vehicles.firstIndex(where: { $0.id == vehicleId }) {
-                    vehicles[vIdx].status = .idle
-                }
+                try? await supabase.functions.invoke("update-vehicle-status",
+                    options: .init(body: ["vehicleId": vehicleId.uuidString, "status": "Idle"]))
+                if let vIdx = vehicles.firstIndex(where: { $0.id == vehicleId }) { vehicles[vIdx].status = .idle }
             }
         }
     }
-
     func deleteMaintenanceTask(id: UUID) async throws {
         try await MaintenanceTaskService.deleteMaintenanceTask(id: id)
         maintenanceTasks.removeAll { $0.id == id }
@@ -559,15 +458,12 @@ final class AppDataStore {
     // MARK: - Work Orders
 
     func addWorkOrder(_ order: WorkOrder) async throws {
-        try await WorkOrderService.addWorkOrder(order)
-        workOrders.append(order)
+        try await WorkOrderService.addWorkOrder(order); workOrders.append(order)
     }
-
     func updateWorkOrder(_ order: WorkOrder) async throws {
         try await WorkOrderService.updateWorkOrder(order)
         if let idx = workOrders.firstIndex(where: { $0.id == order.id }) { workOrders[idx] = order }
     }
-
     func closeWorkOrder(id: UUID) async throws {
         guard let idx = workOrders.firstIndex(where: { $0.id == id }) else { return }
         var order = workOrders[idx]
@@ -575,19 +471,17 @@ final class AppDataStore {
         try await WorkOrderService.updateWorkOrder(order)
         workOrders[idx] = order
         if let taskIdx = maintenanceTasks.firstIndex(where: { $0.id == order.maintenanceTaskId }) {
-            maintenanceTasks[taskIdx].status = .completed
-            maintenanceTasks[taskIdx].completedAt = Date()
+            maintenanceTasks[taskIdx].status = .completed; maintenanceTasks[taskIdx].completedAt = Date()
             try? await MaintenanceTaskService.updateMaintenanceTask(maintenanceTasks[taskIdx])
             let task = maintenanceTasks[taskIdx]
             let vehicleName = vehicle(for: task.vehicleId)?.name ?? "Unknown"
             try? await NotificationService.insertNotification(
-                recipientId: task.createdByAdminId,
-                type: .maintenanceComplete,
+                recipientId: task.createdByAdminId, type: .maintenanceComplete,
                 title: "Work Order Completed",
                 body: "Work order for vehicle \(vehicleName) has been closed.",
-                entityType: "work_order",
-                entityId: order.id
+                entityType: "work_order", entityId: order.id
             )
+            LocalNotificationService.notifyWorkOrderCompleted(vehicleName: vehicleName, workOrderId: order.id)
         }
     }
 
@@ -597,7 +491,6 @@ final class AppDataStore {
         try await MaintenanceRecordService.addMaintenanceRecord(record)
         maintenanceRecords.insert(record, at: 0)
     }
-
     func updateMaintenanceRecord(_ record: MaintenanceRecord) async throws {
         try await MaintenanceRecordService.updateMaintenanceRecord(record)
         if let idx = maintenanceRecords.firstIndex(where: { $0.id == record.id }) { maintenanceRecords[idx] = record }
@@ -614,7 +507,6 @@ final class AppDataStore {
             try? await WorkOrderService.updateWorkOrder(workOrders[idx])
         }
     }
-
     func deletePartUsed(id: UUID) async throws {
         guard let part = partsUsed.first(where: { $0.id == id }) else { return }
         let workOrderId = part.workOrderId
@@ -643,7 +535,6 @@ final class AppDataStore {
         )
         sparePartsRequests.insert(request, at: 0)
     }
-
     func approveSparePartsRequest(id: UUID, reviewedBy adminId: UUID) async throws {
         try await SparePartsRequestService.approveRequest(id: id, reviewedBy: adminId)
         if let idx = sparePartsRequests.firstIndex(where: { $0.id == id }) {
@@ -652,7 +543,6 @@ final class AppDataStore {
             sparePartsRequests[idx].reviewedAt = Date()
         }
     }
-
     func rejectSparePartsRequest(id: UUID, reviewedBy adminId: UUID, reason: String) async throws {
         try await SparePartsRequestService.rejectRequest(id: id, reviewedBy: adminId, reason: reason)
         if let idx = sparePartsRequests.firstIndex(where: { $0.id == id }) {
@@ -666,49 +556,39 @@ final class AppDataStore {
     // MARK: - Geofences
 
     func addGeofence(_ geofence: Geofence) async throws {
-        try await GeofenceService.addGeofence(geofence)
-        geofences.append(geofence)
+        try await GeofenceService.addGeofence(geofence); geofences.append(geofence)
     }
-
     func updateGeofence(_ geofence: Geofence) async throws {
         try await GeofenceService.updateGeofence(geofence)
         if let idx = geofences.firstIndex(where: { $0.id == geofence.id }) { geofences[idx] = geofence }
     }
-
     func deleteGeofence(id: UUID) async throws {
-        try await GeofenceService.deleteGeofence(id: id)
-        geofences.removeAll { $0.id == id }
+        try await GeofenceService.deleteGeofence(id: id); geofences.removeAll { $0.id == id }
     }
-
     func toggleGeofence(id: UUID) async throws {
         guard let idx = geofences.firstIndex(where: { $0.id == id }) else { return }
         let newState = !geofences[idx].isActive
         try await GeofenceService.toggleGeofence(id: id, isActive: newState)
         geofences[idx].isActive = newState
     }
-
     func addGeofenceEvent(_ event: GeofenceEvent) async throws {
-        try await GeofenceEventService.addGeofenceEvent(event)
-        geofenceEvents.append(event)
+        try await GeofenceEventService.addGeofenceEvent(event); geofenceEvents.append(event)
     }
 
     // MARK: - Activity Logs
 
     func refreshActivityLogs() async {
         do { activityLogs = try await ActivityLogService.fetchRecentLogs(limit: 100) }
-        catch { print("[AppDataStore] Activity log refresh failed: \(error)") }
+        catch { print("[AppDataStore] Activity log refresh: \(error)") }
     }
-
     func markActivityLogRead(id: UUID) async throws {
         try await ActivityLogService.markAsRead(id: id)
         if let idx = activityLogs.firstIndex(where: { $0.id == id }) { activityLogs[idx].isRead = true }
     }
-
     func markAllActivityLogsRead() async throws {
         try await ActivityLogService.markAllAsRead()
         for idx in activityLogs.indices { activityLogs[idx].isRead = true }
     }
-
     var unreadActivityCount: Int { activityLogs.filter { !$0.isRead }.count }
     var unreadNotificationCount: Int { notifications.filter { !$0.isRead }.count }
 
@@ -739,14 +619,11 @@ final class AppDataStore {
     }
     func availableDrivers() -> [StaffMember] { staff.filter { $0.role == .driver && $0.status == .active && $0.availability == .available } }
     func availableVehicles() -> [Vehicle] { vehicles.filter { $0.status == .idle && $0.assignedDriverId == nil } }
-
     func activeTrip(forDriverId driverId: UUID) -> Trip? {
         trips.first {
-            $0.driverId?.lowercased() == driverId.uuidString.lowercased()
-            && $0.status.isActionable
+            $0.driverId?.lowercased() == driverId.uuidString.lowercased() && $0.status.isActionable
         }
     }
-
     func workOrder(forMaintenanceTask taskId: UUID) -> WorkOrder? { workOrders.first { $0.maintenanceTaskId == taskId } }
     func sparePartsRequests(forTask taskId: UUID) -> [SparePartsRequest] { sparePartsRequests.filter { $0.maintenanceTaskId == taskId } }
     func pendingSparePartsRequests() -> [SparePartsRequest] { sparePartsRequests.filter { $0.status == .pending } }
@@ -773,7 +650,7 @@ final class AppDataStore {
             }
         }
         Task {
-            do { try await channel.subscribeWithError() } catch { print("[AppDataStore] Emergency alerts channel error: \(error)") }
+            do { try await channel.subscribeWithError() } catch { print("[AppDataStore] Emergency alerts channel: \(error)") }
             await MainActor.run { self.emergencyAlertsChannel = channel }
         }
     }
@@ -795,7 +672,7 @@ final class AppDataStore {
             }
         }
         Task {
-            do { try await channel.subscribeWithError() } catch { print("[AppDataStore] Staff members channel error: \(error)") }
+            do { try await channel.subscribeWithError() } catch { print("[AppDataStore] Staff members channel: \(error)") }
             await MainActor.run { self.staffMembersChannel = channel }
         }
     }
@@ -817,7 +694,7 @@ final class AppDataStore {
             }
         }
         Task {
-            do { try await channel.subscribeWithError() } catch { print("[AppDataStore] Vehicles channel error: \(error)") }
+            do { try await channel.subscribeWithError() } catch { print("[AppDataStore] Vehicles channel: \(error)") }
             await MainActor.run { self.vehiclesChannel = channel }
         }
     }
@@ -851,12 +728,17 @@ final class AppDataStore {
             }
         }
         Task {
-            do { try await channel.subscribeWithError() } catch { print("[AppDataStore] Trips channel error: \(error)") }
+            do { try await channel.subscribeWithError() } catch { print("[AppDataStore] Trips channel: \(error)") }
             await MainActor.run { self.tripsChannel = channel }
         }
     }
 
     // MARK: - Notifications
+    // loadAndSubscribeNotifications subscribes to the Supabase Realtime channel
+    // for the notifications table. When a new notification arrives via Realtime,
+    // it is inserted into the local array AND fired as a local UNUserNotificationCenter
+    // banner via LocalNotificationService — so the user sees an on-device banner
+    // immediately without needing APNs.
 
     func loadAndSubscribeNotifications(for userId: UUID) async {
         if subscribedNotificationsUserId == userId { return }
@@ -872,23 +754,20 @@ final class AppDataStore {
             guard let self else { return }
             Task { @MainActor in
                 self.notifications.insert(newNotification, at: 0)
+                // Fire a local banner so the user sees it even when the app is
+                // foregrounded. UNUserNotificationCenter.delegate = self in
+                // SierraAppDelegate ensures banners show in-foreground.
+                LocalNotificationService.notifyFromSierraNotification(newNotification)
             }
         }
     }
 
     func markNotificationRead(id: UUID) async throws {
         try await NotificationService.markAsRead(id: id)
-        if let idx = notifications.firstIndex(where: { $0.id == id }) {
-            notifications[idx].isRead = true
-        }
+        if let idx = notifications.firstIndex(where: { $0.id == id }) { notifications[idx].isRead = true }
     }
-
     func clearAllNotifications(userId: UUID) async throws {
-        try await supabase
-            .from("notifications")
-            .delete()
-            .eq("recipient_id", value: userId.uuidString)
-            .execute()
+        try await supabase.from("notifications").delete().eq("recipient_id", value: userId.uuidString).execute()
         notifications = []
     }
 
@@ -897,12 +776,9 @@ final class AppDataStore {
     func publishDriverLocation(vehicleId: UUID, tripId: UUID, latitude: Double, longitude: Double, speedKmh: Double?) async {
         do {
             try await VehicleLocationService.shared.publishLocation(
-                vehicleId: vehicleId,
-                tripId: tripId,
+                vehicleId: vehicleId, tripId: tripId,
                 driverId: AuthManager.shared.currentUser?.id ?? UUID(),
-                latitude: latitude,
-                longitude: longitude,
-                speedKmh: speedKmh
+                latitude: latitude, longitude: longitude, speedKmh: speedKmh
             )
             let entry = VehicleLocationHistory(
                 id: UUID(), vehicleId: vehicleId, tripId: tripId,
@@ -911,9 +787,7 @@ final class AppDataStore {
                 speedKmh: speedKmh, recordedAt: Date(), createdAt: Date()
             )
             activeTripLocationHistory.append(entry)
-        } catch {
-            print("[AppDataStore] Location publish failed (non-fatal): \(error)")
-        }
+        } catch { print("[AppDataStore] Location publish failed (non-fatal): \(error)") }
     }
 
     // MARK: - Trip Lifecycle
@@ -926,7 +800,6 @@ final class AppDataStore {
             trips[idx].startMileage = startMileage
         }
     }
-
     func endTrip(tripId: UUID, endMileage: Double) async throws {
         try await TripService.completeTrip(tripId: tripId, endMileage: endMileage)
         if let idx = trips.firstIndex(where: { $0.id == tripId }) {
@@ -934,56 +807,42 @@ final class AppDataStore {
             trips[idx].actualEndDate = Date()
             trips[idx].endMileage = endMileage
         }
-        activeTripLocationHistory = []
-        currentTripDeviations = []
-        activeTripExpenses = []
+        activeTripLocationHistory = []; currentTripDeviations = []; activeTripExpenses = []
     }
-
     func abortTrip(tripId: UUID) async throws {
         try await TripService.cancelTrip(tripId: tripId)
-        if let idx = trips.firstIndex(where: { $0.id == tripId }) {
-            trips[idx].status = .cancelled
-        }
+        if let idx = trips.firstIndex(where: { $0.id == tripId }) { trips[idx].status = .cancelled }
         TripReminderService.shared.cancelReminders(for: tripId)
-        activeTripLocationHistory = []
-        currentTripDeviations = []
-        activeTripExpenses = []
+        activeTripLocationHistory = []; currentTripDeviations = []; activeTripExpenses = []
     }
 
     // MARK: - Overdue Maintenance Check
 
     func checkOverdueMaintenance() async {
         guard subscribedNotificationsUserId != nil else { return }
-        let overdueTasks = maintenanceTasks.filter {
-            $0.status == .pending && $0.dueDate < Date()
-        }
+        let overdueTasks = maintenanceTasks.filter { $0.status == .pending && $0.dueDate < Date() }
         for task in overdueTasks {
-            let alreadyNotified = notifications.contains {
-                $0.type == .maintenanceOverdue && $0.entityId == task.id
-            }
+            let alreadyNotified = notifications.contains { $0.type == .maintenanceOverdue && $0.entityId == task.id }
             guard !alreadyNotified else { continue }
             do {
                 try await NotificationService.insertNotification(
-                    recipientId: task.createdByAdminId,
-                    type: .maintenanceOverdue,
+                    recipientId: task.createdByAdminId, type: .maintenanceOverdue,
                     title: "Maintenance Overdue",
                     body: "Task \"\(task.title)\" is past its due date.",
-                    entityType: "maintenance_task",
-                    entityId: task.id
+                    entityType: "maintenance_task", entityId: task.id
                 )
+                // Also fire a local banner immediately
+                LocalNotificationService.notifyMaintenanceOverdue(taskTitle: task.title, taskId: task.id)
             } catch {
                 print("[AppDataStore] Non-fatal: overdue notification failed: \(error)")
             }
         }
     }
 
-    // MARK: - Full Cleanup (called on sign-out)
+    // MARK: - Full Cleanup
 
     func unsubscribeAll() {
         Task { await tearDownRealtimeChannels() }
-        activeTripLocationHistory = []
-        currentTripDeviations = []
-        activeTripExpenses = []
-        notifications = []
+        activeTripLocationHistory = []; currentTripDeviations = []; activeTripExpenses = []; notifications = []
     }
 }
