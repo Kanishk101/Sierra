@@ -11,13 +11,18 @@ private let iso: ISO8601DateFormatter = {
     return f
 }()
 
+// MARK: - TripServiceError
+
 enum TripServiceError: LocalizedError {
     case tripNotFound(UUID)
+    case driverMismatch
 
     var errorDescription: String? {
         switch self {
         case .tripNotFound(let id):
             return "No trips row found for id \(id.uuidString.lowercased())"
+        case .driverMismatch:
+            return "You are not the assigned driver for this trip."
         }
     }
 }
@@ -46,9 +51,7 @@ struct TripInsertPayload: Encodable {
     let destinationLatitude: Double?
     let destinationLongitude: Double?
     let routePolyline: String?
-    // FIX: was String? — when nil, serialised as JSON null which violated
-    // trips.route_stops jsonb NOT NULL, silently crashing every trip insert.
-    // Now always String, defaults to '[]' for no stops.
+    // Always String — never null — avoids jsonb NOT NULL violation on insert.
     let routeStops: String
 
     enum CodingKeys: String, CodingKey {
@@ -95,7 +98,6 @@ struct TripInsertPayload: Encodable {
         destinationLatitude  = t.destinationLatitude
         destinationLongitude = t.destinationLongitude
         routePolyline        = t.routePolyline
-        // Always send a valid JSON array — never null.
         if let stops = t.routeStops, !stops.isEmpty,
            let data = try? JSONEncoder().encode(stops),
            let str  = String(data: data, encoding: .utf8) {
@@ -107,6 +109,8 @@ struct TripInsertPayload: Encodable {
 }
 
 // MARK: - TripUpdatePayload
+// Includes ALL mutable trip columns so a general updateTrip() call
+// never silently wipes fields that aren't in the payload.
 
 struct TripUpdatePayload: Encodable {
     let taskId: String
@@ -125,9 +129,22 @@ struct TripUpdatePayload: Encodable {
     let notes: String
     let status: String
     let priority: String
+    // GPS coordinates — previously absent, caused coords to be wiped on any edit.
+    let originLatitude: Double?
+    let originLongitude: Double?
+    let destinationLatitude: Double?
+    let destinationLongitude: Double?
+    let routePolyline: String?
+    let routeStops: String
+    // Related records
     let proofOfDeliveryId: String?
     let preInspectionId: String?
     let postInspectionId: String?
+    // Acceptance lifecycle (added in migration 20260322000001)
+    let acceptedAt: String?
+    let acceptanceDeadline: String?
+    let rejectedReason: String?
+    // Rating
     let driverRating: Int?
     let driverRatingNote: String?
     let ratedById: String?
@@ -147,9 +164,18 @@ struct TripUpdatePayload: Encodable {
         case startMileage         = "start_mileage"
         case endMileage           = "end_mileage"
         case notes, status, priority
+        case originLatitude       = "origin_latitude"
+        case originLongitude      = "origin_longitude"
+        case destinationLatitude  = "destination_latitude"
+        case destinationLongitude = "destination_longitude"
+        case routePolyline        = "route_polyline"
+        case routeStops           = "route_stops"
         case proofOfDeliveryId    = "proof_of_delivery_id"
         case preInspectionId      = "pre_inspection_id"
         case postInspectionId     = "post_inspection_id"
+        case acceptedAt           = "accepted_at"
+        case acceptanceDeadline   = "acceptance_deadline"
+        case rejectedReason       = "rejected_reason"
         case driverRating         = "driver_rating"
         case driverRatingNote     = "driver_rating_note"
         case ratedById            = "rated_by_id"
@@ -173,9 +199,24 @@ struct TripUpdatePayload: Encodable {
         notes                = t.notes
         status               = t.status.rawValue
         priority             = t.priority.rawValue
+        originLatitude       = t.originLatitude
+        originLongitude      = t.originLongitude
+        destinationLatitude  = t.destinationLatitude
+        destinationLongitude = t.destinationLongitude
+        routePolyline        = t.routePolyline
+        if let stops = t.routeStops, !stops.isEmpty,
+           let data = try? JSONEncoder().encode(stops),
+           let str  = String(data: data, encoding: .utf8) {
+            routeStops = str
+        } else {
+            routeStops = "[]"
+        }
         proofOfDeliveryId    = t.proofOfDeliveryId?.uuidString
         preInspectionId      = t.preInspectionId?.uuidString
         postInspectionId     = t.postInspectionId?.uuidString
+        acceptedAt           = t.acceptedAt.map    { iso.string(from: $0) }
+        acceptanceDeadline   = t.acceptanceDeadline.map { iso.string(from: $0) }
+        rejectedReason       = t.rejectedReason
         driverRating         = t.driverRating
         driverRatingNote     = t.driverRatingNote
         ratedById            = t.ratedById?.uuidString
@@ -291,11 +332,51 @@ struct TripService {
         return "TRP-\(datePart)-\(suffix)"
     }
 
+    // MARK: - Acceptance Lifecycle
+    // Both methods include .eq("driver_id") as a server-side security
+    // filter — drivers cannot accept/reject trips assigned to someone else.
+    // The RLS policy on trips also enforces this at the DB level.
+
+    static func acceptTrip(tripId: UUID, driverId: UUID) async throws {
+        struct Payload: Encodable {
+            let status: String
+            let accepted_at: String
+        }
+        let rows: [Trip] = try await supabase
+            .from("trips")
+            .update(Payload(
+                status: TripStatus.accepted.rawValue,
+                accepted_at: iso.string(from: Date())
+            ))
+            .eq("id",        value: tripId.uuidString)
+            .eq("driver_id", value: driverId.uuidString.lowercased())
+            .select()
+            .execute()
+            .value
+        // If the update matched no rows the driver_id filter blocked it
+        guard !rows.isEmpty else { throw TripServiceError.driverMismatch }
+    }
+
+    static func rejectTrip(tripId: UUID, driverId: UUID, reason: String) async throws {
+        struct Payload: Encodable {
+            let status: String
+            let rejected_reason: String
+        }
+        let rows: [Trip] = try await supabase
+            .from("trips")
+            .update(Payload(
+                status: TripStatus.rejected.rawValue,
+                rejected_reason: reason
+            ))
+            .eq("id",        value: tripId.uuidString)
+            .eq("driver_id", value: driverId.uuidString.lowercased())
+            .select()
+            .execute()
+            .value
+        guard !rows.isEmpty else { throw TripServiceError.driverMismatch }
+    }
+
     // MARK: - Resource Overlap Check
-    // IMPORTANT: Uses FunctionInvokeOptions(body: body) NOT pre-encoded Data.
-    // Passing Data to the Supabase Swift SDK re-encodes it as base64 in JSON,
-    // corrupting the payload. Pass the Encodable struct directly.
-    // check-resource-overlap is deployed with verify_jwt: false (uses service role key).
 
     static func checkOverlap(
         driverId: UUID,
@@ -322,7 +403,6 @@ struct TripService {
             }
         }
 
-        // CRITICAL FIX: pass struct directly — NOT pre-encoded Data
         let body = OverlapRequest(
             driver_id:        driverId.uuidString.lowercased(),
             vehicle_id:       vehicleId.uuidString.lowercased(),
@@ -337,7 +417,7 @@ struct TripService {
         return (result.driverConflict, result.vehicleConflict)
     }
 
-    // MARK: - Busy Status Helpers
+    // MARK: - Busy / Release Helpers
 
     static func markResourcesBusy(driverId: UUID, vehicleId: UUID) async throws {
         struct AvailabilityPayload: Encodable { let availability: String }

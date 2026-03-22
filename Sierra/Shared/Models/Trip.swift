@@ -2,19 +2,35 @@ import Foundation
 
 // MARK: - Trip Status
 // Maps to PostgreSQL enum: trip_status
+// New values (PendingAcceptance, Accepted, Rejected) added in
+// migration 20260322000001_full_rls_and_schema_fix.sql
 
 enum TripStatus: String, Codable, CaseIterable {
-    case scheduled = "Scheduled"
-    case active    = "Active"
-    case completed = "Completed"
-    case cancelled = "Cancelled"
+    case scheduled          = "Scheduled"
+    case pendingAcceptance  = "PendingAcceptance"
+    case accepted           = "Accepted"
+    case rejected           = "Rejected"
+    case active             = "Active"
+    case completed          = "Completed"
+    case cancelled          = "Cancelled"
 
     var color: String {
         switch self {
-        case .scheduled: "blue"
-        case .active:    "green"
-        case .completed: "gray"
-        case .cancelled: "red"
+        case .scheduled:         return "blue"
+        case .pendingAcceptance: return "orange"
+        case .accepted:          return "teal"
+        case .rejected:          return "red"
+        case .active:            return "green"
+        case .completed:         return "gray"
+        case .cancelled:         return "red"
+        }
+    }
+
+    /// Returns true for statuses where the driver still needs to act.
+    var isActionable: Bool {
+        switch self {
+        case .pendingAcceptance, .accepted, .active: return true
+        default: return false
         }
     }
 }
@@ -75,6 +91,13 @@ struct Trip: Identifiable, Codable {
     var preInspectionId: UUID?
     var postInspectionId: UUID?
 
+    // MARK: Acceptance lifecycle
+    // Columns added in migration 20260322000001_full_rls_and_schema_fix.sql
+    // Default = nil so existing memberwise call-sites compile unchanged.
+    var acceptedAt: Date?           = nil  // accepted_at
+    var acceptanceDeadline: Date?   = nil  // acceptance_deadline
+    var rejectedReason: String?     = nil  // rejected_reason
+
     // MARK: Rating
     var driverRating: Int?               // driver_rating (smallint nullable)
     var driverRatingNote: String?        // driver_rating_note
@@ -111,6 +134,9 @@ struct Trip: Identifiable, Codable {
         case proofOfDeliveryId    = "proof_of_delivery_id"
         case preInspectionId      = "pre_inspection_id"
         case postInspectionId     = "post_inspection_id"
+        case acceptedAt           = "accepted_at"
+        case acceptanceDeadline   = "acceptance_deadline"
+        case rejectedReason       = "rejected_reason"
         case driverRating         = "driver_rating"
         case driverRatingNote     = "driver_rating_note"
         case ratedById            = "rated_by_id"
@@ -158,6 +184,7 @@ struct Trip: Identifiable, Codable {
 
     // MARK: - Mock Data
 
+    #if DEBUG
     static let mockData: [Trip] = {
         let cal     = Calendar.current
         let now     = Date()
@@ -201,7 +228,7 @@ struct Trip: Identifiable, Codable {
             Trip(
                 id: UUID(uuidString: "B0000000-0000-0000-0000-000000000002")!,
                 taskId: "TRP-20260310-0042",
-                driverId: nil,
+                driverId: "D0000000-0000-0000-0000-000000000001",
                 vehicleId: nil,
                 createdByAdminId: adminId,
                 origin: "Delhi Hub",
@@ -220,7 +247,7 @@ struct Trip: Identifiable, Codable {
                 startMileage: nil,
                 endMileage: nil,
                 notes: "Regular supply route",
-                status: .scheduled,
+                status: .pendingAcceptance,
                 priority: .normal,
                 proofOfDeliveryId: nil,
                 preInspectionId: nil,
@@ -302,4 +329,5 @@ struct Trip: Identifiable, Codable {
             ),
         ]
     }()
+    #endif
 }

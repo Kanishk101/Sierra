@@ -2,12 +2,13 @@ import SwiftUI
 import PhotosUI
 import Supabase
 
-// MARK: - Inspection Check Item (local UI state)
+// MARK: - InspectionCheckItem (local UI state)
 
 struct InspectionCheckItem: Identifiable {
     let id = UUID()
     var name: String
     var category: InspectionCategory
+    /// Default is .notChecked. The driver MUST set every item before submission.
     var result: InspectionResult = .notChecked
     var notes: String = ""
 }
@@ -25,28 +26,67 @@ final class PreTripInspectionViewModel {
     let driverId: UUID
     let inspectionType: InspectionType
 
-    // MARK: - State
+    // MARK: - Navigation state
 
-    var currentStep = 1           // 1 = checklist, 2 = photos, 3 = summary
+    var currentStep = 1  // 1 = checklist, 2 = photos, 3 = summary
+
+    // MARK: - Submission state
+
     var isSubmitting = false
     var submitError: String?
     var didSubmitSuccessfully = false
 
-    // Step 1 — Checklist
+    // MARK: - Step 1: Checklist
+
     var checkItems: [InspectionCheckItem] = PreTripInspectionViewModel.defaultCheckItems()
 
-    // Step 2 — Photos
+    // MARK: - Step 2: Photos
+
     var selectedPhotoItems: [PhotosPickerItem] = []
     var photoData: [Data] = []
     var uploadedPhotoUrls: [String] = []
     var isUploadingPhotos = false
     var uploadProgress: String = ""
 
-    // Step 3 — Computed
+    // MARK: - Validation computed properties
+
+    /// True only when every single checklist item has been explicitly set
+    /// (Pass, Warn, or Fail). A .notChecked result is not acceptable.
+    var allItemsChecked: Bool {
+        checkItems.allSatisfy { $0.result != .notChecked }
+    }
+
+    /// Count of items the driver has not yet reviewed.
+    var uncheckedCount: Int {
+        checkItems.filter { $0.result == .notChecked }.count
+    }
+
+    /// Failed items that have no associated photo uploaded yet.
+    /// Uses a pragmatic approach: if ANY photo has been uploaded we
+    /// consider the photo requirement satisfied for all failed items.
+    /// Per-item photo linking is handled in the photo step redesign (Prompt 6).
+    var failedItemsMissingPhoto: [InspectionCheckItem] {
+        guard uploadedPhotoUrls.isEmpty else { return [] }
+        return failedItems
+    }
+
+    /// Driver may advance from the checklist step only when every item is set.
+    var canAdvanceToPhotos: Bool { allItemsChecked }
+
+    /// Driver may submit only when:
+    /// - All items are checked, AND
+    /// - Either there are no failed items missing photos,
+    ///   OR the overall result is passed (no failures at all).
+    var canSubmit: Bool {
+        allItemsChecked && (failedItemsMissingPhoto.isEmpty || overallResult == .passed)
+    }
+
+    // MARK: - Step 3: Computed results
+
     var overallResult: InspectionResult {
-        let hasFail = checkItems.contains { $0.result == .failed }
+        let hasFail    = checkItems.contains { $0.result == .failed }
         let hasWarning = checkItems.contains { $0.result == .passedWithWarnings }
-        if hasFail { return .failed }
+        if hasFail    { return .failed }
         if hasWarning { return .passedWithWarnings }
         return .passed
     }
@@ -61,10 +101,15 @@ final class PreTripInspectionViewModel {
 
     // MARK: - Init
 
-    init(tripId: UUID, vehicleId: UUID, driverId: UUID, inspectionType: InspectionType = .preTripInspection) {
-        self.tripId = tripId
-        self.vehicleId = vehicleId
-        self.driverId = driverId
+    init(
+        tripId: UUID,
+        vehicleId: UUID,
+        driverId: UUID,
+        inspectionType: InspectionType = .preTripInspection
+    ) {
+        self.tripId        = tripId
+        self.vehicleId     = vehicleId
+        self.driverId      = driverId
         self.inspectionType = inspectionType
     }
 
@@ -72,18 +117,18 @@ final class PreTripInspectionViewModel {
 
     static func defaultCheckItems() -> [InspectionCheckItem] {
         [
-            InspectionCheckItem(name: "Brakes", category: .safety),
-            InspectionCheckItem(name: "Tyres", category: .tyres),
-            InspectionCheckItem(name: "Lights (Front)", category: .lights),
-            InspectionCheckItem(name: "Lights (Rear)", category: .lights),
-            InspectionCheckItem(name: "Horn", category: .safety),
-            InspectionCheckItem(name: "Wipers", category: .body),
-            InspectionCheckItem(name: "Mirrors", category: .body),
-            InspectionCheckItem(name: "Fuel Level", category: .fluids),
-            InspectionCheckItem(name: "Engine Oil", category: .engine),
-            InspectionCheckItem(name: "Coolant", category: .fluids),
-            InspectionCheckItem(name: "Steering", category: .safety),
-            InspectionCheckItem(name: "Seatbelt", category: .safety),
+            InspectionCheckItem(name: "Brakes",                   category: .safety),
+            InspectionCheckItem(name: "Tyres",                    category: .tyres),
+            InspectionCheckItem(name: "Lights (Front)",           category: .lights),
+            InspectionCheckItem(name: "Lights (Rear)",            category: .lights),
+            InspectionCheckItem(name: "Horn",                     category: .safety),
+            InspectionCheckItem(name: "Wipers",                   category: .body),
+            InspectionCheckItem(name: "Mirrors",                  category: .body),
+            InspectionCheckItem(name: "Fuel Level",               category: .fluids),
+            InspectionCheckItem(name: "Engine Oil",               category: .engine),
+            InspectionCheckItem(name: "Coolant",                  category: .fluids),
+            InspectionCheckItem(name: "Steering",                 category: .safety),
+            InspectionCheckItem(name: "Seatbelt",                 category: .safety),
             InspectionCheckItem(name: "Dashboard Warning Lights", category: .safety),
         ]
     }
@@ -99,7 +144,7 @@ final class PreTripInspectionViewModel {
         }
     }
 
-    // MARK: - Photo Upload (sequential per Safeguard 1)
+    // MARK: - Photo Upload
 
     func uploadPhotos() async {
         isUploadingPhotos = true
@@ -107,7 +152,7 @@ final class PreTripInspectionViewModel {
         let prefix = inspectionType == .preTripInspection ? "pre-trip" : "post-trip"
 
         for (index, data) in photoData.enumerated() {
-            uploadProgress = "Uploading photo \(index + 1) of \(photoData.count)..."
+            uploadProgress = "Uploading photo \(index + 1) of \(photoData.count)\u2026"
             do {
                 let path = "\(prefix)/\(tripId.uuidString)/\(UUID().uuidString).jpg"
                 try await supabase.storage
@@ -118,22 +163,37 @@ final class PreTripInspectionViewModel {
                     .getPublicURL(path: path)
                 uploadedPhotoUrls.append(publicUrl.absoluteString)
             } catch {
-                print("[InspectionVM] Photo \(index) failed to upload: \(error)")
-                // Continue — partial upload is acceptable
+                // Surface upload errors to the user rather than silently dropping
+                uploadProgress = "\u26a0\ufe0f Photo \(index + 1) failed: \(error.localizedDescription)"
+                // Continue uploading remaining photos
             }
         }
         isUploadingPhotos = false
         uploadProgress = ""
     }
 
-    // MARK: - Submit (Safeguard 2: insert inspection THEN update trip)
+    // MARK: - Submit
+    // Guard on canSubmit prevents blank-inspection submissions that would
+    // previously show as PASSED due to the .notChecked default bug.
 
     func submitInspection(store: AppDataStore) async {
+        // Hard gate — all items must be explicitly checked and failed items
+        // must have at least one photo before we ever touch the network.
+        guard canSubmit else {
+            if !allItemsChecked {
+                submitError = "All \(uncheckedCount) item(s) must be checked before submitting."
+            } else {
+                let names = failedItemsMissingPhoto.map(\.name).joined(separator: ", ")
+                submitError = "Please add at least one photo for failed items: \(names)"
+            }
+            return
+        }
+
         isSubmitting = true
-        submitError = nil
+        submitError  = nil
 
         do {
-            // 1. Upload photos if any
+            // 1. Upload photos
             if !photoData.isEmpty {
                 await uploadPhotos()
             }
@@ -149,10 +209,10 @@ final class PreTripInspectionViewModel {
                 )
             }
 
-            let defectsText = failedItems.isEmpty ? nil : failedItems.map(\.name).joined(separator: ", ")
+            let defectsText    = failedItems.isEmpty ? nil : failedItems.map(\.name).joined(separator: ", ")
             let isDefectRaised = overallResult == .failed
 
-            // 3. INSERT inspection row with all data including photo_urls
+            // 3. INSERT inspection row
             let inspection = try await VehicleInspectionService.submitInspectionWithPhotos(
                 tripId: tripId,
                 vehicleId: vehicleId,
@@ -168,7 +228,7 @@ final class PreTripInspectionViewModel {
                 raisedTaskId: nil
             )
 
-            // 4. Update trip's inspection ID (AFTER insert succeeds — Safeguard 2)
+            // 4. Update trip's inspection ID (AFTER insert succeeds)
             if let idx = store.trips.firstIndex(where: { $0.id == tripId }) {
                 if inspectionType == .preTripInspection {
                     store.trips[idx].preInspectionId = inspection.id
@@ -178,14 +238,14 @@ final class PreTripInspectionViewModel {
                 try await TripService.updateTrip(store.trips[idx])
             }
 
-            // 5. If failed, create maintenance task
+            // 5. If failed, auto-create maintenance task
             if isDefectRaised {
                 let task = MaintenanceTask(
                     id: UUID(),
                     vehicleId: vehicleId,
                     createdByAdminId: driverId,
                     assignedToId: nil,
-                    title: "Inspection Defect — \(inspectionType.rawValue)",
+                    title: "Inspection Defect \u2014 \(inspectionType.rawValue)",
                     taskDescription: "Defects found: \(defectsText ?? "Unknown")",
                     priority: .high,
                     status: .pending,
@@ -206,8 +266,8 @@ final class PreTripInspectionViewModel {
             store.vehicleInspections.append(inspection)
             didSubmitSuccessfully = true
         } catch {
+            // Propagate the full error to the UI — no silent catch-and-print
             submitError = error.localizedDescription
-            print("[InspectionVM] Submit failed: \(error)")
         }
 
         isSubmitting = false
