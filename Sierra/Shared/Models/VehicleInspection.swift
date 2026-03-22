@@ -38,11 +38,20 @@ struct InspectionItem: Codable, Identifiable {
     var category: InspectionCategory
     var result: InspectionResult
     var notes: String?
+    /// Per-item defect photo URLs. Empty for pass/warn items; required for failed items.
+    var photoUrls: [String]       // photo_urls
 
     enum CodingKeys: String, CodingKey {
         case id
-        case checkName = "check_name"
+        case checkName  = "check_name"
         case category, result, notes
+        case photoUrls  = "photo_urls"
+    }
+
+    init(id: UUID, checkName: String, category: InspectionCategory,
+         result: InspectionResult, notes: String? = nil, photoUrls: [String] = []) {
+        self.id = id; self.checkName = checkName; self.category = category
+        self.result = result; self.notes = notes; self.photoUrls = photoUrls
     }
 }
 

@@ -87,7 +87,7 @@ struct StaffReviewSheet: View {
                     }
                 }
             } message: {
-                Text("Are you sure you want to approve \(store.staffMember(for: application.staffMemberId)?.displayName ?? application.phone)? They will be granted access to FleetOS.")
+                Text("Are you sure you want to approve \(store.staffMember(for: application.staffMemberId)?.displayName ?? application.phone)? They will be granted access to Sierra.")
             }
             .animation(.spring(duration: 0.3), value: viewModel.showRejectField)
             .overlay {

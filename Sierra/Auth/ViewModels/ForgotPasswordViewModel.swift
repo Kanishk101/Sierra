@@ -73,7 +73,7 @@ final class ForgotPasswordViewModel {
         guard !newPassword.isEmpty else { return false }
         // Check against Keychain stored hash if available
         if let stored = KeychainService.load(
-            key: "com.fleetOS.hashedCredential",
+            key: "com.sierra.hashedCredential",
             as: CryptoService.HashedCredential.self
         ) {
             return CryptoService.verify(password: newPassword, credential: stored)

@@ -23,10 +23,10 @@ final class AuthManager {
     static let shared = AuthManager()
 
     private enum Keys {
-        static let currentUser       = "com.fleetOS.currentUser"
-        static let backgroundTS      = "com.fleetOS.backgroundTimestamp"
-        static let sessionToken      = "com.fleetOS.sessionToken"
-        static let hashedCred        = "com.fleetOS.hashedCredential"
+        static let currentUser       = "com.sierra.currentUser"
+        static let backgroundTS      = "com.sierra.backgroundTimestamp"
+        static let sessionToken      = "com.sierra.sessionToken"
+        static let hashedCred        = "com.sierra.hashedCredential"
         // biometricOn + biometricPrompted moved to BiometricPreference (single canonical keys)
     }
 

@@ -6,9 +6,59 @@
 //
 
 import SwiftUI
+import UserNotifications
+
+// MARK: - AppDelegate (APNs)
+/// Handles APNs device token registration.
+/// The token is sent to Supabase `push_tokens` so `send-push-notification`
+/// edge function can deliver alerts when the app is backgrounded.
+
+final class SierraAppDelegate: NSObject, UIApplicationDelegate {
+
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        // Request push notification permission on first launch.
+        // Permission prompt appears after the user logs in (via ContentView),
+        // but we register the delegate path here so token delivery works.
+        UNUserNotificationCenter.current().requestAuthorization(
+            options: [.alert, .sound, .badge]
+        ) { granted, _ in
+            if granted {
+                DispatchQueue.main.async {
+                    UIApplication.shared.registerForRemoteNotifications()
+                }
+            }
+        }
+        return true
+    }
+
+    func application(
+        _ application: UIApplication,
+        didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
+    ) {
+        let token = deviceToken.map { String(format: "%02.2hhx", $0) }.joined()
+        // Persist locally so we can unregister on sign-out
+        UserDefaults.standard.set(token, forKey: "sierra.devicePushToken")
+        Task { await PushTokenService.registerToken(token) }
+    }
+
+    func application(
+        _ application: UIApplication,
+        didFailToRegisterForRemoteNotificationsWithError error: Error
+    ) {
+        // Non-fatal: in-app notifications still work. APNs fails in Simulator.
+        print("[APNs] Failed to register for remote notifications: \(error.localizedDescription)")
+    }
+}
+
+// MARK: - SierraApp
 
 @main
 struct SierraApp: App {
+    @UIApplicationDelegateAdaptor(SierraAppDelegate.self) var appDelegate
+
     @Environment(\.scenePhase) private var scenePhase
     private var lifecycle = AppLifecycleMonitor.shared
 
@@ -21,11 +71,11 @@ struct SierraApp: App {
         if !UserDefaults.standard.bool(forKey: hasLaunchedKey) {
             UserDefaults.standard.set(true, forKey: hasLaunchedKey)
             // Clear all stale Keychain entries
-            KeychainService.delete(key: "com.fleetOS.sessionToken")
-            KeychainService.delete(key: "com.fleetOS.currentUser")
-            KeychainService.delete(key: "com.fleetOS.hashedCredential")
-            KeychainService.delete(key: "com.fleetOS.biometricEnabled")
-            KeychainService.delete(key: "com.fleetOS.hasPromptedBiometric")
+            KeychainService.delete(key: "com.sierra.sessionToken")
+            KeychainService.delete(key: "com.sierra.currentUser")
+            KeychainService.delete(key: "com.sierra.hashedCredential")
+            KeychainService.delete(key: "com.sierra.biometricEnabled")
+            KeychainService.delete(key: "com.sierra.hasPromptedBiometric")
             SecureSessionStore.shared.clearAll()
         }
     }

@@ -49,7 +49,7 @@ extension AppDataStore {
         let taskId      = trip?.taskId ?? tripId.uuidString
         let destination = trip?.destination ?? "destination"
 
-        for admin in staff.filter({ $0.role == .admin }) {
+        for admin in staff.filter({ $0.role == .fleetManager }) {
             try? await NotificationService.insertNotification(
                 recipientId: admin.id,
                 type: .general,
@@ -96,7 +96,7 @@ extension AppDataStore {
         let taskId      = trip?.taskId ?? tripId.uuidString
         let destination = trip?.destination ?? "destination"
 
-        for admin in staff.filter({ $0.role == .admin }) {
+        for admin in staff.filter({ $0.role == .fleetManager }) {
             try? await NotificationService.insertNotification(
                 recipientId: admin.id,
                 type: .general,

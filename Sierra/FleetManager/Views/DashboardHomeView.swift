@@ -341,19 +341,25 @@ struct DashboardHomeView: View {
 
     private func tripStatusIcon(_ status: TripStatus) -> String {
         switch status {
-        case .active:    return "arrow.triangle.swap"
-        case .scheduled: return "clock"
-        case .completed: return "checkmark"
-        case .cancelled: return "xmark"
+        case .active:             return "arrow.triangle.swap"
+        case .scheduled:          return "clock"
+        case .pendingAcceptance:  return "hourglass"
+        case .accepted:           return "checkmark.circle"
+        case .completed:          return "checkmark"
+        case .rejected:           return "xmark.circle"
+        case .cancelled:          return "xmark"
         }
     }
 
     private func tripStatusColor(_ status: TripStatus) -> Color {
         switch status {
-        case .active:    return .green
-        case .scheduled: return .blue
-        case .completed: return Color.secondary
-        case .cancelled: return .red
+        case .active:             return .green
+        case .scheduled:          return .blue
+        case .pendingAcceptance:  return .orange
+        case .accepted:           return .teal
+        case .completed:          return Color.secondary
+        case .rejected:           return .red
+        case .cancelled:          return .red
         }
     }
 

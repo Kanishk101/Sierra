@@ -5,6 +5,8 @@ import Foundation
 
 enum NotificationType: String, Codable, CaseIterable {
     case tripAssigned          = "Trip Assigned"
+    case tripAccepted          = "Trip Accepted"
+    case tripRejected          = "Trip Rejected"
     case tripCancelled         = "Trip Cancelled"
     case vehicleAssigned       = "Vehicle Assigned"
     case maintenanceApproved   = "Maintenance Approved"
@@ -13,8 +15,10 @@ enum NotificationType: String, Codable, CaseIterable {
     case sosAlert              = "SOS Alert"
     case defectAlert           = "Defect Alert"
     case routeDeviation        = "Route Deviation"
-    case geofenceViolation     = "Geofence Violation"
+    case geofenceAlert         = "Geofence Alert"
+    case documentExpiry        = "Document Expiry"
     case inspectionFailed      = "Inspection Failed"
+    case emergency             = "Emergency"
     case general               = "General"
 }
 

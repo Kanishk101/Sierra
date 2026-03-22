@@ -239,7 +239,7 @@ struct MaintenanceApplicationSubmittedView: View {
                 Text("You\u{2019}re Approved!")
                     .font(.title.weight(.bold))
                     .foregroundStyle(.primary)
-                Text("Welcome to FleetOS. You can now access maintenance features.")
+                Text("Welcome to Sierra. You can now access maintenance features.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -252,7 +252,7 @@ struct MaintenanceApplicationSubmittedView: View {
                 if var user = AuthManager.shared.currentUser {
                     user.isApproved = true
                     AuthManager.shared.currentUser = user
-                    _ = KeychainService.save(user, forKey: "com.fleetOS.currentUser")
+                    _ = KeychainService.save(user, forKey: "com.sierra.currentUser")
                     AuthManager.shared.isAuthenticated = true
                 }
             } label: {

@@ -239,7 +239,13 @@ final class AppDataStore {
     }
 
     func deleteStaffMember(id: UUID) async throws {
-        try await StaffMemberService.deleteStaffMember(id: id)
+        // Use the edge function so auth.users is deleted atomically with staff_members row.
+        // The edge function (delete-staff-member) runs with service-role key.
+        struct Payload: Encodable { let staffMemberId: String }
+        try await supabase.functions.invoke(
+            "delete-staff-member",
+            options: FunctionInvokeOptions(body: Payload(staffMemberId: id.uuidString))
+        )
         staff.removeAll               { $0.id == id }
         driverProfiles.removeAll      { $0.staffMemberId == id }
         maintenanceProfiles.removeAll { $0.staffMemberId == id }
@@ -378,6 +384,22 @@ final class AppDataStore {
     func addTrip(_ trip: Trip) async throws {
         try await TripService.addTrip(trip)
         trips.insert(trip, at: 0)
+
+        // Phase 5 — C-05 fix: Notify the assigned driver immediately.
+        // The in-app notification is inserted here; the DB trigger
+        // trg_push_on_notification will then fire send-push-notification
+        // so the driver receives an APNs alert even when the app is closed.
+        if let driverIdStr = trip.driverId, let driverUUID = UUID(uuidString: driverIdStr) {
+            let dateStr = trip.scheduledDate.formatted(.dateTime.month().day().hour().minute())
+            try? await NotificationService.insertNotification(
+                recipientId: driverUUID,
+                type: .tripAssigned,
+                title: "New Trip Assigned: \(trip.taskId)",
+                body: "Trip from \(trip.origin) to \(trip.destination) on \(dateStr)",
+                entityType: "trip",
+                entityId: trip.id
+            )
+        }
     }
 
     func updateTrip(_ trip: Trip) async throws {
@@ -456,6 +478,20 @@ final class AppDataStore {
     func addEmergencyAlert(_ alert: EmergencyAlert) async throws {
         try await EmergencyAlertService.addEmergencyAlert(alert)
         emergencyAlerts.insert(alert, at: 0)
+
+        // Phase 5 — H-11 fix: Notify ALL admin users about the SOS alert.
+        // Non-fatal: if notification insert fails, the alert is still in the DB.
+        let driverName = staff.first { $0.id == alert.driverId }?.displayName ?? "A driver"
+        for admin in staff.filter({ $0.role == .fleetManager }) {
+            try? await NotificationService.insertNotification(
+                recipientId: admin.id,
+                type: .emergency,
+                title: "🚨 Emergency Alert",
+                body: "\(driverName) has triggered an SOS alert. Tap to act now.",
+                entityType: "emergency_alert",
+                entityId: alert.id
+            )
+        }
     }
 
     func acknowledgeAlert(id: UUID, acknowledgedBy adminId: UUID) async throws {
@@ -877,6 +913,7 @@ final class AppDataStore {
             trips[idx].startMileage = startMileage
         }
     }
+
 
     /// Completes the active trip. Calls TripService.completeTrip which triggers
     /// the DB trigger trg_trip_status_change — this releases driver + vehicle

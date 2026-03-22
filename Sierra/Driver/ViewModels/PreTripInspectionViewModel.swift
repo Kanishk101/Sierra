@@ -1,5 +1,6 @@
 import SwiftUI
 import PhotosUI
+import UIKit
 import Supabase
 
 // MARK: - InspectionCheckItem (local UI state)
@@ -40,11 +41,25 @@ final class PreTripInspectionViewModel {
 
     var checkItems: [InspectionCheckItem] = PreTripInspectionViewModel.defaultCheckItems()
 
-    // MARK: - Step 2: Photos
+    // MARK: - Step 2: Per-item photos (Phase 6)
 
-    var selectedPhotoItems: [PhotosPickerItem] = []
-    var photoData: [Data] = []
-    var uploadedPhotoUrls: [String] = []
+    /// itemId → raw Data array (in-memory, not yet uploaded)
+    var itemPhotoData: [UUID: [Data]] = [:]
+
+    /// itemId → uploaded public URL array (after upload succeeds)
+    var itemPhotoUrls: [UUID: [String]] = [:]
+
+    /// PhotosPickerItem selections per item — used by the photo step UI
+    var itemPhotoSelections: [UUID: [PhotosPickerItem]] = [:]
+
+    // MARK: - General photos (non-defect overview shots)
+
+    var generalPhotoSelections: [PhotosPickerItem] = []
+    var generalPhotoData: [Data] = []
+    var generalPhotoUrls: [String] = []
+
+    // MARK: - Upload progress
+
     var isUploadingPhotos = false
     var uploadProgress: String = ""
 
@@ -61,24 +76,20 @@ final class PreTripInspectionViewModel {
         checkItems.filter { $0.result == .notChecked }.count
     }
 
-    /// Failed items that have no associated photo uploaded yet.
-    /// Uses a pragmatic approach: if ANY photo has been uploaded we
-    /// consider the photo requirement satisfied for all failed items.
-    /// Per-item photo linking is handled in the photo step redesign (Prompt 6).
+    /// Items marked failed that have NO uploaded photo yet.
+    /// This is the gating condition for the photo step → summary step.
     var failedItemsMissingPhoto: [InspectionCheckItem] {
-        guard uploadedPhotoUrls.isEmpty else { return [] }
-        return failedItems
+        failedItems.filter { (itemPhotoUrls[$0.id] ?? []).isEmpty }
     }
 
-    /// Driver may advance from the checklist step only when every item is set.
     var canAdvanceToPhotos: Bool { allItemsChecked }
 
-    /// Driver may submit only when:
-    /// - All items are checked, AND
-    /// - Either there are no failed items missing photos,
-    ///   OR the overall result is passed (no failures at all).
+    /// May advance to summary only when all failed items have at least one photo.
+    var canAdvanceToSummary: Bool { failedItemsMissingPhoto.isEmpty }
+
+    /// Final submit gate: all items checked + no failed item missing a photo.
     var canSubmit: Bool {
-        allItemsChecked && (failedItemsMissingPhoto.isEmpty || overallResult == .passed)
+        allItemsChecked && failedItemsMissingPhoto.isEmpty
     }
 
     // MARK: - Step 3: Computed results
@@ -99,6 +110,11 @@ final class PreTripInspectionViewModel {
         checkItems.filter { $0.result == .passedWithWarnings }
     }
 
+    /// Items that need a photo in Step 2 — failed and warning items
+    var itemsNeedingPhotos: [InspectionCheckItem] {
+        checkItems.filter { $0.result == .failed || $0.result == .passedWithWarnings }
+    }
+
     // MARK: - Init
 
     init(
@@ -107,9 +123,9 @@ final class PreTripInspectionViewModel {
         driverId: UUID,
         inspectionType: InspectionType = .preTripInspection
     ) {
-        self.tripId        = tripId
-        self.vehicleId     = vehicleId
-        self.driverId      = driverId
+        self.tripId         = tripId
+        self.vehicleId      = vehicleId
+        self.driverId       = driverId
         self.inspectionType = inspectionType
     }
 
@@ -133,52 +149,126 @@ final class PreTripInspectionViewModel {
         ]
     }
 
-    // MARK: - Photo Loading
+    // MARK: - Photo Loading (per-item)
 
-    func loadPhotos() async {
-        photoData = []
-        for item in selectedPhotoItems {
-            if let data = try? await item.loadTransferable(type: Data.self) {
-                photoData.append(data)
+    /// Called when the user picks images for a specific check item.
+    func loadPhotosForItem(_ itemId: UUID, selections: [PhotosPickerItem]) async {
+        var datas: [Data] = []
+        for sel in selections {
+            if let data = try? await sel.loadTransferable(type: Data.self) {
+                datas.append(data)
             }
         }
+        itemPhotoData[itemId] = datas
     }
 
-    // MARK: - Photo Upload
-
-    func uploadPhotos() async {
-        isUploadingPhotos = true
-        uploadedPhotoUrls = []
-        let prefix = inspectionType == .preTripInspection ? "pre-trip" : "post-trip"
-
-        for (index, data) in photoData.enumerated() {
-            uploadProgress = "Uploading photo \(index + 1) of \(photoData.count)\u2026"
-            do {
-                let path = "\(prefix)/\(tripId.uuidString)/\(UUID().uuidString).jpg"
-                try await supabase.storage
-                    .from("inspection-photos")
-                    .upload(path, data: data, options: .init(contentType: "image/jpeg"))
-                let publicUrl = try supabase.storage
-                    .from("inspection-photos")
-                    .getPublicURL(path: path)
-                uploadedPhotoUrls.append(publicUrl.absoluteString)
-            } catch {
-                // Surface upload errors to the user rather than silently dropping
-                uploadProgress = "\u26a0\ufe0f Photo \(index + 1) failed: \(error.localizedDescription)"
-                // Continue uploading remaining photos
+    /// Called when the user picks general / overview photos.
+    func loadGeneralPhotos(selections: [PhotosPickerItem]) async {
+        var datas: [Data] = []
+        for sel in selections {
+            if let data = try? await sel.loadTransferable(type: Data.self) {
+                datas.append(data)
             }
         }
+        generalPhotoData = datas
+    }
+
+    // MARK: - Image Compression (Phase 6)
+
+    /// Compresses image data to stay under `maxSizeKB`. Runs on a background thread.
+    /// Returns nil only if data is not a valid image.
+    nonisolated func compressImage(_ data: Data, maxSizeKB: Int) -> Data? {
+        guard let image = UIImage(data: data) else { return nil }
+        let maxBytes = maxSizeKB * 1024
+
+        // Step 1: Progressive JPEG quality reduction
+        var quality: CGFloat = 0.8
+        var compressed = image.jpegData(compressionQuality: quality)
+        while let c = compressed, c.count > maxBytes, quality > 0.1 {
+            quality -= 0.1
+            compressed = image.jpegData(compressionQuality: quality)
+        }
+
+        // Step 2: If still too large, resize proportionally
+        if let c = compressed, c.count > maxBytes {
+            let scale = CGFloat(maxBytes) / CGFloat(c.count)
+            let newSize = CGSize(
+                width:  image.size.width  * sqrt(scale),
+                height: image.size.height * sqrt(scale)
+            )
+            let renderer = UIGraphicsImageRenderer(size: newSize)
+            let resized = renderer.image { _ in
+                image.draw(in: CGRect(origin: .zero, size: newSize))
+            }
+            return resized.jpegData(compressionQuality: 0.7)
+        }
+        return compressed
+    }
+
+    // MARK: - Photo Upload (per-item)
+
+    /// Uploads all stored per-item photo Data to Supabase storage, with compression.
+    /// Populates `itemPhotoUrls` with resulting public URLs.
+    func uploadAllPhotos() async {
+        isUploadingPhotos = true
+        let prefix = inspectionType == .preTripInspection ? "pre-trip" : "post-trip"
+
+        // Upload per-item photos
+        for item in itemsNeedingPhotos {
+            guard let datas = itemPhotoData[item.id], !datas.isEmpty else { continue }
+            var urls: [String] = []
+            for (idx, rawData) in datas.enumerated() {
+                uploadProgress = "Uploading photo \(idx + 1)/\(datas.count) for \(item.name)…"
+                let compressed = await Task.detached { [weak self] in
+                    self?.compressImage(rawData, maxSizeKB: 800) ?? rawData
+                }.value
+                let path = "\(prefix)/\(tripId.uuidString)/\(item.id.uuidString)/\(UUID().uuidString).jpg"
+                do {
+                    try await supabase.storage
+                        .from("inspection-photos")
+                        .upload(path, data: compressed, options: .init(contentType: "image/jpeg"))
+                    let publicUrl = try supabase.storage
+                        .from("inspection-photos")
+                        .getPublicURL(path: path)
+                    urls.append(publicUrl.absoluteString)
+                } catch {
+                    uploadProgress = "⚠️ Photo \(idx + 1) for \(item.name) failed: \(error.localizedDescription)"
+                }
+            }
+            itemPhotoUrls[item.id] = urls
+        }
+
+        // Upload general photos
+        if !generalPhotoData.isEmpty {
+            var generalUrls: [String] = []
+            for (idx, rawData) in generalPhotoData.enumerated() {
+                uploadProgress = "Uploading general photo \(idx + 1)/\(generalPhotoData.count)…"
+                let compressed = await Task.detached { [weak self] in
+                    self?.compressImage(rawData, maxSizeKB: 800) ?? rawData
+                }.value
+                let path = "\(prefix)/\(tripId.uuidString)/general/\(UUID().uuidString).jpg"
+                do {
+                    try await supabase.storage
+                        .from("inspection-photos")
+                        .upload(path, data: compressed, options: .init(contentType: "image/jpeg"))
+                    let publicUrl = try supabase.storage
+                        .from("inspection-photos")
+                        .getPublicURL(path: path)
+                    generalUrls.append(publicUrl.absoluteString)
+                } catch {
+                    uploadProgress = "⚠️ General photo \(idx + 1) failed: \(error.localizedDescription)"
+                }
+            }
+            generalPhotoUrls = generalUrls
+        }
+
         isUploadingPhotos = false
         uploadProgress = ""
     }
 
     // MARK: - Submit
-    // Guard on canSubmit prevents blank-inspection submissions that would
-    // previously show as PASSED due to the .notChecked default bug.
 
     func submitInspection(store: AppDataStore) async {
-        // Hard gate — all items must be explicitly checked and failed items
-        // must have at least one photo before we ever touch the network.
         guard canSubmit else {
             if !allItemsChecked {
                 submitError = "All \(uncheckedCount) item(s) must be checked before submitting."
@@ -193,21 +283,26 @@ final class PreTripInspectionViewModel {
         submitError  = nil
 
         do {
-            // 1. Upload photos
-            if !photoData.isEmpty {
-                await uploadPhotos()
+            // 1. Upload all photos (per-item + general)
+            let totalPhotos = itemPhotoData.values.flatMap { $0 }.count + generalPhotoData.count
+            if totalPhotos > 0 {
+                await uploadAllPhotos()
             }
 
-            // 2. Build inspection items
+            // 2. Build InspectionItem array with per-item photo URLs
             let items = checkItems.map { item in
                 InspectionItem(
                     id: item.id,
                     checkName: item.name,
                     category: item.category,
                     result: item.result,
-                    notes: item.notes.isEmpty ? nil : item.notes
+                    notes: item.notes.isEmpty ? nil : item.notes,
+                    photoUrls: itemPhotoUrls[item.id] ?? []
                 )
             }
+
+            // Aggregate all photo URLs for the top-level inspection record
+            let allPhotoUrls = itemPhotoUrls.values.flatMap { $0 } + generalPhotoUrls
 
             let defectsText    = failedItems.isEmpty ? nil : failedItems.map(\.name).joined(separator: ", ")
             let isDefectRaised = overallResult == .failed
@@ -223,12 +318,12 @@ final class PreTripInspectionViewModel {
                 defectsReported: defectsText,
                 additionalNotes: nil,
                 driverSignatureUrl: nil,
-                photoUrls: uploadedPhotoUrls,
+                photoUrls: allPhotoUrls,
                 isDefectRaised: isDefectRaised,
                 raisedTaskId: nil
             )
 
-            // 4. Update trip's inspection ID (AFTER insert succeeds)
+            // 4. Update trip's inspection ID
             if let idx = store.trips.firstIndex(where: { $0.id == tripId }) {
                 if inspectionType == .preTripInspection {
                     store.trips[idx].preInspectionId = inspection.id
@@ -238,14 +333,14 @@ final class PreTripInspectionViewModel {
                 try await TripService.updateTrip(store.trips[idx])
             }
 
-            // 5. If failed, auto-create maintenance task
+            // 5. Auto-create maintenance task for defects
             if isDefectRaised {
                 let task = MaintenanceTask(
                     id: UUID(),
                     vehicleId: vehicleId,
                     createdByAdminId: driverId,
                     assignedToId: nil,
-                    title: "Inspection Defect \u2014 \(inspectionType.rawValue)",
+                    title: "Inspection Defect — \(inspectionType.rawValue)",
                     taskDescription: "Defects found: \(defectsText ?? "Unknown")",
                     priority: .high,
                     status: .pending,
@@ -266,7 +361,6 @@ final class PreTripInspectionViewModel {
             store.vehicleInspections.append(inspection)
             didSubmitSuccessfully = true
         } catch {
-            // Propagate the full error to the UI — no silent catch-and-print
             submitError = error.localizedDescription
         }
 

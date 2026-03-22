@@ -1,10 +1,17 @@
 import SwiftUI
 import MapKit
 
-/// Driver-side trip detail view with lifecycle actions.
-/// The navigation map (Mapbox) launches full-screen when the driver taps
-/// "Start Navigation" in StartTripSheet (auto-launched) or the
-/// "Navigate" button on an active trip.
+/// Driver-side trip detail view with full acceptance + lifecycle actions.
+/// Phase 3 (SIERRA_FULL_AUDIT §PROMPT 3): complete rewrite.
+///
+/// Status → action mapping:
+///   .scheduled         → Awaiting Assignment message
+///   .pendingAcceptance → Accept + Reject buttons
+///   .accepted          → Begin Pre-Trip Inspection (if none) or Start Trip
+///   .active            → Navigate (pulsing) + Delivery / Post-Inspection / End Trip gate
+///   .completed         → Completion summary
+///   .rejected          → Rejected banner with reason
+///   .cancelled         → Cancelled banner
 struct TripDetailDriverView: View {
 
     let tripId: UUID
@@ -12,24 +19,46 @@ struct TripDetailDriverView: View {
     @Environment(AppDataStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
-    @State private var showPreInspection = false
-    @State private var showStartTrip = false
-    @State private var showNavigation = false
-    @State private var showProofOfDelivery = false
-    @State private var showPostInspection = false
-    @State private var showFuelLog = false
-    @State private var showMaintenanceRequest = false
-    @State private var errorMessage: String?
-    @State private var showError = false
-    @State private var navigatePulse = false
+    // MARK: - Presentation State
 
-    private var trip: Trip? { store.trips.first { $0.id == tripId } }
+    @State private var showPreInspection        = false
+    @State private var showStartTrip            = false
+    @State private var showNavigation           = false
+    @State private var showProofOfDelivery      = false
+    @State private var showPostInspection       = false
+    @State private var showFuelLog              = false
+    @State private var showMaintenanceRequest   = false
+
+    // Accept / Reject
+    @State private var isAccepting              = false
+    @State private var isRejecting              = false
+
+    // Reject sheet
+    @State private var showRejectSheet          = false
+    @State private var rejectionReason          = ""
+    @State private var rejectionError: String?  = nil
+
+    // End Trip
+    @State private var isEndingTrip             = false
+
+    // Pulse animation for Navigate button
+    @State private var navigatePulse            = false
+
+    // Error alert
+    @State private var errorMessage: String?
+    @State private var showError                = false
+
+    // MARK: - Convenience
+
+    private var trip: Trip?  { store.trips.first { $0.id == tripId } }
     private var user: AuthUser? { AuthManager.shared.currentUser }
 
     private var vehicle: Vehicle? {
         guard let vId = trip?.vehicleId, let uuid = UUID(uuidString: vId) else { return nil }
         return store.vehicle(for: uuid)
     }
+
+    // MARK: - Body
 
     var body: some View {
         Group {
@@ -38,11 +67,7 @@ struct TripDetailDriverView: View {
                     VStack(spacing: 16) {
                         statusBanner(trip)
                         tripInfoCard(trip)
-
-                        // Map preview — always shown when coordinates available,
-                        // or a placeholder encouraging the admin to set them.
                         routeMapCard(trip)
-
                         if let vehicle { vehicleCard(vehicle) }
                         flowStepsCard(trip)
                         actionButtons(trip)
@@ -58,11 +83,17 @@ struct TripDetailDriverView: View {
         .background(Color(.systemGroupedBackground).ignoresSafeArea())
         .navigationTitle("Trip Details")
         .navigationBarTitleDisplayMode(.inline)
+        // MARK: Error alert
         .alert("Error", isPresented: $showError) {
             Button("OK") {}
         } message: {
             Text(errorMessage ?? "Something went wrong")
         }
+        // MARK: Reject sheet
+        .sheet(isPresented: $showRejectSheet) {
+            rejectSheet
+        }
+        // MARK: Pre-trip inspection
         .sheet(isPresented: $showPreInspection) {
             if let trip, let vehicle {
                 NavigationStack {
@@ -76,13 +107,11 @@ struct TripDetailDriverView: View {
                 }
             }
         }
+        // MARK: Start trip sheet
         .sheet(isPresented: $showStartTrip) {
             if let trip {
                 NavigationStack {
                     StartTripSheet(tripId: trip.id) {
-                        // Dismiss the sheet, then auto-launch the navigation map
-                        // with a short delay so the sheet dismiss animation completes
-                        // before the fullScreenCover presentation starts.
                         showStartTrip = false
                         Task {
                             try? await Task.sleep(for: .milliseconds(450))
@@ -92,6 +121,7 @@ struct TripDetailDriverView: View {
                 }
             }
         }
+        // MARK: Proof of delivery
         .sheet(isPresented: $showProofOfDelivery) {
             if let trip {
                 NavigationStack {
@@ -101,6 +131,7 @@ struct TripDetailDriverView: View {
                 }
             }
         }
+        // MARK: Post-trip inspection
         .sheet(isPresented: $showPostInspection) {
             if let trip, let vehicle {
                 NavigationStack {
@@ -112,17 +143,20 @@ struct TripDetailDriverView: View {
                 }
             }
         }
+        // MARK: Navigation (fullscreen)
         .fullScreenCover(isPresented: $showNavigation) {
             if let trip {
                 TripNavigationContainerView(trip: trip)
                     .environment(AppDataStore.shared)
             }
         }
+        // MARK: Fuel log
         .sheet(isPresented: $showFuelLog) {
             if let vehicleId = vehicle?.id, let driverId = user?.id {
                 FuelLogView(vehicleId: vehicleId, driverId: driverId, tripId: trip?.id)
             }
         }
+        // MARK: Maintenance request
         .sheet(isPresented: $showMaintenanceRequest) {
             if let vehicleId = vehicle?.id, let driverId = user?.id {
                 DriverMaintenanceRequestView(
@@ -142,8 +176,6 @@ struct TripDetailDriverView: View {
     }
 
     // MARK: - Route Map Card
-    // Shows a live MapKit preview with origin + destination pins.
-    // Tapping the map on an active trip launches navigation immediately.
 
     @ViewBuilder
     private func routeMapCard(_ trip: Trip) -> some View {
@@ -157,12 +189,8 @@ struct TripDetailDriverView: View {
 
                 let originCoord = CLLocationCoordinate2D(latitude: oLat, longitude: oLng)
                 let destCoord   = CLLocationCoordinate2D(latitude: dLat, longitude: dLng)
-
-                // Compute a region that contains both pins with some padding
-                let minLat = min(oLat, dLat)
-                let maxLat = max(oLat, dLat)
-                let minLng = min(oLng, dLng)
-                let maxLng = max(oLng, dLng)
+                let minLat = min(oLat, dLat), maxLat = max(oLat, dLat)
+                let minLng = min(oLng, dLng), maxLng = max(oLng, dLng)
                 let spanLat = max((maxLat - minLat) * 1.5, 0.05)
                 let spanLng = max((maxLng - minLng) * 1.5, 0.05)
                 let center  = CLLocationCoordinate2D(
@@ -176,47 +204,33 @@ struct TripDetailDriverView: View {
 
                 ZStack(alignment: .bottom) {
                     Map(initialPosition: .region(region)) {
-                        // Origin pin
                         Annotation(trip.origin, coordinate: originCoord) {
                             ZStack {
-                                Circle().fill(SierraTheme.Colors.alpineMint)
-                                    .frame(width: 28, height: 28)
+                                Circle().fill(SierraTheme.Colors.alpineMint).frame(width: 28, height: 28)
                                 Image(systemName: "location.fill")
-                                    .font(.system(size: 13, weight: .bold))
-                                    .foregroundStyle(.white)
-                            }
-                            .shadow(radius: 3)
+                                    .font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
+                            }.shadow(radius: 3)
                         }
-                        // Destination pin
                         Annotation(trip.destination, coordinate: destCoord) {
                             ZStack {
-                                Circle().fill(SierraTheme.Colors.ember)
-                                    .frame(width: 28, height: 28)
+                                Circle().fill(SierraTheme.Colors.ember).frame(width: 28, height: 28)
                                 Image(systemName: "mappin")
-                                    .font(.system(size: 13, weight: .bold))
-                                    .foregroundStyle(.white)
-                            }
-                            .shadow(radius: 3)
+                                    .font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
+                            }.shadow(radius: 3)
                         }
                     }
                     .frame(height: 200)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .disabled(true)  // non-interactive preview
+                    .disabled(true)
 
-                    // Active trip overlay — tap to launch navigation
                     if trip.status == .active {
-                        Button {
-                            showNavigation = true
-                        } label: {
+                        Button { showNavigation = true } label: {
                             HStack(spacing: 8) {
-                                Image(systemName: "location.fill")
-                                    .font(.system(size: 14, weight: .bold))
-                                Text("Tap to Open Navigation")
-                                    .font(.system(size: 14, weight: .bold))
+                                Image(systemName: "location.fill").font(.system(size: 14, weight: .bold))
+                                Text("Tap to Open Navigation").font(.system(size: 14, weight: .bold))
                             }
                             .foregroundStyle(.white)
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 10)
+                            .padding(.horizontal, 20).padding(.vertical, 10)
                             .background(.black.opacity(0.55), in: Capsule())
                         }
                         .padding(.bottom, 12)
@@ -224,18 +238,13 @@ struct TripDetailDriverView: View {
                 }
 
             } else {
-                // No coordinates — show a placeholder
                 HStack(spacing: 12) {
-                    Image(systemName: "map")
-                        .font(.system(size: 28))
-                        .foregroundStyle(.secondary.opacity(0.5))
+                    Image(systemName: "map").font(.system(size: 28)).foregroundStyle(.secondary.opacity(0.5))
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Route preview unavailable")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.secondary)
+                            .font(.subheadline.weight(.medium)).foregroundStyle(.secondary)
                         Text("Ask your fleet manager to set GPS coordinates for this trip.")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
+                            .font(.caption).foregroundStyle(.tertiary)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -247,17 +256,24 @@ struct TripDetailDriverView: View {
         .shadow(color: .black.opacity(0.06), radius: 8, y: 4)
     }
 
-    // MARK: - Flow Steps Card
-    // Shows the driver exactly where they are in the workflow so the path
-    // to navigation is obvious even on a Scheduled trip.
+    // MARK: - Flow Steps Card (7 steps per Phase 3 spec)
 
     private func flowStepsCard(_ trip: Trip) -> some View {
         let steps: [(icon: String, label: String, done: Bool)] = [
-            ("checklist",       "Pre-Trip Inspection",  trip.preInspectionId != nil),
-            ("play.fill",       "Start Trip",           trip.status == .active || trip.status == .completed),
-            ("location.fill",   "Navigate",             false),
-            ("shippingbox.fill","Complete Delivery",    trip.proofOfDeliveryId != nil),
-            ("checklist",       "Post-Trip Inspection", trip.postInspectionId != nil),
+            ("checkmark.shield.fill",  "Accept Trip",
+             trip.status != .scheduled && trip.status != .pendingAcceptance),
+            ("checklist",              "Pre-Trip Inspection",
+             trip.preInspectionId != nil),
+            ("play.fill",              "Start Trip",
+             trip.status == .active || trip.status == .completed),
+            ("location.fill",          "Navigate",
+             trip.status == .completed),
+            ("shippingbox.fill",       "Complete Delivery",
+             trip.proofOfDeliveryId != nil),
+            ("checklist.checked",      "Post-Trip Inspection",
+             trip.postInspectionId != nil),
+            ("flag.checkered",         "End Trip",
+             trip.status == .completed),
         ]
 
         return VStack(alignment: .leading, spacing: 0) {
@@ -273,7 +289,9 @@ struct TripDetailDriverView: View {
                 HStack(spacing: 12) {
                     ZStack {
                         Circle()
-                            .fill(step.done ? SierraTheme.Colors.alpineMint : Color(.tertiarySystemGroupedBackground))
+                            .fill(step.done
+                                  ? SierraTheme.Colors.alpineMint
+                                  : Color(.tertiarySystemGroupedBackground))
                             .frame(width: 32, height: 32)
                         Image(systemName: step.done ? "checkmark" : step.icon)
                             .font(.system(size: 12, weight: .semibold))
@@ -287,8 +305,7 @@ struct TripDetailDriverView: View {
                         Text("TAP BELOW")
                             .font(.caption2.weight(.bold))
                             .foregroundStyle(SierraTheme.Colors.alpineMint)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
+                            .padding(.horizontal, 8).padding(.vertical, 3)
                             .background(SierraTheme.Colors.alpineMint.opacity(0.12), in: Capsule())
                     }
                 }
@@ -313,15 +330,14 @@ struct TripDetailDriverView: View {
     private func statusBanner(_ trip: Trip) -> some View {
         HStack {
             Circle().fill(statusColor(trip.status)).frame(width: 10, height: 10)
-            Text(trip.status.rawValue)
+            Text(statusLabel(trip.status))
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(statusColor(trip.status))
             Spacer()
             Text(trip.priority.rawValue)
                 .font(.caption.weight(.medium))
                 .foregroundStyle(.white)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
+                .padding(.horizontal, 10).padding(.vertical, 4)
                 .background(priorityColor(trip.priority), in: Capsule())
         }
         .padding(14)
@@ -336,8 +352,7 @@ struct TripDetailDriverView: View {
             Text(trip.taskId)
                 .font(.system(size: 13, weight: .semibold, design: .monospaced))
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
+                .padding(.horizontal, 8).padding(.vertical, 4)
                 .background(Color.gray.opacity(0.12), in: Capsule())
 
             VStack(alignment: .leading, spacing: 6) {
@@ -359,18 +374,26 @@ struct TripDetailDriverView: View {
                 trip.scheduledDate.formatted(.dateTime.month(.abbreviated).day().hour().minute()),
                 systemImage: "calendar"
             )
-            .font(.caption)
-            .foregroundStyle(.secondary)
+            .font(.caption).foregroundStyle(.secondary)
+
+            // Acceptance deadline (only shown when pending)
+            if trip.status == .pendingAcceptance, let deadline = trip.acceptanceDeadline {
+                Divider()
+                Label(
+                    "Respond by \(deadline.formatted(.dateTime.month(.abbreviated).day().hour().minute()))",
+                    systemImage: "clock.badge.exclamationmark"
+                )
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.orange)
+            }
 
             if !trip.deliveryInstructions.isEmpty {
                 Divider()
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Delivery Instructions")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     Text(trip.deliveryInstructions)
-                        .font(.caption)
-                        .foregroundStyle(.primary)
+                        .font(.caption).foregroundStyle(.primary)
                 }
             }
         }
@@ -401,13 +424,32 @@ struct TripDetailDriverView: View {
         .shadow(color: .black.opacity(0.04), radius: 6, y: 2)
     }
 
-    // MARK: - Action Buttons
+    // MARK: - Action Buttons (status-driven)
 
     @ViewBuilder
     private func actionButtons(_ trip: Trip) -> some View {
         VStack(spacing: 12) {
             switch trip.status {
+
+            // ── Scheduled: unassigned, no driver yet ───────────────────────
             case .scheduled:
+                HStack(spacing: 10) {
+                    Image(systemName: "clock.fill").foregroundStyle(.secondary)
+                    Text("Awaiting Assignment")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 50)
+                .background(Color(.secondarySystemGroupedBackground),
+                            in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+            // ── Pending Acceptance: driver must accept or reject ────────────
+            case .pendingAcceptance:
+                acceptanceButtons(trip)
+
+            // ── Accepted: pre-inspection gate → then start trip ───────────
+            case .accepted:
                 if trip.preInspectionId == nil {
                     actionButton("Begin Pre-Trip Inspection", icon: "checklist", color: SierraTheme.Colors.ember) {
                         showPreInspection = true
@@ -418,50 +460,27 @@ struct TripDetailDriverView: View {
                     }
                 }
 
+            // ── Active: navigate + delivery flow + quick actions ──────────
             case .active:
-                // Primary: Navigate button with pulse animation
-                Button {
-                    showNavigation = true
-                } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: "location.fill")
-                            .font(.body.weight(.bold))
-                        Text("Navigate")
-                            .font(.system(size: 18, weight: .bold))
-                    }
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 56)
-                    .background(
-                        LinearGradient(
-                            colors: [SierraTheme.Colors.alpineMint, SierraTheme.Colors.alpineMint.opacity(0.8)],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        ),
-                        in: RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    )
-                    .shadow(
-                        color: SierraTheme.Colors.alpineMint.opacity(navigatePulse ? 0.6 : 0.2),
-                        radius: navigatePulse ? 14 : 6,
-                        y: 4
-                    )
-                    .scaleEffect(navigatePulse ? 1.01 : 1.0)
-                }
-                .animation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true), value: navigatePulse)
+                navigateButton()
 
                 if trip.proofOfDeliveryId == nil {
                     actionButton("Complete Delivery", icon: "shippingbox.fill", color: SierraTheme.Colors.ember) {
                         showProofOfDelivery = true
                     }
                 } else if trip.postInspectionId == nil {
-                    actionButton("Post-Trip Inspection", icon: "checklist", color: SierraTheme.Colors.info) {
+                    // Post-inspection REQUIRED before End Trip is shown
+                    actionButton("Post-Trip Inspection (Required)",
+                                 icon: "checklist",
+                                 color: SierraTheme.Colors.info) {
                         showPostInspection = true
                     }
                 } else {
-                    completionSummary(trip)
+                    // Both POD and post-inspection done → show End Trip
+                    endTripButton(trip)
                 }
 
-                // Trip-scoped quick actions — always available during active trip
+                // Quick-access actions always available during an active trip
                 actionButton("Log Fuel", icon: "fuelpump.fill", color: .orange) {
                     showFuelLog = true
                 }
@@ -469,27 +488,202 @@ struct TripDetailDriverView: View {
                     showMaintenanceRequest = true
                 }
 
+            // ── Completed ─────────────────────────────────────────────────
             case .completed:
                 completionSummary(trip)
 
-            default:
-                EmptyView()
+            // ── Rejected ──────────────────────────────────────────────────
+            case .rejected:
+                rejectedBanner(trip)
+
+            // ── Cancelled ─────────────────────────────────────────────────
+            case .cancelled:
+                cancelledBanner()
             }
         }
     }
 
-    private func actionButton(_ title: String, icon: String, color: Color, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+    // MARK: - Accept / Reject Buttons Block
+
+    @ViewBuilder
+    private func acceptanceButtons(_ trip: Trip) -> some View {
+        VStack(spacing: 12) {
+            // Large Accept button
+            Button {
+                Task { await handleAccept(trip: trip) }
+            } label: {
+                Group {
+                    if isAccepting {
+                        ProgressView().tint(.white)
+                    } else {
+                        HStack(spacing: 10) {
+                            Image(systemName: "checkmark.circle.fill").font(.body.weight(.bold))
+                            Text("Accept Trip").font(.system(size: 18, weight: .bold))
+                        }
+                    }
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 56)
+                .background(Color.green, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .shadow(color: Color.green.opacity(0.35), radius: 10, y: 4)
+            }
+            .disabled(isAccepting || isRejecting)
+
+            // Smaller Reject button
+            Button {
+                showRejectSheet = true
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "xmark.circle.fill").font(.body.weight(.semibold))
+                    Text("Reject Trip").font(.subheadline.weight(.semibold))
+                }
+                .foregroundStyle(.red)
+                .frame(maxWidth: .infinity)
+                .frame(height: 44)
+                .background(Color.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color.red.opacity(0.3), lineWidth: 1)
+                )
+            }
+            .disabled(isAccepting || isRejecting)
+        }
+    }
+
+    // MARK: - Navigate Button (pulsing)
+
+    private func navigateButton() -> some View {
+        Button { showNavigation = true } label: {
             HStack(spacing: 10) {
-                Image(systemName: icon).font(.body.weight(.semibold))
-                Text(title).font(.subheadline.weight(.semibold))
+                Image(systemName: "location.fill").font(.body.weight(.bold))
+                Text("Navigate").font(.system(size: 18, weight: .bold))
             }
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
-            .frame(height: 50)
-            .background(color, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .frame(height: 56)
+            .background(
+                LinearGradient(
+                    colors: [SierraTheme.Colors.alpineMint, SierraTheme.Colors.alpineMint.opacity(0.8)],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                ),
+                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+            )
+            .shadow(
+                color: SierraTheme.Colors.alpineMint.opacity(navigatePulse ? 0.6 : 0.2),
+                radius: navigatePulse ? 14 : 6,
+                y: 4
+            )
+            .scaleEffect(navigatePulse ? 1.01 : 1.0)
         }
+        .animation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true), value: navigatePulse)
     }
+
+    // MARK: - End Trip Button
+
+    private func endTripButton(_ trip: Trip) -> some View {
+        Button {
+            Task { await handleEndTrip(trip: trip) }
+        } label: {
+            Group {
+                if isEndingTrip {
+                    ProgressView().tint(.white)
+                } else {
+                    HStack(spacing: 10) {
+                        Image(systemName: "flag.checkered").font(.body.weight(.bold))
+                        Text("End Trip").font(.system(size: 18, weight: .bold))
+                    }
+                }
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .frame(height: 56)
+            .background(
+                LinearGradient(
+                    colors: [Color.indigo, Color.purple.opacity(0.85)],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                ),
+                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+            )
+            .shadow(color: Color.indigo.opacity(0.35), radius: 10, y: 4)
+        }
+        .disabled(isEndingTrip)
+    }
+
+    // MARK: - Reject Sheet
+
+    private var rejectSheet: some View {
+        NavigationStack {
+            VStack(spacing: 20) {
+                Text("Reason for rejection helps the admin reassign this trip quickly.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+
+                TextEditor(text: $rejectionReason)
+                    .frame(height: 120)
+                    .padding(10)
+                    .background(Color(.secondarySystemGroupedBackground),
+                                in: RoundedRectangle(cornerRadius: 12))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color(.separator), lineWidth: 1)
+                    )
+                    .padding(.horizontal)
+
+                if rejectionReason.trimmingCharacters(in: .whitespacesAndNewlines).count < 10 {
+                    Text("Minimum 10 characters required")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let err = rejectionError {
+                    Text(err)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .padding(.horizontal)
+                }
+
+                Button {
+                    Task { await handleReject() }
+                } label: {
+                    Group {
+                        if isRejecting {
+                            ProgressView().tint(.white)
+                        } else {
+                            Text("Confirm Rejection")
+                                .font(.headline)
+                        }
+                    }
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 50)
+                    .background(
+                        rejectionReason.trimmingCharacters(in: .whitespacesAndNewlines).count >= 10
+                            ? Color.red
+                            : Color.red.opacity(0.4),
+                        in: RoundedRectangle(cornerRadius: 14)
+                    )
+                }
+                .disabled(rejectionReason.trimmingCharacters(in: .whitespacesAndNewlines).count < 10 || isRejecting)
+                .padding(.horizontal)
+            }
+            .padding(.top, 24)
+            .navigationTitle("Reject Trip")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { showRejectSheet = false }
+                }
+            }
+        }
+        .presentationDetents([.medium])
+    }
+
+    // MARK: - Banners
 
     private func completionSummary(_ trip: Trip) -> some View {
         VStack(spacing: 10) {
@@ -508,14 +702,112 @@ struct TripDetailDriverView: View {
         .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
     }
 
-    // MARK: - Helpers
+    private func rejectedBanner(_ trip: Trip) -> some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "xmark.octagon.fill").foregroundStyle(.red)
+                Text("Trip Rejected").font(.headline).foregroundStyle(.red)
+            }
+            if let reason = trip.rejectedReason, !reason.isEmpty {
+                Text(reason).font(.caption).foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 20)
+        .background(Color.red.opacity(0.07), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.red.opacity(0.2), lineWidth: 1)
+        )
+    }
+
+    private func cancelledBanner() -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "minus.circle.fill").foregroundStyle(.secondary)
+            Text("Trip Cancelled").font(.headline).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 20)
+        .background(Color(.secondarySystemGroupedBackground),
+                    in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    // MARK: - Generic Action Button
+
+    private func actionButton(_ title: String, icon: String, color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: icon).font(.body.weight(.semibold))
+                Text(title).font(.subheadline.weight(.semibold))
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .frame(height: 50)
+            .background(color, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+    }
+
+    // MARK: - Async Action Handlers
+
+    private func handleAccept(trip: Trip) async {
+        isAccepting = true
+        defer { isAccepting = false }
+        do {
+            try await store.acceptTrip(tripId: trip.id)
+        } catch {
+            errorMessage = error.localizedDescription
+            showError = true
+        }
+    }
+
+    private func handleReject() async {
+        isRejecting = true
+        rejectionError = nil
+        defer { isRejecting = false }
+        do {
+            try await store.rejectTrip(tripId: tripId, reason: rejectionReason)
+            showRejectSheet = false
+            rejectionReason = ""
+        } catch {
+            rejectionError = error.localizedDescription
+        }
+    }
+
+    private func handleEndTrip(trip: Trip) async {
+        isEndingTrip = true
+        defer { isEndingTrip = false }
+        do {
+            try await store.endTrip(tripId: trip.id, endMileage: trip.endMileage ?? 0)
+        } catch {
+            errorMessage = error.localizedDescription
+            showError = true
+        }
+    }
+
+    // MARK: - Style Helpers
+
+    private func statusLabel(_ status: TripStatus) -> String {
+        switch status {
+        case .scheduled:          return "Scheduled"
+        case .pendingAcceptance:  return "Awaiting Your Acceptance"
+        case .accepted:           return "Accepted — Ready to Start"
+        case .rejected:           return "Trip Rejected"
+        case .active:             return "Active"
+        case .completed:          return "Completed"
+        case .cancelled:          return "Cancelled"
+        }
+    }
 
     private func statusColor(_ status: TripStatus) -> Color {
         switch status {
-        case .scheduled: return SierraTheme.Colors.info
-        case .active:    return SierraTheme.Colors.warning
-        case .completed: return SierraTheme.Colors.alpineMint
-        case .cancelled: return SierraTheme.Colors.danger
+        case .scheduled:          return SierraTheme.Colors.info
+        case .pendingAcceptance:  return .orange
+        case .accepted:           return .teal
+        case .rejected:           return SierraTheme.Colors.danger
+        case .active:             return SierraTheme.Colors.alpineMint
+        case .completed:          return .gray
+        case .cancelled:          return SierraTheme.Colors.danger
         }
     }
 

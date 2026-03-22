@@ -133,7 +133,7 @@ final class ForcePasswordChangeViewModel {
     /// credential hash stored in Keychain.
     private func verifyCurrentPasswordDirectly() async -> Bool {
         guard let stored = KeychainService.load(
-            key: "com.fleetOS.hashedCredential",
+            key: "com.sierra.hashedCredential",
             as: CryptoService.HashedCredential.self
         ) else {
             return false

@@ -24,7 +24,7 @@ struct BiometricEnrollmentSheet: View {
                 .foregroundStyle(.primary)
                 .multilineTextAlignment(.center)
 
-            Text("Use \(biometric.biometricDisplayName) for faster, more secure sign-in to FleetOS.")
+            Text("Use \(biometric.biometricDisplayName) for faster, more secure sign-in to Sierra.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

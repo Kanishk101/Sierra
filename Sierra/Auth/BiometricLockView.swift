@@ -28,7 +28,7 @@ struct BiometricLockView: View {
                     .foregroundStyle(.orange)
                     .padding(.bottom, 6)
 
-                Text("FleetOS")
+                Text("Sierra")
                     .font(.system(size: 24, weight: .bold, design: .rounded))
                     .foregroundStyle(.primary)
                     .padding(.bottom, 30)
@@ -173,7 +173,7 @@ struct BiometricLockView: View {
         showTryAgain = false
 
         do {
-            try await biometric.authenticate(reason: "Unlock FleetOS")
+            try await biometric.authenticate(reason: "Unlock Sierra")
             // Success - dismiss lock screen
             lifecycle.biometricUnlocked()
         } catch let error as BiometricError {

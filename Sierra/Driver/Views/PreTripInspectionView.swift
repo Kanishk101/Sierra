@@ -18,7 +18,6 @@ struct PreTripInspectionView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var viewModel: PreTripInspectionViewModel
-    @State private var photoItems: [PhotosPickerItem] = []
 
     init(
         tripId: UUID,
@@ -136,7 +135,7 @@ struct PreTripInspectionView: View {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.orange)
-                    Text("\u26a0\ufe0f \(viewModel.uncheckedCount) item(s) not yet checked")
+                    Text("Warning: \(viewModel.uncheckedCount) item(s) not yet checked")
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.orange)
                 }
@@ -202,78 +201,93 @@ struct PreTripInspectionView: View {
         .background(Color(.systemBackground))
     }
 
-    // MARK: - Step 2: Photos
+    // MARK: - Step 2: Photos (Phase 6 — per-item photo pickers)
 
     private var photoStep: some View {
-        let count       = photoItems.count
-        let buttonTitle = count == 0 ? "Select Photos" : "\(count) photo(s) selected"
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(spacing: 20) {
 
-        return VStack(spacing: 16) {
-            Spacer()
-
-            // Required-photos banner — shown when there are failed items
-            // and no photos have been added yet.
-            if !viewModel.failedItemsMissingPhoto.isEmpty {
-                let names = viewModel.failedItemsMissingPhoto
-                    .map(\.name)
-                    .joined(separator: ", ")
-                HStack(alignment: .top, spacing: 10) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(SierraTheme.Colors.danger)
-                        .font(.subheadline)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Photos required for failed items")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(SierraTheme.Colors.danger)
-                        Text(names)
+                    // ── Header ──────────────────────────────────────────────
+                    VStack(spacing: 6) {
+                        Image(systemName: "camera.badge.ellipsis")
+                            .font(.system(size: 36))
+                            .foregroundStyle(SierraTheme.Colors.ember.opacity(0.7))
+                        Text("Document Issues")
+                            .font(.headline)
+                        Text("Failed items require a photo. Warning items are recommended.")
                             .font(.caption)
-                            .foregroundStyle(SierraTheme.Colors.danger.opacity(0.8))
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
                     }
+                    .padding(.top, 8)
+
+                    // ── Per-item photo pickers ───────────────────────────────
+                    if viewModel.itemsNeedingPhotos.isEmpty {
+                        HStack(spacing: 8) {
+                            Image(systemName: "checkmark.seal.fill")
+                                .foregroundStyle(SierraTheme.Colors.alpineMint)
+                            Text("No failed or warning items — no photos required.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(16)
+                        .frame(maxWidth: .infinity)
+                        .background(Color(.secondarySystemBackground),
+                                    in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    } else {
+                        ForEach(viewModel.itemsNeedingPhotos) { item in
+                            itemPhotoRow(item: item)
+                        }
+                    }
+
+                    // ── General photos (optional) ────────────────────────────
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label("General Vehicle Photos (Optional)", systemImage: "photo.on.rectangle.angled")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+
+                        let generalCount = viewModel.generalPhotoSelections.count
+                        PhotosPicker(
+                            selection: Binding(
+                                get: { viewModel.generalPhotoSelections },
+                                set: { newVal in
+                                    viewModel.generalPhotoSelections = newVal
+                                    Task { @MainActor in
+                                        await viewModel.loadGeneralPhotos(selections: newVal)
+                                    }
+                                }
+                            ),
+                            maxSelectionCount: 5,
+                            matching: .images
+                        ) {
+                            HStack {
+                                Image(systemName: "plus.circle")
+                                Text(generalCount == 0
+                                     ? "Add overview photos"
+                                     : "\(generalCount) photo(s) selected")
+                            }
+                            .font(.subheadline)
+                            .foregroundStyle(SierraTheme.Colors.ember)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .strokeBorder(SierraTheme.Colors.ember.opacity(0.5), lineWidth: 1.3)
+                            )
+                        }
+                    }
+                    .padding(14)
+                    .background(Color(.secondarySystemBackground),
+                                in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(SierraTheme.Colors.danger.opacity(0.08),
-                            in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .padding(.horizontal, 16)
+                .padding(.bottom, 16)
             }
 
-            Image(systemName: "camera.fill")
-                .font(.system(size: 40))
-                .foregroundStyle(SierraTheme.Colors.ember.opacity(0.6))
+            Divider()
 
-            Text("Add Inspection Photos")
-                .font(.headline)
-
-            Text("Upload up to 5 photos of the vehicle condition")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-
-            PhotosPicker(
-                selection: $photoItems,
-                maxSelectionCount: 5,
-                matching: .images
-            ) {
-                HStack {
-                    Image(systemName: "photo.on.rectangle.angled")
-                    Text(buttonTitle)
-                }
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(SierraTheme.Colors.ember)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(SierraTheme.Colors.ember.opacity(0.5), lineWidth: 1.5)
-                )
-            }
-            .onChange(of: photoItems) { _, newItems in
-                viewModel.selectedPhotoItems = newItems
-                Task { @MainActor in await viewModel.loadPhotos() }
-            }
-
-            Spacer()
-
+            // ── Navigation buttons ───────────────────────────────────────────
             HStack(spacing: 12) {
                 Button {
                     withAnimation { viewModel.currentStep = 1 }
@@ -289,8 +303,6 @@ struct PreTripInspectionView: View {
                         )
                 }
 
-                let photoStepBlocked = !viewModel.failedItemsMissingPhoto.isEmpty
-
                 Button {
                     withAnimation { viewModel.currentStep = 3 }
                 } label: {
@@ -300,16 +312,105 @@ struct PreTripInspectionView: View {
                         .frame(maxWidth: .infinity)
                         .frame(height: 50)
                         .background(
-                            photoStepBlocked ? Color.gray : SierraTheme.Colors.ember,
+                            viewModel.canAdvanceToSummary
+                                ? SierraTheme.Colors.ember
+                                : Color.gray,
                             in: RoundedRectangle(cornerRadius: 14, style: .continuous)
                         )
                 }
-                // Disabled until failed items have at least one photo
-                .disabled(photoStepBlocked)
+                .disabled(!viewModel.canAdvanceToSummary)
             }
             .padding(16)
         }
-        .padding(.horizontal, 16)
+    }
+
+    /// A single row showing one check item with its own photo picker.
+    /// Red = failed (REQUIRED), orange = warning (RECOMMENDED).
+    @ViewBuilder
+    private func itemPhotoRow(item: InspectionCheckItem) -> some View {
+        let isFailed         = item.result == .failed
+        let accent: Color    = isFailed ? SierraTheme.Colors.danger : SierraTheme.Colors.warning
+        let badge            = isFailed ? "Required" : "Recommended"
+        let dataCount        = viewModel.itemPhotoData[item.id]?.count ?? 0
+        let hasPhoto         = dataCount > 0
+
+        VStack(alignment: .leading, spacing: 10) {
+            // ── Item header ─────────────────────────────────────────
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: isFailed ? "xmark.circle.fill" : "exclamationmark.triangle.fill")
+                    .foregroundStyle(accent)
+                    .font(.subheadline)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.name)
+                        .font(.subheadline.weight(.semibold))
+                    if !item.notes.isEmpty {
+                        Text(item.notes)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Spacer()
+
+                Text(badge)
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(accent)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(accent.opacity(0.12),
+                                in: Capsule())
+            }
+
+            // ── Photo picker for this item ──────────────────────────
+            PhotosPicker(
+                selection: Binding(
+                    get: { viewModel.itemPhotoSelections[item.id] ?? [] },
+                    set: { newVal in
+                        viewModel.itemPhotoSelections[item.id] = newVal
+                        Task { @MainActor in
+                            await viewModel.loadPhotosForItem(item.id, selections: newVal)
+                        }
+                    }
+                ),
+                maxSelectionCount: 4,
+                matching: .images
+            ) {
+                HStack(spacing: 8) {
+                    if hasPhoto {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(SierraTheme.Colors.alpineMint)
+                        Text("\(dataCount) photo(s) added")
+                            .foregroundStyle(SierraTheme.Colors.alpineMint)
+                    } else {
+                        Image(systemName: "camera.fill")
+                            .foregroundStyle(accent)
+                        Text(isFailed ? "Add photo (required)" : "Add photo (optional)")
+                            .foregroundStyle(accent)
+                    }
+                }
+                .font(.subheadline.weight(.medium))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(
+                            (hasPhoto ? SierraTheme.Colors.alpineMint : accent).opacity(0.5),
+                            lineWidth: 1.3
+                        )
+                )
+            }
+        }
+        .padding(14)
+        .background(
+            accent.opacity(0.04),
+            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(accent.opacity(0.15), lineWidth: 1)
+        )
     }
 
     // MARK: - Step 3: Summary + Submit
@@ -335,11 +436,13 @@ struct PreTripInspectionView: View {
                         )
                     }
 
-                    if !viewModel.photoData.isEmpty {
+                    let totalPhotoCount = viewModel.itemPhotoData.values.flatMap { $0 }.count
+                        + viewModel.generalPhotoData.count
+                    if totalPhotoCount > 0 {
                         HStack {
                             Image(systemName: "photo.fill")
                                 .foregroundStyle(.secondary)
-                            Text("\(viewModel.photoData.count) photo(s) will be uploaded")
+                            Text("\(totalPhotoCount) photo(s) will be uploaded")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                             Spacer()

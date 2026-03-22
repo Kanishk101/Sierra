@@ -430,7 +430,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         let fmIds = AppDataStore.shared.staff.filter { $0.role == .fleetManager && $0.status == .active }.map { $0.id }
         for fmId in fmIds {
             try? await NotificationService.insertNotification(
-                recipientId: fmId, type: .geofenceViolation,
+                recipientId: fmId, type: .geofenceAlert,
                 title: "Geofence \(eventType)",
                 body: "Vehicle \(vehicleIdStr) \(eventType == "Entry" ? "entered" : "exited") a monitored zone",
                 entityType: "geofence", entityId: geofenceId

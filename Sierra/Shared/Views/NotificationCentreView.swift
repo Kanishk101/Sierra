@@ -98,22 +98,26 @@ struct NotificationCentreView: View {
         case .routeDeviation: return "location.slash.fill"
         case .maintenanceOverdue: return "clock.badge.exclamationmark"
         case .tripAssigned: return "map.fill"
-        case .tripCancelled: return "xmark.circle.fill"
+        case .tripAccepted: return "checkmark.circle.fill"
+        case .tripRejected: return "xmark.circle.fill"
+        case .tripCancelled: return "minus.circle.fill"
         case .vehicleAssigned: return "car.fill"
         case .maintenanceApproved: return "checkmark.seal.fill"
         case .maintenanceRejected: return "xmark.seal.fill"
-        case .geofenceViolation: return "exclamationmark.shield.fill"
+        case .geofenceAlert: return "exclamationmark.shield.fill"
         case .inspectionFailed: return "doc.text.fill"
+        case .documentExpiry: return "calendar.badge.exclamationmark"
+        case .emergency: return "exclamationmark.octagon.fill"
         case .general: return "bell.fill"
         }
     }
 
     private func notifColor(_ type: NotificationType) -> Color {
         switch type {
-        case .sosAlert, .defectAlert: return .red
-        case .routeDeviation, .geofenceViolation: return .orange
-        case .maintenanceOverdue, .inspectionFailed: return .yellow
-        case .tripAssigned, .vehicleAssigned: return .blue
+        case .sosAlert, .defectAlert, .emergency: return .red
+        case .routeDeviation, .geofenceAlert, .tripRejected: return .orange
+        case .maintenanceOverdue, .inspectionFailed, .documentExpiry: return .yellow
+        case .tripAssigned, .tripAccepted, .vehicleAssigned: return .blue
         case .maintenanceApproved: return .green
         case .tripCancelled, .maintenanceRejected: return .red
         case .general: return .gray

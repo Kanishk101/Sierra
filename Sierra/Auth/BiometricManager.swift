@@ -78,7 +78,7 @@ actor BiometricManager {
     // MARK: - Authenticate
 
     /// Presents the biometric prompt. Throws `BiometricError` on failure.
-    func authenticate(reason: String = "Authenticate to access FleetOS") async throws {
+    func authenticate(reason: String = "Authenticate to access Sierra") async throws {
         let context = LAContext()
         context.localizedCancelTitle = "Use Password"
 

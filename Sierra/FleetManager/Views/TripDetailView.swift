@@ -251,10 +251,13 @@ struct TripDetailView: View {
 
     private func statusBadge(_ status: TripStatus) -> some View {
         let (text, color): (String, Color) = switch status {
-        case .scheduled: ("Scheduled", .blue)
-        case .active:    ("Active",    .green)
-        case .completed: ("Completed", Color.secondary)
-        case .cancelled: ("Cancelled", .red)
+        case .scheduled:          ("Scheduled",  .blue)
+        case .pendingAcceptance:  ("Pending",     .orange)
+        case .accepted:           ("Accepted",    .teal)
+        case .active:             ("Active",      .green)
+        case .completed:          ("Completed",   Color.secondary)
+        case .rejected:           ("Rejected",    .red)
+        case .cancelled:          ("Cancelled",   .red)
         }
         return Text(text)
             .font(.caption)

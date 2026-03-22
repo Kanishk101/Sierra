@@ -224,10 +224,13 @@ struct TripsListView: View {
 
     private func statusColor(_ status: TripStatus) -> Color {
         switch status {
-        case .active:    return .green
-        case .scheduled: return .blue
-        case .completed: return Color.secondary
-        case .cancelled: return .red
+        case .active:             return .green
+        case .scheduled:          return .blue
+        case .pendingAcceptance:  return .orange
+        case .accepted:           return .teal
+        case .completed:          return Color.secondary
+        case .rejected:           return .red
+        case .cancelled:          return .red
         }
     }
 }

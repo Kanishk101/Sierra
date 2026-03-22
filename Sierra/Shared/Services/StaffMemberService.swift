@@ -301,7 +301,6 @@ struct StaffMemberService {
             options: FunctionInvokeOptions(body: Payload(staffMemberId: id.uuidString))
         )
 
-        // Belt-and-suspenders: surface any error message from the function body
         if let errorMsg = response.error {
             throw StaffMemberServiceError.deleteFailed(errorMsg)
         }
