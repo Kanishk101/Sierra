@@ -69,10 +69,10 @@ enum SierraDebugLogger {
                 if let data = Data(base64Encoded: padded),
                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                     print("🔍 [SierraDebug.sessionState] JWT Payload decode:")
-                    print("🔍   JWT.sub  : \(json[\"sub\"] ?? \"<MISSING — CRITICAL BUG>\")")
-                    print("🔍   JWT.role : \(json[\"role\"] ?? \"<MISSING>\")")
-                    print("🔍   JWT.email: \(json[\"email\"] ?? \"<MISSING>\")")
-                    print("🔍   JWT.iss  : \(json[\"iss\"] ?? \"<MISSING>\")")
+                    print("🔍   JWT.sub  : \(json["sub"] ?? "<MISSING - CRITICAL BUG>")")
+                    print("🔍   JWT.role : \(json["role"] ?? "<MISSING>")")
+                    print("🔍   JWT.email: \(json["email"] ?? "<MISSING>")")
+                    print("🔍   JWT.iss  : \(json["iss"] ?? "<MISSING>")")
                     if let exp = json["exp"] as? Double {
                         let remaining = Int(exp - Date().timeIntervalSince1970)
                         let status = remaining > 0 ? "✅ VALID (\(remaining)s left)" : "❌ *** EXPIRED *** (\(abs(remaining))s ago)"

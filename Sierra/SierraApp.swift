@@ -92,6 +92,7 @@ struct SierraApp: App {
             case .active:
                 AuthManager.shared.appWillEnterForeground()
                 Task { await AppDataStore.shared.checkOverdueMaintenance() }
+                Task { await AppDataStore.shared.checkExpiringDocuments() }
             default:
                 break
             }

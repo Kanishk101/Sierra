@@ -4,52 +4,61 @@ import MapboxDirections
 import MapboxMaps
 
 // MARK: - TripNavigationCoordinator
+// Orchestrator — delegates to RouteEngine, DeviationDetector, GeofenceMonitor.
+// All public properties + methods stay identical to the pre-refactor API
+// so that views (NavigationHUDOverlay, TripNavigationContainerView,
+// RouteSelectionSheet) compile with zero changes.
 
 @MainActor
 @Observable
 final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
 
-    // MARK: - Public state
+    // MARK: - Sub-components
 
-    var currentRoute: MapboxDirections.Route?
-    var alternativeRoute: MapboxDirections.Route?
+    private let routeEngine = RouteEngine()
+    private let deviationDetector = DeviationDetector()
+    private let geofenceMonitor = GeofenceMonitor()
+
+    // MARK: - Forwarded Public State (from RouteEngine)
+
+    var currentRoute: MapboxDirections.Route? { routeEngine.currentRoute }
+    var alternativeRoute: MapboxDirections.Route? { routeEngine.alternativeRoute }
+    var currentStepInstruction: String { routeEngine.currentStepInstruction }
+    var distanceRemainingMetres: Double {
+        get { routeEngine.distanceRemainingMetres }
+        set { routeEngine.distanceRemainingMetres = newValue }
+    }
+    var estimatedArrivalTime: Date? {
+        get { routeEngine.estimatedArrivalTime }
+        set { routeEngine.estimatedArrivalTime = newValue }
+    }
+    var hasDeviated: Bool {
+        get { routeEngine.hasDeviated }
+        set { routeEngine.hasDeviated = newValue }
+    }
+    var avoidTolls: Bool {
+        get { routeEngine.avoidTolls }
+        set { routeEngine.avoidTolls = newValue }
+    }
+    var avoidHighways: Bool {
+        get { routeEngine.avoidHighways }
+        set { routeEngine.avoidHighways = newValue }
+    }
+
+    // MARK: - Coordinator-owned State
+
     var isNavigating: Bool = false
-    var currentStepInstruction: String = ""
-    var distanceRemainingMetres: Double = 0
-    var estimatedArrivalTime: Date?
     var currentSpeedKmh: Double = 0
-    var hasDeviated: Bool = false
     var hasArrived: Bool = false
     var currentSpeedLimit: Int?
     var currentStepManeuver: String = ""
     var nextStepInstruction: String = ""
-    var avoidTolls: Bool = false
-    var avoidHighways: Bool = false
     let trip: Trip
-
-    // MARK: - Private
-
-    private var locationPublishTimer: Timer?
-    private let locationPublishInterval: TimeInterval = 5.0
-    // hasBuiltRoutes is only set to true AFTER a successful route assignment,
-    // not at the start of the build attempt. This allows retry after transient
-    // network/API failures without requiring a new TripNavigationCoordinator instance.
-    private var hasBuiltRoutes: Bool = false
-    private var lastDeviationRecordedAt: Date = .distantPast
-    private let deviationCooldownSeconds: TimeInterval = 60.0
-    private var decodedRouteCoordinates: [CLLocationCoordinate2D] = []
     private(set) var currentLocation: CLLocation?
     private var locationManager: CLLocationManager?
+    private var locationPublishTimer: Timer?
+    private let locationPublishInterval: TimeInterval = 5.0
     private var currentStepIndex: Int = 0
-
-    // Waypoints added by the driver mid-trip via the HUD stop picker.
-    // Cleared on a full reroute so only future stops are carried forward.
-    private var intermediateWaypoints: [(lat: Double, lng: Double, name: String)] = []
-
-    // When true, buildRoutes() uses currentLocation as the route origin instead
-    // of the original trip coordinates. Set by checkDeviation(); reset inside
-    // buildRoutes() once the effective origin has been consumed.
-    private var rerouteFromCurrentLocation: Bool = false
 
     // MARK: - Init / deinit
 
@@ -67,157 +76,26 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         }
     }
 
-    // MARK: - Add Stop
+    // MARK: - Delegated Route Methods
 
-    func addStop(latitude: Double, longitude: Double, name: String) async {
-        intermediateWaypoints.append((lat: latitude, lng: longitude, name: name))
-        hasBuiltRoutes = false
-        await buildRoutes()
+    func buildRoutes() async {
+        await routeEngine.buildRoutes(trip: trip, currentLocation: currentLocation)
     }
 
-    // MARK: - Select Green Route
-    // Swaps currentRoute and alternativeRoute so the driver follows the
-    // lower-distance (eco) route. Called by RouteSelectionSheet.
-    // Does NOT call buildRoutes() — it only reorders already-fetched routes.
-
     func selectGreenRoute() {
-        guard let alt = alternativeRoute else { return }
-        let prev       = currentRoute
-        currentRoute   = alt
-        alternativeRoute = prev
-
-        // Re-decode the newly selected route's shape for deviation detection
-        if let shape = currentRoute?.shape {
-            decodedRouteCoordinates = shape.coordinates
-        }
-
-        // Refresh HUD state for the new route
-        if let firstStep = currentRoute?.legs.first?.steps.first {
-            currentStepInstruction = firstStep.instructions
-        }
-        if let travel = currentRoute?.expectedTravelTime {
-            estimatedArrivalTime = Date().addingTimeInterval(travel)
-        }
-        if let dist = currentRoute?.distance {
-            distanceRemainingMetres = dist
-        }
-
+        routeEngine.selectGreenRoute()
         currentStepIndex = 0
     }
 
-    // MARK: - Rebuild Routes
-    // Resets hasBuiltRoutes and rebuilds. Called when the driver changes
-    // avoidTolls / avoidHighways in RouteSelectionSheet.
-
     func rebuildRoutes() async {
-        hasBuiltRoutes = false
-        await buildRoutes()
+        await routeEngine.rebuildRoutes(trip: trip, currentLocation: currentLocation)
     }
 
-    // MARK: - Route Building
-
-    func buildRoutes() async {
-        guard !hasBuiltRoutes else { return }
-
-        // --- Determine effective origin ---
-        let startLat: Double
-        let startLng: Double
-        let isRerouting = rerouteFromCurrentLocation
-
-        if isRerouting, let loc = currentLocation {
-            startLat = loc.coordinate.latitude
-            startLng = loc.coordinate.longitude
-            rerouteFromCurrentLocation = false
-        } else {
-            rerouteFromCurrentLocation = false
-            guard let originLat = trip.originLatitude,
-                  let originLng = trip.originLongitude else {
-                print("[NavCoordinator] Missing trip coordinates")
-                return
-            }
-            startLat = originLat
-            startLng = originLng
-        }
-
-        guard let destLat = trip.destinationLatitude,
-              let destLng = trip.destinationLongitude else {
-            print("[NavCoordinator] Missing trip destination coordinates")
-            return
-        }
-
-        // --- Build waypoint array: origin → stops → destination ---
-        let originWP = Waypoint(coordinate: CLLocationCoordinate2D(latitude: startLat, longitude: startLng))
-        var waypoints: [Waypoint] = [originWP]
-
-        // Inject any stops from the Trip model's route_stops field
-        let modelStops = (trip.routeStops ?? []).sorted { $0.order < $1.order }
-        for stop in modelStops {
-            waypoints.append(Waypoint(
-                coordinate: CLLocationCoordinate2D(latitude: stop.latitude, longitude: stop.longitude),
-                name: stop.name
-            ))
-        }
-
-        // Plus any stops added mid-trip via addStop()
-        for stop in intermediateWaypoints {
-            waypoints.append(Waypoint(
-                coordinate: CLLocationCoordinate2D(latitude: stop.lat, longitude: stop.lng),
-                name: stop.name
-            ))
-        }
-
-        waypoints.append(Waypoint(coordinate: CLLocationCoordinate2D(latitude: destLat, longitude: destLng)))
-
-        let options = RouteOptions(waypoints: waypoints)
-        options.includesAlternativeRoutes = true
-        options.routeShapeResolution = .full
-        options.shapeFormat = .polyline6
-        options.profileIdentifier = .automobileAvoidingTraffic
-        options.attributeOptions = [.congestionLevel, .expectedTravelTime, .speed]
-        if trip.scheduledDate > Date() {
-            options.departAt = trip.scheduledDate
-        }
-
-        var avoidClasses: RoadClasses = []
-        if avoidTolls    { avoidClasses.insert(.toll) }
-        if avoidHighways { avoidClasses.insert(.motorway) }
-        if !avoidClasses.isEmpty { options.roadClassesToAvoid = avoidClasses }
-
-        do {
-            let response: RouteResponse = try await withCheckedThrowingContinuation { continuation in
-                Directions.shared.calculate(options) { result in
-                    switch result {
-                    case .success(let resp): continuation.resume(returning: resp)
-                    case .failure(let error): continuation.resume(throwing: error)
-                    }
-                }
-            }
-
-            let routes = response.routes ?? []
-
-            if let fastestIndex = routes.indices.min(by: { routes[$0].expectedTravelTime < routes[$1].expectedTravelTime }) {
-                let fastest = routes[fastestIndex]
-                currentRoute = fastest
-                distanceRemainingMetres = fastest.distance
-                estimatedArrivalTime = Date().addingTimeInterval(fastest.expectedTravelTime)
-                if let firstStep = fastest.legs.first?.steps.first {
-                    currentStepInstruction = firstStep.instructions
-                }
-                if routes.count > 1 {
-                    alternativeRoute = routes.enumerated().first(where: { $0.offset != fastestIndex })?.element
-                }
-            }
-
-            if let shape = currentRoute?.shape {
-                decodedRouteCoordinates = shape.coordinates
-            }
-
-            hasBuiltRoutes = true
-            if hasDeviated { hasDeviated = false }
-
-        } catch {
-            print("[NavCoordinator] Route build failed (will retry on next buildRoutes() call): \(error)")
-        }
+    func addStop(latitude: Double, longitude: Double, name: String) async {
+        await routeEngine.addStop(
+            latitude: latitude, longitude: longitude, name: name,
+            trip: trip, currentLocation: currentLocation
+        )
     }
 
     // MARK: - Location Manager
@@ -244,7 +122,11 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         manager.startUpdatingLocation()
         locationManager = manager
         isNavigating = true
-        registerGeofences(AppDataStore.shared.geofences)
+        geofenceMonitor.register(
+            AppDataStore.shared.geofences,
+            locationManager: manager,
+            currentLocation: currentLocation
+        )
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
@@ -284,7 +166,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         locationPublishTimer?.invalidate()
         locationPublishTimer = nil
         if let manager = locationManager {
-            for region in manager.monitoredRegions { manager.stopMonitoring(for: region) }
+            geofenceMonitor.stopMonitoring(locationManager: manager)
         }
         locationManager?.stopUpdatingLocation()
         locationManager = nil
@@ -302,11 +184,14 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     // MARK: - Navigation Progress
 
     private func updateNavigationProgress(location: CLLocation) {
-        guard let route = currentRoute, let leg = route.legs.first else { return }
-        if let lastCoord = decodedRouteCoordinates.last {
+        guard let route = routeEngine.currentRoute,
+              let leg = route.legs.first else { return }
+
+        let routeCoords = routeEngine.decodedRouteCoordinates
+        if let lastCoord = routeCoords.last {
             let destLoc = CLLocation(latitude: lastCoord.latitude, longitude: lastCoord.longitude)
             let distToDest = location.distance(from: destLoc)
-            distanceRemainingMetres = distToDest
+            routeEngine.distanceRemainingMetres = distToDest
 
             // Arrival detection: within 50m of destination
             if distToDest < 50 && !hasArrived {
@@ -315,8 +200,9 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
             }
         }
         let avgSpeed = route.distance / route.expectedTravelTime
-        let remainingTime = avgSpeed > 0 ? distanceRemainingMetres / avgSpeed : 0
-        estimatedArrivalTime = Date().addingTimeInterval(remainingTime)
+        let remainingTime = avgSpeed > 0 ? routeEngine.distanceRemainingMetres / avgSpeed : 0
+        routeEngine.estimatedArrivalTime = Date().addingTimeInterval(remainingTime)
+
         let steps = leg.steps
         for (idx, step) in steps.enumerated() {
             if let shape = step.shape, let firstCoord = shape.coordinates.first {
@@ -325,22 +211,14 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
                 if distToStep < 100 && idx >= currentStepIndex {
                     let wasNewStep = idx > currentStepIndex
                     currentStepIndex = idx
-                    currentStepInstruction = step.instructions
-
-                    // Extract maneuver type for HUD icon
+                    routeEngine.currentStepInstruction = step.instructions
                     currentStepManeuver = step.maneuverType.rawValue
-
-                    // Next step preview for HUD
                     if idx + 1 < steps.count {
                         nextStepInstruction = steps[idx + 1].instructions
                     } else {
                         nextStepInstruction = ""
                     }
-
-                    // speedLimit is not available on RouteStep in this SDK version.
                     currentSpeedLimit = nil
-
-                    // Phase 10: Voice announcement on step change or when close to maneuver
                     if wasNewStep || distToStep < 200 {
                         VoiceNavigationService.shared.announce(step.instructions)
                     }
@@ -350,107 +228,62 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         }
     }
 
-    // MARK: - Deviation Check
+    // MARK: - Deviation Check (delegates math to DeviationDetector)
 
-    func checkDeviation(from location: CLLocation) {
-        guard decodedRouteCoordinates.count >= 2 else { return }
-        let deviationMetres = computeMinDistanceToRoute(
-            location: location.coordinate, routeCoords: decodedRouteCoordinates
+    private func checkDeviation(from location: CLLocation) {
+        let routeCoords = routeEngine.decodedRouteCoordinates
+        guard routeCoords.count >= 2 else { return }
+
+        let deviationMetres = deviationDetector.distanceFromRoute(
+            location: location.coordinate,
+            routeCoords: routeCoords
         )
-        guard deviationMetres > 200 else { if hasDeviated { hasDeviated = false }; return }
-        hasDeviated = true
-        guard Date().timeIntervalSince(lastDeviationRecordedAt) > deviationCooldownSeconds else { return }
-        lastDeviationRecordedAt = Date()
+
+        guard deviationMetres > deviationDetector.deviationThresholdMetres else {
+            if routeEngine.hasDeviated { routeEngine.hasDeviated = false }
+            return
+        }
+
+        routeEngine.hasDeviated = true
+
+        guard deviationDetector.shouldRecordDeviation() else { return }
+        deviationDetector.markDeviationRecorded()
+
         let driverId  = AuthManager.shared.currentUser?.id ?? UUID()
         let vehicleId = UUID(uuidString: trip.vehicleId ?? "") ?? UUID()
         Task {
             try? await RouteDeviationService.recordDeviation(
                 tripId: trip.id, driverId: driverId, vehicleId: vehicleId,
-                latitude: location.coordinate.latitude, longitude: location.coordinate.longitude,
+                latitude: location.coordinate.latitude,
+                longitude: location.coordinate.longitude,
                 deviationMetres: deviationMetres
             )
         }
-        rerouteFromCurrentLocation = true
-        hasBuiltRoutes = false
-        Task { await buildRoutes() }
+
+        routeEngine.triggerRerouteFromCurrentLocation()
+        Task { await routeEngine.buildRoutes(trip: trip, currentLocation: currentLocation) }
     }
 
-    private func computeMinDistanceToRoute(location: CLLocationCoordinate2D, routeCoords: [CLLocationCoordinate2D]) -> Double {
-        var minDist = Double.greatestFiniteMagnitude
-        for i in 0..<(routeCoords.count - 1) {
-            let dist = perpendicularDistance(point: location, segStart: routeCoords[i], segEnd: routeCoords[i + 1])
-            if dist < minDist { minDist = dist }
-        }
-        return minDist
-    }
-
-    private func perpendicularDistance(point: CLLocationCoordinate2D, segStart: CLLocationCoordinate2D, segEnd: CLLocationCoordinate2D) -> Double {
-        let pointLoc = CLLocation(latitude: point.latitude, longitude: point.longitude)
-        let startLoc = CLLocation(latitude: segStart.latitude, longitude: segStart.longitude)
-        let endLoc   = CLLocation(latitude: segEnd.latitude, longitude: segEnd.longitude)
-        let segLength = startLoc.distance(from: endLoc)
-        guard segLength > 0 else { return pointLoc.distance(from: startLoc) }
-        let dx = endLoc.coordinate.longitude - startLoc.coordinate.longitude
-        let dy = endLoc.coordinate.latitude  - startLoc.coordinate.latitude
-        let px = point.longitude - startLoc.coordinate.longitude
-        let py = point.latitude  - startLoc.coordinate.latitude
-        let t = max(0, min(1, (px * dx + py * dy) / (dx * dx + dy * dy)))
-        let projLat = segStart.latitude  + t * (segEnd.latitude  - segStart.latitude)
-        let projLng = segStart.longitude + t * (segEnd.longitude - segStart.longitude)
-        return pointLoc.distance(from: CLLocation(latitude: projLat, longitude: projLng))
-    }
-
-    // MARK: - Geofence Monitoring
-
-    func registerGeofences(_ geofences: [Geofence]) {
-        guard let manager = locationManager else { return }
-        for region in manager.monitoredRegions { manager.stopMonitoring(for: region) }
-        let driverCoord = currentLocation?.coordinate ?? CLLocationCoordinate2D(latitude: 20.5937, longitude: 78.9629)
-        let driverLoc   = CLLocation(latitude: driverCoord.latitude, longitude: driverCoord.longitude)
-        let active = geofences.filter { $0.isActive }.sorted {
-            CLLocation(latitude: $0.latitude, longitude: $0.longitude).distance(from: driverLoc)
-            < CLLocation(latitude: $1.latitude, longitude: $1.longitude).distance(from: driverLoc)
-        }
-        for geofence in active.prefix(20) {
-            let center = CLLocationCoordinate2D(latitude: geofence.latitude, longitude: geofence.longitude)
-            let region = CLCircularRegion(center: center, radius: geofence.radiusMeters, identifier: geofence.id.uuidString)
-            region.notifyOnEntry = geofence.alertOnEntry
-            region.notifyOnExit  = geofence.alertOnExit
-            manager.startMonitoring(for: region)
-        }
-    }
+    // MARK: - Geofence Delegates
 
     nonisolated func locationManager(_ manager: CLLocationManager, didEnterRegion region: CLRegion) {
         guard let geofenceId = UUID(uuidString: region.identifier) else { return }
-        Task { @MainActor in await self.handleGeofenceEvent(geofenceId: geofenceId, eventType: "Entry") }
+        Task { @MainActor in
+            await geofenceMonitor.handleGeofenceEvent(
+                geofenceId: geofenceId, eventType: "Entry",
+                vehicleIdStr: trip.vehicleId ?? "",
+                tripId: trip.id, currentLocation: currentLocation
+            )
+        }
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didExitRegion region: CLRegion) {
         guard let geofenceId = UUID(uuidString: region.identifier) else { return }
-        Task { @MainActor in await self.handleGeofenceEvent(geofenceId: geofenceId, eventType: "Exit") }
-    }
-
-    private func handleGeofenceEvent(geofenceId: UUID, eventType: String) async {
-        guard let vehicleIdStr = trip.vehicleId, let vehicleId = UUID(uuidString: vehicleIdStr) else { return }
-        let driverId = AuthManager.shared.currentUser?.id ?? UUID()
-        do {
-            try await GeofenceEventService.addGeofenceEvent(GeofenceEvent(
-                id: UUID(), geofenceId: geofenceId, vehicleId: vehicleId, tripId: trip.id, driverId: driverId,
-                eventType: eventType == "Entry" ? .entry : .exit,
-                latitude: currentLocation?.coordinate.latitude ?? 0,
-                longitude: currentLocation?.coordinate.longitude ?? 0,
-                triggeredAt: Date(), createdAt: Date()
-            ))
-        } catch { print("[NavCoordinator] Geofence event insert failed: \(error)") }
-        // ROLE NOTE: UserRole.fleetManager.rawValue == "fleetManager" which matches
-        // the value stored in staff_members.role column — no mismatch risk here.
-        let fmIds = AppDataStore.shared.staff.filter { $0.role == .fleetManager && $0.status == .active }.map { $0.id }
-        for fmId in fmIds {
-            try? await NotificationService.insertNotification(
-                recipientId: fmId, type: .geofenceAlert,
-                title: "Geofence \(eventType)",
-                body: "Vehicle \(vehicleIdStr) \(eventType == "Entry" ? "entered" : "exited") a monitored zone",
-                entityType: "geofence", entityId: geofenceId
+        Task { @MainActor in
+            await geofenceMonitor.handleGeofenceEvent(
+                geofenceId: geofenceId, eventType: "Exit",
+                vehicleIdStr: trip.vehicleId ?? "",
+                tripId: trip.id, currentLocation: currentLocation
             )
         }
     }

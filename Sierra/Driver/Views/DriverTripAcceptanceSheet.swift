@@ -230,7 +230,6 @@ struct DriverTripAcceptanceSheet: View {
     @ViewBuilder
     private func deadlineBanner(_ deadline: Date) -> some View {
         let isOverdue = deadline < Date()
-        let isUrgent  = deadline < Date().addingTimeInterval(2 * 3600)
 
         HStack(spacing: 8) {
             Image(systemName: isOverdue ? "exclamationmark.triangle.fill" : "clock.badge.exclamationmark")

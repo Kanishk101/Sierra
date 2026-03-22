@@ -107,8 +107,8 @@ final class AppDataStore {
         // Background housekeeping
         Task.detached(priority: .background) {
             struct PurgeParams: Encodable { let days_to_keep: Int }
-            try? await supabase.rpc("purge_old_location_history", params: PurgeParams(days_to_keep: 30)).execute()
-            try? await supabase.rpc("purge_expired_password_reset_tokens").execute()
+            _ = try? await supabase.rpc("purge_old_location_history", params: PurgeParams(days_to_keep: 30)).execute()
+            _ = try? await supabase.rpc("purge_expired_password_reset_tokens").execute()
         }
 
         subscribeToEmergencyAlerts()
@@ -204,50 +204,8 @@ final class AppDataStore {
         if let idx = staff.firstIndex(where: { $0.id == member.id }) { staff[idx] = member }
     }
 
-    // MARK: deleteStaffMember
-    //
-    // FIX: The original call had no return type annotation on functions.invoke(),
-    // which is undefined behavior in the Supabase Swift SDK. Now properly typed.
-    // Also: the 401 was caused by anon key injection (same root cause as all other
-    // edge function calls). Fixed by using SupabaseManager.functionOptions().
-
     func deleteStaffMember(id: UUID) async throws {
-        struct Payload: Encodable { let staffMemberId: String }
-        struct DeleteStaffResponse: Decodable {
-            let success: Bool?
-            let deletedId: String?
-            let error: String?
-        }
-
-        #if DEBUG
-        SierraDebugLogger.banner("AppDataStore.deleteStaffMember")
-        print("👤 [AppDataStore.deleteStaffMember] Deleting staff ID=\(id.uuidString)")
-        await SierraDebugLogger.logSessionState(context: "AppDataStore.deleteStaffMember")
-        let t = Date()
-        #endif
-
-        let options = try await SupabaseManager.functionOptions(body: Payload(staffMemberId: id.uuidString))
-        let response: DeleteStaffResponse = try await supabase.functions.invoke(
-            "delete-staff-member",
-            options: options
-        )
-
-        #if DEBUG
-        let ms = Int(Date().timeIntervalSince(t) * 1000)
-        print("👤 [AppDataStore.deleteStaffMember] ✅ invoke succeeded in \(ms)ms")
-        print("👤   success  : \(response.success ?? false)")
-        print("👤   deletedId: \(response.deletedId ?? "nil")")
-        print("👤   error    : \(response.error ?? "nil")")
-        #endif
-
-        if let errorMsg = response.error {
-            throw NSError(
-                domain: "SierraDeleteStaff",
-                code: 500,
-                userInfo: [NSLocalizedDescriptionKey: errorMsg]
-            )
-        }
-
+        try await StaffMemberService.deleteStaffMember(id: id)
         staff.removeAll               { $0.id == id }
         driverProfiles.removeAll      { $0.staffMemberId == id }
         maintenanceProfiles.removeAll { $0.staffMemberId == id }
@@ -907,6 +865,42 @@ final class AppDataStore {
                 LocalNotificationService.notifyMaintenanceOverdue(taskTitle: task.title, taskId: task.id)
             } catch {
                 print("[AppDataStore] Non-fatal: overdue notification failed: \(error)")
+            }
+        }
+    }
+
+    // MARK: - Expiring Documents Check
+
+    func checkExpiringDocuments() async {
+        guard subscribedNotificationsUserId != nil else { return }
+
+        let adminIds = staff
+            .filter { $0.role == .fleetManager && $0.status == .active }
+            .map { $0.id }
+        guard !adminIds.isEmpty else { return }
+
+        let expiringDocs = documentsExpiringSoon()
+        guard !expiringDocs.isEmpty else { return }
+
+        for doc in expiringDocs {
+            let alreadyNotified = notifications.contains {
+                $0.type == .documentExpiry && $0.entityId == doc.id
+            }
+            guard !alreadyNotified else { continue }
+
+            let vehicleName = vehicles.first { $0.id == doc.vehicleId }?.name ?? "Unknown vehicle"
+            let statusLabel = doc.isExpired ? "EXPIRED" : "expiring soon"
+            let expiryStr   = doc.expiryDate.formatted(.dateTime.day().month(.abbreviated).year())
+
+            for adminId in adminIds {
+                try? await NotificationService.insertNotification(
+                    recipientId: adminId,
+                    type: .documentExpiry,
+                    title: "Document \(statusLabel): \(doc.documentType.rawValue)",
+                    body: "\(vehicleName) — \(doc.documentType.rawValue) \(statusLabel). Expires \(expiryStr).",
+                    entityType: "vehicle_document",
+                    entityId: doc.id
+                )
             }
         }
     }
