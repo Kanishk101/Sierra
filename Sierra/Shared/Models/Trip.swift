@@ -56,9 +56,9 @@ struct Trip: Identifiable, Codable {
 
     // MARK: Core fields
     var taskId: String                    // task_id (UNIQUE)
-    var driverId: String?                 // driver_id (FK → staff_members.id, TEXT)
-    var vehicleId: String?                // vehicle_id (FK → vehicles.id, TEXT)
-    var createdByAdminId: String          // created_by_admin_id (FK → staff_members.id, TEXT)
+    var driverId: String?                 // driver_id (FK -> staff_members.id, TEXT)
+    var vehicleId: String?                // vehicle_id (FK -> vehicles.id, TEXT)
+    var createdByAdminId: String          // created_by_admin_id (FK -> staff_members.id, TEXT)
 
     // MARK: Route
     var origin: String
@@ -101,7 +101,7 @@ struct Trip: Identifiable, Codable {
     // MARK: Rating
     var driverRating: Int?               // driver_rating (smallint nullable)
     var driverRatingNote: String?        // driver_rating_note
-    var ratedById: UUID?                 // rated_by_id (FK → staff_members.id)
+    var ratedById: UUID?                 // rated_by_id (FK -> staff_members.id)
     var ratedAt: Date?                   // rated_at
 
     // MARK: Timestamps
@@ -143,6 +143,66 @@ struct Trip: Identifiable, Codable {
         case ratedAt              = "rated_at"
         case createdAt            = "created_at"
         case updatedAt            = "updated_at"
+    }
+
+    // MARK: - Custom Decoder
+    // route_stops is JSONB in Postgres. PostgREST normally returns it as a native JSON array
+    // so Swift decodes [RouteStop] directly. However, rows written by the pre-fix
+    // TripInsertPayload serialised the array to a JSON String (e.g. "[]" or "[{...}]").
+    // This decoder handles both shapes so legacy rows never crash the entire trips fetch.
+    // Pattern mirrors VehicleInspection.items which has the same JSONB double-encode defence.
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+
+        id                   = try c.decode(UUID.self,   forKey: .id)
+        taskId               = try c.decode(String.self, forKey: .taskId)
+        driverId             = try c.decodeIfPresent(String.self, forKey: .driverId)
+        vehicleId            = try c.decodeIfPresent(String.self, forKey: .vehicleId)
+        createdByAdminId     = try c.decode(String.self, forKey: .createdByAdminId)
+        origin               = try c.decode(String.self, forKey: .origin)
+        destination          = try c.decode(String.self, forKey: .destination)
+        originLatitude       = try c.decodeIfPresent(Double.self, forKey: .originLatitude)
+        originLongitude      = try c.decodeIfPresent(Double.self, forKey: .originLongitude)
+        destinationLatitude  = try c.decodeIfPresent(Double.self, forKey: .destinationLatitude)
+        destinationLongitude = try c.decodeIfPresent(Double.self, forKey: .destinationLongitude)
+        routePolyline        = try c.decodeIfPresent(String.self, forKey: .routePolyline)
+
+        // route_stops: try native JSONB array first, then the legacy string-encoded shape.
+        // Both empty-array variants resolve to nil so downstream code never sees [].
+        if let arr = try? c.decode([RouteStop].self, forKey: .routeStops), !arr.isEmpty {
+            routeStops = arr
+        } else if let str = try? c.decode(String.self, forKey: .routeStops),
+                  let data = str.data(using: .utf8),
+                  let parsed = try? JSONDecoder().decode([RouteStop].self, from: data),
+                  !parsed.isEmpty {
+            routeStops = parsed
+        } else {
+            routeStops = nil
+        }
+
+        deliveryInstructions = try c.decode(String.self,       forKey: .deliveryInstructions)
+        scheduledDate        = try c.decode(Date.self,         forKey: .scheduledDate)
+        scheduledEndDate     = try c.decodeIfPresent(Date.self,   forKey: .scheduledEndDate)
+        actualStartDate      = try c.decodeIfPresent(Date.self,   forKey: .actualStartDate)
+        actualEndDate        = try c.decodeIfPresent(Date.self,   forKey: .actualEndDate)
+        startMileage         = try c.decodeIfPresent(Double.self, forKey: .startMileage)
+        endMileage           = try c.decodeIfPresent(Double.self, forKey: .endMileage)
+        notes                = try c.decode(String.self,       forKey: .notes)
+        status               = try c.decode(TripStatus.self,   forKey: .status)
+        priority             = try c.decode(TripPriority.self, forKey: .priority)
+        proofOfDeliveryId    = try c.decodeIfPresent(UUID.self, forKey: .proofOfDeliveryId)
+        preInspectionId      = try c.decodeIfPresent(UUID.self, forKey: .preInspectionId)
+        postInspectionId     = try c.decodeIfPresent(UUID.self, forKey: .postInspectionId)
+        acceptedAt           = try c.decodeIfPresent(Date.self,   forKey: .acceptedAt)
+        acceptanceDeadline   = try c.decodeIfPresent(Date.self,   forKey: .acceptanceDeadline)
+        rejectedReason       = try c.decodeIfPresent(String.self, forKey: .rejectedReason)
+        driverRating         = try c.decodeIfPresent(Int.self,    forKey: .driverRating)
+        driverRatingNote     = try c.decodeIfPresent(String.self, forKey: .driverRatingNote)
+        ratedById            = try c.decodeIfPresent(UUID.self,   forKey: .ratedById)
+        ratedAt              = try c.decodeIfPresent(Date.self,   forKey: .ratedAt)
+        createdAt            = try c.decode(Date.self, forKey: .createdAt)
+        updatedAt            = try c.decode(Date.self, forKey: .updatedAt)
     }
 
     // MARK: - Computed
@@ -205,14 +265,14 @@ struct Trip: Identifiable, Codable {
                 destinationLongitude: nil,
                 routePolyline: nil,
                 routeStops: nil,
-                deliveryInstructions: "Handle with care — electronics",
+                deliveryInstructions: "Handle with care",
                 scheduledDate: cal.date(byAdding: .hour, value: -2, to: now) ?? now,
                 scheduledEndDate: cal.date(byAdding: .hour, value: 4, to: now),
                 actualStartDate: cal.date(byAdding: .hour, value: -1, to: now),
                 actualEndDate: nil,
                 startMileage: 45230.5,
                 endMileage: nil,
-                notes: "Fragile cargo — electronics shipment",
+                notes: "Fragile cargo",
                 status: .active,
                 priority: .high,
                 proofOfDeliveryId: nil,
@@ -314,7 +374,7 @@ struct Trip: Identifiable, Codable {
                 actualEndDate: nil,
                 startMileage: nil,
                 endMileage: nil,
-                notes: "Vehicle entered maintenance — trip cancelled",
+                notes: "Vehicle entered maintenance",
                 status: .cancelled,
                 priority: .low,
                 proofOfDeliveryId: nil,

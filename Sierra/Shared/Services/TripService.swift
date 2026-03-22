@@ -51,8 +51,10 @@ struct TripInsertPayload: Encodable {
     let destinationLatitude: Double?
     let destinationLongitude: Double?
     let routePolyline: String?
-    // Always String — never null — avoids jsonb NOT NULL violation on insert.
-    let routeStops: String
+    // [RouteStop] encodes directly to a JSON array, which PostgREST stores
+    // as native JSONB. This replaces the previous String serialisation that
+    // was storing the JSON as a string literal ("[]") instead of an array ([]).
+    let routeStops: [RouteStop]
 
     enum CodingKeys: String, CodingKey {
         case taskId               = "task_id"
@@ -98,13 +100,8 @@ struct TripInsertPayload: Encodable {
         destinationLatitude  = t.destinationLatitude
         destinationLongitude = t.destinationLongitude
         routePolyline        = t.routePolyline
-        if let stops = t.routeStops, !stops.isEmpty,
-           let data = try? JSONEncoder().encode(stops),
-           let str  = String(data: data, encoding: .utf8) {
-            routeStops = str
-        } else {
-            routeStops = "[]"
-        }
+        // Send array directly — PostgREST stores it as native JSONB []
+        routeStops           = t.routeStops ?? []
     }
 }
 
@@ -129,18 +126,18 @@ struct TripUpdatePayload: Encodable {
     let notes: String
     let status: String
     let priority: String
-    // GPS coordinates — previously absent, caused coords to be wiped on any edit.
     let originLatitude: Double?
     let originLongitude: Double?
     let destinationLatitude: Double?
     let destinationLongitude: Double?
     let routePolyline: String?
-    let routeStops: String
+    // Same fix as TripInsertPayload: [RouteStop] -> native JSONB array
+    let routeStops: [RouteStop]
     // Related records
     let proofOfDeliveryId: String?
     let preInspectionId: String?
     let postInspectionId: String?
-    // Acceptance lifecycle (added in migration 20260322000001)
+    // Acceptance lifecycle
     let acceptedAt: String?
     let acceptanceDeadline: String?
     let rejectedReason: String?
@@ -204,13 +201,7 @@ struct TripUpdatePayload: Encodable {
         destinationLatitude  = t.destinationLatitude
         destinationLongitude = t.destinationLongitude
         routePolyline        = t.routePolyline
-        if let stops = t.routeStops, !stops.isEmpty,
-           let data = try? JSONEncoder().encode(stops),
-           let str  = String(data: data, encoding: .utf8) {
-            routeStops = str
-        } else {
-            routeStops = "[]"
-        }
+        routeStops           = t.routeStops ?? []
         proofOfDeliveryId    = t.proofOfDeliveryId?.uuidString
         preInspectionId      = t.preInspectionId?.uuidString
         postInspectionId     = t.postInspectionId?.uuidString
@@ -334,7 +325,7 @@ struct TripService {
 
     // MARK: - Acceptance Lifecycle
     // Both methods include .eq("driver_id") as a server-side security
-    // filter — drivers cannot accept/reject trips assigned to someone else.
+    // filter -- drivers cannot accept/reject trips assigned to someone else.
     // The RLS policy on trips also enforces this at the DB level.
 
     static func acceptTrip(tripId: UUID, driverId: UUID) async throws {
@@ -353,7 +344,6 @@ struct TripService {
             .select()
             .execute()
             .value
-        // If the update matched no rows the driver_id filter blocked it
         guard !rows.isEmpty else { throw TripServiceError.driverMismatch }
     }
 
