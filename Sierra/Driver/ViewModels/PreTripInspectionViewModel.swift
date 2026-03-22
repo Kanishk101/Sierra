@@ -115,6 +115,11 @@ final class PreTripInspectionViewModel {
         checkItems.filter { $0.result == .failed || $0.result == .passedWithWarnings }
     }
 
+    // Phase 11: Fuel level integration
+    var fuelLevelNeedsAttention: Bool {
+        checkItems.contains { $0.name == "Fuel Level" && ($0.result == .failed || $0.result == .passedWithWarnings) }
+    }
+
     // MARK: - Init
 
     init(

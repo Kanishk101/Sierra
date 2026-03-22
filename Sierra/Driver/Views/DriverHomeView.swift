@@ -56,6 +56,38 @@ struct DriverHomeView: View {
     }
 
     var body: some View {
+        Group {
+            if store.isLoading {
+                SierraLoadingView(message: "Loading your assignments...")
+            } else if let error = store.loadError {
+                SierraErrorView(message: error) {
+                    if let id = driverStaffId {
+                        await store.loadDriverData(driverId: id)
+                    }
+                }
+            } else {
+                mainContent
+            }
+        }
+        .ignoresSafeArea(edges: .top)
+        .toolbar(.hidden, for: .navigationBar)
+        .onAppear {
+            availabilitySwitch = isAvailable
+            runDebugChecksIfNeeded()
+        }
+        .onChange(of: isAvailable) { _, newValue in
+            availabilitySwitch = newValue
+        }
+        .sheet(isPresented: $showProfile) {
+            DriverProfileSheet()
+                .environment(AppDataStore.shared)
+                .presentationDetents([.large])
+        }
+    }
+
+    // MARK: - Main Content
+
+    private var mainContent: some View {
         ZStack(alignment: .top) {
             Color(red: 0.97, green: 0.97, blue: 0.96)
                 .ignoresSafeArea()
@@ -90,20 +122,6 @@ struct DriverHomeView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
                     .zIndex(2)
             }
-        }
-        .ignoresSafeArea(edges: .top)
-        .toolbar(.hidden, for: .navigationBar)
-        .onAppear {
-            availabilitySwitch = isAvailable
-            runDebugChecksIfNeeded()
-        }
-        .onChange(of: isAvailable) { _, newValue in
-            availabilitySwitch = newValue
-        }
-        .sheet(isPresented: $showProfile) {
-            DriverProfileSheet()
-                .environment(AppDataStore.shared)
-                .presentationDetents([.large])
         }
     }
 

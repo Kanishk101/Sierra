@@ -1,7 +1,8 @@
 import SwiftUI
 
 // MARK: - TripsListView
-// Fleet manager view: full trip list with filter chips + search.
+// Fleet manager view: full trip list with filter sheet + search.
+// Phase 9: filter chips replaced with FilterSheetView.
 
 struct TripsListView: View {
 
@@ -9,6 +10,28 @@ struct TripsListView: View {
     @State private var searchText = ""
     @State private var selectedStatus: TripStatus? = nil
     @State private var showCreateSheet = false
+    @State private var showFilterSheet = false
+
+    // Bridge selectedStatus ↔ FilterSheetView's String? binding
+    private var filterBinding: Binding<String?> {
+        Binding(
+            get: { selectedStatus?.rawValue },
+            set: { newVal in
+                selectedStatus = newVal.flatMap { TripStatus(rawValue: $0) }
+            }
+        )
+    }
+
+    private var tripFilterOptions: [FilterOption] {
+        TripStatus.allCases.map { status in
+            FilterOption(
+                id: status.rawValue,
+                label: status.rawValue,
+                icon: tripStatusIcon(status),
+                color: statusColor(status)
+            )
+        }
+    }
 
     private var filtered: [Trip] {
         store.trips
@@ -26,108 +49,99 @@ struct TripsListView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            filterChips
-                .padding(.vertical, 8)
-                .background(Color(.systemGroupedBackground))
+        mainContent
+            .background(Color(.systemGroupedBackground).ignoresSafeArea())
+            .navigationTitle("Trips")
+            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search trips…")
+            .navigationDestination(for: UUID.self) { id in
+                TripDetailView(tripId: id)
+            }
+            .toolbar { toolbarContent }
+            .sheet(isPresented: $showFilterSheet) {
+                FilterSheetView(
+                    title: "Filter Trips",
+                    options: tripFilterOptions,
+                    selectedId: filterBinding
+                )
+            }
+            .sheet(isPresented: $showCreateSheet) {
+                CreateTripView()
+            }
+            .onAppear {
+                print("[TripsListView] Appeared — \(store.trips.count) trips loaded")
+            }
+            .task {
+                if store.trips.isEmpty { await store.loadAll() }
+            }
+            .refreshable {
+                await store.loadAll()
+            }
+    }
 
-            if filtered.isEmpty {
-                emptyState
-            } else {
-                List {
-                    ForEach(filtered) { trip in
-                        NavigationLink(value: trip.id) {
-                            tripRow(trip)
-                        }
-                        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
-                    }
-                }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
+    // MARK: - Extracted subviews (break up complex body)
+
+    @ViewBuilder
+    private var mainContent: some View {
+        if let error = store.loadError {
+            SierraErrorView(message: error) {
+                await store.loadAll()
             }
-        }
-        .background(Color(.systemGroupedBackground).ignoresSafeArea())
-        .navigationTitle("Trips")
-        .toolbarTitleDisplayMode(.inlineLarge)
-        .toolbarBackground(.hidden, for: .navigationBar)
-        .navigationDestination(for: UUID.self) { id in
-            TripDetailView(tripId: id)
-        }
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { showCreateSheet = true } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(.orange)
-                }
-            }
-        }
-        .sheet(isPresented: $showCreateSheet) {
-            CreateTripView()
-        }
-        .onAppear {
-            print("[TripsListView] Appeared — \(store.trips.count) trips loaded")
-        }
-        .task {
-            if store.trips.isEmpty { await store.loadAll() }
-        }
-        .refreshable {
-            await store.loadAll()
+        } else if filtered.isEmpty {
+            emptyState
+        } else {
+            tripList
         }
     }
 
-    // MARK: - Filter Chips
-    // FIX: unselected chips had Color.clear background — invisible against
-    // systemGroupedBackground. Changed to secondarySystemGroupedBackground
-    // so unselected chips are visible as pill cards.
-
-    private var filterChips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                chip("All", isSelected: selectedStatus == nil) { selectedStatus = nil }
-                ForEach(TripStatus.allCases, id: \.self) { status in
-                    chip(status.rawValue, isSelected: selectedStatus == status) {
-                        withAnimation(.easeInOut(duration: 0.15)) {
-                            selectedStatus = status
-                        }
-                    }
+    private var tripList: some View {
+        List {
+            ForEach(filtered) { trip in
+                NavigationLink(value: trip.id) {
+                    tripRow(trip)
                 }
+                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
             }
-            .padding(.horizontal, 16)
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+    }
+
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            Button {
+                showFilterSheet = true
+            } label: {
+                filterButtonLabel
+            }
+        }
+        ToolbarItem(placement: .topBarTrailing) {
+            Button { showCreateSheet = true } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(.orange)
+            }
         }
     }
 
-    private func chip(_ label: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(label)
-                .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
-                .foregroundStyle(isSelected ? .white : .primary)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 7)
-                .background(
-                    isSelected
-                        ? Color.orange
-                        : Color(.secondarySystemGroupedBackground),
-                    in: Capsule()
-                )
-                .overlay(
-                    Capsule().strokeBorder(
-                        isSelected ? Color.clear : Color(.separator),
-                        lineWidth: 1
-                    )
-                )
-        }
-        .buttonStyle(.plain)
-        .contentShape(Capsule())
+    private var filterButtonLabel: some View {
+        Label(
+            selectedStatus == nil ? "Filter" : selectedStatus!.rawValue,
+            systemImage: selectedStatus == nil
+                ? "line.3.horizontal.decrease.circle"
+                : "line.3.horizontal.decrease.circle.fill"
+        )
+        .foregroundStyle(selectedStatus == nil ? Color.secondary : Color.orange)
     }
 
     // MARK: - Trip Row
 
     private func tripRow(_ trip: Trip) -> some View {
         HStack(spacing: 14) {
-            // Status dot
             Circle()
                 .fill(statusColor(trip.status))
                 .frame(width: 10, height: 10)
@@ -135,7 +149,7 @@ struct TripsListView: View {
                 .background(statusColor(trip.status).opacity(0.1), in: Circle())
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("\(trip.origin) \u{2192} \(trip.destination)")
+                Text("\(trip.origin) → \(trip.destination)")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
@@ -158,22 +172,26 @@ struct TripsListView: View {
 
             Spacer()
 
-            VStack(alignment: .trailing, spacing: 4) {
-                Text(trip.status.rawValue)
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(statusColor(trip.status))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(statusColor(trip.status).opacity(0.1), in: Capsule())
-
-                Text(trip.priority.rawValue)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.secondary)
-            }
+            tripStatusBadge(trip)
         }
         .padding(16)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
+    }
+
+    private func tripStatusBadge(_ trip: Trip) -> some View {
+        VStack(alignment: .trailing, spacing: 4) {
+            Text(trip.status.rawValue)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(statusColor(trip.status))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(statusColor(trip.status).opacity(0.1), in: Capsule())
+
+            Text(trip.priority.rawValue)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.secondary)
+        }
     }
 
     // MARK: - Driver / Vehicle inline line
@@ -209,6 +227,20 @@ struct TripsListView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func tripStatusIcon(_ status: TripStatus) -> String {
+        switch status {
+        case .active:             return "arrow.triangle.swap"
+        case .scheduled:          return "clock"
+        case .pendingAcceptance:  return "hourglass"
+        case .accepted:           return "checkmark.circle"
+        case .completed:          return "checkmark"
+        case .rejected:           return "xmark.circle"
+        case .cancelled:          return "xmark"
         }
     }
 

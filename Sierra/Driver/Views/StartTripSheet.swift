@@ -212,92 +212,26 @@ struct StartTripSheet: View {
               let destLat = trip.destinationLatitude,
               let destLng = trip.destinationLongitude else { return }
 
-        guard let token = Bundle.main.object(forInfoDictionaryKey: "MBXAccessToken") as? String else {
-            print("[StartTripSheet] No MBXAccessToken in Info.plist")
-            return
-        }
-
         isFetchingRoutes = true
-
-        var urlString = "https://api.mapbox.com/directions/v5/mapbox/driving/"
-        urlString += "\(originLng),\(originLat);\(destLng),\(destLat)"
-        urlString += "?alternatives=true&geometries=polyline6&overview=full&access_token=\(token)"
-
-        // Build exclude string
-        var exclusions: [String] = []
-        if avoidTolls { exclusions.append("toll") }
-        if avoidHighways { exclusions.append("motorway") }
-        if !exclusions.isEmpty {
-            urlString += "&exclude=\(exclusions.joined(separator: ","))"
-        }
-
-        guard let url = URL(string: urlString) else {
-            isFetchingRoutes = false
-            return
-        }
+        defer { isFetchingRoutes = false }
 
         do {
-            let (data, _) = try await URLSession.shared.data(from: url)
-            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let routes = json["routes"] as? [[String: Any]], !routes.isEmpty {
+            let mapRoutes = try await MapService.fetchRoutes(
+                originLat: originLat, originLng: originLng,
+                destLat: destLat, destLng: destLng,
+                avoidTolls: avoidTolls,
+                avoidHighways: avoidHighways
+            )
 
-                // Parse all returned routes
-                struct RawRoute {
-                    let distanceM: Double
-                    let durationS: Double
-                    let geometry: String
-                }
-
-                let rawRoutes: [RawRoute] = routes.prefix(3).compactMap { route in
-                    guard let dist = route["distance"] as? Double,
-                          let dur = route["duration"] as? Double,
-                          let geo = route["geometry"] as? String else { return nil }
-                    return RawRoute(distanceM: dist, durationS: dur, geometry: geo)
-                }
-
-                guard !rawRoutes.isEmpty else {
-                    isFetchingRoutes = false
-                    return
-                }
-
-                // Fastest = lowest duration
-                let fastest = rawRoutes.min(by: { $0.durationS < $1.durationS })!
-
-                // Green = lowest distance (correlates to least fuel — fewer km = less fuel burned)
-                // Must be a different route from fastest if alternatives exist
-                let green: RawRoute? = rawRoutes.count > 1
-                    ? rawRoutes.filter { $0.geometry != fastest.geometry }
-                               .min(by: { $0.distanceM < $1.distanceM })
-                    : nil
-
-                var options: [RouteOption] = [
-                    RouteOption(
-                        label: "Fastest Route",
-                        distanceKm: fastest.distanceM / 1000.0,
-                        durationMinutes: fastest.durationS / 60.0,
-                        geometry: fastest.geometry,
-                        isGreen: false
-                    )
-                ]
-
-                if let g = green {
-                    options.append(RouteOption(
-                        label: "Green Route",
-                        distanceKm: g.distanceM / 1000.0,
-                        durationMinutes: g.durationS / 60.0,
-                        geometry: g.geometry,
-                        isGreen: true
-                    ))
-                }
-
-                routeOptions = options
-                selectedRouteIndex = 0
-            }
+            routeOptions = mapRoutes.map { RouteOption(from: $0) }
+            selectedRouteIndex = 0
+        } catch let error as MapServiceError {
+            errorMessage = error.errorDescription
+            showError = true
         } catch {
-            print("[StartTripSheet] Route fetch error: \(error)")
+            errorMessage = error.localizedDescription
+            showError = true
         }
-
-        isFetchingRoutes = false
     }
 }
 
@@ -309,4 +243,24 @@ struct RouteOption {
     let durationMinutes: Double
     let geometry: String
     let isGreen: Bool
+    let steps: [RouteStep]
+
+    init(label: String, distanceKm: Double, durationMinutes: Double, geometry: String, isGreen: Bool, steps: [RouteStep] = []) {
+        self.label = label
+        self.distanceKm = distanceKm
+        self.durationMinutes = durationMinutes
+        self.geometry = geometry
+        self.isGreen = isGreen
+        self.steps = steps
+    }
+
+    init(from mapRoute: MapRoute) {
+        self.label = mapRoute.label
+        self.distanceKm = mapRoute.distanceKm
+        self.durationMinutes = mapRoute.durationMinutes
+        self.geometry = mapRoute.geometry
+        self.isGreen = mapRoute.isGreen
+        self.steps = mapRoute.steps
+    }
 }
+

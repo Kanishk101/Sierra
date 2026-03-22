@@ -14,6 +14,7 @@ struct NavigationHUDOverlay: View {
     @State private var stopAddress = ""
     @State private var geocodeTask: Task<Void, Never>?
     @State private var geocodedResults: [GeocodedStop] = []
+    @State private var isVoiceMuted = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -90,6 +91,13 @@ struct NavigationHUDOverlay: View {
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.white.opacity(0.9))
                     .lineLimit(2)
+                // Phase 10: Next step preview
+                if !coordinator.nextStepInstruction.isEmpty {
+                    Text("Then: \(coordinator.nextStepInstruction)")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.6))
+                        .lineLimit(1)
+                }
             }
             Spacer()
         }
@@ -224,6 +232,15 @@ struct NavigationHUDOverlay: View {
             }
             actionButton("End Trip", icon: "xmark.circle", color: SierraTheme.Colors.ember) {
                 showEndTripConfirm = true
+            }
+            // Phase 10: Voice mute toggle
+            actionButton(
+                isVoiceMuted ? "Unmute" : "Mute",
+                icon: isVoiceMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
+                color: isVoiceMuted ? Color.secondary : .blue
+            ) {
+                VoiceNavigationService.shared.toggleMute()
+                isVoiceMuted = VoiceNavigationService.shared.isMutedState
             }
         }
         .padding(.horizontal, 16)

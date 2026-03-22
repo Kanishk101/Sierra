@@ -3,18 +3,32 @@ import Charts
 
 // MARK: - DashboardHomeView
 // Fleet manager overview: KPI cards + analytics snapshot + recent trips + expiring docs.
+// Phase 8: Uses DashboardViewModel, interactive KPI cards, loading states, 6-card grid.
 
 struct DashboardHomeView: View {
 
     @Environment(AppDataStore.self) private var store
-    @State private var showProfile   = false
-    @State private var showAnalytics = false
+    @State private var viewModel: DashboardViewModel?
+    @State private var showProfile       = false
+    @State private var showAnalytics     = false
     @State private var showNotifications = false
 
-    // Sheets for fleet management (replaces NavigationLink push to avoid nested nav conflicts)
+    // Sheets for fleet management
     @State private var showReportsSheet   = false
     @State private var showAlertsSheet    = false
     @State private var showGeofencesSheet = false
+
+    // KPI tap destinations
+    @State private var showVehiclesTab       = false
+    @State private var showTripsTab          = false
+    @State private var showStaffTab          = false
+    @State private var showAlertsFromKPI     = false
+    @State private var showMaintenanceFromKPI = false
+    @State private var showDriversFromKPI    = false
+
+    private var vm: DashboardViewModel {
+        viewModel ?? DashboardViewModel(store: store)
+    }
 
     var body: some View {
         NavigationStack {
@@ -24,8 +38,14 @@ struct DashboardHomeView: View {
                         .padding(.horizontal, 20)
                         .padding(.top, 12)
 
-                    analyticsSnapshotCard
-                        .padding(.horizontal, 20)
+                    // Loading state for analytics
+                    if vm.isLoading {
+                        loadingSkeleton
+                            .padding(.horizontal, 20)
+                    } else {
+                        analyticsSnapshotCard
+                            .padding(.horizontal, 20)
+                    }
 
                     recentTripsSection
 
@@ -42,7 +62,8 @@ struct DashboardHomeView: View {
             .toolbarTitleDisplayMode(.inlineLarge)
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                // Phase 8C: notification bell moved to trailing
+                ToolbarItem(placement: .topBarTrailing) {
                     Button { showNotifications = true } label: {
                         ZStack(alignment: .topTrailing) {
                             Image(systemName: "bell.fill")
@@ -58,19 +79,6 @@ struct DashboardHomeView: View {
                         }
                     }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { showProfile = true } label: {
-                        Image(systemName: "person.crop.circle")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 26, height: 26)
-                            .foregroundStyle(.tint)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .sheet(isPresented: $showProfile) {
-                AdminProfileView().presentationDetents([.medium])
             }
             .sheet(isPresented: $showAnalytics) {
                 AnalyticsDashboardView().environment(AppDataStore.shared)
@@ -78,52 +86,166 @@ struct DashboardHomeView: View {
             .sheet(isPresented: $showNotifications) {
                 NotificationCentreView()
             }
+            .onAppear {
+                if viewModel == nil {
+                    viewModel = DashboardViewModel(store: store)
+                }
+            }
         }
     }
 
-    // MARK: - KPI Grid
+    // MARK: - Loading Skeleton
+
+    private var loadingSkeleton: some View {
+        VStack(spacing: 16) {
+            HStack(spacing: 12) {
+                ForEach(0..<3) { _ in
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color(.tertiarySystemFill))
+                        .frame(height: 72)
+                }
+            }
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color(.tertiarySystemFill))
+                .frame(height: 64)
+            HStack(spacing: 8) {
+                ForEach(0..<3) { _ in
+                    Capsule()
+                        .fill(Color(.tertiarySystemFill))
+                        .frame(height: 28)
+                }
+            }
+        }
+        .padding(16)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(
+            ProgressView("Loading fleet data...")
+                .tint(.orange)
+                .font(.caption)
+        )
+        .frame(minHeight: 200)
+    }
+
+    // MARK: - KPI Grid (Phase 8B, 8D, 8F)
 
     private var kpiGrid: some View {
         LazyVGrid(
             columns: [GridItem(.flexible()), GridItem(.flexible())],
             spacing: 14
         ) {
-            kpiCard(icon: "car.fill",                  color: .blue,   label: "Vehicles",      value: "\(store.vehicles.count)")
-            kpiCard(icon: "arrow.triangle.swap",       color: .green,  label: "Active Trips",  value: "\(store.activeTripsCount)")
-            kpiCard(icon: "person.2.fill",             color: .orange, label: "Pending Staff", value: "\(store.pendingApplicationsCount)", badge: store.pendingApplicationsCount)
-            kpiCard(icon: "exclamationmark.triangle.fill", color: .red, label: "Active Alerts", value: "\(store.activeEmergencyAlerts().count)", badge: store.activeEmergencyAlerts().count)
+            // Original 4
+            kpiCard(icon: "car.fill",
+                    color: .blue,
+                    label: "Vehicles",
+                    value: "\(vm.vehicleCount)") {
+                showVehiclesTab = true
+            }
+
+            kpiCard(icon: "arrow.triangle.swap",
+                    color: .green,
+                    label: "Active Trips",
+                    value: "\(vm.activeTripsCount)") {
+                showTripsTab = true
+            }
+
+            kpiCard(icon: "person.2.fill",
+                    color: .orange,
+                    label: "Pending Staff",
+                    value: "\(vm.pendingApplicationsCount)",
+                    badge: vm.pendingApplicationsCount) {
+                showStaffTab = true
+            }
+
+            kpiCard(icon: "exclamationmark.triangle.fill",
+                    color: .red,
+                    label: "Active Alerts",
+                    value: "\(vm.activeAlertsCount)",
+                    badge: vm.activeAlertsCount) {
+                showAlertsFromKPI = true
+            }
+
+            // Phase 8F: 2 new KPI cards
+            kpiCard(icon: "wrench.fill",
+                    color: .purple,
+                    label: "In Maintenance",
+                    value: "\(vm.inMaintenanceCount)") {
+                showMaintenanceFromKPI = true
+            }
+
+            kpiCard(icon: "person.fill.checkmark",
+                    color: .teal,
+                    label: "Available Drivers",
+                    value: "\(vm.availableDriversCount)") {
+                showDriversFromKPI = true
+            }
+        }
+        // KPI tap destinations — open as sheets to avoid nested nav issues
+        .sheet(isPresented: $showStaffTab) {
+            NavigationStack {
+                StaffTabView()
+                    .environment(AppDataStore.shared)
+            }
+        }
+        .sheet(isPresented: $showAlertsFromKPI) {
+            NavigationStack {
+                AlertsInboxView()
+                    .environment(AppDataStore.shared)
+            }
+        }
+        .sheet(isPresented: $showMaintenanceFromKPI) {
+            NavigationStack {
+                MaintenanceRequestsView()
+                    .environment(AppDataStore.shared)
+            }
         }
     }
 
-    private func kpiCard(icon: String, color: Color, label: String, value: String, badge: Int = 0) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top) {
-                Image(systemName: icon)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(color)
-                    .frame(width: 32, height: 32)
-                    .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                Spacer()
-                if badge > 0 {
-                    Image(systemName: "circle.fill")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.orange)
+    // MARK: - KPI Card (Phase 8B: ellipsis fix, 8D: interactive)
+
+    private func kpiCard(
+        icon: String,
+        color: Color,
+        label: String,
+        value: String,
+        badge: Int = 0,
+        onTap: (() -> Void)? = nil
+    ) -> some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            onTap?()
+        } label: {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top) {
+                    Image(systemName: icon)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(color)
+                        .frame(width: 32, height: 32)
+                        .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    Spacer()
+                    if badge > 0 {
+                        Image(systemName: "circle.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.orange)
+                    }
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    // Phase 8B: smaller font, better scaleFactor, fixedSize
+                    Text(value)
+                        .font(.system(size: 24, weight: .bold, design: .rounded))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(label)
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
                 }
             }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(value)
-                    .font(.system(size: 30, weight: .bold, design: .rounded))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-                Text(label)
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-            }
+            .padding(16)
+            .frame(maxWidth: .infinity, minHeight: 110, alignment: .leading)
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .buttonStyle(.plain)
     }
 
     // MARK: - Analytics Snapshot Card
@@ -157,18 +279,18 @@ struct DashboardHomeView: View {
 
                 // Mini donuts
                 HStack(spacing: 12) {
-                    miniDonut(title: "Fleet",  total: store.vehicles.count,    slices: fleetSlices)
-                    miniDonut(title: "Trips",  total: store.trips.count,       slices: tripSlices)
-                    miniDonut(title: "Staff",  total: activeStaffCount,        slices: staffSlices)
+                    miniDonut(title: "Fleet",  total: vm.vehicleCount,     slices: vm.fleetSlices)
+                    miniDonut(title: "Trips",  total: store.trips.count,   slices: vm.tripSlices)
+                    miniDonut(title: "Staff",  total: vm.activeStaffCount, slices: vm.staffSlices)
                 }
 
-                // Sparkline - only show when there is data
-                if !monthlyData.allSatisfy({ $0.count == 0 }) {
+                // Sparkline
+                if !vm.monthlyData.allSatisfy({ $0.count == 0 }) {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Trip volume - last 6 months")
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
-                        Chart(monthlyData) { item in
+                        Chart(vm.monthlyData) { item in
                             BarMark(x: .value("Month", item.month), y: .value("Trips", item.count))
                                 .foregroundStyle(.tint)
                                 .cornerRadius(4)
@@ -183,9 +305,9 @@ struct DashboardHomeView: View {
 
                 // Doc health pills
                 HStack(spacing: 8) {
-                    docPill(icon: "checkmark.shield.fill",          count: validDocCount,    label: "Valid",    color: .green)
-                    docPill(icon: "clock.badge.exclamationmark",    count: expiringDocCount, label: "Expiring", color: .orange)
-                    docPill(icon: "xmark.shield.fill",              count: expiredDocCount,  label: "Expired",  color: .red)
+                    docPill(icon: "checkmark.shield.fill",       count: vm.validDocCount,    label: "Valid",    color: .green)
+                    docPill(icon: "clock.badge.exclamationmark", count: vm.expiringDocCount, label: "Expiring", color: .orange)
+                    docPill(icon: "xmark.shield.fill",           count: vm.expiredDocCount,  label: "Expired",  color: .red)
                 }
             }
             .padding(16)
@@ -237,58 +359,6 @@ struct DashboardHomeView: View {
         .frame(maxWidth: .infinity)
     }
 
-    // MARK: - Computed Data
-
-    private var validDocCount:    Int { store.vehicleDocuments.filter { !$0.isExpiringSoon && !$0.isExpired }.count }
-    private var expiringDocCount: Int { store.vehicleDocuments.filter { $0.isExpiringSoon && !$0.isExpired }.count }
-    private var expiredDocCount:  Int { store.vehicleDocuments.filter { $0.isExpired }.count }
-    private var activeStaffCount: Int { store.staff.filter { $0.status == .active }.count }
-
-    private var fleetSlices: [(Double, Color)] {
-        let s: [(Double, Color)] = [
-            (Double(store.vehicles.filter { $0.status == .active }.count),         .green),
-            (Double(store.vehicles.filter { $0.status == .idle }.count),           .blue),
-            (Double(store.vehicles.filter { $0.status == .inMaintenance }.count),  .orange),
-            (Double(store.vehicles.filter { $0.status == .outOfService }.count),   .red)
-        ]
-        return s.filter { $0.0 > 0 }
-    }
-
-    private var tripSlices: [(Double, Color)] {
-        let s: [(Double, Color)] = [
-            (Double(store.trips.filter { $0.status == .active }.count),    .green),
-            (Double(store.trips.filter { $0.status == .scheduled }.count), .blue),
-            (Double(store.trips.filter { $0.status == .completed }.count), Color.secondary),
-            (Double(store.trips.filter { $0.status == .cancelled }.count), .red)
-        ]
-        return s.filter { $0.0 > 0 }
-    }
-
-    private var staffSlices: [(Double, Color)] {
-        let s: [(Double, Color)] = [
-            (Double(store.staff.filter { $0.role == .driver && $0.status == .active }.count),              .blue),
-            (Double(store.staff.filter { $0.role == .maintenancePersonnel && $0.status == .active }.count),.orange),
-            (Double(store.staff.filter { $0.status == .pendingApproval }.count),                           .orange)
-        ]
-        return s.filter { $0.0 > 0 }
-    }
-
-    private var monthlyData: [MonthlyTripData] {
-        let calendar  = Calendar.current
-        let now       = Date()
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM"
-        return (0..<6).reversed().compactMap { offset -> MonthlyTripData? in
-            guard let monthStart = calendar.date(byAdding: .month, value: -offset, to: now),
-                  let range      = calendar.dateInterval(of: .month, for: monthStart) else { return nil }
-            let count = store.trips.filter { range.contains($0.scheduledDate) }.count
-            return MonthlyTripData(month: formatter.string(from: monthStart),
-                                   year:  calendar.component(.year, from: monthStart),
-                                   count: count,
-                                   date:  range.start)
-        }
-    }
-
     // MARK: - Recent Trips
 
     private var recentTripsSection: some View {
@@ -297,7 +367,7 @@ struct DashboardHomeView: View {
                 .padding(.horizontal, 20)
                 .padding(.bottom, 8)
 
-            let trips = Array(store.trips.sorted { $0.createdAt > $1.createdAt }.prefix(5))
+            let trips = vm.recentTrips
 
             if trips.isEmpty {
                 emptyPlaceholder("No trips yet", icon: "arrow.triangle.swap")
@@ -324,7 +394,7 @@ struct DashboardHomeView: View {
                     .foregroundStyle(tripStatusColor(trip.status))
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text("\(trip.origin) \u{2192} \(trip.destination)")
+                Text("\(trip.origin) → \(trip.destination)")
                     .font(.system(size: 15, weight: .semibold)).foregroundStyle(.primary).lineLimit(1)
                 Text(trip.taskId)
                     .font(.system(size: 12, weight: .medium, design: .monospaced)).foregroundStyle(.tertiary)
@@ -371,7 +441,7 @@ struct DashboardHomeView: View {
                 .padding(.horizontal, 20)
                 .padding(.bottom, 8)
 
-            let docs = store.documentsExpiringSoon()
+            let docs = vm.expiringDocs
 
             if docs.isEmpty {
                 emptyPlaceholder("All documents are up to date", icon: "checkmark.shield.fill")
@@ -433,7 +503,7 @@ struct DashboardHomeView: View {
                 managementCard(
                     icon: "wrench.and.screwdriver.fill",
                     title: "Maintenance",
-                    subtitle: "\(store.maintenanceTasks.filter { $0.status == .pending }.count) pending tasks",
+                    subtitle: "\(vm.pendingMaintenanceCount) pending tasks",
                     color: .orange
                 )
             }
@@ -451,7 +521,7 @@ struct DashboardHomeView: View {
                 managementCard(
                     icon: "bell.badge.fill",
                     title: "Alerts Inbox",
-                    subtitle: "\(store.activeEmergencyAlerts().count) active alerts",
+                    subtitle: "\(vm.activeAlertsCount) active alerts",
                     color: .red
                 )
             }
@@ -460,7 +530,7 @@ struct DashboardHomeView: View {
                 managementCard(
                     icon: "mappin.and.ellipse",
                     title: "Geofences",
-                    subtitle: "\(store.geofences.filter { $0.isActive }.count) active zones",
+                    subtitle: "\(vm.activeGeofenceCount) active zones",
                     color: .teal
                 )
             }

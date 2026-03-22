@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 
 enum DriverTab: Hashable {
-    case home, trips, history
+    case home, trips, inspections, history
 }
 
 struct DriverTabView: View {
@@ -30,6 +30,12 @@ struct DriverTabView: View {
                         .navigationDestination(for: UUID.self) { id in
                             TripDetailDriverView(tripId: id)
                         }
+                }
+            }
+
+            Tab("Inspections", systemImage: "checklist", value: .inspections) {
+                NavigationStack {
+                    DriverInspectionsView()
                 }
             }
 

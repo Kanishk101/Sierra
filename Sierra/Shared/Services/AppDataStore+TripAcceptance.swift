@@ -43,6 +43,9 @@ extension AppDataStore {
             trips[idx].acceptedAt = now
         }
 
+        // Reschedule reminders so the newly-accepted trip gets its notifications
+        await TripReminderService.shared.scheduleReminders(for: trips)
+
         // Notify admins
         let trip        = trips.first { $0.id == tripId }
         let driverName  = staff.first { $0.id == driverId }?.displayName ?? "Driver"
@@ -89,6 +92,9 @@ extension AppDataStore {
             trips[idx].status         = .rejected
             trips[idx].rejectedReason = trimmedReason
         }
+
+        // Cancel any pending reminders for this trip
+        TripReminderService.shared.cancelReminders(for: tripId)
 
         // Notify admins with the reason so they can act
         let trip        = trips.first { $0.id == tripId }

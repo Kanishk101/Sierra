@@ -166,6 +166,9 @@ final class AppDataStore {
         isLoading = false
         subscribeToTripUpdates()
         await loadAndSubscribeNotifications(for: driverId)
+        // Schedule local reminders for upcoming trips (Phase 7)
+        await TripReminderService.shared.requestAuthorizationIfNeeded()
+        await TripReminderService.shared.scheduleReminders(for: trips)
     }
 
     // MARK: - loadMaintenanceData
@@ -937,6 +940,7 @@ final class AppDataStore {
         if let idx = trips.firstIndex(where: { $0.id == tripId }) {
             trips[idx].status = .cancelled
         }
+        TripReminderService.shared.cancelReminders(for: tripId)
         activeTripLocationHistory = []
         currentTripDeviations = []
         activeTripExpenses = []

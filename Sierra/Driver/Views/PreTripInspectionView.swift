@@ -145,6 +145,21 @@ struct PreTripInspectionView: View {
                 .background(Color.orange.opacity(0.08))
             }
 
+            // Phase 11: Fuel level integration note
+            if viewModel.fuelLevelNeedsAttention {
+                HStack(spacing: 6) {
+                    Text("⛽")
+                        .font(.caption)
+                    Text("Fuel level issue noted. Please log fuel after inspection.")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.orange)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.orange.opacity(0.06))
+            }
+
             Button {
                 withAnimation { viewModel.currentStep = 2 }
             } label: {

@@ -10,9 +10,31 @@ struct VehicleListView: View {
     @State private var deleteTarget: Vehicle?
     @State private var isVehicleRefreshRunning = false
     @State private var showRefreshTimeoutAlert = false
+    @State private var showFilterSheet = false
 
     private let refreshTimeoutSeconds = 10
     private let refreshPollIntervalNanoseconds: UInt64 = 200_000_000
+
+    // Bridge selectedFilter ↔ FilterSheetView's String? binding
+    private var filterBinding: Binding<String?> {
+        Binding(
+            get: { selectedFilter?.rawValue },
+            set: { newVal in
+                selectedFilter = newVal.flatMap { VehicleStatus(rawValue: $0) }
+            }
+        )
+    }
+
+    private var vehicleFilterOptions: [FilterOption] {
+        VehicleStatus.allCases.map { status in
+            FilterOption(
+                id: status.rawValue,
+                label: status.rawValue,
+                icon: vehicleStatusIcon(status),
+                color: vehicleStatusColor(status)
+            )
+        }
+    }
 
     private var filteredVehicles: [Vehicle] {
         store.vehicles.filter { v in
@@ -30,86 +52,129 @@ struct VehicleListView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                filterChips
-                    .padding(.vertical, 8)
-                    .background(Color(.systemGroupedBackground))
-
-                if filteredVehicles.isEmpty {
-                    emptyState
-                } else {
-                    List {
-                        ForEach(filteredVehicles) { vehicle in
-                            NavigationLink(value: vehicle.id) {
-                                vehicleRow(vehicle)
-                            }
-                            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-                            .listRowSeparator(.hidden)
-                            .listRowBackground(Color.clear)
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button(role: .destructive) {
-                                    deleteTarget = vehicle
-                                } label: {
-                                    Label("Delete", systemImage: "trash.fill")
-                                }
-                                Button {
-                                    editingVehicle = vehicle
-                                } label: {
-                                    Label("Edit", systemImage: "pencil")
-                                }
-                                .tint(.orange)
-                            }
+            mainContent
+                .background(Color(.systemGroupedBackground).ignoresSafeArea())
+                .navigationTitle("Vehicles")
+                .toolbarTitleDisplayMode(.inlineLarge)
+                .toolbarBackground(.hidden, for: .navigationBar)
+                .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search vehicles…")
+                .navigationDestination(for: UUID.self) { id in
+                    VehicleDetailView(vehicleId: id)
+                }
+                .task {
+                    if store.vehicles.isEmpty { await loadVehiclesWithTimeout() }
+                }
+                .refreshable {
+                    await loadVehiclesWithTimeout()
+                }
+                .toolbar { toolbarContent }
+                .sheet(isPresented: $showFilterSheet) {
+                    FilterSheetView(
+                        title: "Filter Vehicles",
+                        options: vehicleFilterOptions,
+                        selectedId: filterBinding
+                    )
+                }
+                .sheet(isPresented: $showAddSheet) { AddVehicleView() }
+                .sheet(item: $editingVehicle) { vehicle in AddVehicleView(editingVehicle: vehicle) }
+                .confirmationDialog("Delete Vehicle?", isPresented: deleteTargetBinding, titleVisibility: .visible) {
+                    Button("Delete", role: .destructive) {
+                        if let v = deleteTarget {
+                            Task { try? await store.deleteVehicle(id: v.id) }
+                            deleteTarget = nil
                         }
                     }
-                    .listStyle(.plain)
-                    .scrollContentBackground(.hidden)
+                    Button("Cancel", role: .cancel) { deleteTarget = nil }
+                } message: {
+                    Text("This vehicle will be permanently removed.")
                 }
+                .alert("Refresh Timed Out", isPresented: $showRefreshTimeoutAlert) {
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text("Vehicle refresh exceeded 10 seconds. Please pull to refresh again.")
+                }
+        }
+    }
+
+    private var deleteTargetBinding: Binding<Bool> {
+        Binding(
+            get: { deleteTarget != nil },
+            set: { if !$0 { deleteTarget = nil } }
+        )
+    }
+
+    // MARK: - Extracted subviews
+
+    @ViewBuilder
+    private var mainContent: some View {
+        if let error = store.loadError {
+            SierraErrorView(message: error) {
+                await store.loadAll()
             }
-            .background(Color(.systemGroupedBackground).ignoresSafeArea())
-            .navigationTitle("Vehicles")
-            .toolbarTitleDisplayMode(.inlineLarge)
-            .toolbarBackground(.hidden, for: .navigationBar)
-            .navigationDestination(for: UUID.self) { id in
-                VehicleDetailView(vehicleId: id)
-            }
-            .task {
-                if store.vehicles.isEmpty { await loadVehiclesWithTimeout() }
-            }
-            .refreshable {
-                await loadVehiclesWithTimeout()
-            }
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { showAddSheet = true } label: {
-                        Image(systemName: "plus")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(.orange)
+        } else if filteredVehicles.isEmpty {
+            emptyState
+        } else {
+            vehicleList
+        }
+    }
+
+    private var vehicleList: some View {
+        List {
+            ForEach(filteredVehicles) { vehicle in
+                NavigationLink(value: vehicle.id) {
+                    vehicleRow(vehicle)
+                }
+                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    Button(role: .destructive) {
+                        deleteTarget = vehicle
+                    } label: {
+                        Label("Delete", systemImage: "trash.fill")
                     }
-                }
-            }
-            .sheet(isPresented: $showAddSheet) { AddVehicleView() }
-            .sheet(item: $editingVehicle) { vehicle in AddVehicleView(editingVehicle: vehicle) }
-            .confirmationDialog("Delete Vehicle?", isPresented: .init(
-                get: { deleteTarget != nil },
-                set: { if !$0 { deleteTarget = nil } }
-            ), titleVisibility: .visible) {
-                Button("Delete", role: .destructive) {
-                    if let v = deleteTarget {
-                        Task { try? await store.deleteVehicle(id: v.id) }
-                        deleteTarget = nil
+                    Button {
+                        editingVehicle = vehicle
+                    } label: {
+                        Label("Edit", systemImage: "pencil")
                     }
+                    .tint(.orange)
                 }
-                Button("Cancel", role: .cancel) { deleteTarget = nil }
-            } message: {
-                Text("This vehicle will be permanently removed.")
             }
-            .alert("Refresh Timed Out", isPresented: $showRefreshTimeoutAlert) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text("Vehicle refresh exceeded 10 seconds. Please pull to refresh again.")
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+    }
+
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            Button {
+                showFilterSheet = true
+            } label: {
+                filterButtonLabel
+            }
+        }
+        ToolbarItem(placement: .topBarTrailing) {
+            Button { showAddSheet = true } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(.orange)
             }
         }
     }
+
+    private var filterButtonLabel: some View {
+        Label(
+            selectedFilter == nil ? "Filter" : selectedFilter!.rawValue,
+            systemImage: selectedFilter == nil
+                ? "line.3.horizontal.decrease.circle"
+                : "line.3.horizontal.decrease.circle.fill"
+        )
+        .foregroundStyle(selectedFilter == nil ? Color.secondary : Color.orange)
+    }
+
+    // MARK: - Load with timeout
 
     @MainActor
     private func loadVehiclesWithTimeout() async {
@@ -134,45 +199,14 @@ struct VehicleListView: View {
         showRefreshTimeoutAlert = true
     }
 
-    // MARK: - Filter Chips
-
-    private var filterChips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                filterChip("All", isSelected: selectedFilter == nil) { selectedFilter = nil }
-                ForEach(VehicleStatus.allCases, id: \.self) { status in
-                    filterChip(status.rawValue, isSelected: selectedFilter == status) {
-                        selectedFilter = status
-                    }
-                }
-            }
-            .padding(.horizontal, 16)
-        }
-    }
-
-    private func filterChip(_ label: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(isSelected ? .white : .primary)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 7)
-                .background(isSelected ? Color.orange : .clear, in: Capsule())
-                .overlay(Capsule().strokeBorder(isSelected ? .clear : Color(.separator), lineWidth: 1))
-        }
-        .buttonStyle(.plain)
-    }
-
     // MARK: - Vehicle Row
 
     private func vehicleRow(_ vehicle: Vehicle) -> some View {
-        // Look up assigned driver from store
         let driver: StaffMember? = vehicle.assignedDriverId
             .flatMap { UUID(uuidString: $0) }
             .flatMap { store.staffMember(for: $0) }
 
         return HStack(spacing: 14) {
-            // Vehicle icon
             Image(systemName: "car.fill")
                 .font(.system(size: 20))
                 .foregroundStyle(.blue)
@@ -188,30 +222,7 @@ struct VehicleListView: View {
                     .font(.system(size: 12, weight: .medium, design: .monospaced))
                     .foregroundStyle(.secondary)
 
-                // Assigned driver + their availability
-                if let driver {
-                    HStack(spacing: 4) {
-                        Image(systemName: "person.fill")
-                            .font(.system(size: 9))
-                            .foregroundStyle(.secondary)
-                        Text(driver.displayName)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.secondary)
-                        availabilityDot(driver.availability)
-                        Text(driver.availability.rawValue)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(availabilityColor(driver.availability))
-                    }
-                } else if vehicle.assignedDriverId != nil {
-                    // Driver ID exists but not in store
-                    Text("Driver loading\u{2026}")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("No driver assigned")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.tertiary)
-                }
+                driverLine(driver: driver, hasAssignedId: vehicle.assignedDriverId != nil)
             }
 
             Spacer()
@@ -223,7 +234,55 @@ struct VehicleListView: View {
         .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
     }
 
-    // MARK: - Availability helpers
+    @ViewBuilder
+    private func driverLine(driver: StaffMember?, hasAssignedId: Bool) -> some View {
+        if let driver {
+            HStack(spacing: 4) {
+                Image(systemName: "person.fill")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+                Text(driver.displayName)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                availabilityDot(driver.availability)
+                Text(driver.availability.rawValue)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(availabilityColor(driver.availability))
+            }
+        } else if hasAssignedId {
+            Text("Driver loading…")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+        } else {
+            Text("No driver assigned")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.tertiary)
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func vehicleStatusIcon(_ status: VehicleStatus) -> String {
+        switch status {
+        case .active:         return "checkmark.circle.fill"
+        case .idle:           return "moon.zzz.fill"
+        case .busy:           return "arrow.right.circle.fill"
+        case .inMaintenance:  return "wrench.fill"
+        case .outOfService:   return "xmark.circle.fill"
+        case .decommissioned: return "archivebox.fill"
+        }
+    }
+
+    private func vehicleStatusColor(_ status: VehicleStatus) -> Color {
+        switch status {
+        case .active:         return .green
+        case .idle:           return .blue
+        case .busy:           return .orange
+        case .inMaintenance:  return .purple
+        case .outOfService:   return .red
+        case .decommissioned: return .gray
+        }
+    }
 
     private func availabilityDot(_ availability: StaffAvailability) -> some View {
         Circle()

@@ -33,7 +33,13 @@ struct StaffListView: View {
                     .padding(.horizontal, 20)
                     .padding(.vertical, 8)
 
-                    if filteredStaff.isEmpty {
+                    if let error = store.loadError {
+                        Spacer()
+                        SierraErrorView(message: error) {
+                            await store.loadAll()
+                        }
+                        Spacer()
+                    } else if filteredStaff.isEmpty {
                         Spacer()
                         VStack(spacing: 16) {
                             Image(systemName: selectedSegment == .driver ? "person.fill" : "wrench.fill")

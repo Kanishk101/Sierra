@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// Driver-side completed trip history.
-/// Safeguard 1: data from AppDataStore, no extra queries.
-/// Safeguard 2: NO .navigationDestination declared here — it lives in
+/// Driver-side trip history — completed + cancelled trips.
+/// Phase 12: Shows real history with distance, duration, and status badge.
+/// NOTE: .navigationDestination intentionally omitted here — it lives in
 ///   DriverTabView so there is exactly one declaration per NavigationStack.
 struct DriverTripHistoryView: View {
 
@@ -10,30 +10,28 @@ struct DriverTripHistoryView: View {
 
     private var currentUserId: UUID { AuthManager.shared.currentUser?.id ?? UUID() }
 
-    private var myCompletedTrips: [Trip] {
+    private var myHistoryTrips: [Trip] {
         let userId = currentUserId.uuidString
         return store.trips
-            .filter { $0.driverId == userId && $0.status == .completed }
-            .sorted { ($0.actualEndDate ?? .distantPast) > ($1.actualEndDate ?? .distantPast) }
+            .filter { $0.driverId == userId && ($0.status == .completed || $0.status == .cancelled) }
+            .sorted { ($0.actualEndDate ?? $0.scheduledDate) > ($1.actualEndDate ?? $1.scheduledDate) }
     }
 
     var body: some View {
         Group {
-            if myCompletedTrips.isEmpty {
-                VStack(spacing: 12) {
-                    Spacer()
-                    Image(systemName: "road.lanes")
-                        .font(.system(size: 40, weight: .light))
-                        .foregroundStyle(.secondary)
-                    Text("No completed trips yet")
-                        .font(.subheadline).foregroundStyle(.secondary)
-                    Spacer()
+            if let error = store.loadError {
+                SierraErrorView(message: error) {
+                    await store.loadAll()
                 }
-                .frame(maxWidth: .infinity)
+            } else if myHistoryTrips.isEmpty {
+                SierraEmptyState(
+                    icon: "road.lanes",
+                    title: "No Trip History",
+                    message: "Your completed and cancelled trips will appear here."
+                )
             } else {
                 List {
-                    ForEach(myCompletedTrips) { trip in
-                        // Uses parent NavigationStack's destination declaration
+                    ForEach(myHistoryTrips) { trip in
                         NavigationLink(value: trip.id) {
                             tripRow(trip)
                         }
@@ -44,9 +42,6 @@ struct DriverTripHistoryView: View {
         }
         .navigationTitle("Trip History")
         .navigationBarTitleDisplayMode(.large)
-        // NOTE: .navigationDestination intentionally omitted here.
-        // DriverTabView declares it once on each NavigationStack to avoid
-        // the SwiftUI "declared earlier on the stack" warning and recursive push.
     }
 
     private func tripRow(_ trip: Trip) -> some View {
@@ -55,14 +50,14 @@ struct DriverTripHistoryView: View {
                 Text("\(trip.origin) \u{2192} \(trip.destination)")
                     .font(.subheadline.weight(.medium)).lineLimit(1)
                 Spacer()
-                if trip.proofOfDeliveryId != nil {
-                    Image(systemName: "checkmark.seal.fill")
-                        .font(.caption).foregroundStyle(.green)
-                }
+                statusBadge(trip)
             }
             HStack(spacing: 12) {
                 if let end = trip.actualEndDate {
                     Text(end.formatted(.dateTime.month(.abbreviated).day()))
+                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Text(trip.scheduledDate.formatted(.dateTime.month(.abbreviated).day()))
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if let s = trip.startMileage, let e = trip.endMileage {
@@ -75,5 +70,22 @@ struct DriverTripHistoryView: View {
             }
         }
         .padding(.vertical, 4)
+    }
+
+    private func statusBadge(_ trip: Trip) -> some View {
+        let isCompleted = trip.status == .completed
+        return HStack(spacing: 4) {
+            Image(systemName: isCompleted ? "checkmark.seal.fill" : "xmark.circle.fill")
+                .font(.caption2)
+            Text(isCompleted ? "Completed" : "Cancelled")
+                .font(.caption2.weight(.bold))
+        }
+        .foregroundStyle(isCompleted ? SierraTheme.Colors.alpineMint : SierraTheme.Colors.danger)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+            (isCompleted ? SierraTheme.Colors.alpineMint : SierraTheme.Colors.danger).opacity(0.12),
+            in: Capsule()
+        )
     }
 }

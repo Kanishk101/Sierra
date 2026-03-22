@@ -22,6 +22,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     var hasArrived: Bool = false
     var currentSpeedLimit: Int?
     var currentStepManeuver: String = ""
+    var nextStepInstruction: String = ""
     var avoidTolls: Bool = false
     var avoidHighways: Bool = false
     let trip: Trip
@@ -320,15 +321,29 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         for (idx, step) in steps.enumerated() {
             if let shape = step.shape, let firstCoord = shape.coordinates.first {
                 let stepLoc = CLLocation(latitude: firstCoord.latitude, longitude: firstCoord.longitude)
-                if stepLoc.distance(from: location) < 100 && idx >= currentStepIndex {
+                let distToStep = stepLoc.distance(from: location)
+                if distToStep < 100 && idx >= currentStepIndex {
+                    let wasNewStep = idx > currentStepIndex
                     currentStepIndex = idx
                     currentStepInstruction = step.instructions
 
                     // Extract maneuver type for HUD icon
                     currentStepManeuver = step.maneuverType.rawValue
 
+                    // Next step preview for HUD
+                    if idx + 1 < steps.count {
+                        nextStepInstruction = steps[idx + 1].instructions
+                    } else {
+                        nextStepInstruction = ""
+                    }
+
                     // speedLimit is not available on RouteStep in this SDK version.
                     currentSpeedLimit = nil
+
+                    // Phase 10: Voice announcement on step change or when close to maneuver
+                    if wasNewStep || distToStep < 200 {
+                        VoiceNavigationService.shared.announce(step.instructions)
+                    }
                     break
                 }
             }

@@ -59,10 +59,16 @@ struct MaintenanceRequestsView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
 
-            switch selectedSection {
-            case .tasks:      tasksSection
-            case .spareParts: sparePartsSection
-            case .history:    historySection
+            if let error = store.loadError {
+                SierraErrorView(message: error) {
+                    await store.loadAll()
+                }
+            } else {
+                switch selectedSection {
+                case .tasks:      tasksSection
+                case .spareParts: sparePartsSection
+                case .history:    historySection
+                }
             }
         }
         .background(Color(.systemGroupedBackground))
