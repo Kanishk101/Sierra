@@ -145,17 +145,15 @@ struct Trip: Identifiable, Codable {
         case updatedAt            = "updated_at"
     }
 
-    // MARK: - Custom Decoder
-    // route_stops is JSONB in Postgres. PostgREST normally returns it as a native JSON array
-    // so Swift decodes [RouteStop] directly. However, rows written by the pre-fix
-    // TripInsertPayload serialised the array to a JSON String (e.g. "[]" or "[{...}]").
-    // This decoder handles both shapes so legacy rows never crash the entire trips fetch.
-    // Pattern mirrors VehicleInspection.items which has the same JSONB double-encode defence.
-
+    // MARK: - Decoder Hardening
+    // Supabase can return route_stops as either:
+    // 1) JSON array (expected), or
+    // 2) stringified JSON array.
+    // We decode both to avoid dropping the entire trips payload.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
 
-        id                   = try c.decode(UUID.self,   forKey: .id)
+        id                   = try c.decode(UUID.self, forKey: .id)
         taskId               = try c.decode(String.self, forKey: .taskId)
         driverId             = try c.decodeIfPresent(String.self, forKey: .driverId)
         vehicleId            = try c.decodeIfPresent(String.self, forKey: .vehicleId)
@@ -168,41 +166,117 @@ struct Trip: Identifiable, Codable {
         destinationLongitude = try c.decodeIfPresent(Double.self, forKey: .destinationLongitude)
         routePolyline        = try c.decodeIfPresent(String.self, forKey: .routePolyline)
 
-        // route_stops: try native JSONB array first, then the legacy string-encoded shape.
-        // Both empty-array variants resolve to nil so downstream code never sees [].
-        if let arr = try? c.decode([RouteStop].self, forKey: .routeStops), !arr.isEmpty {
-            routeStops = arr
-        } else if let str = try? c.decode(String.self, forKey: .routeStops),
-                  let data = str.data(using: .utf8),
-                  let parsed = try? JSONDecoder().decode([RouteStop].self, from: data),
-                  !parsed.isEmpty {
+        if let parsedStops = try? c.decodeIfPresent([RouteStop].self, forKey: .routeStops) {
+            routeStops = parsedStops
+        } else if let raw = try? c.decode(String.self, forKey: .routeStops),
+                  let data = raw.data(using: .utf8),
+                  let parsed = try? JSONDecoder().decode([RouteStop].self, from: data) {
             routeStops = parsed
         } else {
             routeStops = nil
         }
 
-        deliveryInstructions = try c.decode(String.self,       forKey: .deliveryInstructions)
-        scheduledDate        = try c.decode(Date.self,         forKey: .scheduledDate)
-        scheduledEndDate     = try c.decodeIfPresent(Date.self,   forKey: .scheduledEndDate)
-        actualStartDate      = try c.decodeIfPresent(Date.self,   forKey: .actualStartDate)
-        actualEndDate        = try c.decodeIfPresent(Date.self,   forKey: .actualEndDate)
+        deliveryInstructions = try c.decodeIfPresent(String.self, forKey: .deliveryInstructions) ?? ""
+        scheduledDate        = try c.decode(Date.self, forKey: .scheduledDate)
+        scheduledEndDate     = try c.decodeIfPresent(Date.self, forKey: .scheduledEndDate)
+        actualStartDate      = try c.decodeIfPresent(Date.self, forKey: .actualStartDate)
+        actualEndDate        = try c.decodeIfPresent(Date.self, forKey: .actualEndDate)
         startMileage         = try c.decodeIfPresent(Double.self, forKey: .startMileage)
         endMileage           = try c.decodeIfPresent(Double.self, forKey: .endMileage)
-        notes                = try c.decode(String.self,       forKey: .notes)
-        status               = try c.decode(TripStatus.self,   forKey: .status)
-        priority             = try c.decode(TripPriority.self, forKey: .priority)
-        proofOfDeliveryId    = try c.decodeIfPresent(UUID.self, forKey: .proofOfDeliveryId)
-        preInspectionId      = try c.decodeIfPresent(UUID.self, forKey: .preInspectionId)
-        postInspectionId     = try c.decodeIfPresent(UUID.self, forKey: .postInspectionId)
-        acceptedAt           = try c.decodeIfPresent(Date.self,   forKey: .acceptedAt)
-        acceptanceDeadline   = try c.decodeIfPresent(Date.self,   forKey: .acceptanceDeadline)
-        rejectedReason       = try c.decodeIfPresent(String.self, forKey: .rejectedReason)
-        driverRating         = try c.decodeIfPresent(Int.self,    forKey: .driverRating)
-        driverRatingNote     = try c.decodeIfPresent(String.self, forKey: .driverRatingNote)
-        ratedById            = try c.decodeIfPresent(UUID.self,   forKey: .ratedById)
-        ratedAt              = try c.decodeIfPresent(Date.self,   forKey: .ratedAt)
-        createdAt            = try c.decode(Date.self, forKey: .createdAt)
-        updatedAt            = try c.decode(Date.self, forKey: .updatedAt)
+        notes                = try c.decodeIfPresent(String.self, forKey: .notes) ?? ""
+
+        let statusRaw   = try c.decodeIfPresent(String.self, forKey: .status) ?? TripStatus.scheduled.rawValue
+        let priorityRaw = try c.decodeIfPresent(String.self, forKey: .priority) ?? TripPriority.normal.rawValue
+        status          = TripStatus(rawValue: statusRaw) ?? .scheduled
+        priority        = TripPriority(rawValue: priorityRaw) ?? .normal
+
+        proofOfDeliveryId  = try c.decodeIfPresent(UUID.self, forKey: .proofOfDeliveryId)
+        preInspectionId    = try c.decodeIfPresent(UUID.self, forKey: .preInspectionId)
+        postInspectionId   = try c.decodeIfPresent(UUID.self, forKey: .postInspectionId)
+        acceptedAt         = try c.decodeIfPresent(Date.self, forKey: .acceptedAt)
+        acceptanceDeadline = try c.decodeIfPresent(Date.self, forKey: .acceptanceDeadline)
+        rejectedReason     = try c.decodeIfPresent(String.self, forKey: .rejectedReason)
+        driverRating       = try c.decodeIfPresent(Int.self, forKey: .driverRating)
+        driverRatingNote   = try c.decodeIfPresent(String.self, forKey: .driverRatingNote)
+        ratedById          = try c.decodeIfPresent(UUID.self, forKey: .ratedById)
+        ratedAt            = try c.decodeIfPresent(Date.self, forKey: .ratedAt)
+        createdAt          = try c.decode(Date.self, forKey: .createdAt)
+        updatedAt          = try c.decode(Date.self, forKey: .updatedAt)
+    }
+
+    // Explicit memberwise initializer to preserve existing call sites.
+    init(
+        id: UUID,
+        taskId: String,
+        driverId: String?,
+        vehicleId: String?,
+        createdByAdminId: String,
+        origin: String,
+        destination: String,
+        originLatitude: Double?,
+        originLongitude: Double?,
+        destinationLatitude: Double?,
+        destinationLongitude: Double?,
+        routePolyline: String?,
+        routeStops: [RouteStop]?,
+        deliveryInstructions: String,
+        scheduledDate: Date,
+        scheduledEndDate: Date?,
+        actualStartDate: Date?,
+        actualEndDate: Date?,
+        startMileage: Double?,
+        endMileage: Double?,
+        notes: String,
+        status: TripStatus,
+        priority: TripPriority,
+        proofOfDeliveryId: UUID?,
+        preInspectionId: UUID?,
+        postInspectionId: UUID?,
+        acceptedAt: Date? = nil,
+        acceptanceDeadline: Date? = nil,
+        rejectedReason: String? = nil,
+        driverRating: Int?,
+        driverRatingNote: String?,
+        ratedById: UUID?,
+        ratedAt: Date?,
+        createdAt: Date,
+        updatedAt: Date
+    ) {
+        self.id = id
+        self.taskId = taskId
+        self.driverId = driverId
+        self.vehicleId = vehicleId
+        self.createdByAdminId = createdByAdminId
+        self.origin = origin
+        self.destination = destination
+        self.originLatitude = originLatitude
+        self.originLongitude = originLongitude
+        self.destinationLatitude = destinationLatitude
+        self.destinationLongitude = destinationLongitude
+        self.routePolyline = routePolyline
+        self.routeStops = routeStops
+        self.deliveryInstructions = deliveryInstructions
+        self.scheduledDate = scheduledDate
+        self.scheduledEndDate = scheduledEndDate
+        self.actualStartDate = actualStartDate
+        self.actualEndDate = actualEndDate
+        self.startMileage = startMileage
+        self.endMileage = endMileage
+        self.notes = notes
+        self.status = status
+        self.priority = priority
+        self.proofOfDeliveryId = proofOfDeliveryId
+        self.preInspectionId = preInspectionId
+        self.postInspectionId = postInspectionId
+        self.acceptedAt = acceptedAt
+        self.acceptanceDeadline = acceptanceDeadline
+        self.rejectedReason = rejectedReason
+        self.driverRating = driverRating
+        self.driverRatingNote = driverRatingNote
+        self.ratedById = ratedById
+        self.ratedAt = ratedAt
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
     }
 
     // MARK: - Computed
