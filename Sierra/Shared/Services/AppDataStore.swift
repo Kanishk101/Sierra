@@ -299,7 +299,6 @@ final class AppDataStore {
         if let si = staff.firstIndex(where: { $0.id == app.staffMemberId }) {
             staff[si].isApproved = true; staff[si].status = .active
         }
-        // Notify the approved staff member
         try? await NotificationService.insertNotification(
             recipientId: app.staffMemberId,
             type: .general,
@@ -442,9 +441,13 @@ final class AppDataStore {
         proofOfDeliveries.append(pod)
         if let tripIdx = trips.firstIndex(where: { $0.id == pod.tripId }) {
             trips[tripIdx].proofOfDeliveryId = pod.id
+            // Persist proofOfDeliveryId on the trip row only.
+            // Do NOT auto-complete the trip here — it stays .active until the
+            // driver finishes post-trip inspection and taps "End Trip" in
+            // TripDetailDriverView, which calls endTrip(tripId:endMileage:).
+            // Auto-completing here orphaned the post-inspection step and released
+            // driver/vehicle before the workflow was genuinely finished (Phase 3 fix).
             try await TripService.updateTrip(trips[tripIdx])
-            // Auto-complete the trip after POD submission
-            try await updateTripStatus(id: pod.tripId, status: .completed)
         }
     }
 
@@ -681,9 +684,17 @@ final class AppDataStore {
     }
     func availableDrivers() -> [StaffMember] { staff.filter { $0.role == .driver && $0.status == .active && $0.availability == .available } }
     func availableVehicles() -> [Vehicle] { vehicles.filter { $0.status == .idle && $0.assignedDriverId == nil } }
+
+    /// Returns the driver's current actionable trip — any status where the driver
+    /// still has work to do. Covers the full Phase 3 lifecycle:
+    /// pendingAcceptance → accepted → active (→ completed / cancelled are terminal).
     func activeTrip(forDriverId driverId: UUID) -> Trip? {
-        trips.first { $0.driverId?.lowercased() == driverId.uuidString.lowercased() && ($0.status == .active || $0.status == .scheduled) }
+        trips.first {
+            $0.driverId?.lowercased() == driverId.uuidString.lowercased()
+            && $0.status.isActionable
+        }
     }
+
     func workOrder(forMaintenanceTask taskId: UUID) -> WorkOrder? { workOrders.first { $0.maintenanceTaskId == taskId } }
     func sparePartsRequests(forTask taskId: UUID) -> [SparePartsRequest] { sparePartsRequests.filter { $0.maintenanceTaskId == taskId } }
     func pendingSparePartsRequests() -> [SparePartsRequest] { sparePartsRequests.filter { $0.status == .pending } }
@@ -692,7 +703,8 @@ final class AppDataStore {
     // MARK: - Computed Aggregates
 
     var pendingCount: Int { pendingApplicationsCount }
-    var activeTripsCount: Int { trips.filter { $0.status == .active }.count }
+    /// Counts all in-progress trips for the admin KPI card (active + pending acceptance + accepted).
+    var activeTripsCount: Int { trips.filter { $0.status.isActionable }.count }
     var vehiclesInMaintenance: [Vehicle] { vehicles.filter { $0.status == .inMaintenance } }
     var overdueTrips: [Trip] { trips.filter { $0.isOverdue } }
 
@@ -867,8 +879,10 @@ final class AppDataStore {
     }
 
     /// Completes the active trip. Calls TripService.completeTrip which triggers
-    /// the DB trigger trg_trip_completed — this releases driver + vehicle resources
-    /// and updates stats atomically in Postgres (SECURITY DEFINER).
+    /// the DB trigger trg_trip_status_change — this releases driver + vehicle
+    /// resources atomically in Postgres (SECURITY DEFINER).
+    /// Only called from TripDetailDriverView "End Trip" button, which is gated
+    /// behind postInspectionId being set. This is the correct completion point.
     func endTrip(tripId: UUID, endMileage: Double) async throws {
         try await TripService.completeTrip(tripId: tripId, endMileage: endMileage)
         if let idx = trips.firstIndex(where: { $0.id == tripId }) {
