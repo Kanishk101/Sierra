@@ -1,9 +1,6 @@
 import SwiftUI
 
 /// Driver-side trip history — completed + cancelled trips.
-/// Phase 12: Shows real history with distance, duration, and status badge.
-/// NOTE: .navigationDestination intentionally omitted here — it lives in
-///   DriverTabView so there is exactly one declaration per NavigationStack.
 struct DriverTripHistoryView: View {
 
     @Environment(AppDataStore.self) private var store
@@ -12,10 +9,18 @@ struct DriverTripHistoryView: View {
     private var currentUserId: UUID? { AuthManager.shared.currentUser?.id }
 
     private var myHistoryTrips: [Trip] {
-        guard let userId = currentUserId?.uuidString else { return [] }
+        // FIX: compare lowercased on both sides — driver_id TEXT column is stored
+        // lowercase (after migration 20260323000001) and auth.uid()::text is lowercase,
+        // but legacy rows may still be uppercase; LOWER() on both sides is safe either way.
+        guard let userId = currentUserId?.uuidString.lowercased() else { return [] }
         return store.trips
-            .filter { $0.driverId == userId && ($0.status == .completed || $0.status == .cancelled) }
-            .sorted { ($0.actualEndDate ?? $0.scheduledDate) > ($1.actualEndDate ?? $1.scheduledDate) }
+            .filter {
+                ($0.driverId?.lowercased() ?? "") == userId
+                    && ($0.status == .completed || $0.status == .cancelled)
+            }
+            .sorted {
+                ($0.actualEndDate ?? $0.scheduledDate) > ($1.actualEndDate ?? $1.scheduledDate)
+            }
     }
 
     var body: some View {
@@ -51,7 +56,7 @@ struct DriverTripHistoryView: View {
     private func tripRow(_ trip: Trip) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("\(trip.origin) \u{2192} \(trip.destination)")
+                Text("\(trip.origin) → \(trip.destination)")
                     .font(.subheadline.weight(.medium)).lineLimit(1)
                 Spacer()
                 statusBadge(trip)
