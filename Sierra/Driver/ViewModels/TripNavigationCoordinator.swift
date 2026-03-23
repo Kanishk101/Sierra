@@ -65,6 +65,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     private var locationPublishTimer: Timer?
     private let locationPublishInterval: TimeInterval = 5.0
     private var currentStepIndex: Int = 0
+    private var lastStepChangeLocation: CLLocation?  // ISSUE-13 FIX: hysteresis tracking
 
     // MARK: - Init / deinit
     init(trip: Trip) {
@@ -85,8 +86,9 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     func buildRoutes() async {
         await routeEngine.buildRoutes(trip: trip, currentLocation: currentLocation)
     }
-    func selectGreenRoute() {
-        routeEngine.selectGreenRoute()
+    // ISSUE-19 FIX: Renamed from selectGreenRoute
+    func swapAlternativeRoute() {
+        routeEngine.swapAlternativeRoute()
         currentStepIndex = 0
     }
     func rebuildRoutes() async {
@@ -134,21 +136,26 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     }
 
     // MARK: - Location Publishing
+    // BUG-11 FIX: Removed nested Task, BUG-23 FIX: Skip publish when stationary
+    private var lastPublishedLocation: CLLocation?
     func startLocationPublishing(vehicleId: UUID, driverId: UUID) {
         guard locationPublishTimer == nil else { return }
         locationPublishTimer = Timer.scheduledTimer(withTimeInterval: locationPublishInterval, repeats: true) { [weak self] _ in
             guard let self else { return }
-            Task { @MainActor in
-                guard let location = self.currentLocation else { return }
+            Task { @MainActor [weak self] in
+                guard let self, let location = self.currentLocation else { return }
+                // ISSUE-23 FIX: Only publish if moving (>1 m/s) or >10m from last published
+                if let last = self.lastPublishedLocation,
+                   location.speed < 1.0,
+                   location.distance(from: last) < 10 { return }
+                self.lastPublishedLocation = location
                 let lat   = location.coordinate.latitude
                 let lng   = location.coordinate.longitude
                 let speed = location.speed > 0 ? location.speed * 3.6 : nil
-                Task {
-                    try? await VehicleLocationService.shared.publishLocation(
-                        vehicleId: vehicleId, tripId: self.trip.id,
-                        driverId: driverId, latitude: lat, longitude: lng, speedKmh: speed
-                    )
-                }
+                try? await VehicleLocationService.shared.publishLocation(
+                    vehicleId: vehicleId, tripId: self.trip.id,
+                    driverId: driverId, latitude: lat, longitude: lng, speedKmh: speed
+                )
             }
         }
     }
@@ -170,22 +177,46 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     }
 
     // MARK: - Navigation Progress
+    // BUG-06 FIX: Use polyline-walking distance instead of crow-fly for route remaining
+    // ISSUE-36 FIX: Only announce on new step transitions
     private func updateNavigationProgress(location: CLLocation) {
         guard let route = routeEngine.currentRoute, let leg = route.legs.first else { return }
         let routeCoords = routeEngine.decodedRouteCoordinates
-        if let lastCoord = routeCoords.last {
-            let destLoc = CLLocation(latitude: lastCoord.latitude, longitude: lastCoord.longitude)
-            let distToDest = location.distance(from: destLoc)
-            routeEngine.distanceRemainingMetres = distToDest
-            if distToDest < 50 && !hasArrived {
-                hasArrived = true
-                NotificationCenter.default.post(name: .tripArrivedAtDestination, object: nil)
+        guard routeCoords.count >= 2 else { return }
+
+        // BUG-06 FIX: Find closest point on polyline and sum remaining segment lengths
+        var minDist = Double.greatestFiniteMagnitude
+        var closestSegIndex = 0
+        for i in 0..<(routeCoords.count - 1) {
+            let segStart = CLLocation(latitude: routeCoords[i].latitude, longitude: routeCoords[i].longitude)
+            let dist = location.distance(from: segStart)
+            if dist < minDist {
+                minDist = dist
+                closestSegIndex = i
             }
         }
+
+        // Sum remaining segment lengths from closest point forward
+        var remainingDist: Double = 0
+        for i in closestSegIndex..<(routeCoords.count - 1) {
+            let a = CLLocation(latitude: routeCoords[i].latitude, longitude: routeCoords[i].longitude)
+            let b = CLLocation(latitude: routeCoords[i + 1].latitude, longitude: routeCoords[i + 1].longitude)
+            remainingDist += a.distance(from: b)
+        }
+        routeEngine.distanceRemainingMetres = remainingDist
+
+        // Arrival check using route distance, not crow-fly
+        if remainingDist < 50 && !hasArrived {
+            hasArrived = true
+            NotificationCenter.default.post(name: .tripArrivedAtDestination, object: nil)
+        }
+
+        // ETA using route-average speed × remaining route distance
         let avgSpeed = route.distance / route.expectedTravelTime
-        let remainingTime = avgSpeed > 0 ? routeEngine.distanceRemainingMetres / avgSpeed : 0
+        let remainingTime = avgSpeed > 0 ? remainingDist / avgSpeed : 0
         routeEngine.estimatedArrivalTime = Date().addingTimeInterval(remainingTime)
 
+        // Step detection
         let steps = leg.steps
         for (idx, step) in steps.enumerated() {
             if let shape = step.shape, let firstCoord = shape.coordinates.first {
@@ -193,12 +224,19 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
                 let distToStep = stepLoc.distance(from: location)
                 if distToStep < 100 && idx >= currentStepIndex {
                     let wasNewStep = idx > currentStepIndex
+                    // ISSUE-13 FIX: Require minimum travel distance before accepting new step
+                    if wasNewStep, let lastChange = lastStepChangeLocation,
+                       location.distance(from: lastChange) < TripConstants.stepChangeHysteresisMetres {
+                        continue  // Too close to last step change — likely oscillation
+                    }
                     currentStepIndex = idx
+                    if wasNewStep { lastStepChangeLocation = location }
                     routeEngine.currentStepInstruction = step.instructions
                     currentStepManeuver = step.maneuverType.rawValue
                     nextStepInstruction = idx + 1 < steps.count ? steps[idx + 1].instructions : ""
                     currentSpeedLimit = nil
-                    if wasNewStep || distToStep < 200 {
+                    // ISSUE-36 FIX: Only announce on new step transitions
+                    if wasNewStep {
                         VoiceNavigationService.shared.announce(step.instructions)
                     }
                     break
@@ -221,8 +259,12 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         routeEngine.hasDeviated = true
         guard deviationDetector.shouldRecordDeviation() else { return }
         deviationDetector.markDeviationRecorded()
-        let driverId  = AuthManager.shared.currentUser?.id ?? UUID()
-        let vehicleId = UUID(uuidString: trip.vehicleId ?? "") ?? UUID()
+        // BUG-10 FIX: Don't generate random UUIDs for safety-critical records
+        guard let driverId = AuthManager.shared.currentUser?.id else {
+            print("[NavCoordinator] No auth user — skipping deviation record")
+            return
+        }
+        guard let vehicleIdStr = trip.vehicleId, let vehicleId = UUID(uuidString: vehicleIdStr) else { return }
         Task {
             try? await RouteDeviationService.recordDeviation(
                 tripId: trip.id, driverId: driverId, vehicleId: vehicleId,

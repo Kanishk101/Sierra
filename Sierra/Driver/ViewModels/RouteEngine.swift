@@ -30,6 +30,7 @@ final class RouteEngine {
     private(set) var decodedRouteCoordinates: [CLLocationCoordinate2D] = []
     private var intermediateWaypoints: [(lat: Double, lng: Double, name: String)] = []
     private var rerouteFromCurrentLocation: Bool = false
+    private var isBuilding: Bool = false  // CODE-33 FIX: prevent concurrent builds
 
     // MARK: - Route Building
     //
@@ -40,6 +41,10 @@ final class RouteEngine {
     func buildRoutes(trip: Trip, currentLocation: CLLocation?) async {
         // Only skip if we already have a valid route AND we're not rerouting
         if currentRoute != nil && !rerouteFromCurrentLocation { return }
+        // CODE-33 FIX: Prevent concurrent route calculations
+        guard !isBuilding else { return }
+        isBuilding = true
+        defer { isBuilding = false }
 
         let isRerouting = rerouteFromCurrentLocation
         rerouteFromCurrentLocation = false
@@ -128,7 +133,8 @@ final class RouteEngine {
         }
     }
 
-    func selectGreenRoute() {
+    /// ISSUE-19 FIX: Renamed from selectGreenRoute — this swaps primary and alternative routes.
+    func swapAlternativeRoute() {
         guard let alt = alternativeRoute else { return }
         let prev = currentRoute; currentRoute = alt; alternativeRoute = prev
         if let shape = currentRoute?.shape { decodedRouteCoordinates = shape.coordinates }

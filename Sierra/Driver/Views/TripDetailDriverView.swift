@@ -103,12 +103,12 @@ struct TripDetailDriverView: View {
             rejectSheet
         }
         .sheet(isPresented: $showPreInspection) {
-            if let trip, let vehicle {
+            if let trip, let vehicle, let userId = user?.id {
                 NavigationStack {
                     PreTripInspectionView(
                         tripId: trip.id,
                         vehicleId: vehicle.id,
-                        driverId: user?.id ?? UUID(),
+                        driverId: userId,  // ISSUE-21 FIX
                         inspectionType: .preTripInspection,
                         onComplete: { showPreInspection = false }
                     )
@@ -129,21 +129,21 @@ struct TripDetailDriverView: View {
             }
         }
         .sheet(isPresented: $showProofOfDelivery) {
-            if let trip {
+            if let trip, let userId = user?.id {
                 NavigationStack {
-                    ProofOfDeliveryView(tripId: trip.id, driverId: user?.id ?? UUID()) {
+                    ProofOfDeliveryView(tripId: trip.id, driverId: userId) {  // ISSUE-21 FIX
                         showProofOfDelivery = false
                     }
                 }
             }
         }
         .sheet(isPresented: $showPostInspection) {
-            if let trip, let vehicle {
+            if let trip, let vehicle, let userId = user?.id {
                 NavigationStack {
                     PostTripInspectionView(
                         tripId: trip.id,
                         vehicleId: vehicle.id,
-                        driverId: user?.id ?? UUID()
+                        driverId: userId  // ISSUE-21 FIX
                     )
                 }
             }

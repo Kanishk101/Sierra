@@ -8,6 +8,7 @@ struct SOSAlertSheet: View {
 
     let tripId: UUID?
     let vehicleId: UUID?
+    let currentLocation: CLLocation?  // BUG-03 FIX: passed from coordinator
     @Environment(AppDataStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -115,7 +116,7 @@ struct SOSAlertSheet: View {
     private var sendButton: some View {
         Button {
             Task {
-                await vm.triggerSOS(vehicleId: vehicleId, tripId: tripId, store: store)
+                await vm.triggerSOS(vehicleId: vehicleId, tripId: tripId, store: store, currentLocation: currentLocation)
                 if vm.sentSuccessfully {
                     try? await Task.sleep(nanoseconds: 3_000_000_000)
                     dismiss()

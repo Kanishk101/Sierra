@@ -66,7 +66,19 @@ final class GeofenceMonitor {
         currentLocation: CLLocation?
     ) async {
         guard let vehicleId = UUID(uuidString: vehicleIdStr) else { return }
-        let driverId = AuthManager.shared.currentUser?.id ?? UUID()
+
+        // BUG-10 FIX: Never generate a random UUID for a driver ID
+        guard let driverId = AuthManager.shared.currentUser?.id else {
+            print("[GeofenceMonitor] No auth user — skipping event record")
+            return
+        }
+
+        // BUG-07 FIX: Guard against nil location — don't write (0,0) to DB
+        guard let location = currentLocation,
+              (location.coordinate.latitude != 0 || location.coordinate.longitude != 0) else {
+            print("[GeofenceMonitor] GPS unavailable — deferring event record")
+            return
+        }
 
         do {
             try await GeofenceEventService.addGeofenceEvent(GeofenceEvent(
@@ -76,8 +88,8 @@ final class GeofenceMonitor {
                 tripId: tripId,
                 driverId: driverId,
                 eventType: eventType == "Entry" ? .entry : .exit,
-                latitude: currentLocation?.coordinate.latitude ?? 0,
-                longitude: currentLocation?.coordinate.longitude ?? 0,
+                latitude: location.coordinate.latitude,
+                longitude: location.coordinate.longitude,
                 triggeredAt: Date(),
                 createdAt: Date()
             ))

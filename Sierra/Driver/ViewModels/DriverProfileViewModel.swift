@@ -79,6 +79,7 @@ final class DriverProfileViewModel {
     // MARK: - Aadhaar formatter
     // ─────────────────────────────────
 
+    // ISSUE-29 FIX: Display format adds spaces (UI only), storage format is raw 12 digits
     var formattedAadhaar: String {
         let digits = aadhaarNumber.filter(\.isNumber)
         var result = ""
@@ -87,6 +88,11 @@ final class DriverProfileViewModel {
             result.append(c)
         }
         return result
+    }
+
+    /// Raw 12-digit Aadhaar for DB storage (no spaces)
+    var rawAadhaar: String {
+        String(aadhaarNumber.filter(\.isNumber).prefix(12))
     }
 
     func setAadhaarNumber(_ raw: String) {
@@ -132,6 +138,7 @@ final class DriverProfileViewModel {
         !firstName.trimmingCharacters(in: .whitespaces).isEmpty
         && !lastName.trimmingCharacters(in: .whitespaces).isEmpty
         && phoneNumber.filter(\.isNumber).count >= 10
+        && !address.trimmingCharacters(in: .whitespaces).isEmpty  // ISSUE-16 FIX
         && !emergencyContactName.trimmingCharacters(in: .whitespaces).isEmpty
         && emergencyContactPhone.filter(\.isNumber).count >= 10
     }
@@ -206,7 +213,45 @@ final class DriverProfileViewModel {
         let now = Date()
         let fullName = "\(firstName.trimmingCharacters(in: .whitespaces)) \(lastName.trimmingCharacters(in: .whitespaces))"
 
-        // Build the StaffApplication using the correct Supabase-mapped model fields
+        // BUG-01 FIX: Upload KYC images to Supabase Storage before building the application
+        var aadhaarDocUrl: String?
+        var licenseDocUrl: String?
+
+        do {
+            let userId = user.id.uuidString
+            let bucket = supabase.storage.from("kyc-documents")
+
+            // Upload Aadhaar images (front + back) as a combined document entry
+            if let frontData = aadhaarFrontImage?.jpegData(compressionQuality: 0.8) {
+                let path = "\(userId)/aadhaar-front.jpg"
+                try await bucket.upload(path, data: frontData, options: .init(contentType: "image/jpeg", upsert: true))
+                let url = try bucket.getPublicURL(path: path)
+                aadhaarDocUrl = url.absoluteString
+            }
+            if let backData = aadhaarBackImage?.jpegData(compressionQuality: 0.8) {
+                let path = "\(userId)/aadhaar-back.jpg"
+                try await bucket.upload(path, data: backData, options: .init(contentType: "image/jpeg", upsert: true))
+                // Use front URL as the primary doc URL; back is stored separately
+            }
+
+            // Upload License images
+            if let frontData = licenseFrontImage?.jpegData(compressionQuality: 0.8) {
+                let path = "\(userId)/license-front.jpg"
+                try await bucket.upload(path, data: frontData, options: .init(contentType: "image/jpeg", upsert: true))
+                let url = try bucket.getPublicURL(path: path)
+                licenseDocUrl = url.absoluteString
+            }
+            if let backData = licenseBackImage?.jpegData(compressionQuality: 0.8) {
+                let path = "\(userId)/license-back.jpg"
+                try await bucket.upload(path, data: backData, options: .init(contentType: "image/jpeg", upsert: true))
+            }
+        } catch {
+            errorMessage = "Failed to upload documents: \(error.localizedDescription)"
+            isLoading = false
+            return
+        }
+
+        // Build the StaffApplication with real document URLs
         let application = StaffApplication(
             id: UUID(),
             staffMemberId: user.id,
@@ -222,14 +267,14 @@ final class DriverProfileViewModel {
             address: address,
             emergencyContactName: emergencyContactName,
             emergencyContactPhone: emergencyContactPhone,
-            aadhaarNumber: formattedAadhaar,
-            aadhaarDocumentUrl: nil,
+            aadhaarNumber: rawAadhaar,  // ISSUE-29 FIX: store raw 12 digits
+            aadhaarDocumentUrl: aadhaarDocUrl,
             profilePhotoUrl: nil,
             driverLicenseNumber: licenseNumber.trimmingCharacters(in: .whitespaces),
             driverLicenseExpiry: pgDateFormatter.string(from: licenseExpiryDate),
             driverLicenseClass: nil,
             driverLicenseIssuingState: nil,
-            driverLicenseDocumentUrl: nil,
+            driverLicenseDocumentUrl: licenseDocUrl,
             maintCertificationType: nil,
             maintCertificationNumber: nil,
             maintIssuingAuthority: nil,
@@ -256,7 +301,7 @@ final class DriverProfileViewModel {
                 member.address = address
                 member.emergencyContactName = emergencyContactName
                 member.emergencyContactPhone = emergencyContactPhone
-                member.aadhaarNumber = formattedAadhaar
+                member.aadhaarNumber = rawAadhaar  // ISSUE-29 FIX: consistent format
                 member.isProfileComplete = true
                 try await AppDataStore.shared.updateStaffMember(member)
             }

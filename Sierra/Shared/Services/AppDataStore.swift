@@ -134,14 +134,20 @@ final class AppDataStore {
         async let inspectionsTask = VehicleInspectionService.fetchAllInspections()
         async let driverProfTask  = DriverProfileService.fetchDriverProfile(staffMemberId: driverId)
 
+        // H-01 FIX: Collect errors and set loadError (was print-only, never surfaced to UI)
+        var errors: [String] = []
         do { if let m = try await selfMemberTask { staff = [m] } }
-            catch { print("[loadDriverData] staff: \(error)") }
-        do { vehicles = try await vehiclesTask }           catch { print("[loadDriverData] vehicles: \(error)") }
-        do { trips = try await tripsTask }                 catch { print("[loadDriverData] trips: \(error)") }
-        do { fuelLogs = try await fuelLogsTask }           catch { print("[loadDriverData] fuelLogs: \(error)") }
-        do { vehicleInspections = try await inspectionsTask } catch { print("[loadDriverData] inspections: \(error)") }
+            catch { errors.append("Staff: \(error.localizedDescription)") }
+        do { vehicles = try await vehiclesTask }           catch { errors.append("Vehicles: \(error.localizedDescription)") }
+        do { trips = try await tripsTask }                 catch { errors.append("Trips: \(error.localizedDescription)") }
+        do { fuelLogs = try await fuelLogsTask }           catch { errors.append("Fuel logs: \(error.localizedDescription)") }
+        do { vehicleInspections = try await inspectionsTask } catch { errors.append("Inspections: \(error.localizedDescription)") }
         do { if let p = try await driverProfTask { driverProfiles = [p] } }
-            catch { print("[loadDriverData] driverProfile: \(error)") }
+            catch { errors.append("Profile: \(error.localizedDescription)") }
+
+        if !errors.isEmpty {
+            loadError = "Some data failed to load: \(errors.joined(separator: "; "))"
+        }
 
         isLoading = false
         subscribeToTripUpdates()
@@ -357,14 +363,10 @@ final class AppDataStore {
     func addTrip(_ trip: Trip) async throws {
         try await TripService.addTrip(trip)
         trips.insert(trip, at: 0)
-        if let driverIdStr = trip.driverId, let driverUUID = UUID(uuidString: driverIdStr) {
-            let dateStr = trip.scheduledDate.formatted(.dateTime.month().day().hour().minute())
-            try? await NotificationService.insertNotification(
-                recipientId: driverUUID, type: .tripAssigned,
-                title: "New Trip Assigned: \(trip.taskId)",
-                body: "Trip from \(trip.origin) to \(trip.destination) on \(dateStr)",
-                entityType: "trip", entityId: trip.id
-            )
+        // M-11 FIX: Removed NotificationService.insertNotification here.
+        // The DB trigger fn_notify_driver_trip_assigned() already fires AFTER INSERT ON trips
+        // and sends the exact same notification, causing double "New Trip Assigned" alerts.
+        if let driverIdStr = trip.driverId, UUID(uuidString: driverIdStr) != nil {
             LocalNotificationService.notifyTripAssigned(
                 taskId: trip.taskId, origin: trip.origin,
                 destination: trip.destination, tripId: trip.id
@@ -820,15 +822,17 @@ final class AppDataStore {
     // MARK: - Location Publishing
 
     func publishDriverLocation(vehicleId: UUID, tripId: UUID, latitude: Double, longitude: Double, speedKmh: Double?) async {
+        // C-04 FIX: Guard against nil auth instead of UUID() fallback
+        guard let driverId = AuthManager.shared.currentUser?.id else { return }
         do {
             try await VehicleLocationService.shared.publishLocation(
                 vehicleId: vehicleId, tripId: tripId,
-                driverId: AuthManager.shared.currentUser?.id ?? UUID(),
+                driverId: driverId,
                 latitude: latitude, longitude: longitude, speedKmh: speedKmh
             )
             let entry = VehicleLocationHistory(
                 id: UUID(), vehicleId: vehicleId, tripId: tripId,
-                driverId: AuthManager.shared.currentUser?.id,
+                driverId: driverId,
                 latitude: latitude, longitude: longitude,
                 speedKmh: speedKmh, recordedAt: Date(), createdAt: Date()
             )

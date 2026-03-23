@@ -100,7 +100,7 @@ struct RouteSelectionSheet: View {
 
                 // CTA
                 Button {
-                    if selectedIsGreen { coordinator.selectGreenRoute() }
+                    if selectedIsGreen { coordinator.swapAlternativeRoute() }  // ISSUE-19 FIX
                     dismiss()
                     onStart()
                 } label: {

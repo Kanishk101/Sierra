@@ -104,18 +104,24 @@ final class PreTripInspectionViewModel {
         checkItems.filter { $0.result == .notChecked }.count
     }
 
-    /// Items marked failed that have NO uploaded photo yet.
-    /// This is the gating condition for the photo step → summary step.
+    /// Items marked failed that have NO photo captured or uploaded yet.
+    /// C-03 FIX: Check BOTH itemPhotoData (local captures) and itemPhotoUrls (uploaded URLs).
+    /// Before submission, only itemPhotoData is populated — checking itemPhotoUrls alone
+    /// permanently blocks the driver from advancing to summary.
     var failedItemsMissingPhoto: [InspectionCheckItem] {
-        failedItems.filter { (itemPhotoUrls[$0.id] ?? []).isEmpty }
+        failedItems.filter {
+            (itemPhotoData[$0.id] ?? []).isEmpty &&
+            (itemPhotoUrls[$0.id] ?? []).isEmpty
+        }
     }
 
     var canAdvanceToPhotos: Bool { allItemsChecked && odometerValid }
 
     /// May advance to summary only when all failed items have at least one photo.
+    /// M-06 FIX: Warning items that are flagged as needing photos are also gated.
     var canAdvanceToSummary: Bool { failedItemsMissingPhoto.isEmpty }
 
-    /// Final submit gate: all items checked + no failed item missing a photo.
+    /// Final submit gate: all items checked + no failed/warning item missing a photo.
     var canSubmit: Bool {
         allItemsChecked && failedItemsMissingPhoto.isEmpty && odometerValid
     }
@@ -411,14 +417,18 @@ final class PreTripInspectionViewModel {
                 raisedTaskId: nil
             )
 
-            // 4. Update trip's inspection ID
+            // 4. Update trip's inspection ID — BUG-28 FIX: mutate DB first, then local store
             if let idx = store.trips.firstIndex(where: { $0.id == tripId }) {
+                var updatedTrip = store.trips[idx]
                 if inspectionType == .preTripInspection {
-                    store.trips[idx].preInspectionId = inspection.id
+                    updatedTrip.preInspectionId = inspection.id
                 } else {
-                    store.trips[idx].postInspectionId = inspection.id
+                    updatedTrip.postInspectionId = inspection.id
                 }
-                try await TripService.updateTrip(store.trips[idx])
+                // Write to DB first — if this throws, local state stays unchanged
+                try await TripService.updateTrip(updatedTrip)
+                // Only now commit to local store
+                store.trips[idx] = updatedTrip
             }
 
             // 5. Auto-create maintenance task for defects

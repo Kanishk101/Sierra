@@ -8,10 +8,11 @@ struct DriverTripHistoryView: View {
 
     @Environment(AppDataStore.self) private var store
 
-    private var currentUserId: UUID { AuthManager.shared.currentUser?.id ?? UUID() }
+    // C-04 FIX: guard instead of UUID() fallback
+    private var currentUserId: UUID? { AuthManager.shared.currentUser?.id }
 
     private var myHistoryTrips: [Trip] {
-        let userId = currentUserId.uuidString
+        guard let userId = currentUserId?.uuidString else { return [] }
         return store.trips
             .filter { $0.driverId == userId && ($0.status == .completed || $0.status == .cancelled) }
             .sorted { ($0.actualEndDate ?? $0.scheduledDate) > ($1.actualEndDate ?? $1.scheduledDate) }
@@ -20,8 +21,11 @@ struct DriverTripHistoryView: View {
     var body: some View {
         Group {
             if let error = store.loadError {
+                // H-02 FIX: Use loadDriverData (driver-scoped) not loadAll (admin-scoped)
                 SierraErrorView(message: error) {
-                    await store.loadAll()
+                    if let uid = currentUserId {
+                        await store.loadDriverData(driverId: uid)
+                    }
                 }
             } else if myHistoryTrips.isEmpty {
                 SierraEmptyState(

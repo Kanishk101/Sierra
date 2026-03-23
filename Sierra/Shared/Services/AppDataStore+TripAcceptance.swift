@@ -33,7 +33,8 @@ extension AppDataStore {
         try await TripService.dispatchTrip(tripId: tripId)
 
         // Update local state
-        let deadline = Date().addingTimeInterval(24 * 3600)
+        // BUG-12 FIX: Use centralized constant instead of hardcoded value
+        let deadline = Date().addingTimeInterval(TripConstants.acceptanceDeadlineSeconds)
         if let idx = trips.firstIndex(where: { $0.id == tripId }) {
             trips[idx].status = .pendingAcceptance
             trips[idx].acceptanceDeadline = deadline

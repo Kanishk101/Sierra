@@ -19,6 +19,7 @@ struct FuelLog: Identifiable, Codable {
     var odometerAtFill: Double           // odometer_at_fill
     var fuelStation: String?             // fuel_station
     var receiptImageUrl: String?         // receipt_image_url
+    var notes: String?                   // M-01 FIX: fuel_notes
 
     // MARK: Timestamps
     var loggedAt: Date                   // logged_at (default now())
@@ -37,6 +38,7 @@ struct FuelLog: Identifiable, Codable {
         case odometerAtFill     = "odometer_at_fill"
         case fuelStation        = "fuel_station"
         case receiptImageUrl    = "receipt_image_url"
+        case notes              = "fuel_notes"  // M-01 FIX
         case loggedAt           = "logged_at"
         case createdAt          = "created_at"
     }

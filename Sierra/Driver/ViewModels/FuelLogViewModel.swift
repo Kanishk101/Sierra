@@ -58,14 +58,20 @@ final class FuelLogViewModel {
     }
 
     var hasTotalCostMismatch: Bool {
+        // ISSUE-17 FIX: Only compare when all three fields are filled
         guard let q = Double(quantity),
               let c = Double(costPerLitre),
-              let t = Double(totalCost) else { return false }
+              let t = Double(totalCost),
+              q > 0, c > 0 else { return false }
         return abs(q * c - t) > 1.0 // Allow ₹1 rounding tolerance
     }
 
     var canSubmit: Bool {
-        !quantity.isEmpty && !totalCost.isEmpty && !hasTotalCostMismatch
+        guard let q = Double(quantity), q > 0,
+              let t = Double(totalCost), t > 0 else { return false }
+        // ISSUE-17 FIX: costPerLitre must be filled OR auto-calculable
+        let hasRate = Double(costPerLitre) != nil && !costPerLitre.isEmpty
+        return (hasRate || !quantity.isEmpty) && !hasTotalCostMismatch
     }
 
     // MARK: - Submit
@@ -96,6 +102,7 @@ final class FuelLogViewModel {
                 odometerAtFill: Double(odometer) ?? 0,
                 fuelStation: fuelStation.isEmpty ? nil : fuelStation,
                 receiptImageUrl: receiptURL,
+                notes: notes.isEmpty ? nil : notes,  // M-01 FIX: persist notes
                 loggedAt: Date(),
                 createdAt: Date()
             )

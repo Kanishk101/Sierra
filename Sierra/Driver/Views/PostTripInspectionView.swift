@@ -1,7 +1,10 @@
 import SwiftUI
 
 /// Post-trip inspection + trip completion.
-/// Same structure as PreTripInspectionView but completes the trip on submit.
+/// BUG-05 FIX: Uses a clean phase-based state machine instead of a dual-ViewModel pattern.
+/// Phase 1: .inspecting — embeds PreTripInspectionView
+/// Phase 2: .enteringOdometer — shows end-odometer + Complete Trip form
+/// Phase 3: .completed — shows success screen
 struct PostTripInspectionView: View {
 
     let tripId: UUID
@@ -11,49 +14,41 @@ struct PostTripInspectionView: View {
     @Environment(AppDataStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
-    @State private var viewModel: PreTripInspectionViewModel
+    // BUG-05 FIX: Single phase enum drives the entire UI
+    enum Phase { case inspecting, enteringOdometer, completed }
+    @State private var phase: Phase = .inspecting
     @State private var endOdometerText = ""
-    @State private var showCompletedAlert = false
     @State private var errorMessage: String?
     @State private var showError = false
-
-    init(tripId: UUID, vehicleId: UUID, driverId: UUID) {
-        self.tripId = tripId
-        self.vehicleId = vehicleId
-        self.driverId = driverId
-        _viewModel = State(initialValue: PreTripInspectionViewModel(
-            tripId: tripId, vehicleId: vehicleId, driverId: driverId, inspectionType: .postTripInspection
-        ))
-    }
 
     private var trip: Trip? { store.trips.first { $0.id == tripId } }
 
     var body: some View {
         VStack(spacing: 0) {
-            if showCompletedAlert {
-                completedView
-            } else if viewModel.currentStep <= 3 {
-                // Reuse the PreTripInspectionView for the inspection part
+            switch phase {
+            case .inspecting:
                 PreTripInspectionView(
                     tripId: tripId,
                     vehicleId: vehicleId,
                     driverId: driverId,
                     inspectionType: .postTripInspection,
                     onComplete: {
-                        viewModel.didSubmitSuccessfully = true
+                        withAnimation { phase = .enteringOdometer }
                     }
                 )
-            }
 
-            if viewModel.didSubmitSuccessfully && !showCompletedAlert {
+            case .enteringOdometer:
                 odometerAndComplete
+
+            case .completed:
+                completedView
             }
         }
         .navigationTitle("Post-Trip Inspection")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                if !showCompletedAlert {
+                if phase != .completed {
                     Button("Cancel") { dismiss() }
                 }
             }
@@ -68,8 +63,20 @@ struct PostTripInspectionView: View {
     // MARK: - Odometer + Complete
 
     private var odometerAndComplete: some View {
-        VStack(spacing: 16) {
-            Divider()
+        VStack(spacing: 20) {
+            Spacer()
+
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 48))
+                .foregroundStyle(SierraTheme.Colors.alpineMint)
+
+            Text("Post-Trip Inspection Complete")
+                .font(.headline)
+
+            Text("Enter the final odometer reading to complete the trip.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("End Odometer Reading (km)")
@@ -80,8 +87,8 @@ struct PostTripInspectionView: View {
             }
             .padding(.horizontal, 16)
 
-            // Safeguard 6: completeTrip gated behind proof_of_delivery_id
-            // Safeguard 7: Task { } not .task { }
+            Spacer()
+
             Button {
                 Task { await completeTrip() }
             } label: {
@@ -145,7 +152,6 @@ struct PostTripInspectionView: View {
     }
 
     private func completeTrip() async {
-        // Safeguard 6: check proof of delivery exists
         guard let trip = trip, trip.proofOfDeliveryId != nil else {
             errorMessage = "Please submit proof of delivery before completing the trip."
             showError = true
@@ -160,7 +166,7 @@ struct PostTripInspectionView: View {
 
         do {
             try await store.endTrip(tripId: tripId, endMileage: endMileage)
-            showCompletedAlert = true
+            withAnimation { phase = .completed }
         } catch {
             errorMessage = error.localizedDescription
             showError = true

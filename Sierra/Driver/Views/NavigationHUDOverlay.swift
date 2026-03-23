@@ -51,7 +51,8 @@ struct NavigationHUDOverlay: View {
         .sheet(isPresented: $showSOSAlert) {
             SOSAlertSheet(
                 tripId: coordinator.trip.id,
-                vehicleId: UUID(uuidString: coordinator.trip.vehicleId ?? "")
+                vehicleId: UUID(uuidString: coordinator.trip.vehicleId ?? ""),
+                currentLocation: coordinator.currentLocation  // BUG-03 FIX
             )
         }
         .sheet(isPresented: $showIncidentReport) {
@@ -137,6 +138,9 @@ struct NavigationHUDOverlay: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.black)
             Spacer()
+            // ISSUE-25 FIX: Show spinner during reroute
+            ProgressView()
+                .tint(.black)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)

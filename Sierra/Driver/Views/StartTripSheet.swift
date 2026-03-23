@@ -177,6 +177,14 @@ struct StartTripSheet: View {
             await fetchRouteOptions()
         }
 
+        // BUG-09 FIX: Block trip start if no routes were obtained
+        guard !routeOptions.isEmpty else {
+            errorMessage = "Unable to fetch route. Please check network connection and try again."
+            showError = true
+            isStarting = false
+            return
+        }
+
         do {
             try await store.startActiveTrip(tripId: tripId, startMileage: mileage)
 
@@ -184,9 +192,9 @@ struct StartTripSheet: View {
                let originLat = trip.originLatitude,
                let originLng = trip.originLongitude,
                let destLat = trip.destinationLatitude,
-               let destLng = trip.destinationLongitude,
-               !routeOptions.isEmpty {
-                try? await TripService.updateTripCoordinates(
+               let destLng = trip.destinationLongitude {
+                // BUG-09 FIX: Use `try` instead of `try?` so errors are surfaced
+                try await TripService.updateTripCoordinates(
                     tripId: tripId,
                     originLat: originLat,
                     originLng: originLng,

@@ -91,7 +91,11 @@ struct IncidentReportSheet: View {
                 let message: String
                 let performed_at: String
             }
-            let userId = AuthManager.shared.currentUser?.id ?? UUID()
+            // C-04 FIX: Guard against nil auth
+            guard let userId = AuthManager.shared.currentUser?.id else {
+                isSubmitting = false
+                return
+            }
             let iso = ISO8601DateFormatter()
             iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
 
@@ -99,7 +103,7 @@ struct IncidentReportSheet: View {
                 .from("activity_logs")
                 .insert(LogPayload(
                     staff_id: userId.uuidString,
-                    activity_type: "Route Deviation",
+                    activity_type: incidentType.rawValue,  // H-03 FIX: use selected type
                     severity: "Medium",
                     message: "[\(incidentType.rawValue)] \(notes)",
                     performed_at: iso.string(from: Date())

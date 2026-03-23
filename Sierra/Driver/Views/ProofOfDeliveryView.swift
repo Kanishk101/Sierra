@@ -36,6 +36,8 @@ struct ProofOfDeliveryView: View {
     @State private var otpEnteredByRecipient = ""
     @State private var otpVerified = false
     @State private var otpShowMismatch = false
+    @State private var generatedOTPTime: Date?   // BUG-08 FIX: track generation time
+    @State private var otpExpired = false         // BUG-08 FIX: expired flag
 
     var body: some View {
         ScrollView {
@@ -118,28 +120,69 @@ struct ProofOfDeliveryView: View {
         }
     }
 
-    // MARK: - Photo Section
+    // ISSUE-30 FIX: Show camera trigger and photo gallery picker
+    @State private var showCamera = false
+    @State private var cameraImage: UIImage?
 
     private var photoSection: some View {
         VStack(spacing: 12) {
-            PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                VStack(spacing: 8) {
-                    Image(systemName: "camera.fill")
-                        .font(.system(size: 36))
-                        .foregroundStyle(SierraTheme.Colors.ember.opacity(0.6))
-                    Text(photoData == nil ? "Take or Select Photo" : "Photo Selected ✓")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(photoData == nil ? SierraTheme.Colors.ember : SierraTheme.Colors.alpineMint)
+            HStack(spacing: 12) {
+                // Camera button
+                Button {
+                    showCamera = true
+                } label: {
+                    VStack(spacing: 8) {
+                        Image(systemName: "camera.fill")
+                            .font(.system(size: 28))
+                            .foregroundStyle(SierraTheme.Colors.ember.opacity(0.6))
+                        Text("Camera")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(SierraTheme.Colors.ember)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 100)
+                    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
-                .frame(maxWidth: .infinity)
-                .frame(height: 120)
-                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            }
-            .onChange(of: selectedPhoto) { _, newItem in
-                Task {
-                    if let data = try? await newItem?.loadTransferable(type: Data.self) {
+                .fullScreenCover(isPresented: $showCamera) {
+                    CameraCapture(image: $cameraImage)
+                        .ignoresSafeArea()
+                }
+                .onChange(of: cameraImage) { _, newImage in
+                    if let img = newImage, let data = img.jpegData(compressionQuality: 0.8) {
                         photoData = data
                     }
+                }
+
+                // Gallery picker
+                PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                    VStack(spacing: 8) {
+                        Image(systemName: "photo.on.rectangle")
+                            .font(.system(size: 28))
+                            .foregroundStyle(SierraTheme.Colors.ember.opacity(0.6))
+                        Text("Gallery")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(SierraTheme.Colors.ember)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 100)
+                    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .onChange(of: selectedPhoto) { _, newItem in
+                    Task {
+                        if let data = try? await newItem?.loadTransferable(type: Data.self) {
+                            photoData = data
+                        }
+                    }
+                }
+            }
+
+            if photoData != nil {
+                HStack {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(SierraTheme.Colors.alpineMint)
+                    Text("Photo captured ✓")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(SierraTheme.Colors.alpineMint)
                 }
             }
         }
@@ -262,15 +305,35 @@ struct ProofOfDeliveryView: View {
     private func generateOTP() {
         let otp = String(format: "%06d", Int.random(in: 0...999999))
         generatedOTP = otp
+        generatedOTPTime = Date() // BUG-08 FIX
+        otpExpired = false
 
         // Hash OTP via CryptoService — never store plaintext
         let credential = CryptoService.hash(password: otp)
         otpHash = credential.hash
         otpSalt = credential.salt
+
+        // BUG-08 FIX: Auto-expire after 10 minutes
+        Task {
+            try? await Task.sleep(for: .seconds(600))
+            if !otpVerified {
+                otpExpired = true
+                generatedOTP = nil
+            }
+        }
     }
 
     private func verifyOTP() {
         guard let hash = otpHash, let salt = otpSalt else { return }
+
+        // BUG-08 FIX: Enforce 10-minute expiry
+        if let genTime = generatedOTPTime, Date().timeIntervalSince(genTime) > 600 {
+            otpExpired = true
+            otpShowMismatch = false
+            generatedOTP = nil
+            return
+        }
+
         let credential = CryptoService.HashedCredential(hash: hash, salt: salt)
         if CryptoService.verify(password: otpEnteredByRecipient, credential: credential) {
             otpVerified = true
@@ -312,10 +375,35 @@ struct ProofOfDeliveryView: View {
                 photoUrl = url.absoluteString
             }
 
-            // Export signature if needed
+            // BUG-02 FIX: Rasterize signature canvas to UIImage, upload, store real URL
             if method == .signature {
-                // For signature, we store a placeholder — full image export requires ImageRenderer
-                signatureUrl = "signature://captured-on-device"
+                let renderer = UIGraphicsImageRenderer(size: CGSize(width: 600, height: 300))
+                let signatureImage = renderer.image { ctx in
+                    ctx.cgContext.setFillColor(UIColor.white.cgColor)
+                    ctx.cgContext.fill(CGRect(origin: .zero, size: CGSize(width: 600, height: 300)))
+                    ctx.cgContext.setStrokeColor(UIColor.black.cgColor)
+                    ctx.cgContext.setLineWidth(2)
+                    ctx.cgContext.setLineCap(.round)
+                    // Scale points from canvas size to render size
+                    for line in signatureLines {
+                        guard let first = line.first else { continue }
+                        ctx.cgContext.move(to: CGPoint(x: first.x * (600/UIScreen.main.bounds.width), y: first.y * (300/180)))
+                        for point in line.dropFirst() {
+                            ctx.cgContext.addLine(to: CGPoint(x: point.x * (600/UIScreen.main.bounds.width), y: point.y * (300/180)))
+                        }
+                        ctx.cgContext.strokePath()
+                    }
+                }
+                if let jpegData = signatureImage.jpegData(compressionQuality: 0.8) {
+                    let path = "delivery-proofs/\(tripId.uuidString)/signature-\(UUID().uuidString).jpg"
+                    try await supabase.storage
+                        .from("delivery-proofs")
+                        .upload(path, data: jpegData, options: .init(contentType: "image/jpeg"))
+                    let url = try supabase.storage
+                        .from("delivery-proofs")
+                        .getPublicURL(path: path)
+                    signatureUrl = url.absoluteString
+                }
             }
 
             let pod = ProofOfDelivery(

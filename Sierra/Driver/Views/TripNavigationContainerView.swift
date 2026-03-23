@@ -121,9 +121,11 @@ struct TripNavigationContainerView: View {
             RouteSelectionSheet(coordinator: coordinator) { startTracking() }
         }
         .sheet(isPresented: $showProofOfDelivery) {
-            NavigationStack {
-                ProofOfDeliveryView(tripId: coordinator.trip.id, driverId: user?.id ?? UUID()) {
-                    showProofOfDelivery = false; dismiss()
+            if let userId = user?.id {  // ISSUE-21 FIX
+                NavigationStack {
+                    ProofOfDeliveryView(tripId: coordinator.trip.id, driverId: userId) {
+                        showProofOfDelivery = false; dismiss()
+                    }
                 }
             }
         }

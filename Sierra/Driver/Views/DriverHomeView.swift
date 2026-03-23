@@ -38,7 +38,10 @@ struct DriverHomeView: View {
             .sorted { $0.scheduledDate < $1.scheduledDate }
     }
 
-    private var recentTrips: [Trip] { Array(driverTrips.prefix(5)) }
+    // ISSUE-14 FIX: Exclude cancelled/rejected from recent trips
+    private var recentTrips: [Trip] {
+        Array(driverTrips.filter { $0.status != .cancelled && $0.status != .rejected }.prefix(5))
+    }
 
     private var isAvailable: Bool { driverMember?.availability == .available }
     private var driverStaffId: UUID? { driverMember?.id }
@@ -48,12 +51,12 @@ struct DriverHomeView: View {
         return store.activeTrip(forDriverId: member.id)
     }
 
-    // 30-minute window check — mirrors the DB function driver_availability_blocked()
+    // ISSUE-15 FIX: Use centralized constant and check trip's scheduledDate is within window
     private var tripStartsWithin30Min: Bool {
-        let cutoff = Date().addingTimeInterval(30 * 60)
         return driverTrips.contains { trip in
             (trip.status == .scheduled || trip.status == .accepted || trip.status == .pendingAcceptance)
-            && trip.scheduledDate <= cutoff
+            && trip.scheduledDate.timeIntervalSinceNow <= TripConstants.driverBlockWindowSeconds
+            && trip.scheduledDate.timeIntervalSinceNow > -3600  // exclude trips up to 1h overdue
         }
     }
 
