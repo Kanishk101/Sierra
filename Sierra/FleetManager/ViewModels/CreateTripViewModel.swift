@@ -2,8 +2,25 @@ import Foundation
 
 // MARK: - CreateTripViewModel
 // @MainActor @Observable — extracted from CreateTripView (Phase 13 MVVM refactor).
-// Contains all form state, validation logic, conflict checking, geocoding, and submission logic.
-// Store is injected via method parameters, not init.
+//
+// STATUS LOGIC (FIXED):
+// Trips are ALWAYS created as .pendingAcceptance with a 24-hour acceptance deadline.
+// Previously they were created as .scheduled, meaning the FM had to manually tap
+// "Dispatch to Driver" in TripDetailView, and drivers never saw a PendingAcceptance
+// trip to accept.
+//
+// Now the create-trip wizard IS the dispatch action:
+//   Step 1: route details  →  Step 2: driver  →  Step 3: vehicle  →  Step 4: geofences
+//   → INSERT as PendingAcceptance + acceptance_deadline = now + 24h
+//   → Driver sees it immediately in DriverTripsListView with Accept/Decline CTA
+//
+// The "Dispatch to Driver" button in TripDetailView still works for any Scheduled
+// trips that exist (legacy data, or trips created without a driver).
+//
+// RESOURCE LOCKING:
+// Resources are NOT marked Busy at creation time. The DB trigger fn_trip_status_change
+// fires on status → Active and handles Busy/Idle atomically. PendingAcceptance and
+// Accepted do not lock resources — the driver might still reject the trip.
 
 @MainActor
 @Observable
@@ -96,24 +113,6 @@ final class CreateTripViewModel {
         tripGeofences.remove(at: index)
     }
 
-    // MARK: - Busy-Resource Validation
-
-    private func busyResourceValidationError(resourceLabel: String, trips: [Trip], newTripStart: Date) -> String? {
-        let blockingTrips = trips.filter { $0.status == .active || $0.status == .scheduled }
-        guard !blockingTrips.isEmpty else {
-            return "Selected \(resourceLabel) is marked Busy. Please resolve the current assignment first."
-        }
-        let explicitEndTimes = blockingTrips.compactMap { $0.actualEndDate ?? $0.scheduledEndDate }
-        guard let latestEnd = explicitEndTimes.max() else {
-            return "Selected \(resourceLabel) is Busy and has no explicit trip end time."
-        }
-        if latestEnd > newTripStart {
-            let endText = latestEnd.formatted(.dateTime.day().month(.abbreviated).year().hour().minute())
-            return "Selected \(resourceLabel) is Busy until \(endText). Choose another or a later departure."
-        }
-        return nil
-    }
-
     // MARK: - Geocoding
 
     func geocodeAddress(_ address: String) async -> (Double, Double)? {
@@ -151,45 +150,49 @@ final class CreateTripViewModel {
         else { destCoords = await geocodeAddress(destination.trimmingCharacters(in: .whitespaces)) }
 
         do {
+            // Validate driver
             guard let latestDriver = try await StaffMemberService.fetchStaffMember(id: driverId) else {
                 errorMessage = "Selected driver no longer exists."; showError = true; isCreating = false; return
             }
             guard latestDriver.status == .active else {
                 errorMessage = "Selected driver is not active."; showError = true; isCreating = false; return
             }
-            if latestDriver.availability != .available && latestDriver.availability != .busy {
-                errorMessage = "Selected driver is unavailable."; showError = true; isCreating = false; return
-            }
-            if latestDriver.availability == .busy {
-                let driverTrips = try await TripService.fetchTrips(driverId: driverId)
-                if let err = busyResourceValidationError(resourceLabel: "driver", trips: driverTrips, newTripStart: scheduledDate) {
-                    errorMessage = err; showError = true; isCreating = false; return
-                }
+            if latestDriver.availability == .unavailable {
+                errorMessage = "Selected driver is currently offline. Ask them to mark themselves Available first."
+                showError = true; isCreating = false; return
             }
 
+            // Validate vehicle
             guard let latestVehicle = try await VehicleService.fetchVehicle(id: vehicleId) else {
                 errorMessage = "Selected vehicle no longer exists."; showError = true; isCreating = false; return
             }
-            if latestVehicle.status == .busy {
-                let vehicleTrips = try await TripService.fetchTrips(vehicleId: vehicleId)
-                if let err = busyResourceValidationError(resourceLabel: "vehicle", trips: vehicleTrips, newTripStart: scheduledDate) {
-                    errorMessage = err; showError = true; isCreating = false; return
-                }
+            if latestVehicle.status == .inMaintenance {
+                errorMessage = "Selected vehicle is currently in maintenance."; showError = true; isCreating = false; return
             }
 
+            // Authoritative time-based overlap check
+            // (now includes PendingAcceptance + Accepted — migration 20260323000001)
             let conflict = try await TripService.checkOverlap(
                 driverId: driverId, vehicleId: vehicleId,
                 start: scheduledDate, end: scheduledEndDate
             )
             if conflict.driverConflict {
-                errorMessage = "This driver already has a trip in that time slot."; showError = true; isCreating = false; return
+                errorMessage = "This driver already has a trip in that time window."
+                showError = true; isCreating = false; return
             }
             if conflict.vehicleConflict {
-                errorMessage = "This vehicle is already assigned in that time slot."; showError = true; isCreating = false; return
+                errorMessage = "This vehicle is already assigned in that time window."
+                showError = true; isCreating = false; return
             }
 
-            let adminId = AuthManager.shared.currentUser?.id ?? UUID()
+            // Hard guard — never fall back to random UUID
+            guard let adminId = AuthManager.shared.currentUser?.id else {
+                errorMessage = "No authenticated session. Please sign in again."
+                showError = true; isCreating = false; return
+            }
+
             let now = Date()
+            let acceptanceDeadline = now.addingTimeInterval(24 * 3600)
 
             let routeStops: [RouteStop] = stops.enumerated().map { index, addr in
                 RouteStop(name: addr.shortName, latitude: addr.latitude, longitude: addr.longitude, order: index + 1)
@@ -208,22 +211,24 @@ final class CreateTripViewModel {
                 scheduledDate: scheduledDate, scheduledEndDate: scheduledEndDate,
                 actualStartDate: nil, actualEndDate: nil,
                 startMileage: nil, endMileage: nil,
-                notes: notes, status: .scheduled, priority: priority,
+                notes: notes,
+                // FIXED: always PendingAcceptance — driver selects accept/reject next
+                status: .pendingAcceptance,
+                priority: priority,
                 proofOfDeliveryId: nil, preInspectionId: nil, postInspectionId: nil,
+                acceptanceDeadline: acceptanceDeadline,
                 driverRating: nil, driverRatingNote: nil, ratedById: nil, ratedAt: nil,
                 createdAt: now, updatedAt: now
             )
 
             try await store.addTrip(trip)
-
-            if scheduledDate <= now {
-                try await TripService.markResourcesBusy(driverId: driverId, vehicleId: vehicleId)
-                if var v = store.vehicle(for: vehicleId) { v.status = .busy; v.assignedDriverId = driverId.uuidString; try? await store.updateVehicle(v) }
-                if var d = store.staffMember(for: driverId) { d.availability = .busy; try? await store.updateStaffMember(d) }
-            }
+            // NOTE: do NOT manually mark resources Busy here.
+            // The DB trigger fn_trip_status_change fires on status → Active.
+            // PendingAcceptance does not lock resources (driver might reject).
 
             createdTrip = trip
 
+            // Create associated geofences
             for gf in tripGeofences {
                 let geofence = Geofence(
                     id: UUID(), name: gf.name,
