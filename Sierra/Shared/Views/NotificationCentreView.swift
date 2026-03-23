@@ -1,6 +1,8 @@
 import SwiftUI
 
-/// Shared notification centre — reads from AppDataStore.notifications (Safeguard 5).
+/// Shared notification centre — reads from AppDataStore.notifications.
+/// Shows both delivered notifications and upcoming scheduled reminders
+/// (pre-inspection, acceptance) that are within 2 hours.
 struct NotificationCentreView: View {
 
     @Environment(AppDataStore.self) private var store
@@ -8,31 +10,55 @@ struct NotificationCentreView: View {
 
     private var currentUserId: UUID { AuthManager.shared.currentUser?.id ?? UUID() }
 
-    private var sortedNotifications: [SierraNotification] {
-        store.notifications.sorted { $0.sentAt > $1.sentAt }
+    // Delivered + read notifications, newest first
+    private var delivered: [SierraNotification] {
+        store.notifications
+            .filter { $0.isDelivered || $0.scheduledFor == nil }
+            .sorted { $0.sentAt > $1.sentAt }
+    }
+
+    // Upcoming scheduled reminders within 2 hours, soonest first
+    private var upcomingReminders: [SierraNotification] {
+        store.notifications
+            .filter { $0.isPendingUpcoming }
+            .sorted { ($0.scheduledFor ?? .distantFuture) < ($1.scheduledFor ?? .distantFuture) }
     }
 
     var body: some View {
         NavigationStack {
             Group {
-                if sortedNotifications.isEmpty {
-                    VStack(spacing: 12) {
-                        Spacer()
-                        Image(systemName: "bell.slash")
-                            .font(.system(size: 40, weight: .light))
-                            .foregroundStyle(.secondary)
-                        Text("No notifications")
-                            .font(.subheadline).foregroundStyle(.secondary)
-                        Spacer()
-                    }
-                    .frame(maxWidth: .infinity)
+                if delivered.isEmpty && upcomingReminders.isEmpty {
+                    emptyState
                 } else {
                     List {
-                        ForEach(sortedNotifications) { notif in
-                            notificationRow(notif)
-                                .onTapGesture {
-                                    Task { await markRead(notif) }
+                        // ── Upcoming reminders section ───────────────────────
+                        if !upcomingReminders.isEmpty {
+                            Section {
+                                ForEach(upcomingReminders) { notif in
+                                    upcomingRow(notif)
                                 }
+                            } header: {
+                                Label("Upcoming Reminders", systemImage: "clock.badge")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.orange)
+                                    .textCase(nil)
+                            }
+                        }
+
+                        // ── Delivered notifications ──────────────────────────
+                        if !delivered.isEmpty {
+                            Section {
+                                ForEach(delivered) { notif in
+                                    notificationRow(notif)
+                                        .onTapGesture { Task { await markRead(notif) } }
+                                }
+                            } header: {
+                                if !upcomingReminders.isEmpty {
+                                    Text("Recent")
+                                        .font(.caption.weight(.semibold))
+                                        .textCase(nil)
+                                }
+                            }
                         }
                     }
                     .listStyle(.insetGrouped)
@@ -44,22 +70,71 @@ struct NotificationCentreView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Mark All Read") {
-                        Task { await markAllRead() }
+                if store.unreadNotificationCount > 0 {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Mark All Read") {
+                            Task { await markAllRead() }
+                        }
+                        .font(.caption)
                     }
-                    .font(.caption)
-                    .disabled(store.unreadNotificationCount == 0)
                 }
             }
         }
     }
 
-    // MARK: - Row
+    // MARK: - Empty state
+
+    private var emptyState: some View {
+        VStack(spacing: 12) {
+            Spacer()
+            Image(systemName: "bell.slash")
+                .font(.system(size: 40, weight: .light))
+                .foregroundStyle(.secondary)
+            Text("No notifications")
+                .font(.subheadline).foregroundStyle(.secondary)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - Upcoming reminder row (not yet delivered)
+
+    private func upcomingRow(_ notif: SierraNotification) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: notifIcon(notif.type))
+                .font(.title3)
+                .foregroundStyle(.orange)
+                .frame(width: 32)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(notif.title)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                Text(notif.body)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+
+            Spacer()
+
+            // "in Xm" countdown badge
+            if let mins = notif.minutesUntilDelivery {
+                Text(mins == 0 ? "now" : "in \(mins)m")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(Color.orange))
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    // MARK: - Delivered notification row
 
     private func notificationRow(_ notif: SierraNotification) -> some View {
         HStack(spacing: 12) {
-            // Unread dot
             Circle()
                 .fill(notif.isRead ? Color.clear : Color.blue)
                 .frame(width: 8, height: 8)
@@ -93,48 +168,54 @@ struct NotificationCentreView: View {
 
     private func notifIcon(_ type: NotificationType) -> String {
         switch type {
-        case .sosAlert: return "sos.circle.fill"
-        case .defectAlert: return "wrench.trianglebadge.exclamationmark"
-        case .routeDeviation: return "location.slash.fill"
-        case .maintenanceOverdue: return "clock.badge.exclamationmark"
-        case .tripAssigned: return "map.fill"
-        case .tripAccepted: return "checkmark.circle.fill"
-        case .tripRejected: return "xmark.circle.fill"
-        case .tripCancelled: return "minus.circle.fill"
-        case .vehicleAssigned: return "car.fill"
-        case .maintenanceApproved: return "checkmark.seal.fill"
-        case .maintenanceRejected: return "xmark.seal.fill"
-        case .geofenceAlert: return "exclamationmark.shield.fill"
-        case .inspectionFailed: return "doc.text.fill"
-        case .documentExpiry: return "calendar.badge.exclamationmark"
-        case .emergency: return "exclamationmark.octagon.fill"
-        case .maintenanceComplete: return "wrench.and.screwdriver.fill"
-        case .general: return "bell.fill"
+        case .sosAlert:                return "sos.circle.fill"
+        case .defectAlert:             return "wrench.trianglebadge.exclamationmark"
+        case .routeDeviation:          return "location.slash.fill"
+        case .maintenanceOverdue:      return "clock.badge.exclamationmark"
+        case .tripAssigned:            return "map.fill"
+        case .tripAccepted:            return "checkmark.circle.fill"
+        case .tripRejected:            return "xmark.circle.fill"
+        case .tripCancelled:           return "minus.circle.fill"
+        case .vehicleAssigned:         return "car.fill"
+        case .maintenanceApproved:     return "checkmark.seal.fill"
+        case .maintenanceRejected:     return "xmark.seal.fill"
+        case .geofenceAlert:           return "exclamationmark.shield.fill"
+        case .inspectionFailed:        return "doc.text.fill"
+        case .documentExpiry:          return "calendar.badge.exclamationmark"
+        case .emergency:               return "exclamationmark.octagon.fill"
+        case .maintenanceComplete:     return "wrench.and.screwdriver.fill"
+        case .preInspectionReminder:   return "checklist"
+        case .tripAcceptanceReminder:  return "clock.badge.exclamationmark"
+        case .general:                 return "bell.fill"
         }
     }
 
     private func notifColor(_ type: NotificationType) -> Color {
         switch type {
-        case .sosAlert, .defectAlert, .emergency: return .red
-        case .routeDeviation, .geofenceAlert, .tripRejected: return .orange
-        case .maintenanceOverdue, .inspectionFailed, .documentExpiry: return .yellow
-        case .tripAssigned, .tripAccepted, .vehicleAssigned: return .blue
-        case .maintenanceApproved: return .green
-        case .tripCancelled, .maintenanceRejected: return .red
-        case .maintenanceComplete: return .green
-        case .general: return .gray
+        case .sosAlert, .defectAlert, .emergency, .tripCancelled, .maintenanceRejected:
+            return .red
+        case .routeDeviation, .geofenceAlert, .tripRejected,
+             .preInspectionReminder, .tripAcceptanceReminder:
+            return .orange
+        case .maintenanceOverdue, .inspectionFailed, .documentExpiry:
+            return .yellow
+        case .tripAssigned, .tripAccepted, .vehicleAssigned:
+            return .blue
+        case .maintenanceApproved, .maintenanceComplete:
+            return .green
+        case .general:
+            return .gray
         }
     }
 
     private func timeAgo(_ date: Date) -> String {
         let interval = Date().timeIntervalSince(date)
-        if interval < 60 { return "Now" }
-        if interval < 3600 { return "\(Int(interval / 60))m" }
-        if interval < 86400 { return "\(Int(interval / 3600))h" }
+        if interval < 60      { return "Now" }
+        if interval < 3600    { return "\(Int(interval / 60))m" }
+        if interval < 86400   { return "\(Int(interval / 3600))h" }
         return "\(Int(interval / 86400))d"
     }
 
-    // Safeguard 5: only these two calls to Supabase are allowed
     private func markRead(_ notif: SierraNotification) async {
         guard !notif.isRead else { return }
         do {
