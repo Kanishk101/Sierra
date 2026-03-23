@@ -83,7 +83,10 @@ struct StaffReviewSheet: View {
                 Button("Approve") {
                     Task {
                         await viewModel.approve(applicationId: application.id)
-                        dismiss()
+                        // Only dismiss if the operation succeeded (no error set)
+                        if viewModel.errorMessage == nil {
+                            dismiss()
+                        }
                     }
                 }
             } message: {
@@ -330,7 +333,10 @@ struct StaffReviewSheet: View {
             Button {
                 Task {
                     await viewModel.reject(applicationId: application.id, reason: viewModel.rejectionReason)
-                    dismiss()
+                    // Only dismiss if the operation succeeded (no error set)
+                    if viewModel.errorMessage == nil {
+                        dismiss()
+                    }
                 }
             } label: {
                 Text("Confirm Rejection")
