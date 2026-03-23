@@ -2,11 +2,6 @@ import SwiftUI
 import UserNotifications
 
 // MARK: - AppDelegate
-// Handles local notification permission only.
-// APNs (remote push) requires a paid Apple Developer Program membership
-// and is not used in this build. All notification banners are delivered
-// via UNUserNotificationCenter local notifications instead, triggered
-// by the Supabase Realtime events that already fire for every role.
 
 final class SierraAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
 
@@ -14,11 +9,7 @@ final class SierraAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificati
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
-        // Set ourselves as the UNUserNotificationCenter delegate so banners
-        // appear even when the app is in the foreground.
         UNUserNotificationCenter.current().delegate = self
-
-        // Request local notification permission (no APNs — no paid account needed).
         UNUserNotificationCenter.current().requestAuthorization(
             options: [.alert, .sound, .badge]
         ) { granted, error in
@@ -38,6 +29,23 @@ final class SierraAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificati
     ) {
         completionHandler([.banner, .sound, .badge])
     }
+
+    // Deep-link tap handling: route to the correct trip/entity when user taps a banner.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let userInfo = response.notification.request.content.userInfo
+        if let entityId = userInfo["entityId"] as? String {
+            NotificationCenter.default.post(
+                name: .sierraNotificationTapped,
+                object: nil,
+                userInfo: ["entityId": entityId]
+            )
+        }
+        completionHandler()
+    }
 }
 
 // MARK: - SierraApp
@@ -50,8 +58,7 @@ struct SierraApp: App {
     private var lifecycle = AppLifecycleMonitor.shared
 
     init() {
-        // On first launch after a fresh install, clear stale Keychain data
-        // so Face ID / session tokens from a previous install don't carry over.
+        // On first launch after a fresh install, clear stale Keychain data.
         let hasLaunchedKey = "sierra.hasLaunchedBefore"
         if !UserDefaults.standard.bool(forKey: hasLaunchedKey) {
             UserDefaults.standard.set(true, forKey: hasLaunchedKey)
@@ -70,7 +77,6 @@ struct SierraApp: App {
                 ContentView()
                     .applySierraTheme()
 
-                // Biometric lock overlay - covers all roles
                 if lifecycle.showBiometricLock {
                     BiometricLockView()
                         .transition(.opacity)
@@ -91,11 +97,21 @@ struct SierraApp: App {
                 AuthManager.shared.appDidEnterBackground()
             case .active:
                 AuthManager.shared.appWillEnterForeground()
+                // Housekeeping on every foreground resume
                 Task { await AppDataStore.shared.checkOverdueMaintenance() }
                 Task { await AppDataStore.shared.checkExpiringDocuments() }
+                // Deliver any past-due scheduled notifications (1-hr accept /
+                // 30-min pre-inspection reminders). Non-fatal if user is not
+                // signed in yet — the function returns 401 which is swallowed.
+                Task { await NotificationService.deliverScheduledNotifications() }
             default:
                 break
             }
         }
     }
+}
+
+// MARK: - Notification name for deep-link tap routing
+extension Notification.Name {
+    static let sierraNotificationTapped = Notification.Name("sierraNotificationTapped")
 }
