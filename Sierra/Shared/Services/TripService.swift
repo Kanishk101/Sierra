@@ -28,12 +28,19 @@ enum TripServiceError: LocalizedError {
 }
 
 // MARK: - TripInsertPayload
+//
+// FIX (UUID case): Swift UUID.uuidString is UPPERCASE; PostgreSQL auth.uid()::text
+// is LOWERCASE. All TEXT FK UUID columns must be lowercased at insert time so that
+// the RLS USING clause `LOWER(driver_id) = LOWER(auth.uid()::text)` succeeds.
+//
+// FIX (acceptanceDeadline): trips created as PendingAcceptance must carry the 24h
+// response deadline from the very first INSERT row. Added field here.
 
 struct TripInsertPayload: Encodable {
     let taskId: String
-    let driverId: String?
-    let vehicleId: String?
-    let createdByAdminId: String
+    let driverId: String?        // always lowercased
+    let vehicleId: String?       // always lowercased
+    let createdByAdminId: String // always lowercased
     let origin: String
     let destination: String
     let deliveryInstructions: String
@@ -52,6 +59,7 @@ struct TripInsertPayload: Encodable {
     let destinationLongitude: Double?
     let routePolyline: String?
     let routeStops: [RouteStop]
+    let acceptanceDeadline: String?  // NEW — required for PendingAcceptance trips
 
     enum CodingKeys: String, CodingKey {
         case taskId               = "task_id"
@@ -73,13 +81,15 @@ struct TripInsertPayload: Encodable {
         case destinationLongitude = "destination_longitude"
         case routePolyline        = "route_polyline"
         case routeStops           = "route_stops"
+        case acceptanceDeadline   = "acceptance_deadline"
     }
 
     init(from t: Trip) {
         taskId               = t.taskId
-        driverId             = t.driverId
-        vehicleId            = t.vehicleId
-        createdByAdminId     = t.createdByAdminId
+        // LOWERCASE — must match auth.uid()::text which PostgreSQL always returns lowercase
+        driverId             = t.driverId?.lowercased()
+        vehicleId            = t.vehicleId?.lowercased()
+        createdByAdminId     = t.createdByAdminId.lowercased()
         origin               = t.origin
         destination          = t.destination
         deliveryInstructions = t.deliveryInstructions
@@ -98,6 +108,7 @@ struct TripInsertPayload: Encodable {
         destinationLongitude = t.destinationLongitude
         routePolyline        = t.routePolyline
         routeStops           = t.routeStops ?? []
+        acceptanceDeadline   = t.acceptanceDeadline.map { iso.string(from: $0) }
     }
 }
 
@@ -171,9 +182,10 @@ struct TripUpdatePayload: Encodable {
 
     init(from t: Trip) {
         taskId               = t.taskId
-        driverId             = t.driverId
-        vehicleId            = t.vehicleId
-        createdByAdminId     = t.createdByAdminId
+        // LOWERCASE — same reason as TripInsertPayload
+        driverId             = t.driverId?.lowercased()
+        vehicleId            = t.vehicleId?.lowercased()
+        createdByAdminId     = t.createdByAdminId.lowercased()
         origin               = t.origin
         destination          = t.destination
         deliveryInstructions = t.deliveryInstructions
@@ -246,7 +258,7 @@ struct TripService {
         try await supabase
             .from("trips")
             .select()
-            .eq("vehicle_id", value: vehicleId.uuidString)
+            .eq("vehicle_id", value: vehicleId.uuidString.lowercased())
             .order("scheduled_date", ascending: false)
             .limit(200)
             .execute()
@@ -271,14 +283,10 @@ struct TripService {
         print("🗺️  [TripService.addTrip] Starting INSERT for trip:")
         print("🗺️    ID          : \(trip.id.uuidString)")
         print("🗺️    TaskID      : \(trip.taskId)")
-        print("🗺️    DriverID    : \(trip.driverId ?? "nil")")
+        print("🗺️    DriverID    : \(trip.driverId ?? "nil") → stored as: \(trip.driverId?.lowercased() ?? "nil")")
         print("🗺️    VehicleID   : \(trip.vehicleId ?? "nil")")
-        print("🗺️    AdminID     : \(trip.createdByAdminId)")
-        print("🗺️    Origin      : \(trip.origin)")
-        print("🗺️    Destination : \(trip.destination)")
         print("🗺️    Status      : \(trip.status.rawValue)")
-        print("🗺️    Priority    : \(trip.priority.rawValue)")
-        print("🗺️    ScheduledAt : \(trip.scheduledDate)")
+        print("🗺️    Deadline    : \(trip.acceptanceDeadline?.description ?? "nil")")
         await SierraDebugLogger.logSessionState(context: "TripService.addTrip")
         await SierraDebugLogger.logRLSRole(context: "TripService.addTrip")
         let payload = TripInsertPayload(from: trip)
@@ -427,15 +435,6 @@ struct TripService {
     }
 
     // MARK: - Resource Overlap Check
-    //
-    // FIX: Explicitly injects Authorization header.
-    // The SDK's FunctionsClient uses a synchronous _headers fallback that
-    // sends the anon key when the async session can't be awaited.
-    // SupabaseManager.functionOptions() gets the real user access token
-    // via async `supabase.auth.session` and injects it correctly.
-    //
-    // DB FIX also applied: Dropped the uuid overload of check_resource_overlap
-    // to resolve the PostgREST "function is not unique" 500 error.
 
     static func checkOverlap(
         driverId: UUID,
@@ -482,7 +481,6 @@ struct TripService {
         let t = Date()
         #endif
 
-        // CRITICAL FIX: use SupabaseManager.functionOptions() to inject user JWT
         let options = try await SupabaseManager.functionOptions(body: body)
 
         do {
