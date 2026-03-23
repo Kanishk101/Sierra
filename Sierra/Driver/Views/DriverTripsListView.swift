@@ -23,6 +23,8 @@ struct DriverTripsListView: View {
     @State private var inspectionMode: InspectionFlowMode = .pre
     @State private var overviewTrip: Trip? = nil  // drives fullscreen TripDetailDriverView
     @State private var isAccepting = false  // prevents double-tap
+    @State private var showNavigation = false
+    @State private var navigationTrip: Trip? = nil
 
     enum InspectionFlowMode {
         case pre, post
@@ -67,6 +69,15 @@ struct DriverTripsListView: View {
             } else {
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(spacing: 14) {
+                        HStack {
+                            Text("All Trips")
+                                .font(.system(size: 30, weight: .bold, design: .rounded))
+                                .foregroundColor(.appTextPrimary)
+                            Spacer()
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.top, 4)
+
                         // Stats Header
                         statsBar
                             .padding(.horizontal, 20)
@@ -141,8 +152,8 @@ struct DriverTripsListView: View {
                 .zIndex(260)
             }
         }
-        .navigationTitle("My Trips")
-        .toolbarTitleDisplayMode(.large)
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $searchText, prompt: "Search task ID, origin…")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -210,17 +221,32 @@ struct DriverTripsListView: View {
                let vIdStr = iTrip.vehicleId,
                let vehicleUUID = UUID(uuidString: vIdStr),
                let dId = driverId {
-                PreTripInspectionView(
-                    tripId: iTrip.id,
-                    vehicleId: vehicleUUID,
-                    driverId: dId,
-                    inspectionType: inspectionMode == .post ? .postTripInspection : .preTripInspection,
-                    onComplete: {
-                        showInspection = false
-                        inspectionTrip = nil
-                    }
-                )
-                .environment(store)
+                if inspectionMode == .post {
+                    PostTripInspectionView(
+                        tripId: iTrip.id,
+                        vehicleId: vehicleUUID,
+                        driverId: dId
+                    )
+                    .environment(store)
+                } else {
+                    PreTripInspectionView(
+                        tripId: iTrip.id,
+                        vehicleId: vehicleUUID,
+                        driverId: dId,
+                        inspectionType: .preTripInspection,
+                        onComplete: {
+                            showInspection = false
+                            inspectionTrip = nil
+                        }
+                    )
+                    .environment(store)
+                }
+            }
+        }
+        .fullScreenCover(isPresented: $showNavigation) {
+            if let nTrip = navigationTrip {
+                TripNavigationContainerView(trip: nTrip)
+                    .environment(AppDataStore.shared)
             }
         }
         .task {
@@ -318,7 +344,7 @@ struct DriverTripsListView: View {
         // Check vehicle status
         // (Sierra doesn't have waitingReallocation on Trip, but VehicleInspection handles vehicle changes)
 
-        if trip.status == .accepted || trip.status == .active {
+        if trip.status == .accepted || trip.status == .active || (trip.status == .scheduled && trip.acceptedAt != nil) {
             inspectionMode = trip.status == .completed ? .post : .pre
             inspectionTrip = trip
             dismissDetail()
@@ -536,7 +562,14 @@ struct DriverTripsListView: View {
         let needsPostTrip = isCompleted && trip.postInspectionId == nil
         let postTripDone = isCompleted && trip.postInspectionId != nil
         let hasPreInspection = trip.preInspectionId != nil
-        let isNavigateReady = (trip.status == .accepted && hasPreInspection) || trip.status == .active
+        // Navigate is ready when:
+        //  • .accepted or .scheduled-post-acceptance with pre-inspection done
+        //  • .active (always navigate)
+        let isPostAcceptanceScheduled = trip.status == .scheduled && trip.acceptedAt != nil
+        let isNavigateReady = ((trip.status == .accepted || isPostAcceptanceScheduled) && hasPreInspection && trip.scheduledDate <= Date())
+            || trip.status == .active
+        // Trip was accepted (any accepted-family status) but pre-inspection not yet done
+        let isAcceptedAwaitingInspection = (trip.status == .accepted || isPostAcceptanceScheduled) && !hasPreInspection
 
         if needsPostTrip {
             // Post-trip inspection slider
@@ -593,8 +626,11 @@ struct DriverTripsListView: View {
                     .buttonStyle(.plain)
                     .disabled(isAccepting)
                 } else if isNavigateReady {
-                    // Navigate — pushes to TripDetailDriverView
-                    NavigationLink(value: trip.id) {
+                    // Navigate — opens direct full-screen nav, so back returns to list.
+                    Button {
+                        navigationTrip = trip
+                        showNavigation = true
+                    } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "location.fill")
                                 .font(.system(size: 13, weight: .semibold))
@@ -609,8 +645,8 @@ struct DriverTripsListView: View {
                         )
                     }
                     .buttonStyle(.plain)
-                } else if trip.status == .accepted {
-                    // Accepted (disabled green)
+                } else if isAcceptedAwaitingInspection {
+                    // Accepted — waiting for pre-trip inspection (disabled green)
                     HStack(spacing: 6) {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 13, weight: .semibold))
@@ -626,25 +662,35 @@ struct DriverTripsListView: View {
                     .overlay(
                         Capsule().stroke(Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.3), lineWidth: 1.5)
                     )
-                } else {
-                    // Fallback: View Details (already handled by left button, show Completed for Done)
-                    if isCompleted {
-                        HStack(spacing: 6) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 13, weight: .semibold))
-                            Text("Completed")
-                                .font(.system(size: 14, weight: .bold, design: .rounded))
-                        }
-                        .foregroundColor(Color(red: 0.20, green: 0.65, blue: 0.32))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(
-                            Capsule().fill(Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.12))
-                        )
-                        .overlay(
-                            Capsule().stroke(Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.3), lineWidth: 1.5)
-                        )
+                } else if isCompleted {
+                    // Completed label
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("Completed")
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
                     }
+                    .foregroundColor(Color(red: 0.20, green: 0.65, blue: 0.32))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(
+                        Capsule().fill(Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.12))
+                    )
+                    .overlay(
+                        Capsule().stroke(Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.3), lineWidth: 1.5)
+                    )
+                } else {
+                    HStack(spacing: 6) {
+                        Image(systemName: "clock.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text(trip.status.rawValue)
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                    }
+                    .foregroundColor(.appTextSecondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Capsule().fill(Color(.tertiarySystemGroupedBackground)))
+                    .overlay(Capsule().stroke(Color.appDivider.opacity(0.6), lineWidth: 1))
                 }
             }
         }
@@ -1057,8 +1103,19 @@ struct RoutePreviewMap: UIViewRepresentable {
 
         // Request driving route
         let request = MKDirections.Request()
-        request.source      = MKMapItem(placemark: MKPlacemark(coordinate: o))
-        request.destination = MKMapItem(placemark: MKPlacemark(coordinate: d))
+        if #available(iOS 26.0, *) {
+            request.source = MKMapItem(
+                location: CLLocation(latitude: o.latitude, longitude: o.longitude),
+                address: nil
+            )
+            request.destination = MKMapItem(
+                location: CLLocation(latitude: d.latitude, longitude: d.longitude),
+                address: nil
+            )
+        } else {
+            request.source      = MKMapItem(placemark: MKPlacemark(coordinate: o))
+            request.destination = MKMapItem(placemark: MKPlacemark(coordinate: d))
+        }
         request.transportType = .automobile
         request.requestsAlternateRoutes = false
 
@@ -1085,9 +1142,15 @@ struct RoutePreviewMap: UIViewRepresentable {
     }
 
     private func geocode(_ name: String) async -> CLLocationCoordinate2D? {
-        let geocoder = CLGeocoder()
-        let placemarks = try? await geocoder.geocodeAddressString(name)
-        return placemarks?.first?.location?.coordinate
+        if #available(iOS 26.0, *) {
+            let request = MKGeocodingRequest(addressString: name)
+            let mapItems = try? await request?.mapItems
+            return mapItems?.first?.location.coordinate
+        } else {
+            let geocoder = CLGeocoder()
+            let placemarks = try? await geocoder.geocodeAddressString(name)
+            return placemarks?.first?.location?.coordinate
+        }
     }
 }
 
@@ -1109,6 +1172,17 @@ struct TripDetailCard: View {
     private var distanceDisplay: String {
         if let km = trip.distanceKm {
             return "\(Int(km))km"
+        }
+        if let oLat = trip.originLatitude,
+           let oLng = trip.originLongitude,
+           let dLat = trip.destinationLatitude,
+           let dLng = trip.destinationLongitude {
+            let origin = CLLocation(latitude: oLat, longitude: oLng)
+            let destination = CLLocation(latitude: dLat, longitude: dLng)
+            let km = origin.distance(from: destination) / 1000
+            if km.isFinite, km > 0 {
+                return "\(Int(km.rounded()))km"
+            }
         }
         return "—"
     }

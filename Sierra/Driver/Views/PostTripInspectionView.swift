@@ -152,8 +152,8 @@ struct PostTripInspectionView: View {
     }
 
     private func completeTrip() async {
-        guard let trip = trip, trip.proofOfDeliveryId != nil else {
-            errorMessage = "Please submit proof of delivery before completing the trip."
+        guard let _ = trip else {
+            errorMessage = "Trip not found."
             showError = true
             return
         }

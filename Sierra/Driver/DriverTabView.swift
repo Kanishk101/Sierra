@@ -57,6 +57,9 @@ struct DriverTabView: View {
         }
         .onChange(of: store.notifications.count) { _, _ in
             if let latest = store.notifications.first, !latest.isRead {
+                // Driver acceptance already shows an in-flow centered success overlay.
+                // Suppress duplicate top banners for that same event.
+                if latest.type == .tripAccepted { return }
                 bannerCoordinator.show(.init(title: latest.title, body: latest.body))
             }
         }

@@ -145,7 +145,7 @@ struct DriverProfileSheet: View {
                     }
                 }
 
-                // License Info
+                // License + Documents Info
                 if let profile = driverMember.flatMap({ store.driverProfile(for: $0.id) }) {
                     Section("License") {
                         HStack {
@@ -153,6 +153,22 @@ struct DriverProfileSheet: View {
                                 .font(.subheadline)
                             Spacer()
                             Text(profile.licenseNumber)
+                                .font(.system(size: 13, design: .monospaced).weight(.semibold))
+                                .foregroundStyle(.orange)
+                        }
+                        HStack {
+                            Label("Class", systemImage: "creditcard.fill")
+                                .font(.subheadline)
+                            Spacer()
+                            Text(profile.licenseClass)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        HStack {
+                            Label("Issuing State", systemImage: "mappin.and.ellipse")
+                                .font(.subheadline)
+                            Spacer()
+                            Text(profile.licenseIssuingState)
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
@@ -163,6 +179,25 @@ struct DriverProfileSheet: View {
                             Text(profile.licenseExpiry)
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Section("Documents") {
+                        HStack {
+                            Label("License Doc", systemImage: "doc.richtext.fill")
+                                .font(.subheadline)
+                            Spacer()
+                            Text(profile.licenseDocumentUrl != nil ? "Uploaded ✓" : "Not uploaded")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(profile.licenseDocumentUrl != nil ? .green : .secondary)
+                        }
+                        HStack {
+                            Label("Aadhaar Card", systemImage: "person.text.rectangle.fill")
+                                .font(.subheadline)
+                            Spacer()
+                            Text(profile.aadhaarDocumentUrl != nil ? "Uploaded ✓" : "Not uploaded")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(profile.aadhaarDocumentUrl != nil ? .green : .secondary)
                         }
                     }
                 }

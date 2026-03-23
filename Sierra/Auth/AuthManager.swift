@@ -174,7 +174,7 @@ final class AuthManager {
             print("🔐 [AuthManager.signIn] ✅ T+\(t("s3ok"))ms: Edge fn succeeded in \(edgeFnMs)ms")
             print("🔐 [AuthManager.signIn] 📋 Profile id    : \(profile.id)")
             print("🔐 [AuthManager.signIn] 📋 Profile role  : \(profile.role)")
-            print("🔐 [AuthManager.signIn] 📋 First login   : \(profile.is_first_login ?? true)")
+            print("🔐 [AuthManager.signIn] 📋 First login   : \(profile.is_first_login ?? false)")
             print("🔐 [AuthManager.signIn] 📋 Approved      : \(profile.is_approved ?? false)")
             print("🔐 [AuthManager.signIn] 📋 Profile complete: \(profile.is_profile_complete ?? false)")
             print("🔐 [AuthManager.signIn] ────────────────────────────────────────")
@@ -208,7 +208,7 @@ final class AuthManager {
         let user = AuthUser(
             id: userId, email: profile.email,
             role: UserRole(rawValue: profile.role) ?? .driver,
-            isFirstLogin: profile.is_first_login ?? true,
+            isFirstLogin: profile.is_first_login ?? false,
             isProfileComplete: profile.is_profile_complete ?? false,
             isApproved: profile.is_approved ?? false,
             name: profile.name, rejectionReason: profile.rejection_reason,
@@ -322,16 +322,19 @@ final class AuthManager {
         switch user.role {
         case .fleetManager: return .fleetManagerDashboard
         case .driver:
-            if user.isFirstLogin        { return .changePassword }
-            if !user.isProfileComplete  { return .driverOnboarding }
+            // Approved + complete drivers go straight to dashboard, even if isFirstLogin is stale
+            if user.isApproved && user.isProfileComplete { return .driverDashboard }
+            if !user.isProfileComplete { return .driverOnboarding }
+            if user.isFirstLogin      { return .changePassword }
             if !user.isApproved {
                 if let r = user.rejectionReason, !r.isEmpty { return .rejected }
                 return .pendingApproval
             }
             return .driverDashboard
         case .maintenancePersonnel:
-            if user.isFirstLogin        { return .changePassword }
+            if user.isApproved && user.isProfileComplete { return .maintenanceDashboard }
             if !user.isProfileComplete  { return .maintenanceOnboarding }
+            if user.isFirstLogin        { return .changePassword }
             if !user.isApproved {
                 if let r = user.rejectionReason, !r.isEmpty { return .rejected }
                 return .pendingApproval

@@ -32,6 +32,7 @@ struct TripDetailDriverView: View {
     // Accept / Reject
     @State private var isAccepting              = false
     @State private var isRejecting              = false
+    @State private var showAcceptSuccess        = false
 
     // Reject sheet
     @State private var showRejectSheet          = false
@@ -86,7 +87,6 @@ struct TripDetailDriverView: View {
                         routeMapCard(trip)
                         if let vehicle { vehicleCard(vehicle) }
                         tripProgressBar(trip)
-                        flowStepsCard(trip)
                         actionButtons(trip)
                         Spacer(minLength: 40)
                     }
@@ -98,6 +98,13 @@ struct TripDetailDriverView: View {
             }
         }
         .background(Color.appSurface.ignoresSafeArea())
+        .overlay {
+            if showAcceptSuccess {
+                AcceptSuccessOverlay()
+                    .transition(.opacity.combined(with: .scale(scale: 0.8)))
+                    .zIndex(200)
+            }
+        }
         .navigationTitle("Trip Overview")
         .navigationBarTitleDisplayMode(.inline)
         .alert("Error", isPresented: $showError) {
@@ -151,6 +158,7 @@ struct TripDetailDriverView: View {
                         vehicleId: vehicle.id,
                         driverId: userId  // ISSUE-21 FIX
                     )
+                    .environment(store)
                 }
             }
         }
@@ -618,6 +626,38 @@ struct TripDetailDriverView: View {
                 }
             }
 
+            // Distance + scheduled time stat chips
+            HStack(spacing: 10) {
+                // Distance chip
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.up.right.circle.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.blue)
+                    Text(trip.distanceKm.map { "\(Int($0)) km" } ?? "N/A")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundColor(.appTextPrimary)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color.blue.opacity(0.08)))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.blue.opacity(0.18), lineWidth: 1))
+
+                // Scheduled time chip
+                HStack(spacing: 6) {
+                    Image(systemName: "clock.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.appOrange)
+                    Text(trip.scheduledDate.formatted(.dateTime.hour().minute()))
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundColor(.appTextPrimary)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color.appOrange.opacity(0.08)))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.appOrange.opacity(0.18), lineWidth: 1))
+            }
+            .padding(.top, 4)
+
             if !trip.deliveryInstructions.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("DELIVERY INSTRUCTIONS")
@@ -687,49 +727,45 @@ struct TripDetailDriverView: View {
         VStack(spacing: 12) {
             switch trip.status {
 
-            // ── Scheduled: unassigned, no driver yet ────────────────────────
-            case .scheduled:
-                VStack(spacing: 8) {
-                    Image(systemName: "clock.badge.questionmark")
-                        .font(.system(size: 28))
-                        .foregroundStyle(.secondary)
-                    Text("Awaiting Dispatch")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Text("Your fleet manager will send this trip for your review shortly.")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                        .multilineTextAlignment(.center)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 20)
-                .background(Color(.secondarySystemGroupedBackground),
-                            in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-
             // ── Pending Acceptance: driver must accept or reject ─────────────
             case .pendingAcceptance:
                 acceptanceButtons(trip)
 
             // ── Scheduled (post-acceptance): pre-inspection → then Start Trip ─
-            // Start Trip is only enabled once the trip becomes Active (time window).
+            // Navigate is enabled only once scheduled start time has begun.
             case .scheduled, .accepted:
-                if trip.preInspectionId == nil {
+                if trip.status == .scheduled && trip.acceptedAt == nil {
+                    VStack(spacing: 8) {
+                        Image(systemName: "clock.badge.questionmark")
+                            .font(.system(size: 28))
+                            .foregroundStyle(.secondary)
+                        Text("Awaiting Dispatch")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Text("Your fleet manager will send this trip for your review shortly.")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 20)
+                    .background(Color(.secondarySystemGroupedBackground),
+                                in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                } else if trip.preInspectionId == nil {
                     // Step 1: Complete pre-trip inspection first
                     actionButton("Begin Pre-Trip Inspection", icon: "checklist", color: SierraTheme.Colors.ember) {
                         showPreInspection = true
                     }
-                } else if trip.status == .active {
-                    // Trip is in the time window — Start Trip unlocked
-                    actionButton("Start Trip", icon: "play.fill", color: SierraTheme.Colors.alpineMint) {
-                        showStartTrip = true
-                    }
+                } else if trip.scheduledDate <= Date() {
+                    // Time slot has started — allow navigation.
+                    navigateButton()
                 } else {
-                    // Pre-inspection done but not yet in time window — show locked Start Trip
+                    // Pre-inspection done but trip has not started yet.
                     VStack(spacing: 8) {
                         HStack(spacing: 10) {
                             Image(systemName: "lock.fill")
                                 .foregroundStyle(.secondary)
-                            Text("Start Trip")
+                            Text("Navigate")
                                 .font(.system(size: 16, weight: .bold, design: .rounded))
                                 .foregroundStyle(.secondary)
                         }
@@ -742,7 +778,7 @@ struct TripDetailDriverView: View {
                                 .stroke(Color(.separator).opacity(0.5), lineWidth: 1)
                         )
 
-                        Text("Available when trip enters the active window (±30 min of scheduled time)")
+                        Text("Navigation unlocks when the scheduled start time begins.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
@@ -1067,6 +1103,14 @@ struct TripDetailDriverView: View {
         defer { isAccepting = false }
         do {
             try await store.acceptTrip(tripId: trip.id)
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
+                showAcceptSuccess = true
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
+                withAnimation(.easeOut(duration: 0.25)) {
+                    showAcceptSuccess = false
+                }
+            }
         } catch {
             errorMessage = error.localizedDescription
             showError = true

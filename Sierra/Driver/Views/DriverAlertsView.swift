@@ -28,6 +28,15 @@ struct DriverAlertsView: View {
             } else {
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(spacing: 12) {
+                        HStack {
+                            Text("Alerts")
+                                .font(.system(size: 30, weight: .bold, design: .rounded))
+                                .foregroundColor(.appTextPrimary)
+                            Spacer()
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.top, 4)
+
                         // Unread badge header
                         if unreadCount > 0 {
                             HStack(spacing: 8) {
@@ -61,8 +70,8 @@ struct DriverAlertsView: View {
                 }
             }
         }
-        .navigationTitle("Alerts")
-        .navigationBarTitleDisplayMode(.large)
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
         .refreshable {
             if let id = user?.id {
                 await store.loadDriverData(driverId: id)

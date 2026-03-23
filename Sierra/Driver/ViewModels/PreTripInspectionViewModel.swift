@@ -363,6 +363,9 @@ final class PreTripInspectionViewModel {
     // MARK: - Submit
 
     func submitInspection(store: AppDataStore) async {
+        // Guard: prevent double-submission on rapid taps
+        guard !isSubmitting else { return }
+
         guard canSubmit else {
             if !allItemsChecked {
                 submitError = "All \(uncheckedCount) item(s) must be checked before submitting."
@@ -422,7 +425,9 @@ final class PreTripInspectionViewModel {
                 raisedTaskId: nil
             )
 
-            // 4. Update trip's inspection ID — BUG-28 FIX: mutate DB first, then local store
+            // 4. Update trip's inspection ID using targeted patch only.
+            // Avoids RLS/trigger failures like "Drivers cannot change the trip schedule"
+            // that occur when sending a full Trip update payload.
             if let idx = store.trips.firstIndex(where: { $0.id == tripId }) {
                 var updatedTrip = store.trips[idx]
                 if inspectionType == .preTripInspection {
@@ -431,7 +436,11 @@ final class PreTripInspectionViewModel {
                     updatedTrip.postInspectionId = inspection.id
                 }
                 // Write to DB first — if this throws, local state stays unchanged
-                try await TripService.updateTrip(updatedTrip)
+                try await TripService.setInspectionId(
+                    tripId: tripId,
+                    inspectionId: inspection.id,
+                    type: inspectionType
+                )
                 // Only now commit to local store
                 store.trips[idx] = updatedTrip
             }
