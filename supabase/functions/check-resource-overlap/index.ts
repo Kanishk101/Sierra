@@ -3,17 +3,18 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 
 // check-resource-overlap  (Sierra Fleet Management System)
 //
-// verify_jwt: FALSE — the Supabase Swift SDK serialises JWT tokens as a Data
-// body which causes 401s when verify_jwt is true. Manual JWT verification is
-// performed below instead, giving equivalent security without the SDK issue.
+// verify_jwt: TRUE
+// The Supabase gateway validates the Bearer token before this function runs.
+// The Swift SDK (v2+) sends the session access_token as Authorization: Bearer
+// automatically via supabase.functions.invoke() — no manual JWT handling needed.
 //
 // POST body (JSON):
 // {
-//   driver_id:       string  (UUID)
+//   driver_id:       string  (UUID — lowercase or uppercase, LOWER() applied in SQL)
 //   vehicle_id:      string  (UUID)
 //   start:           string  (ISO-8601 datetime)
 //   end:             string  (ISO-8601 datetime)
-//   exclude_trip_id: string? (UUID, optional)
+//   exclude_trip_id: string? (UUID, optional — exclude current trip when editing)
 // }
 
 Deno.serve(async (req: Request) => {
@@ -24,50 +25,43 @@ Deno.serve(async (req: Request) => {
     return errorResponse(405, "Method not allowed. Use POST.");
   }
 
-  // ── Manual JWT verification ──────────────────────────────────────────────
-  // Extract the Authorization header and validate it against Supabase Auth.
-  // This replaces the verify_jwt=true gateway check that is broken by the SDK.
-  const authHeader = req.headers.get("Authorization") ?? "";
-  const jwt = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
-  if (!jwt) {
-    return errorResponse(401, "Missing Authorization header.");
-  }
-
-  // Use anon key client to validate the token — getUser() verifies signature.
-  const supabaseAnon = createClient(
+  // JWT already verified by gateway. Use service-role to query all trips
+  // (SECURITY DEFINER RPC bypasses per-row RLS for conflict detection).
+  const supabaseAdmin = createClient(
     Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_ANON_KEY")!,
-    { global: { headers: { Authorization: `Bearer ${jwt}` } }, auth: { persistSession: false } }
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    { auth: { persistSession: false } }
   );
-  const { data: { user }, error: authError } = await supabaseAnon.auth.getUser();
-  if (authError || !user) {
-    return errorResponse(401, "Invalid or expired token.");
-  }
-  // ────────────────────────────────────────────────────────────────────────
 
-  let body: { driver_id: string; vehicle_id: string; start: string; end: string; exclude_trip_id?: string | null; };
-  try { body = await req.json(); }
-  catch { return errorResponse(400, "Invalid JSON body."); }
+  let body: {
+    driver_id: string;
+    vehicle_id: string;
+    start: string;
+    end: string;
+    exclude_trip_id?: string | null;
+  };
+
+  try {
+    body = await req.json();
+  } catch {
+    return errorResponse(400, "Invalid JSON body.");
+  }
 
   const { driver_id, vehicle_id, start, end, exclude_trip_id } = body;
+
   if (!driver_id || !vehicle_id || !start || !end) {
     return errorResponse(400, "Missing required fields: driver_id, vehicle_id, start, end.");
   }
 
   const startDate = new Date(start);
   const endDate   = new Date(end);
+
   if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
     return errorResponse(400, "start and end must be valid ISO-8601 datetimes.");
   }
   if (endDate <= startDate) {
     return errorResponse(400, "end must be after start.");
   }
-
-  const supabaseAdmin = createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-    { auth: { persistSession: false } }
-  );
 
   const { data, error } = await supabaseAdmin.rpc("check_resource_overlap", {
     p_driver_id:       driver_id,
@@ -83,7 +77,10 @@ Deno.serve(async (req: Request) => {
   }
 
   const row    = Array.isArray(data) ? data[0] : data;
-  const result = { driver_conflict: row?.driver_conflict ?? false, vehicle_conflict: row?.vehicle_conflict ?? false };
+  const result = {
+    driver_conflict:  row?.driver_conflict  ?? false,
+    vehicle_conflict: row?.vehicle_conflict ?? false,
+  };
 
   return new Response(JSON.stringify(result), {
     status: 200,
@@ -98,8 +95,10 @@ function corsHeaders(): Record<string, string> {
     "Access-Control-Allow-Headers": "Authorization, Content-Type, apikey, x-client-info",
   };
 }
+
 function errorResponse(status: number, message: string): Response {
   return new Response(JSON.stringify({ error: message }), {
-    status, headers: { "Content-Type": "application/json", ...corsHeaders() },
+    status,
+    headers: { "Content-Type": "application/json", ...corsHeaders() },
   });
 }
