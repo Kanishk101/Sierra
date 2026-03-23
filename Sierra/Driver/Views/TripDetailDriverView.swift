@@ -2,16 +2,18 @@ import SwiftUI
 import MapKit
 
 /// Driver-side trip detail view with full acceptance + lifecycle actions.
-/// Phase 3 (SIERRA_FULL_AUDIT §PROMPT 3): complete rewrite.
 ///
 /// Status → action mapping:
 ///   .scheduled         → Awaiting Assignment message
 ///   .pendingAcceptance → Accept + Reject buttons
 ///   .accepted          → Begin Pre-Trip Inspection (if none) or Start Trip
-///   .active            → Navigate (pulsing) + Delivery / Post-Inspection / End Trip gate
+///   .active            → Navigate (primary) + Complete Delivery (secondary)
 ///   .completed         → Completion summary
 ///   .rejected          → Rejected banner with reason
 ///   .cancelled         → Cancelled banner
+///
+/// Flow card: Accept Trip step is ONLY shown when the trip used the acceptance flow
+/// (detected via acceptedAt, rejectedReason, or acceptance-related status).
 struct TripDetailDriverView: View {
 
     let tripId: UUID
@@ -26,8 +28,6 @@ struct TripDetailDriverView: View {
     @State private var showNavigation           = false
     @State private var showProofOfDelivery      = false
     @State private var showPostInspection       = false
-    @State private var showFuelLog              = false
-    @State private var showMaintenanceRequest   = false
 
     // Accept / Reject
     @State private var isAccepting              = false
@@ -58,6 +58,16 @@ struct TripDetailDriverView: View {
         return store.vehicle(for: uuid)
     }
 
+    /// True when this trip was (or is being) routed through the driver-acceptance flow.
+    /// Used to decide whether to show the "Accept Trip" step in the flow card.
+    private func usedAcceptanceFlow(_ trip: Trip) -> Bool {
+        trip.acceptedAt != nil
+            || trip.rejectedReason != nil
+            || trip.status == .pendingAcceptance
+            || trip.status == .accepted
+            || trip.status == .rejected
+    }
+
     // MARK: - Body
 
     var body: some View {
@@ -84,17 +94,14 @@ struct TripDetailDriverView: View {
         .background(Color(.systemGroupedBackground).ignoresSafeArea())
         .navigationTitle("Trip Details")
         .navigationBarTitleDisplayMode(.inline)
-        // MARK: Error alert
         .alert("Error", isPresented: $showError) {
             Button("OK") {}
         } message: {
             Text(errorMessage ?? "Something went wrong")
         }
-        // MARK: Reject sheet
         .sheet(isPresented: $showRejectSheet) {
             rejectSheet
         }
-        // MARK: Pre-trip inspection
         .sheet(isPresented: $showPreInspection) {
             if let trip, let vehicle {
                 NavigationStack {
@@ -108,7 +115,6 @@ struct TripDetailDriverView: View {
                 }
             }
         }
-        // MARK: Start trip sheet
         .sheet(isPresented: $showStartTrip) {
             if let trip {
                 NavigationStack {
@@ -122,7 +128,6 @@ struct TripDetailDriverView: View {
                 }
             }
         }
-        // MARK: Proof of delivery
         .sheet(isPresented: $showProofOfDelivery) {
             if let trip {
                 NavigationStack {
@@ -132,7 +137,6 @@ struct TripDetailDriverView: View {
                 }
             }
         }
-        // MARK: Post-trip inspection
         .sheet(isPresented: $showPostInspection) {
             if let trip, let vehicle {
                 NavigationStack {
@@ -144,27 +148,10 @@ struct TripDetailDriverView: View {
                 }
             }
         }
-        // MARK: Navigation (fullscreen)
         .fullScreenCover(isPresented: $showNavigation) {
             if let trip {
                 TripNavigationContainerView(trip: trip)
                     .environment(AppDataStore.shared)
-            }
-        }
-        // MARK: Fuel log
-        .sheet(isPresented: $showFuelLog) {
-            if let vehicleId = vehicle?.id, let driverId = user?.id {
-                FuelLogView(vehicleId: vehicleId, driverId: driverId, tripId: trip?.id)
-            }
-        }
-        // MARK: Maintenance request
-        .sheet(isPresented: $showMaintenanceRequest) {
-            if let vehicleId = vehicle?.id, let driverId = user?.id {
-                DriverMaintenanceRequestView(
-                    vehicleId: vehicleId,
-                    driverId: driverId,
-                    tripId: trip?.id
-                )
             }
         }
         .onAppear {
@@ -257,24 +244,29 @@ struct TripDetailDriverView: View {
         .shadow(color: .black.opacity(0.06), radius: 8, y: 4)
     }
 
-    // MARK: - Flow Steps Card (7 steps per Phase 3 spec)
+    // MARK: - Flow Steps Card
+    // Accept Trip step is conditionally included — only for trips that went
+    // through the driver-acceptance flow.
 
     private func flowStepsCard(_ trip: Trip) -> some View {
-        let steps: [(icon: String, label: String, done: Bool)] = [
-            ("checkmark.shield.fill",  "Accept Trip",
-             trip.status != .scheduled && trip.status != .pendingAcceptance),
-            ("checklist",              "Pre-Trip Inspection",
-             trip.preInspectionId != nil),
-            ("play.fill",              "Start Trip",
-             trip.status == .active || trip.status == .completed),
-            ("location.fill",          "Navigate",
-             trip.status == .completed),
-            ("shippingbox.fill",       "Complete Delivery",
-             trip.proofOfDeliveryId != nil),
-            ("checklist.checked",      "Post-Trip Inspection",
-             trip.postInspectionId != nil),
-            ("flag.checkered",         "End Trip",
-             trip.status == .completed),
+        var steps: [(icon: String, label: String, done: Bool)] = []
+
+        // Only inject Accept Trip step if this trip used the acceptance flow
+        if usedAcceptanceFlow(trip) {
+            steps.append((
+                "checkmark.shield.fill",
+                "Accept Trip",
+                trip.status != .pendingAcceptance
+            ))
+        }
+
+        steps += [
+            ("checklist",         "Pre-Trip Inspection",  trip.preInspectionId != nil),
+            ("play.fill",         "Start Trip",           trip.status == .active || trip.status == .completed),
+            ("location.fill",     "Navigate",             trip.status == .completed),
+            ("shippingbox.fill",  "Complete Delivery",    trip.proofOfDeliveryId != nil),
+            ("checklist.checked", "Post-Trip Inspection", trip.postInspectionId != nil),
+            ("flag.checkered",    "End Trip",             trip.status == .completed),
         ]
 
         return VStack(alignment: .leading, spacing: 0) {
@@ -377,7 +369,6 @@ struct TripDetailDriverView: View {
             )
             .font(.caption).foregroundStyle(.secondary)
 
-            // Acceptance deadline (only shown when pending)
             if trip.status == .pendingAcceptance, let deadline = trip.acceptanceDeadline {
                 Divider()
                 Label(
@@ -432,7 +423,7 @@ struct TripDetailDriverView: View {
         VStack(spacing: 12) {
             switch trip.status {
 
-            // ── Scheduled: unassigned, no driver yet ───────────────────────
+            // ── Scheduled: unassigned, no driver yet ────────────────────────
             case .scheduled:
                 VStack(spacing: 8) {
                     Image(systemName: "clock.badge.questionmark")
@@ -451,11 +442,11 @@ struct TripDetailDriverView: View {
                 .background(Color(.secondarySystemGroupedBackground),
                             in: RoundedRectangle(cornerRadius: 14, style: .continuous))
 
-            // ── Pending Acceptance: driver must accept or reject ────────────
+            // ── Pending Acceptance: driver must accept or reject ─────────────
             case .pendingAcceptance:
                 acceptanceButtons(trip)
 
-            // ── Accepted: pre-inspection gate → then start trip ───────────
+            // ── Accepted: pre-inspection gate → then start trip ─────────────
             case .accepted:
                 if trip.preInspectionId == nil {
                     actionButton("Begin Pre-Trip Inspection", icon: "checklist", color: SierraTheme.Colors.ember) {
@@ -467,43 +458,44 @@ struct TripDetailDriverView: View {
                     }
                 }
 
-            // ── Active: navigate + delivery flow + quick actions ──────────
+            // ── Active: Navigate (primary) then delivery / inspection gate ───
             case .active:
+                // Primary: Navigate is ALWAYS the main CTA while the trip is active
                 navigateButton()
 
+                // Secondary gate — only one of these shows at a time, smaller weight
                 if trip.proofOfDeliveryId == nil {
-                    actionButton("Complete Delivery", icon: "shippingbox.fill", color: SierraTheme.Colors.ember) {
+                    secondaryActionButton(
+                        "Complete Delivery",
+                        icon: "shippingbox.fill",
+                        color: SierraTheme.Colors.ember
+                    ) {
                         showProofOfDelivery = true
                     }
                 } else if trip.postInspectionId == nil {
-                    // Post-inspection REQUIRED before End Trip is shown
-                    actionButton("Post-Trip Inspection (Required)",
-                                 icon: "checklist",
-                                 color: SierraTheme.Colors.info) {
+                    actionButton(
+                        "Post-Trip Inspection (Required)",
+                        icon: "checklist",
+                        color: SierraTheme.Colors.info
+                    ) {
                         showPostInspection = true
                     }
                 } else {
-                    // Both POD and post-inspection done → show End Trip
                     endTripButton(trip)
                 }
+                // NOTE: Log Fuel and Report Issue are accessed from within
+                // Pre-Trip Inspection and Post-Trip Inspection views respectively.
+                // They are NOT standalone actions in trip detail.
 
-                // Quick-access actions always available during an active trip
-                actionButton("Log Fuel", icon: "fuelpump.fill", color: .orange) {
-                    showFuelLog = true
-                }
-                actionButton("Report Issue", icon: "wrench.and.screwdriver.fill", color: .red.opacity(0.8)) {
-                    showMaintenanceRequest = true
-                }
-
-            // ── Completed ─────────────────────────────────────────────────
+            // ── Completed ──────────────────────────────────────────────────
             case .completed:
                 completionSummary(trip)
 
-            // ── Rejected ──────────────────────────────────────────────────
+            // ── Rejected ───────────────────────────────────────────────────
             case .rejected:
                 rejectedBanner(trip)
 
-            // ── Cancelled ─────────────────────────────────────────────────
+            // ── Cancelled ──────────────────────────────────────────────────
             case .cancelled:
                 cancelledBanner()
             }
@@ -515,7 +507,6 @@ struct TripDetailDriverView: View {
     @ViewBuilder
     private func acceptanceButtons(_ trip: Trip) -> some View {
         VStack(spacing: 12) {
-            // Large Accept button
             Button {
                 Task { await handleAccept(trip: trip) }
             } label: {
@@ -537,7 +528,6 @@ struct TripDetailDriverView: View {
             }
             .disabled(isAccepting || isRejecting)
 
-            // Smaller Reject button
             Button {
                 showRejectSheet = true
             } label: {
@@ -558,7 +548,7 @@ struct TripDetailDriverView: View {
         }
     }
 
-    // MARK: - Navigate Button (pulsing)
+    // MARK: - Navigate Button (pulsing, primary CTA for active trips)
 
     private func navigateButton() -> some View {
         Button { showNavigation = true } label: {
@@ -740,8 +730,9 @@ struct TripDetailDriverView: View {
                     in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
-    // MARK: - Generic Action Button
+    // MARK: - Generic Action Buttons
 
+    /// Full-height primary action button.
     private func actionButton(_ title: String, icon: String, color: Color, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 10) {
@@ -752,6 +743,24 @@ struct TripDetailDriverView: View {
             .frame(maxWidth: .infinity)
             .frame(height: 50)
             .background(color, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+    }
+
+    /// Smaller secondary action — used for Complete Delivery alongside Navigate.
+    private func secondaryActionButton(_ title: String, icon: String, color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: icon).font(.system(size: 14, weight: .semibold))
+                Text(title).font(.system(size: 15, weight: .semibold))
+            }
+            .foregroundStyle(color)
+            .frame(maxWidth: .infinity)
+            .frame(height: 44)
+            .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(color.opacity(0.3), lineWidth: 1)
+            )
         }
     }
 
