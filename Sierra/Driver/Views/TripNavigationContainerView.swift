@@ -2,15 +2,8 @@ import SwiftUI
 import AVFoundation
 
 /// Full-screen container composing TripNavigationView + NavigationHUDOverlay.
-/// Flow:
-///   1. .task fires buildRoutes() and shows a spinner while the Mapbox API call is in-flight.
-///   2. On success, RouteSelectionSheet is presented so the driver can choose Fastest or Green.
-///   3. After the driver confirms, startLocationTracking() + startLocationPublishing() begin.
-///   4. Navigation runs; End Trip triggers ProofOfDeliveryView.
-///
-/// Safeguard: location tracking is NOT started in .onAppear — it starts only after the driver
-/// has confirmed a route in RouteSelectionSheet. This prevents battery drain when the sheet
-/// is dismissed or the build fails.
+/// Added: X/close button in top-left so the driver can exit the map view.
+/// When navigation is in progress, a confirmation alert prevents accidental exits.
 struct TripNavigationContainerView: View {
 
     @State private var coordinator: TripNavigationCoordinator
@@ -19,6 +12,7 @@ struct TripNavigationContainerView: View {
     @State private var isBuildingRoutes    = false
     @State private var routeBuildFailed    = false
     @State private var lastSpokenInstruction = ""
+    @State private var showDismissAlert    = false   // confirmation before exiting mid-navigation
     @Environment(AppDataStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -35,23 +29,49 @@ struct TripNavigationContainerView: View {
             TripNavigationView(coordinator: coordinator)
 
             NavigationHUDOverlay(coordinator: coordinator) {
-                // End Trip tapped
+                // End Trip tapped from HUD
                 coordinator.stopLocationPublishing()
                 coordinator.isNavigating = false
                 showProofOfDelivery = true
             }
+
+            // ── Close (X) button — top-left corner ──────────────────────────
+            VStack {
+                HStack {
+                    Button {
+                        if coordinator.isNavigating {
+                            showDismissAlert = true
+                        } else {
+                            dismissView()
+                        }
+                    } label: {
+                        ZStack {
+                            Circle()
+                                .fill(.black.opacity(0.55))
+                                .frame(width: 40, height: 40)
+                            Image(systemName: "xmark")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundStyle(.white)
+                        }
+                        .shadow(color: .black.opacity(0.3), radius: 6, y: 2)
+                    }
+                    .padding(.leading, 18)
+                    .padding(.top, 56) // Below the safe-area notch
+                    Spacer()
+                }
+                Spacer()
+            }
+            .ignoresSafeArea(edges: .top)
+            .zIndex(10)
 
             // Spinner while Mapbox API call is in-flight
             if isBuildingRoutes {
                 ZStack {
                     Color.black.opacity(0.45).ignoresSafeArea()
                     VStack(spacing: 16) {
-                        ProgressView()
-                            .scaleEffect(1.4)
-                            .tint(.white)
+                        ProgressView().scaleEffect(1.4).tint(.white)
                         Text("Calculating routes\u{2026}")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.white)
+                            .font(.subheadline.weight(.medium)).foregroundStyle(.white)
                     }
                     .padding(32)
                     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
@@ -63,28 +83,23 @@ struct TripNavigationContainerView: View {
                 VStack {
                     Spacer()
                     HStack(spacing: 10) {
-                        Image(systemName: "wifi.exclamationmark")
-                            .foregroundStyle(.red)
+                        Image(systemName: "wifi.exclamationmark").foregroundStyle(.red)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Could not calculate routes")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.white)
+                                .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
                             Text("Check your connection and try again")
-                                .font(.caption)
-                                .foregroundStyle(.white.opacity(0.8))
+                                .font(.caption).foregroundStyle(.white.opacity(0.8))
                         }
                         Spacer()
                         Button("Retry") {
                             routeBuildFailed = false
                             Task { await buildAndShowRoutes() }
                         }
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.white)
+                        .font(.caption.weight(.bold)).foregroundStyle(.white)
                     }
                     .padding(16)
                     .background(.red.opacity(0.9), in: RoundedRectangle(cornerRadius: 16))
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 40)
+                    .padding(.horizontal, 20).padding(.bottom, 40)
                 }
             }
         }
@@ -106,14 +121,20 @@ struct TripNavigationContainerView: View {
             coordinator.stopLocationPublishing()
             speechSynthesizer.stopSpeaking(at: .immediate)
         }
+        // Dismiss confirmation (only shown when navigation is active)
+        .alert("Exit Navigation?", isPresented: $showDismissAlert) {
+            Button("Exit", role: .destructive) { dismissView() }
+            Button("Keep Navigating", role: .cancel) {}
+        } message: {
+            Text("Your trip is still active. You can return to navigation from the trip detail screen.")
+        }
         // Route selection — shown once routes are ready, before navigation starts
         .sheet(isPresented: $showRouteSelection) {
             RouteSelectionSheet(coordinator: coordinator) {
-                // Driver confirmed a route — now start location tracking
                 startTracking()
             }
         }
-        // Proof of delivery — shown when driver ends the trip
+        // Proof of delivery
         .sheet(isPresented: $showProofOfDelivery) {
             NavigationStack {
                 ProofOfDeliveryView(
@@ -136,10 +157,8 @@ struct TripNavigationContainerView: View {
         isBuildingRoutes = false
 
         if coordinator.currentRoute != nil {
-            // Routes ready — show selection sheet
             showRouteSelection = true
         } else {
-            // API call failed — show retry banner
             routeBuildFailed = true
         }
     }
@@ -152,5 +171,13 @@ struct TripNavigationContainerView: View {
               let driverId    = user?.id else { return }
         coordinator.startLocationTracking()
         coordinator.startLocationPublishing(vehicleId: vehicleId, driverId: driverId)
+    }
+
+    // MARK: - Dismiss Helper
+
+    private func dismissView() {
+        coordinator.stopLocationPublishing()
+        speechSynthesizer.stopSpeaking(at: .immediate)
+        dismiss()
     }
 }

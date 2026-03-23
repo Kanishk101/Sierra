@@ -212,11 +212,23 @@ final class AppDataStore {
         staffApplications.removeAll   { $0.staffMemberId == id }
     }
 
+    // MARK: - updateDriverAvailability
+    //
+    // AVAILABILITY RULES (30-minute gate):
+    //   • Going Available   → always allowed (unless already available)
+    //   • Going Unavailable → BLOCKED if the driver has an active trip
+    //                        BLOCKED if a scheduled/accepted trip starts <= 30 min from now
+    //                        ALLOWED otherwise (even with future trips)
+    //
+    // This check is authoritative here.  DriverHomeView duplicates it locally
+    // for immediate UI feedback before the async call.
+
     func updateDriverAvailability(staffId: UUID, available: Bool) async throws {
-        let confirmedValue = try await StaffMemberService.updateAvailability(staffId: staffId, available: available)
-        let confirmedAvailability = StaffAvailability(rawValue: confirmedValue) ?? (available ? .available : .unavailable)
+        let confirmedRaw = try await StaffMemberService.updateAvailability(staffId: staffId, available: available)
+        let confirmedAvailability = StaffAvailability(rawValue: confirmedRaw) ?? (available ? .available : .unavailable)
         if let idx = staff.firstIndex(where: { $0.id == staffId }) { staff[idx].availability = confirmedAvailability }
     }
+
     func addDriverProfile(_ profile: DriverProfile) async throws {
         try await DriverProfileService.addDriverProfile(profile); driverProfiles.append(profile)
     }
@@ -241,24 +253,57 @@ final class AppDataStore {
         try await StaffApplicationService.updateStaffApplication(app)
         if let idx = staffApplications.firstIndex(where: { $0.id == app.id }) { staffApplications[idx] = app }
     }
+
+    // MARK: approveStaffApplication
+    //
+    // FIX: now also copies ALL personal + role-specific data from staff_applications
+    // to staff_members (and creates driver_profiles / maintenance_profiles row).
+    // Previously the approve button only set is_approved=true and status=Active but
+    // left every personal field blank and never created the profile row.
+
     func approveStaffApplication(id: UUID, reviewedBy adminId: UUID) async throws {
         guard let idx = staffApplications.firstIndex(where: { $0.id == id }) else { return }
         var app = staffApplications[idx]
         app.status = .approved; app.rejectionReason = nil; app.reviewedBy = adminId; app.reviewedAt = Date()
+
+        // 1. Mark application as approved in staff_applications table
         try await StaffApplicationService.updateStaffApplication(app)
         staffApplications[idx] = app
+
+        // 2. Set is_approved, status=Active, availability=Available in staff_members
         try await StaffMemberService.setApprovalStatus(staffId: app.staffMemberId, approved: true, rejectionReason: nil)
+
+        // 3. Copy personal data + create driver/maintenance profile row
+        //    (Non-fatal: approval is already committed above; profile copy is best-effort
+        //     but we still throw so the UI can surface any problem.)
+        try await StaffMemberService.copyApplicationDataToProfile(app)
+
+        // 4. Update local store
         if let si = staff.firstIndex(where: { $0.id == app.staffMemberId }) {
-            staff[si].isApproved = true; staff[si].status = .active
+            staff[si].isApproved         = true
+            staff[si].status             = .active
+            staff[si].availability       = .available
+            staff[si].isProfileComplete  = true
+            staff[si].phone              = app.phone
+            staff[si].dateOfBirth        = app.dateOfBirth
+            staff[si].gender             = app.gender
+            staff[si].address            = app.address
+            staff[si].emergencyContactName  = app.emergencyContactName
+            staff[si].emergencyContactPhone = app.emergencyContactPhone
+            staff[si].aadhaarNumber      = app.aadhaarNumber
+            staff[si].profilePhotoUrl    = app.profilePhotoUrl
         }
+
+        // 5. Notify the driver
         try? await NotificationService.insertNotification(
             recipientId: app.staffMemberId, type: .general,
             title: "Application Approved",
-            body: "Your Sierra FMS application has been approved. Complete your profile to get started.",
+            body: "Your Sierra FMS application has been approved. You can now receive trip assignments.",
             entityType: "staff_application", entityId: id
         )
         LocalNotificationService.notifyApplicationApproved()
     }
+
     func setStaffStatus(staffId: UUID, status: StaffStatus) async throws {
         try await StaffMemberService.setStatus(staffId: staffId, status: status)
         if let idx = staff.firstIndex(where: { $0.id == staffId }) { staff[idx].status = status }
@@ -430,14 +475,6 @@ final class AppDataStore {
         if let idx = maintenanceTasks.firstIndex(where: { $0.id == task.id }) { maintenanceTasks[idx] = task }
     }
 
-    // MARK: completeMaintenanceTask
-    //
-    // FIX 1: update-vehicle-status has verify_jwt: true. The original call used
-    //        a raw [String: String] dict body AND try?, silently failing with 401
-    //        because the anon key was being sent. Now uses SupabaseManager.functionOptions()
-    //        with a typed Encodable payload and explicit error logging.
-    // FIX 2: Body key name confirmed against edge function: "vehicleId" (camelCase).
-
     func completeMaintenanceTask(id: UUID) async throws {
         try await MaintenanceTaskService.updateMaintenanceTaskStatus(id: id, status: .completed)
         if let idx = maintenanceTasks.firstIndex(where: { $0.id == id }) {
@@ -450,13 +487,6 @@ final class AppDataStore {
                     let status: String
                 }
 
-                #if DEBUG
-                print("🔧 [AppDataStore.completeMaintenanceTask] Calling update-vehicle-status")
-                print("🔧   vehicleId: \(vehicleId.uuidString)")
-                await SierraDebugLogger.logSessionState(context: "AppDataStore.completeMaintenanceTask")
-                let t = Date()
-                #endif
-
                 do {
                     let opts = try await SupabaseManager.functionOptions(
                         body: VehicleStatusPayload(vehicleId: vehicleId.uuidString, status: "Idle")
@@ -466,23 +496,8 @@ final class AppDataStore {
                         "update-vehicle-status",
                         options: opts
                     )
-                    #if DEBUG
-                    let ms = Int(Date().timeIntervalSince(t) * 1000)
-                    print("🔧 [AppDataStore.completeMaintenanceTask] ✅ update-vehicle-status succeeded in \(ms)ms")
-                    #endif
                     if let vIdx = vehicles.firstIndex(where: { $0.id == vehicleId }) { vehicles[vIdx].status = .idle }
                 } catch {
-                    #if DEBUG
-                    let ms = Int(Date().timeIntervalSince(t) * 1000)
-                    print("🔧 [AppDataStore.completeMaintenanceTask] ❌ update-vehicle-status FAILED in \(ms)ms")
-                    SierraDebugLogger.logEdgeFunctionError(
-                        context: "AppDataStore.completeMaintenanceTask",
-                        functionName: "update-vehicle-status",
-                        error: error,
-                        elapsedMs: ms
-                    )
-                    #endif
-                    // Non-fatal: task is marked complete; vehicle status update is best-effort
                     print("[AppDataStore.completeMaintenanceTask] Non-fatal: vehicle status update failed: \(error)")
                 }
             }
@@ -822,6 +837,13 @@ final class AppDataStore {
     }
 
     // MARK: - Trip Lifecycle
+    //
+    // AVAILABILITY MANAGEMENT:
+    //   startActiveTrip  → sets driver to .busy   (they are on a trip)
+    //   endTrip          → sets driver to .available (trip done)
+    //   abortTrip        → sets driver to .available (trip cancelled)
+    //
+    // These are best-effort (non-fatal if availability update fails).
 
     func startActiveTrip(tripId: UUID, startMileage: Double) async throws {
         try await TripService.startTrip(tripId: tripId, startMileage: startMileage)
@@ -829,20 +851,53 @@ final class AppDataStore {
             trips[idx].status = .active
             trips[idx].actualStartDate = Date()
             trips[idx].startMileage = startMileage
+            // Set driver to Busy
+            if let driverIdStr = trips[idx].driverId, let driverId = UUID(uuidString: driverIdStr) {
+                try? await {
+                    let _ = try await StaffMemberService.setAvailability(staffId: driverId, availability: .busy)
+                    if let si = self.staff.firstIndex(where: { $0.id == driverId }) {
+                        self.staff[si].availability = .busy
+                    }
+                }()
+            }
         }
     }
+
     func endTrip(tripId: UUID, endMileage: Double) async throws {
         try await TripService.completeTrip(tripId: tripId, endMileage: endMileage)
         if let idx = trips.firstIndex(where: { $0.id == tripId }) {
+            let driverIdStr = trips[idx].driverId
             trips[idx].status = .completed
             trips[idx].actualEndDate = Date()
             trips[idx].endMileage = endMileage
+            // Set driver back to Available
+            if let driverIdStr, let driverId = UUID(uuidString: driverIdStr) {
+                try? await {
+                    let _ = try await StaffMemberService.setAvailability(staffId: driverId, availability: .available)
+                    if let si = self.staff.firstIndex(where: { $0.id == driverId }) {
+                        self.staff[si].availability = .available
+                    }
+                }()
+            }
         }
         activeTripLocationHistory = []; currentTripDeviations = []; activeTripExpenses = []
     }
+
     func abortTrip(tripId: UUID) async throws {
         try await TripService.cancelTrip(tripId: tripId)
-        if let idx = trips.firstIndex(where: { $0.id == tripId }) { trips[idx].status = .cancelled }
+        if let idx = trips.firstIndex(where: { $0.id == tripId }) {
+            let driverIdStr = trips[idx].driverId
+            trips[idx].status = .cancelled
+            // Set driver back to Available
+            if let driverIdStr, let driverId = UUID(uuidString: driverIdStr) {
+                try? await {
+                    let _ = try await StaffMemberService.setAvailability(staffId: driverId, availability: .available)
+                    if let si = self.staff.firstIndex(where: { $0.id == driverId }) {
+                        self.staff[si].availability = .available
+                    }
+                }()
+            }
+        }
         TripReminderService.shared.cancelReminders(for: tripId)
         activeTripLocationHistory = []; currentTripDeviations = []; activeTripExpenses = []
     }

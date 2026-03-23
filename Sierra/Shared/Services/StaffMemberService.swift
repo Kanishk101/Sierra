@@ -141,7 +141,7 @@ extension StaffMemberDB {
             status: StaffStatus(rawValue: status) ?? .pendingApproval,
             email: email,
             phone: phone,
-            availability: StaffAvailability(rawValue: availability) ?? .unavailable,
+            availability: canonicalAvailability(availability),
             dateOfBirth: date_of_birth,
             gender: gender,
             address: address,
@@ -174,6 +174,15 @@ extension StaffMemberDB {
             phone: phone,
             createdAt: created_at.flatMap { iso.date(from: $0) } ?? Date()
         )
+    }
+
+    // Collapse legacy "On Trip" / "On Task" → .busy so the UI never sees
+    // fragmented states for what is semantically the same thing.
+    private func canonicalAvailability(_ raw: String) -> StaffAvailability {
+        switch raw {
+        case "On Trip", "On Task", "Busy": return .busy
+        default: return StaffAvailability(rawValue: raw) ?? .unavailable
+        }
     }
 }
 
@@ -254,70 +263,63 @@ struct StaffMemberService {
             .execute()
     }
 
-    // MARK: - Availability update
+    // MARK: - setAvailability (explicit value, not just bool)
     //
-    // DRIVER-SIDE: drivers call this on their own row (RLS allows id = auth.uid()).
-    // FLEET-MANAGER-SIDE: called via AppDataStore on behalf of any driver.
-    //
-    // targetAvailability is the desired StaffAvailability raw value string.
-    // This replaces the old Bool-only API so callers can set any availability
-    // state (Available, Unavailable, Busy) rather than just toggling two values.
+    // Preferred API — callers pass the exact StaffAvailability they want.
+    // Only writes Available, Unavailable, or Busy — never the legacy On Trip / On Task.
 
-    static func updateAvailability(staffId: UUID, available: Bool) async throws -> String {
-        struct Row: Decodable { let id: UUID; let availability: String }
-        let value = available
-            ? StaffAvailability.available.rawValue
-            : StaffAvailability.unavailable.rawValue
+    static func setAvailability(staffId: UUID, availability: StaffAvailability) async throws -> StaffAvailability {
+        // Map any legacy Busy-equivalent to canonical Busy before writing
+        let canonical: StaffAvailability
+        switch availability {
+        case .busy, .onTrip, .onTask: canonical = .busy
+        default: canonical = availability
+        }
+
         struct Payload: Encodable { let availability: String }
+        struct Row:     Decodable { let id: UUID; let availability: String }
 
         let idLower = staffId.uuidString.lowercased()
 
-        #if DEBUG
-        print("🔄 [StaffMemberService.updateAvailability] staffId=\(idLower) target=\(value)")
-        let t = Date()
-        #endif
-
         let rows: [Row] = try await supabase
             .from("staff_members")
-            .update(Payload(availability: value))
+            .update(Payload(availability: canonical.rawValue))
             .eq("id", value: idLower)
             .select("id, availability")
             .execute()
             .value
 
-        #if DEBUG
-        let ms = Int(Date().timeIntervalSince(t) * 1000)
-        if rows.isEmpty {
-            print("🔄 [StaffMemberService.updateAvailability] ❌ No rows updated in \(ms)ms — RLS or ID mismatch")
-        } else {
-            print("🔄 [StaffMemberService.updateAvailability] ✅ Updated in \(ms)ms — confirmed=\(rows[0].availability)")
-        }
-        #endif
-
         if rows.isEmpty {
             throw StaffMemberServiceError.availabilityTargetMissing(staffId)
         }
-        return rows[0].availability
+        // Canonicalise the confirmed value the same way we do on read
+        switch rows[0].availability {
+        case "On Trip", "On Task", "Busy": return .busy
+        default: return StaffAvailability(rawValue: rows[0].availability) ?? canonical
+        }
+    }
+
+    // MARK: - updateAvailability (legacy Bool API — preserved for call sites that still use it)
+    //
+    // Internally delegates to setAvailability so the normalisation logic is shared.
+
+    static func updateAvailability(staffId: UUID, available: Bool) async throws -> String {
+        let target: StaffAvailability = available ? .available : .unavailable
+        let confirmed = try await setAvailability(staffId: staffId, availability: target)
+        return confirmed.rawValue
     }
 
     // MARK: - Delete (via edge function)
-    //
-    // FIX: Now uses SupabaseManager.functionOptions() to inject the user JWT
-    // as the Authorization header. Previously used raw supabase.functions.invoke()
-    // which sent the anon key, causing 401s on the delete-staff-member edge function
-    // (which has verify_jwt: true).
 
     static func deleteStaffMember(id: UUID) async throws {
         struct Payload: Encodable { let staffMemberId: String }
 
         #if DEBUG
-        print("🗑️  [StaffMemberService.deleteStaffMember] Deleting staff id=\(id.uuidString)")
+        print("\u{1F5D1}\u{FE0F}  [StaffMemberService.deleteStaffMember] Deleting staff id=\(id.uuidString)")
         await SierraDebugLogger.logSessionState(context: "StaffMemberService.deleteStaffMember")
         let t = Date()
         #endif
 
-        // CRITICAL: must use SupabaseManager.functionOptions to inject user JWT.
-        // Raw supabase.functions.invoke() sends the anon key → 401.
         let options = try await SupabaseManager.functionOptions(
             body: Payload(staffMemberId: id.uuidString)
         )
@@ -328,7 +330,7 @@ struct StaffMemberService {
 
         #if DEBUG
         let ms = Int(Date().timeIntervalSince(t) * 1000)
-        print("🗑️  [StaffMemberService.deleteStaffMember] invoke returned in \(ms)ms success=\(response.success ?? false) error=\(response.error ?? "nil")")
+        print("\u{1F5D1}\u{FE0F}  [StaffMemberService.deleteStaffMember] invoke returned in \(ms)ms success=\(response.success ?? false)")
         #endif
 
         if let errorMsg = response.error {
@@ -379,8 +381,8 @@ struct StaffMemberService {
 
     // MARK: - Set Approval Status
     //
-    // When approving, always sets availability = 'Available' so the driver
-    // immediately appears in the trip assignment wizard.
+    // When approving, sets is_approved=true, status=Active, availability=Available.
+    // Separately call copyApplicationDataToProfile to migrate personal + role data.
 
     static func setApprovalStatus(
         staffId: UUID,
@@ -392,6 +394,7 @@ struct StaffMemberService {
             let status: String
             let rejection_reason: String?
             let availability: String
+            let joined_date: String
         }
         struct RejectPayload: Encodable {
             let is_approved: Bool
@@ -400,13 +403,15 @@ struct StaffMemberService {
         }
 
         if approved {
+            let nowISO = ISO8601DateFormatter().string(from: Date())
             try await supabase
                 .from("staff_members")
                 .update(ApprovePayload(
                     is_approved:      true,
                     status:           StaffStatus.active.rawValue,
                     rejection_reason: nil,
-                    availability:     StaffAvailability.available.rawValue
+                    availability:     StaffAvailability.available.rawValue,
+                    joined_date:      nowISO
                 ))
                 .eq("id", value: staffId.uuidString.lowercased())
                 .execute()
@@ -420,6 +425,121 @@ struct StaffMemberService {
                 ))
                 .eq("id", value: staffId.uuidString.lowercased())
                 .execute()
+        }
+    }
+
+    // MARK: - copyApplicationDataToProfile
+    //
+    // Copies personal fields from a StaffApplication into the staff_members row
+    // and creates the appropriate driver_profiles or maintenance_profiles row.
+    // Called by AppDataStore.approveStaffApplication after setApprovalStatus.
+
+    static func copyApplicationDataToProfile(_ app: StaffApplication) async throws {
+        // --- 1. Copy personal fields to staff_members ---
+        struct PersonalPayload: Encodable {
+            let phone: String
+            let date_of_birth: String
+            let gender: String
+            let address: String
+            let emergency_contact_name: String
+            let emergency_contact_phone: String
+            let aadhaar_number: String
+            let profile_photo_url: String?
+            let is_profile_complete: Bool
+        }
+        try await supabase
+            .from("staff_members")
+            .update(PersonalPayload(
+                phone:                   app.phone,
+                date_of_birth:           app.dateOfBirth,
+                gender:                  app.gender,
+                address:                 app.address,
+                emergency_contact_name:  app.emergencyContactName,
+                emergency_contact_phone: app.emergencyContactPhone,
+                aadhaar_number:          app.aadhaarNumber,
+                profile_photo_url:       app.profilePhotoUrl,
+                is_profile_complete:     true
+            ))
+            .eq("id", value: app.staffMemberId.uuidString.lowercased())
+            .execute()
+
+        // --- 2. Create role-specific profile row if it doesn't exist ---
+        switch app.role {
+        case .driver:
+            // Check if a driver_profiles row already exists
+            struct ExistRow: Decodable { let id: UUID }
+            let existing: [ExistRow] = try await supabase
+                .from("driver_profiles")
+                .select("id")
+                .eq("staff_member_id", value: app.staffMemberId.uuidString.lowercased())
+                .execute()
+                .value
+            guard existing.isEmpty else { return }
+
+            struct DriverProfileInsert: Encodable {
+                let staff_member_id: String
+                let license_number: String
+                let license_expiry: String
+                let license_class: String
+                let license_issuing_state: String
+                let license_document_url: String?
+                let aadhaar_document_url: String?
+                let total_trips_completed: Int
+                let total_distance_km: Double
+            }
+            try await supabase
+                .from("driver_profiles")
+                .insert(DriverProfileInsert(
+                    staff_member_id:      app.staffMemberId.uuidString,
+                    license_number:       app.driverLicenseNumber ?? "",
+                    license_expiry:       app.driverLicenseExpiry ?? "2030-01-01",
+                    license_class:        app.driverLicenseClass ?? "LMV",
+                    license_issuing_state: app.driverLicenseIssuingState ?? "",
+                    license_document_url: app.driverLicenseDocumentUrl,
+                    aadhaar_document_url: app.aadhaarDocumentUrl,
+                    total_trips_completed: 0,
+                    total_distance_km:    0.0
+                ))
+                .execute()
+
+        case .maintenancePersonnel:
+            struct ExistRow: Decodable { let id: UUID }
+            let existing: [ExistRow] = try await supabase
+                .from("maintenance_profiles")
+                .select("id")
+                .eq("staff_member_id", value: app.staffMemberId.uuidString.lowercased())
+                .execute()
+                .value
+            guard existing.isEmpty else { return }
+
+            struct MaintProfileInsert: Encodable {
+                let staff_member_id: String
+                let certification_type: String
+                let certification_number: String
+                let issuing_authority: String
+                let certification_expiry: String
+                let certification_document_url: String?
+                let years_of_experience: Int
+                let specializations: [String]
+                let aadhaar_document_url: String?
+            }
+            try await supabase
+                .from("maintenance_profiles")
+                .insert(MaintProfileInsert(
+                    staff_member_id:           app.staffMemberId.uuidString,
+                    certification_type:        app.maintCertificationType ?? "General",
+                    certification_number:      app.maintCertificationNumber ?? "",
+                    issuing_authority:         app.maintIssuingAuthority ?? "",
+                    certification_expiry:      app.maintCertificationExpiry ?? "2030-01-01",
+                    certification_document_url: app.maintCertificationDocumentUrl,
+                    years_of_experience:       app.maintYearsOfExperience ?? 0,
+                    specializations:           app.maintSpecializations ?? [],
+                    aadhaar_document_url:      app.aadhaarDocumentUrl
+                ))
+                .execute()
+
+        case .fleetManager:
+            break // Fleet managers have no separate profile table
         }
     }
 
