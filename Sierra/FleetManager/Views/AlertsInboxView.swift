@@ -5,7 +5,7 @@ import Supabase
 
 /// FM's live alert centre — emergency alerts, route deviations, overdue maintenance.
 /// Safeguard 3: NO polling timers. Realtime only + pull to refresh.
-/// Safeguard 4: Reverse geocoding cached, uses CLGeocoder (free).
+/// Safeguard 4: Reverse geocoding cached.
 struct AlertsInboxView: View {
 
     @Environment(AppDataStore.self) private var store
@@ -197,16 +197,22 @@ struct AlertsInboxView: View {
         return "\(Int(interval / 86400))d ago"
     }
 
-    // MARK: - Reverse Geocode (Safeguard 4: cached, uses CLGeocoder)
+    // MARK: - Reverse Geocode (Safeguard 4: cached, iOS 26 MapKit API)
 
     private func reverseGeocode(_ alert: EmergencyAlert) async {
         guard reversedAddresses[alert.id] == nil else { return }  // already cached
         do {
             let location = CLLocation(latitude: alert.latitude, longitude: alert.longitude)
-            let placemarks = try await CLGeocoder().reverseGeocodeLocation(location)
-            if let pm = placemarks.first {
-                let parts = [pm.name, pm.locality, pm.administrativeArea].compactMap { $0 }
-                reversedAddresses[alert.id] = parts.joined(separator: ", ")
+            guard let request = MKReverseGeocodingRequest(location: location) else { return }
+            let mapItems = try await request.mapItems
+            if let item = mapItems.first {
+                if let short = item.address?.shortAddress, !short.isEmpty {
+                    reversedAddresses[alert.id] = short
+                } else if let full = item.address?.fullAddress, !full.isEmpty {
+                    reversedAddresses[alert.id] = full
+                } else if let name = item.name, !name.isEmpty {
+                    reversedAddresses[alert.id] = name
+                }
             }
         } catch {
             // Non-fatal

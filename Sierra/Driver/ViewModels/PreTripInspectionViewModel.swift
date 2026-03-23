@@ -1,6 +1,7 @@
 import SwiftUI
 import PhotosUI
 import UIKit
+import Vision
 import Supabase
 
 // MARK: - InspectionCheckItem (local UI state)
@@ -30,6 +31,33 @@ final class PreTripInspectionViewModel {
     // MARK: - Navigation state
 
     var currentStep = 1  // 1 = checklist, 2 = photos, 3 = summary
+
+    // MARK: - Odometer capture (Step 1)
+
+    enum OdometerOCRState {
+        case idle           // nothing started yet
+        case scanning       // camera presented
+        case result(String) // OCR returned a reading — show for confirmation
+        case confirmed      // user tapped Accept or entered manually
+        case failed         // OCR ran but found no digits
+    }
+
+    var odometerText: String = ""             // current text field value
+    var odometerOCRState: OdometerOCRState = .idle
+    var odometerCameraImage: UIImage?          // image captured for OCR
+    var showOdometerCamera = false
+
+    /// Final confirmed odometer reading (nil until confirmed).
+    var odometerReading: Double? {
+        Double(odometerText.trimmingCharacters(in: .whitespacesAndNewlines).filter { $0.isNumber || $0 == "." })
+    }
+
+    /// True when odometer required but not yet filled in (pre-trip only).
+    var odometerRequired: Bool { inspectionType == .preTripInspection }
+    var odometerValid: Bool { !odometerRequired || (odometerReading != nil) }
+
+    // MARK: - Fuel receipt (Post-trip)
+    var fuelReceiptUrl: String?
 
     // MARK: - Submission state
 
@@ -82,14 +110,14 @@ final class PreTripInspectionViewModel {
         failedItems.filter { (itemPhotoUrls[$0.id] ?? []).isEmpty }
     }
 
-    var canAdvanceToPhotos: Bool { allItemsChecked }
+    var canAdvanceToPhotos: Bool { allItemsChecked && odometerValid }
 
     /// May advance to summary only when all failed items have at least one photo.
     var canAdvanceToSummary: Bool { failedItemsMissingPhoto.isEmpty }
 
     /// Final submit gate: all items checked + no failed item missing a photo.
     var canSubmit: Bool {
-        allItemsChecked && failedItemsMissingPhoto.isEmpty
+        allItemsChecked && failedItemsMissingPhoto.isEmpty && odometerValid
     }
 
     // MARK: - Step 3: Computed results
@@ -132,6 +160,56 @@ final class PreTripInspectionViewModel {
         self.vehicleId      = vehicleId
         self.driverId       = driverId
         self.inspectionType = inspectionType
+    }
+
+    // MARK: - OCR Odometer Parsing
+
+    /// Runs Vision text recognition on `image` and extracts the first
+    /// plausible odometer reading (4–9 consecutive digits, optional comma/period).
+    /// Calls completion on the main actor with the parsed string or nil on failure.
+    nonisolated func extractOdometerReading(from image: UIImage) async -> String? {
+        guard let cgImage = image.cgImage else { return nil }
+
+        return await withCheckedContinuation { continuation in
+            let request = VNRecognizeTextRequest { request, _ in
+                let candidates = (request.results as? [VNRecognizedTextObservation] ?? [])
+                    .compactMap { $0.topCandidates(1).first?.string }
+
+                // Find first string that looks like an odometer: 4-9 digit number,
+                // possibly with commas (100,000) or periods (123.4).
+                let pattern = #"\b\d[\d,\.]{2,8}\d\b"#
+                let regex = try? NSRegularExpression(pattern: pattern)
+
+                for candidate in candidates {
+                    let range = NSRange(candidate.startIndex..., in: candidate)
+                    if let match = regex?.firstMatch(in: candidate, range: range),
+                       let swiftRange = Range(match.range, in: candidate) {
+                        let raw = String(candidate[swiftRange])
+                            .replacingOccurrences(of: ",", with: "")
+                        continuation.resume(returning: raw)
+                        return
+                    }
+                }
+                continuation.resume(returning: nil)
+            }
+            request.recognitionLevel = .accurate
+            request.usesLanguageCorrection = false
+
+            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+            try? handler.perform([request])
+        }
+    }
+
+    /// Called when camera dismisses with a captured image.
+    func handleOCRImage(_ image: UIImage) async {
+        odometerCameraImage = image
+        odometerOCRState = .scanning
+        if let reading = await extractOdometerReading(from: image) {
+            odometerText = reading
+            odometerOCRState = .result(reading)
+        } else {
+            odometerOCRState = .failed
+        }
     }
 
     // MARK: - Default Check Items
@@ -309,6 +387,9 @@ final class PreTripInspectionViewModel {
             // Aggregate all photo URLs for the top-level inspection record
             let allPhotoUrls = itemPhotoUrls.values.flatMap { $0 } + generalPhotoUrls
 
+            // Confirm final odometer reading
+            let confirmedOdometer = odometerReading
+
             let defectsText    = failedItems.isEmpty ? nil : failedItems.map(\.name).joined(separator: ", ")
             let isDefectRaised = overallResult == .failed
 
@@ -324,6 +405,8 @@ final class PreTripInspectionViewModel {
                 additionalNotes: nil,
                 driverSignatureUrl: nil,
                 photoUrls: allPhotoUrls,
+                odometerReading: confirmedOdometer,
+                fuelReceiptUrl: fuelReceiptUrl,
                 isDefectRaised: isDefectRaised,
                 raisedTaskId: nil
             )

@@ -135,6 +135,8 @@ struct VehicleInspectionService {
         additionalNotes: String?,
         driverSignatureUrl: String?,
         photoUrls: [String],
+        odometerReading: Double?,
+        fuelReceiptUrl: String?,
         isDefectRaised: Bool,
         raisedTaskId: UUID?
     ) async throws -> VehicleInspection {
@@ -149,6 +151,8 @@ struct VehicleInspectionService {
             let additional_notes: String?
             let driver_signature_url: String?
             let photo_urls: [String]    // Swift array — SDK handles serialisation
+            let odometer_reading: Double?
+            let fuel_receipt_url: String?
             let is_defect_raised: Bool
             let raised_task_id: String?
             let inspected_at: String
@@ -169,6 +173,8 @@ struct VehicleInspectionService {
             additional_notes: additionalNotes,
             driver_signature_url: driverSignatureUrl,
             photo_urls: photoUrls,
+            odometer_reading: odometerReading,
+            fuel_receipt_url: fuelReceiptUrl,
             is_defect_raised: isDefectRaised,
             raised_task_id: raisedTaskId?.uuidString,
             inspected_at: iso.string(from: now)

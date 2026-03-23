@@ -1,5 +1,6 @@
 import SwiftUI
 import PhotosUI
+import UIKit
 
 /// Multi-step pre-trip / post-trip inspection form.
 /// Step 1: Checklist  — every item must be explicitly set (Pass / Warn / Fail).
@@ -56,6 +57,16 @@ struct PreTripInspectionView: View {
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") { dismiss() }
+            }
+        }
+        .sheet(isPresented: Binding(
+            get: { viewModel.showOdometerCamera },
+            set: { viewModel.showOdometerCamera = $0 }
+        )) {
+            OdometerCameraSheet { image in
+                Task { @MainActor in
+                    await viewModel.handleOCRImage(image)
+                }
             }
         }
         .alert("Submission Error", isPresented: .init(
@@ -119,6 +130,14 @@ struct PreTripInspectionView: View {
         VStack(spacing: 0) {
             ScrollView {
                 LazyVStack(spacing: 1) {
+                    // Odometer capture card (pre-trip only)
+                    if viewModel.inspectionType == .preTripInspection {
+                        odometerCaptureCard
+                            .padding(.horizontal, 16)
+                            .padding(.top, 12)
+                            .padding(.bottom, 4)
+                    }
+
                     ForEach($viewModel.checkItems) { $item in
                         checkItemRow(item: $item)
                     }
@@ -593,6 +612,187 @@ struct PreTripInspectionView: View {
         case .passedWithWarnings: return SierraTheme.Colors.warning
         case .failed:             return SierraTheme.Colors.danger
         case .notChecked:         return .gray
+        }
+    }
+    // MARK: - Odometer Capture Card
+
+    @ViewBuilder
+    private var odometerCaptureCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Odometer Reading", systemImage: "speedometer")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.secondary)
+
+            // State-driven display
+            switch viewModel.odometerOCRState {
+            case .idle:
+                // Show camera scan button
+                Button {
+                    viewModel.showOdometerCamera = true
+                    viewModel.odometerOCRState = .scanning
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "camera.viewfinder")
+                            .font(.title3)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Scan Odometer")
+                                .font(.subheadline.weight(.semibold))
+                            Text("Point camera at odometer display")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(12)
+                    .background(Color(.secondarySystemGroupedBackground),
+                                in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(SierraTheme.Colors.ember.opacity(0.3), lineWidth: 1.2)
+                    )
+                }
+                .buttonStyle(.plain)
+                manualEntryField
+
+            case .scanning:
+                HStack(spacing: 8) {
+                    ProgressView().scaleEffect(0.8)
+                    Text("Running OCR…").font(.caption).foregroundStyle(.secondary)
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(.secondarySystemGroupedBackground),
+                            in: RoundedRectangle(cornerRadius: 12))
+
+            case .result(let reading):
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                        Text("OCR detected: \(reading) km")
+                            .font(.subheadline.weight(.medium))
+                        Spacer()
+                        Button("Retry") {
+                            viewModel.odometerOCRState = .idle
+                            viewModel.odometerText = ""
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                    }
+                    .padding(12)
+                    .background(Color.green.opacity(0.07),
+                                in: RoundedRectangle(cornerRadius: 12))
+                    manualEntryField
+                }
+
+            case .failed:
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .foregroundStyle(.orange)
+                        Text("OCR couldn't read odometer — enter manually")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Retry") {
+                            viewModel.showOdometerCamera = true
+                            viewModel.odometerOCRState = .scanning
+                        }
+                        .font(.caption)
+                        .foregroundStyle(SierraTheme.Colors.ember)
+                    }
+                    .padding(10)
+                    .background(Color.orange.opacity(0.07),
+                                in: RoundedRectangle(cornerRadius: 10))
+                    manualEntryField
+                }
+
+            case .confirmed:
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .foregroundStyle(.green)
+                    Text("\(viewModel.odometerText) km confirmed")
+                        .font(.subheadline.weight(.medium))
+                    Spacer()
+                    Button("Edit") { viewModel.odometerOCRState = .failed }
+                        .font(.caption).foregroundStyle(.orange)
+                }
+                .padding(12)
+                .background(Color.green.opacity(0.07),
+                            in: RoundedRectangle(cornerRadius: 12))
+            }
+        }
+        .padding(14)
+        .background(Color(.tertiarySystemGroupedBackground),
+                    in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private var manualEntryField: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Manual entry").font(.caption2).foregroundStyle(.tertiary)
+            HStack(spacing: 8) {
+                TextField("e.g. 45230", text: Binding(
+                    get: { viewModel.odometerText },
+                    set: { viewModel.odometerText = $0 }
+                ))
+                .keyboardType(.decimalPad)
+                .textFieldStyle(.roundedBorder)
+                Text("km").font(.caption).foregroundStyle(.secondary)
+                if viewModel.odometerReading != nil {
+                    Button {
+                        viewModel.odometerOCRState = .confirmed
+                    } label: {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                            .font(.title3)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - OdometerCameraSheet
+// UIImagePickerController wrapper for live camera capture.
+
+struct OdometerCameraSheet: UIViewControllerRepresentable {
+
+    let onCapture: (UIImage) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = UIImagePickerController.isSourceTypeAvailable(.camera) ? .camera : .photoLibrary
+        picker.delegate = context.coordinator
+        picker.allowsEditing = false
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+
+    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let parent: OdometerCameraSheet
+        init(parent: OdometerCameraSheet) { self.parent = parent }
+
+        func imagePickerController(
+            _ picker: UIImagePickerController,
+            didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]
+        ) {
+            if let image = info[.originalImage] as? UIImage {
+                parent.onCapture(image)
+            }
+            parent.dismiss()
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            parent.dismiss()
         }
     }
 }
