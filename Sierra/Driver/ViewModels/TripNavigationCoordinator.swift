@@ -43,7 +43,6 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         get { routeEngine.avoidHighways }
         set { routeEngine.avoidHighways = newValue }
     }
-
     // MARK: - Coordinator-owned State
     var isNavigating: Bool = false
     var currentSpeedKmh: Double = 0

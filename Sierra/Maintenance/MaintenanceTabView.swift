@@ -34,10 +34,17 @@ struct MaintenanceTabView: View {
         }
         .overlay(alignment: .top) {
             if let banner = bannerCoordinator.current {
-                NotificationBannerView(title: banner.title, message: banner.body) {
-                    bannerCoordinator.dismiss()
-                    banner.onTap()
-                }
+                NotificationBannerView(
+                    title: banner.title,
+                    message: banner.body,
+                    onTap: {
+                        bannerCoordinator.dismiss()
+                        banner.onTap()
+                    },
+                    onDismiss: {
+                        bannerCoordinator.dismiss()
+                    }
+                )
             }
         }
         .onChange(of: store.notifications.count) { _, _ in
