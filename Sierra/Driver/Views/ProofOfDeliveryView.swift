@@ -28,6 +28,7 @@ struct ProofOfDeliveryView: View {
     // Signature
     @State private var signatureLines: [[CGPoint]] = []
     @State private var currentLine: [CGPoint] = []
+    @State private var signatureCanvasSize = CGSize(width: 1, height: 180)
 
     // OTP — Safeguard 5: hash only, never plaintext stored
     @State private var generatedOTP: String?
@@ -224,6 +225,15 @@ struct ProofOfDeliveryView: View {
                 )
             }
             .frame(height: 180)
+            .background {
+                GeometryReader { proxy in
+                    Color.clear
+                        .onAppear { signatureCanvasSize = proxy.size }
+                        .onChange(of: proxy.size) { _, newSize in
+                            signatureCanvasSize = newSize
+                        }
+                }
+            }
 
             Button("Clear Signature") {
                 signatureLines = []
@@ -377,6 +387,10 @@ struct ProofOfDeliveryView: View {
 
             // BUG-02 FIX: Rasterize signature canvas to UIImage, upload, store real URL
             if method == .signature {
+                let canvasWidth = max(signatureCanvasSize.width, 1)
+                let canvasHeight = max(signatureCanvasSize.height, 1)
+                let widthScale = 600.0 / canvasWidth
+                let heightScale = 300.0 / canvasHeight
                 let renderer = UIGraphicsImageRenderer(size: CGSize(width: 600, height: 300))
                 let signatureImage = renderer.image { ctx in
                     ctx.cgContext.setFillColor(UIColor.white.cgColor)
@@ -387,9 +401,9 @@ struct ProofOfDeliveryView: View {
                     // Scale points from canvas size to render size
                     for line in signatureLines {
                         guard let first = line.first else { continue }
-                        ctx.cgContext.move(to: CGPoint(x: first.x * (600/UIScreen.main.bounds.width), y: first.y * (300/180)))
+                        ctx.cgContext.move(to: CGPoint(x: first.x * widthScale, y: first.y * heightScale))
                         for point in line.dropFirst() {
-                            ctx.cgContext.addLine(to: CGPoint(x: point.x * (600/UIScreen.main.bounds.width), y: point.y * (300/180)))
+                            ctx.cgContext.addLine(to: CGPoint(x: point.x * widthScale, y: point.y * heightScale))
                         }
                         ctx.cgContext.strokePath()
                     }
