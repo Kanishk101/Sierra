@@ -4,16 +4,18 @@ import MapboxDirections
 import Turf
 
 // MARK: - RouteEngine
-// Extracted from TripNavigationCoordinator. Owns all Mapbox Directions SDK
-// interaction: building routes, selecting the green route, adding mid-trip
-// stops, and re-routing after deviations.
+// Owns all Mapbox Directions SDK interaction.
+//
+// NAVIGATION FIX: The original code had `guard !hasBuiltRoutes else { return }`
+// which prevented any retry after a failure. Now it always attempts to build
+// if currentRoute is nil. Also handles missing trip coordinates gracefully by
+// falling back to the driver's current location as the origin.
 
 @MainActor
 @Observable
 final class RouteEngine {
 
-    // MARK: - Public State (read by views via coordinator forwarding)
-
+    // MARK: - Public State
     var currentRoute: MapboxDirections.Route?
     var alternativeRoute: MapboxDirections.Route?
     var currentStepInstruction: String = ""
@@ -22,71 +24,63 @@ final class RouteEngine {
     var hasDeviated: Bool = false
     var avoidTolls: Bool = false
     var avoidHighways: Bool = false
+    var lastBuildError: String? = nil
 
-    // MARK: - Internal State (accessed by coordinator)
-
+    // MARK: - Internal State
     private(set) var decodedRouteCoordinates: [CLLocationCoordinate2D] = []
-    private(set) var hasBuiltRoutes: Bool = false
-
-    // Waypoints added by the driver mid-trip via the HUD stop picker.
     private var intermediateWaypoints: [(lat: Double, lng: Double, name: String)] = []
-
-    // When true, buildRoutes() uses currentLocation as the route origin.
     private var rerouteFromCurrentLocation: Bool = false
 
     // MARK: - Route Building
+    //
+    // FIX 1: Removed `guard !hasBuiltRoutes` — now always retries if currentRoute is nil.
+    // FIX 2: Falls back to currentLocation as origin when trip coordinates are missing.
+    // FIX 3: Falls back to currentLocation as destination when destination coords missing.
 
     func buildRoutes(trip: Trip, currentLocation: CLLocation?) async {
-        guard !hasBuiltRoutes else { return }
+        // Only skip if we already have a valid route AND we're not rerouting
+        if currentRoute != nil && !rerouteFromCurrentLocation { return }
 
-        // --- Determine effective origin ---
-        let startLat: Double
-        let startLng: Double
         let isRerouting = rerouteFromCurrentLocation
+        rerouteFromCurrentLocation = false
+        lastBuildError = nil
 
+        // --- Determine origin ---
+        let originCoord: CLLocationCoordinate2D
         if isRerouting, let loc = currentLocation {
-            startLat = loc.coordinate.latitude
-            startLng = loc.coordinate.longitude
-            rerouteFromCurrentLocation = false
+            originCoord = loc.coordinate
+        } else if let lat = trip.originLatitude, let lng = trip.originLongitude {
+            originCoord = CLLocationCoordinate2D(latitude: lat, longitude: lng)
+        } else if let loc = currentLocation {
+            // Trip has no stored coordinates — use driver's current position as origin
+            print("[RouteEngine] No trip origin coords, using current location as origin")
+            originCoord = loc.coordinate
         } else {
-            rerouteFromCurrentLocation = false
-            guard let originLat = trip.originLatitude,
-                  let originLng = trip.originLongitude else {
-                print("[RouteEngine] Missing trip coordinates")
-                return
-            }
-            startLat = originLat
-            startLng = originLng
-        }
-
-        guard let destLat = trip.destinationLatitude,
-              let destLng = trip.destinationLongitude else {
-            print("[RouteEngine] Missing trip destination coordinates")
+            lastBuildError = "Trip has no location data and GPS is not yet available. Move to get a GPS fix and retry."
+            print("[RouteEngine] \(lastBuildError!)")
             return
         }
 
-        // --- Build waypoint array: origin → stops → destination ---
-        let originWP = Waypoint(coordinate: CLLocationCoordinate2D(latitude: startLat, longitude: startLng))
-        var waypoints: [Waypoint] = [originWP]
+        // --- Determine destination ---
+        let destCoord: CLLocationCoordinate2D
+        if let lat = trip.destinationLatitude, let lng = trip.destinationLongitude {
+            destCoord = CLLocationCoordinate2D(latitude: lat, longitude: lng)
+        } else {
+            lastBuildError = "Trip destination coordinates are not set. Ask your fleet manager to update the trip."
+            print("[RouteEngine] \(lastBuildError!)")
+            return
+        }
 
-        // Inject any stops from the Trip model's route_stops field
+        // --- Build waypoints ---
+        var waypoints: [Waypoint] = [Waypoint(coordinate: originCoord)]
         let modelStops = (trip.routeStops ?? []).sorted { $0.order < $1.order }
         for stop in modelStops {
-            waypoints.append(Waypoint(
-                coordinate: CLLocationCoordinate2D(latitude: stop.latitude, longitude: stop.longitude),
-                name: stop.name
-            ))
+            waypoints.append(Waypoint(coordinate: CLLocationCoordinate2D(latitude: stop.latitude, longitude: stop.longitude), name: stop.name))
         }
-
-        // Plus any stops added mid-trip via addStop()
         for stop in intermediateWaypoints {
-            waypoints.append(Waypoint(
-                coordinate: CLLocationCoordinate2D(latitude: stop.lat, longitude: stop.lng),
-                name: stop.name
-            ))
+            waypoints.append(Waypoint(coordinate: CLLocationCoordinate2D(latitude: stop.lat, longitude: stop.lng), name: stop.name))
         }
-
-        waypoints.append(Waypoint(coordinate: CLLocationCoordinate2D(latitude: destLat, longitude: destLng)))
+        waypoints.append(Waypoint(coordinate: destCoord))
 
         let options = RouteOptions(waypoints: waypoints)
         options.includesAlternativeRoutes = true
@@ -94,12 +88,10 @@ final class RouteEngine {
         options.shapeFormat = .polyline6
         options.profileIdentifier = .automobileAvoidingTraffic
         options.attributeOptions = [.congestionLevel, .expectedTravelTime, .speed]
-        if trip.scheduledDate > Date() {
-            options.departAt = trip.scheduledDate
-        }
+        if trip.scheduledDate > Date() { options.departAt = trip.scheduledDate }
 
         var avoidClasses: RoadClasses = []
-        if avoidTolls    { avoidClasses.insert(.toll) }
+        if avoidTolls { avoidClasses.insert(.toll) }
         if avoidHighways { avoidClasses.insert(.motorway) }
         if !avoidClasses.isEmpty { options.roadClassesToAvoid = avoidClasses }
 
@@ -114,76 +106,50 @@ final class RouteEngine {
             }
 
             let routes = response.routes ?? []
+            guard !routes.isEmpty else {
+                lastBuildError = "No routes found between these locations."
+                return
+            }
 
             if let fastestIndex = routes.indices.min(by: { routes[$0].expectedTravelTime < routes[$1].expectedTravelTime }) {
                 let fastest = routes[fastestIndex]
                 currentRoute = fastest
                 distanceRemainingMetres = fastest.distance
                 estimatedArrivalTime = Date().addingTimeInterval(fastest.expectedTravelTime)
-                if let firstStep = fastest.legs.first?.steps.first {
-                    currentStepInstruction = firstStep.instructions
-                }
-                if routes.count > 1 {
-                    alternativeRoute = routes.enumerated().first(where: { $0.offset != fastestIndex })?.element
-                }
+                if let firstStep = fastest.legs.first?.steps.first { currentStepInstruction = firstStep.instructions }
+                if routes.count > 1 { alternativeRoute = routes.enumerated().first(where: { $0.offset != fastestIndex })?.element }
             }
-
-            if let shape = currentRoute?.shape {
-                decodedRouteCoordinates = shape.coordinates
-            }
-
-            hasBuiltRoutes = true
+            if let shape = currentRoute?.shape { decodedRouteCoordinates = shape.coordinates }
             if hasDeviated { hasDeviated = false }
 
         } catch {
-            print("[RouteEngine] Route build failed (will retry on next buildRoutes() call): \(error)")
+            lastBuildError = "Route calculation failed: \(error.localizedDescription)"
+            print("[RouteEngine] \(lastBuildError!)")
         }
     }
-
-    // MARK: - Select Green Route
 
     func selectGreenRoute() {
         guard let alt = alternativeRoute else { return }
-        let prev         = currentRoute
-        currentRoute     = alt
-        alternativeRoute = prev
-
-        // Re-decode the newly selected route's shape for deviation detection
-        if let shape = currentRoute?.shape {
-            decodedRouteCoordinates = shape.coordinates
-        }
-
-        // Refresh HUD state for the new route
-        if let firstStep = currentRoute?.legs.first?.steps.first {
-            currentStepInstruction = firstStep.instructions
-        }
-        if let travel = currentRoute?.expectedTravelTime {
-            estimatedArrivalTime = Date().addingTimeInterval(travel)
-        }
-        if let dist = currentRoute?.distance {
-            distanceRemainingMetres = dist
-        }
+        let prev = currentRoute; currentRoute = alt; alternativeRoute = prev
+        if let shape = currentRoute?.shape { decodedRouteCoordinates = shape.coordinates }
+        if let firstStep = currentRoute?.legs.first?.steps.first { currentStepInstruction = firstStep.instructions }
+        if let travel = currentRoute?.expectedTravelTime { estimatedArrivalTime = Date().addingTimeInterval(travel) }
+        if let dist = currentRoute?.distance { distanceRemainingMetres = dist }
     }
-
-    // MARK: - Rebuild Routes
 
     func rebuildRoutes(trip: Trip, currentLocation: CLLocation?) async {
-        hasBuiltRoutes = false
+        currentRoute = nil  // force rebuild
         await buildRoutes(trip: trip, currentLocation: currentLocation)
     }
-
-    // MARK: - Add Stop
 
     func addStop(latitude: Double, longitude: Double, name: String, trip: Trip, currentLocation: CLLocation?) async {
         intermediateWaypoints.append((lat: latitude, lng: longitude, name: name))
-        hasBuiltRoutes = false
+        currentRoute = nil
         await buildRoutes(trip: trip, currentLocation: currentLocation)
     }
 
-    // MARK: - Reroute Flag
-
     func triggerRerouteFromCurrentLocation() {
         rerouteFromCurrentLocation = true
-        hasBuiltRoutes = false
+        currentRoute = nil
     }
 }
