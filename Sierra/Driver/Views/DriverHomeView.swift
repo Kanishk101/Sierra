@@ -400,7 +400,7 @@ struct DriverHomeView: View {
                 .multilineTextAlignment(.center).lineSpacing(2)
 
             if availabilitySwitch {
-                Text("You\u{2019}re waiting for assignment")
+                Text("You\u{2019}re available — awaiting dispatch")
                     .font(.caption.weight(.medium)).foregroundStyle(Color(.systemGreen))
                     .padding(.horizontal, 14).padding(.vertical, 8)
                     .background(Color(.systemGreen).opacity(0.1), in: Capsule())

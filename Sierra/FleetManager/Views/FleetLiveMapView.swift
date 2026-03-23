@@ -21,8 +21,6 @@ struct FleetLiveMapView: View {
             }
             .padding(.top, 60).padding(.trailing, 16)
         }
-        .navigationTitle("Fleet Map")
-        .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             if !hasSetInitialRegion {
                 hasSetInitialRegion = true

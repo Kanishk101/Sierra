@@ -27,9 +27,10 @@ struct VehicleListView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                topActionBar
+                headerRow
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
+                    .padding(.bottom, 4)
 
                 Group {
                     if filteredVehicles.isEmpty {
@@ -40,8 +41,6 @@ struct VehicleListView: View {
                 }
             }
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
-            .navigationTitle("Vehicles")
-            .toolbarTitleDisplayMode(.inlineLarge)
             .toolbarBackground(.hidden, for: .navigationBar)
             .navigationDestination(for: UUID.self) { VehicleDetailView(vehicleId: $0) }
             .navigationDestination(item: $navigationTarget) { VehicleDetailView(vehicleId: $0) }
@@ -61,26 +60,30 @@ struct VehicleListView: View {
         }
     }
 
-    private var topActionBar: some View {
+    private var headerRow: some View {
         HStack(spacing: 10) {
+            Text("Vehicles")
+                .font(.largeTitle.bold())
+
+            Spacer()
+
             Button {
                 showAddSheet = true
             } label: {
-                Label("Create", systemImage: "plus")
-                    .frame(maxWidth: .infinity)
+                Image(systemName: "plus")
+                    .font(.title3.weight(.semibold))
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
 
             Button {
                 showFilterSheet = true
             } label: {
-                Label(
-                    selectedFilter == nil ? "Filter" : selectedFilter!.rawValue,
-                    systemImage: selectedFilter == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill"
-                )
-                .frame(maxWidth: .infinity)
+                Image(systemName: selectedFilter == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
+                    .font(.title3.weight(.semibold))
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
             .tint(selectedFilter == nil ? .secondary : .orange)
         }
     }

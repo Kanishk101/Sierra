@@ -136,7 +136,8 @@ struct TripNavigationContainerView: View {
         isBuildingRoutes = false
 
         if coordinator.currentRoute != nil {
-            showRouteSelection = true
+            // Auto-select fastest route and begin tracking immediately
+            startTracking()
         } else {
             // Surface the specific error from RouteEngine so the driver knows what's wrong
             buildErrorMessage = coordinator.routeEngineError ?? "Could not calculate route. Check your network and try again."

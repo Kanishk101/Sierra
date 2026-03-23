@@ -22,6 +22,44 @@ enum AppDataStoreError: LocalizedError {
 
 extension AppDataStore {
 
+    // MARK: - dispatchTrip
+    // Called by the fleet manager to transition a Scheduled trip to PendingAcceptance.
+    // 1. Calls TripService (targeted UPDATE setting status + acceptance_deadline)
+    // 2. Updates local trips array
+    // 3. Schedules trip reminders
+    // 4. Notifies the assigned driver
+
+    func dispatchTrip(tripId: UUID) async throws {
+        try await TripService.dispatchTrip(tripId: tripId)
+
+        // Update local state
+        let deadline = Date().addingTimeInterval(24 * 3600)
+        if let idx = trips.firstIndex(where: { $0.id == tripId }) {
+            trips[idx].status = .pendingAcceptance
+            trips[idx].acceptanceDeadline = deadline
+            trips[idx].updatedAt = Date()
+        }
+
+        // Schedule local reminders for the dispatched trip
+        await TripReminderService.shared.scheduleReminders(for: trips)
+
+        // Notify the assigned driver
+        let trip = trips.first { $0.id == tripId }
+        if let driverIdStr = trip?.driverId,
+           let driverUUID = UUID(uuidString: driverIdStr) {
+            let taskId = trip?.taskId ?? tripId.uuidString
+            let destination = trip?.destination ?? "destination"
+            try? await NotificationService.insertNotification(
+                recipientId: driverUUID,
+                type: .general,
+                title: "New Trip Assigned: \(taskId)",
+                body: "You have a new trip to \(destination). Please accept or decline within 24 hours.",
+                entityType: "trip",
+                entityId: tripId
+            )
+        }
+    }
+
     // MARK: - acceptTrip
     // Called when the driver taps \u201cAccept\u201d on a PendingAcceptance trip.
     // 1. Calls TripService (targeted UPDATE with driver_id safety filter)

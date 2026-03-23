@@ -88,6 +88,11 @@ struct VehicleInspection: Identifiable, Codable {
     var inspectedAt: Date
     var createdAt: Date
 
+    // MARK: Readings (nullable DB columns)
+    var odometerReading: Double?         // odometer_reading
+    var fuelLevelPct: Int?               // fuel_level_pct
+    var fuelReceiptUrl: String?          // fuel_receipt_url
+
     // MARK: - CodingKeys
 
     enum CodingKeys: String, CodingKey {
@@ -106,6 +111,9 @@ struct VehicleInspection: Identifiable, Codable {
         case raisedTaskId       = "raised_task_id"
         case inspectedAt        = "inspected_at"
         case createdAt          = "created_at"
+        case odometerReading    = "odometer_reading"
+        case fuelLevelPct       = "fuel_level_pct"
+        case fuelReceiptUrl     = "fuel_receipt_url"
     }
 
     // MARK: - Custom Decoder
@@ -142,6 +150,9 @@ struct VehicleInspection: Identifiable, Codable {
         raisedTaskId       = try c.decodeIfPresent(UUID.self, forKey: .raisedTaskId)
         inspectedAt        = try c.decode(Date.self, forKey: .inspectedAt)
         createdAt          = try c.decode(Date.self, forKey: .createdAt)
+        odometerReading    = try c.decodeIfPresent(Double.self, forKey: .odometerReading)
+        fuelLevelPct       = try c.decodeIfPresent(Int.self, forKey: .fuelLevelPct)
+        fuelReceiptUrl     = try c.decodeIfPresent(String.self, forKey: .fuelReceiptUrl)
     }
 
     // MARK: - Memberwise init (for VehicleInspectionService.addInspection)
@@ -152,7 +163,9 @@ struct VehicleInspection: Identifiable, Codable {
         items: [InspectionItem], defectsReported: String?,
         additionalNotes: String?, driverSignatureUrl: String?,
         photoUrls: [String] = [], isDefectRaised: Bool = false,
-        raisedTaskId: UUID? = nil, inspectedAt: Date, createdAt: Date
+        raisedTaskId: UUID? = nil, inspectedAt: Date, createdAt: Date,
+        odometerReading: Double? = nil, fuelLevelPct: Int? = nil,
+        fuelReceiptUrl: String? = nil
     ) {
         self.id = id; self.tripId = tripId; self.vehicleId = vehicleId
         self.driverId = driverId; self.type = type; self.overallResult = overallResult
@@ -160,6 +173,7 @@ struct VehicleInspection: Identifiable, Codable {
         self.additionalNotes = additionalNotes; self.driverSignatureUrl = driverSignatureUrl
         self.photoUrls = photoUrls; self.isDefectRaised = isDefectRaised
         self.raisedTaskId = raisedTaskId; self.inspectedAt = inspectedAt
-        self.createdAt = createdAt
+        self.createdAt = createdAt; self.odometerReading = odometerReading
+        self.fuelLevelPct = fuelLevelPct; self.fuelReceiptUrl = fuelReceiptUrl
     }
 }

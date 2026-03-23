@@ -40,9 +40,10 @@ struct StaffTabView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                topActionBar
+                headerRow
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
+                    .padding(.bottom, 4)
 
                 Picker("Segment", selection: $segment) {
                     ForEach(StaffSegment.allCases, id: \.self) { s in
@@ -60,8 +61,6 @@ struct StaffTabView: View {
                 }
             }
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
-            .navigationTitle("Staff")
-            .toolbarTitleDisplayMode(.inlineLarge)
             .toolbarBackground(.hidden, for: .navigationBar)
             .animation(.easeInOut(duration: 0.2), value: segment)
             .sheet(isPresented: $showCreateStaff) { NavigationStack { CreateStaffView() } }
@@ -77,26 +76,30 @@ struct StaffTabView: View {
         }
     }
 
-    private var topActionBar: some View {
+    private var headerRow: some View {
         HStack(spacing: 10) {
+            Text("Staff")
+                .font(.largeTitle.bold())
+
+            Spacer()
+
             Button {
                 showCreateStaff = true
             } label: {
-                Label("Create", systemImage: "plus")
-                    .frame(maxWidth: .infinity)
+                Image(systemName: "plus")
+                    .font(.title3.weight(.semibold))
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
 
             Button {
                 showFilterSheet = true
             } label: {
-                Label(
-                    selectedStatus == nil ? "Filter" : selectedStatus!.rawValue,
-                    systemImage: selectedStatus == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill"
-                )
-                .frame(maxWidth: .infinity)
+                Image(systemName: selectedStatus == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
+                    .font(.title3.weight(.semibold))
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
             .tint(selectedStatus == nil ? .secondary : .orange)
         }
     }

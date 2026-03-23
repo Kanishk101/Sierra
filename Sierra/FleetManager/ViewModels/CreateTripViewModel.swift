@@ -78,6 +78,24 @@ final class CreateTripViewModel {
         return list
     }
 
+    // MARK: - Geofence Helpers
+
+    func hasGeofence(latitude: Double, longitude: Double) -> Bool {
+        tripGeofences.contains { $0.latitude == latitude && $0.longitude == longitude }
+    }
+
+    func addGeofence(name: String, latitude: Double, longitude: Double) {
+        guard !hasGeofence(latitude: latitude, longitude: longitude) else { return }
+        tripGeofences.append(
+            GeofenceCandidate(name: name, latitude: latitude, longitude: longitude)
+        )
+    }
+
+    func removeGeofence(id: UUID) {
+        guard let index = tripGeofences.firstIndex(where: { $0.id == id }) else { return }
+        tripGeofences.remove(at: index)
+    }
+
     // MARK: - Busy-Resource Validation
 
     private func busyResourceValidationError(resourceLabel: String, trips: [Trip], newTripStart: Date) -> String? {

@@ -8,12 +8,8 @@ struct NavigationHUDOverlay: View {
     var onEndTrip: () -> Void
 
     @State private var showEndTripConfirm = false
-    @State private var showAddStop = false
     @State private var showSOSAlert = false
     @State private var showIncidentReport = false
-    @State private var stopAddress = ""
-    @State private var geocodeTask: Task<Void, Never>?
-    @State private var geocodedResults: [GeocodedStop] = []
     @State private var isVoiceMuted = false
 
     var body: some View {
@@ -28,6 +24,11 @@ struct NavigationHUDOverlay: View {
             // Off-route warning banner
             if coordinator.hasDeviated {
                 deviationBanner
+            }
+
+            // Route progress bar (live distance)
+            if coordinator.currentRoute != nil && coordinator.isNavigating {
+                routeProgressBar()
             }
 
             // Stats row
@@ -46,9 +47,6 @@ struct NavigationHUDOverlay: View {
 
             // Action bar
             actionBar
-        }
-        .sheet(isPresented: $showAddStop) {
-            addStopSheet
         }
         .sheet(isPresented: $showSOSAlert) {
             SOSAlertSheet(
@@ -227,9 +225,6 @@ struct NavigationHUDOverlay: View {
             actionButton("Incident", icon: "exclamationmark.triangle.fill", color: .orange) {
                 showIncidentReport = true
             }
-            actionButton("Add Stop", icon: "plus.circle", color: SierraTheme.Colors.info) {
-                showAddStop = true
-            }
             actionButton("End Trip", icon: "xmark.circle", color: SierraTheme.Colors.ember) {
                 showEndTripConfirm = true
             }
@@ -248,6 +243,47 @@ struct NavigationHUDOverlay: View {
         .background(.ultraThinMaterial)
     }
 
+    // MARK: - Route Progress Bar
+
+    private func routeProgressBar() -> some View {
+        let progress = coordinator.routeProgressFraction
+        let pct = Int(progress * 100)
+        return VStack(spacing: 4) {
+            HStack {
+                Text("Route Progress")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.7))
+                Spacer()
+                Text("\(pct)%")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.white)
+            }
+            .padding(.horizontal, 16)
+
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Rectangle()
+                        .fill(Color.white.opacity(0.2))
+                        .frame(height: 6)
+                    Rectangle()
+                        .fill(
+                            LinearGradient(
+                                colors: [Color(red: 0.2, green: 0.85, blue: 0.55), Color.orange],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(width: geo.size.width * progress, height: 6)
+                        .animation(.linear(duration: 0.5), value: progress)
+                }
+            }
+            .frame(height: 6)
+            .padding(.horizontal, 16)
+        }
+        .padding(.vertical, 6)
+        .background(Color.black.opacity(0.3))
+    }
+
     private func actionButton(_ title: String, icon: String, color: Color, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 4) {
@@ -262,101 +298,4 @@ struct NavigationHUDOverlay: View {
             .padding(.vertical, 8)
         }
     }
-
-    // MARK: - Add Stop Sheet (Safeguard 5: 500ms debounce)
-
-    private var addStopSheet: some View {
-        NavigationStack {
-            VStack(spacing: 16) {
-                TextField("Search for a stop...", text: $stopAddress)
-                    .textFieldStyle(.roundedBorder)
-                    .padding(.horizontal, 16)
-                    .onChange(of: stopAddress) { _, newValue in
-                        geocodeTask?.cancel()
-                        geocodeTask = Task {
-                            try? await Task.sleep(nanoseconds: 500_000_000) // 500ms debounce
-                            guard !Task.isCancelled else { return }
-                            await geocodeAddress(newValue)
-                        }
-                    }
-
-                if geocodedResults.isEmpty {
-                    ContentUnavailableView("Type an address to search", systemImage: "mappin.and.ellipse")
-                } else {
-                    List(geocodedResults) { result in
-                        Button {
-                            Task {
-                                await coordinator.addStop(
-                                    latitude: result.latitude,
-                                    longitude: result.longitude,
-                                    name: result.name
-                                )
-                            }
-                            showAddStop = false
-                        } label: {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(result.name).font(.subheadline.weight(.medium))
-                                Text(result.address).font(.caption).foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                    .listStyle(.plain)
-                }
-
-                Spacer()
-            }
-            .navigationTitle("Add Stop")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { showAddStop = false }
-                }
-            }
-        }
-        .presentationDetents([.medium, .large])
-    }
-
-    private func geocodeAddress(_ query: String) async {
-        guard !query.trimmingCharacters(in: .whitespaces).isEmpty else {
-            geocodedResults = []
-            return
-        }
-
-        guard let token = Bundle.main.object(forInfoDictionaryKey: "MBXAccessToken") as? String else { return }
-        guard let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "https://api.mapbox.com/geocoding/v5/mapbox.places/\(encoded).json?access_token=\(token)&limit=5") else { return }
-
-        do {
-            let (data, _) = try await URLSession.shared.data(from: url)
-            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let features = json["features"] as? [[String: Any]] {
-                var results: [GeocodedStop] = []
-                for feature in features {
-                    let name = feature["text"] as? String ?? ""
-                    let address = feature["place_name"] as? String ?? ""
-                    if let center = feature["center"] as? [Double], center.count == 2 {
-                        results.append(GeocodedStop(
-                            name: name,
-                            address: address,
-                            longitude: center[0],
-                            latitude: center[1]
-                        ))
-                    }
-                }
-                geocodedResults = results
-            }
-        } catch {
-            print("[HUD] Geocoding error: \(error)")
-        }
-    }
-}
-
-// MARK: - GeocodedStop
-
-struct GeocodedStop: Identifiable {
-    let id = UUID()
-    let name: String
-    let address: String
-    let longitude: Double
-    let latitude: Double
 }

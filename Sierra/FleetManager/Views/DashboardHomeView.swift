@@ -68,7 +68,7 @@ struct DashboardHomeView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
-                    headerActionBar
+                    headerRow
                         .padding(.horizontal, 20)
                         .padding(.top, 12)
 
@@ -88,8 +88,6 @@ struct DashboardHomeView: View {
                 }
             }
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
-            .navigationTitle("Dashboard")
-            .toolbarTitleDisplayMode(.inlineLarge)
             .toolbarBackground(.hidden, for: .navigationBar)
             .sheet(isPresented: $showProfile) {
                 AdminProfileView()
@@ -117,15 +115,10 @@ struct DashboardHomeView: View {
         }
     }
 
-    private var headerActionBar: some View {
+    private var headerRow: some View {
         HStack {
-            Button { showProfile = true } label: {
-                Text(adminInitials)
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .frame(width: 28, height: 28)
-            }
-            .buttonStyle(.bordered)
-            .buttonBorderShape(.circle)
+            Text("Dashboard")
+                .font(.largeTitle.bold())
 
             Spacer()
 
@@ -143,7 +136,15 @@ struct DashboardHomeView: View {
                     }
                 }
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
+
+            Button { showProfile = true } label: {
+                Text(adminInitials)
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .frame(width: 28, height: 28)
+            }
+            .buttonStyle(.glass)
             .buttonBorderShape(.circle)
         }
     }

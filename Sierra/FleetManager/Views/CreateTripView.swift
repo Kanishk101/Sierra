@@ -317,11 +317,9 @@ struct CreateTripView: View {
                             .font(.caption).foregroundStyle(.tertiary)
                     } else {
                         ForEach(suggestions, id: \.0) { name, lat, lng in
-                            let alreadyAdded = vm.tripGeofences.contains { $0.latitude == lat && $0.longitude == lng }
+                            let alreadyAdded = vm.hasGeofence(latitude: lat, longitude: lng)
                             Button {
-                                if !alreadyAdded {
-                                    vm.tripGeofences.append(GeofenceCandidate(name: name, latitude: lat, longitude: lng))
-                                }
+                                vm.addGeofence(name: name, latitude: lat, longitude: lng)
                             } label: {
                                 HStack(spacing: 10) {
                                     Image(systemName: alreadyAdded ? "checkmark.circle.fill" : "plus.circle")
@@ -385,7 +383,12 @@ struct CreateTripView: View {
                         .font(.caption2).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button { vm.tripGeofences.removeAll { $0.id == gf.wrappedValue.id } } label: {
+                Button {
+                    let id = gf.wrappedValue.id
+                    DispatchQueue.main.async {
+                        vm.removeGeofence(id: id)
+                    }
+                } label: {
                     Image(systemName: "minus.circle.fill").foregroundStyle(.red.opacity(0.7))
                 }.buttonStyle(.plain)
             }.padding(.vertical, 8)

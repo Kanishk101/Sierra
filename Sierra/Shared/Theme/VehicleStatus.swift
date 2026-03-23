@@ -2,7 +2,7 @@ import SwiftUI
 
 // MARK: - Vehicle Status
 // Maps to PostgreSQL enum: vehicle_status
-// Values: Active | Idle | In Maintenance | Out of Service | Decommissioned
+// Values: Active | Idle | Busy | In Maintenance | Out of Service | Decommissioned
 
 enum VehicleStatus: String, SierraStatus, CaseIterable, Codable {
     case active          = "Active"

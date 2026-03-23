@@ -166,7 +166,28 @@ struct DriverTripsListView: View {
             if trip.status == .pendingAcceptance, let deadline = trip.acceptanceDeadline {
                 deadlineBadge(deadline: deadline)
                     .padding(.horizontal, 16)
-                    .padding(.bottom, 12)
+                    .padding(.bottom, 8)
+            }
+
+            // Visible "Accept Trip" CTA for pending acceptance trips
+            if trip.status == .pendingAcceptance {
+                Button {
+                    acceptanceTrip = trip
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.subheadline.weight(.bold))
+                        Text("Accept Trip")
+                            .font(.subheadline.weight(.bold))
+                    }
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 44)
+                    .background(Color.green, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 12)
             }
         }
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))

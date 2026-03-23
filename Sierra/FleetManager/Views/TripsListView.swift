@@ -21,9 +21,10 @@ struct TripsListView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            topActionBar
+            headerRow
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
+                .padding(.bottom, 4)
 
             Group {
                 if filtered.isEmpty {
@@ -34,8 +35,6 @@ struct TripsListView: View {
             }
         }
         .background(Color(.systemGroupedBackground).ignoresSafeArea())
-        .navigationTitle("Trips")
-        .toolbarTitleDisplayMode(.inlineLarge)
         .toolbarBackground(.hidden, for: .navigationBar)
         .navigationDestination(for: UUID.self) { TripDetailView(tripId: $0) }
         .navigationDestination(item: $navigationTarget) { TripDetailView(tripId: $0) }
@@ -45,26 +44,30 @@ struct TripsListView: View {
         .refreshable { await store.loadAll() }
     }
 
-    private var topActionBar: some View {
+    private var headerRow: some View {
         HStack(spacing: 10) {
+            Text("Trips")
+                .font(.largeTitle.bold())
+
+            Spacer()
+
             Button {
                 showCreateSheet = true
             } label: {
-                Label("Create", systemImage: "plus")
-                    .frame(maxWidth: .infinity)
+                Image(systemName: "plus")
+                    .font(.title3.weight(.semibold))
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
 
             Button {
                 showFilterSheet = true
             } label: {
-                Label(
-                    selectedStatus == nil ? "Filter" : selectedStatus!.rawValue,
-                    systemImage: selectedStatus == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill"
-                )
-                .frame(maxWidth: .infinity)
+                Image(systemName: selectedStatus == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
+                    .font(.title3.weight(.semibold))
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
             .tint(selectedStatus == nil ? .secondary : .orange)
         }
     }

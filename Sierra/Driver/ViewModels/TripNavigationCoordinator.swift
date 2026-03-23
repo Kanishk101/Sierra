@@ -50,6 +50,15 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     var currentSpeedLimit: Int?
     var currentStepManeuver: String = ""
     var nextStepInstruction: String = ""
+
+    /// Returns a value in [0.0, 1.0] representing how far along the route the driver is.
+    /// 0.0 = at origin, 1.0 = arrived at destination.
+    var routeProgressFraction: Double {
+        guard let route = currentRoute, route.distance > 0 else { return 0 }
+        let distanceTraveled = route.distance - distanceRemainingMetres
+        return max(0, min(1, distanceTraveled / route.distance))
+    }
+
     let trip: Trip
     private(set) var currentLocation: CLLocation?
     private var locationManager: CLLocationManager?

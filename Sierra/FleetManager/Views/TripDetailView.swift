@@ -8,6 +8,8 @@ struct TripDetailView: View {
     let tripId: UUID
 
     @State private var showCancelConfirm = false
+    @State private var isDispatching = false
+    @State private var dispatchError: String?
 
     private var trip: Trip? {
         store.trips.first { $0.id == tripId }
@@ -33,6 +35,14 @@ struct TripDetailView: View {
             Button("Keep Trip", role: .cancel) {}
         } message: {
             Text("This will cancel the trip and free the assigned driver and vehicle.")
+        }
+        .alert("Dispatch Error", isPresented: .init(
+            get: { dispatchError != nil },
+            set: { if !$0 { dispatchError = nil } }
+        )) {
+            Button("OK") {}
+        } message: {
+            Text(dispatchError ?? "")
         }
     }
 
@@ -229,6 +239,53 @@ struct TripDetailView: View {
                 }
             }
 
+            // Dispatch to Driver (only for scheduled trips with driver + vehicle assigned)
+            if t.status == .scheduled && t.driverId != nil && t.vehicleId != nil {
+                Section {
+                    Button {
+                        Task { await performDispatch() }
+                    } label: {
+                        HStack {
+                            Spacer()
+                            if isDispatching {
+                                ProgressView()
+                                    .tint(.white)
+                            } else {
+                                Label("Dispatch to Driver", systemImage: "paperplane.fill")
+                                    .font(.system(size: 16, weight: .semibold))
+                            }
+                            Spacer()
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.vertical, 4)
+                    }
+                    .listRowBackground(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(isDispatching ? Color.teal.opacity(0.5) : Color.teal)
+                    )
+                    .disabled(isDispatching)
+                }
+            }
+
+            // Acceptance deadline info (shown when pending acceptance)
+            if t.status == .pendingAcceptance, let deadline = t.acceptanceDeadline {
+                Section {
+                    HStack(spacing: 10) {
+                        Image(systemName: "clock.badge.exclamationmark.fill")
+                            .foregroundStyle(.orange)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Dispatched — Awaiting Driver Response")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.orange)
+                            Text("Deadline: \(deadline.formatted(.dateTime.month(.abbreviated).day().hour().minute()))")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                    }
+                }
+            }
+
             // Cancel (only for scheduled trips)
             if t.status == .scheduled {
                 Section {
@@ -280,6 +337,19 @@ struct TripDetailView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background(color.opacity(0.12), in: Capsule())
+    }
+
+    // MARK: - Dispatch Trip (async)
+
+    @MainActor
+    private func performDispatch() async {
+        isDispatching = true
+        do {
+            try await store.dispatchTrip(tripId: tripId)
+        } catch {
+            dispatchError = error.localizedDescription
+        }
+        isDispatching = false
     }
 
     // MARK: - Cancel Trip (async)

@@ -366,6 +366,26 @@ struct TripService {
         return "TRP-\(datePart)-\(suffix)"
     }
 
+    // MARK: - Dispatch Lifecycle
+
+    static func dispatchTrip(tripId: UUID) async throws {
+        struct Payload: Encodable {
+            let status: String
+            let acceptance_deadline: String
+            let updated_at: String
+        }
+        let deadline = Date().addingTimeInterval(24 * 3600)
+        try await supabase
+            .from("trips")
+            .update(Payload(
+                status: TripStatus.pendingAcceptance.rawValue,
+                acceptance_deadline: iso.string(from: deadline),
+                updated_at: iso.string(from: Date())
+            ))
+            .eq("id", value: tripId.uuidString)
+            .execute()
+    }
+
     // MARK: - Acceptance Lifecycle
 
     static func acceptTrip(tripId: UUID, driverId: UUID) async throws {

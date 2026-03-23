@@ -69,6 +69,7 @@ struct TripDetailDriverView: View {
                         tripInfoCard(trip)
                         routeMapCard(trip)
                         if let vehicle { vehicleCard(vehicle) }
+                        tripProgressBar(trip)
                         flowStepsCard(trip)
                         actionButtons(trip)
                         Spacer(minLength: 40)
@@ -433,14 +434,20 @@ struct TripDetailDriverView: View {
 
             // ── Scheduled: unassigned, no driver yet ───────────────────────
             case .scheduled:
-                HStack(spacing: 10) {
-                    Image(systemName: "clock.fill").foregroundStyle(.secondary)
-                    Text("Awaiting Assignment")
-                        .font(.subheadline.weight(.medium))
+                VStack(spacing: 8) {
+                    Image(systemName: "clock.badge.questionmark")
+                        .font(.system(size: 28))
                         .foregroundStyle(.secondary)
+                    Text("Awaiting Dispatch")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text("Your fleet manager will send this trip for your review shortly.")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: 50)
+                .padding(.vertical, 20)
                 .background(Color(.secondarySystemGroupedBackground),
                             in: RoundedRectangle(cornerRadius: 14, style: .continuous))
 
@@ -783,6 +790,61 @@ struct TripDetailDriverView: View {
             errorMessage = error.localizedDescription
             showError = true
         }
+    }
+
+    // MARK: - Trip Progress
+
+    private func tripProgress(_ trip: Trip) -> Double {
+        switch trip.status {
+        case .scheduled:         return 0.0
+        case .pendingAcceptance: return 0.1
+        case .accepted:          return trip.preInspectionId != nil ? 0.3 : 0.2
+        case .active:
+            if trip.postInspectionId != nil { return 0.85 }
+            if trip.proofOfDeliveryId != nil { return 0.70 }
+            return 0.50
+        case .completed:         return 1.0
+        case .rejected, .cancelled: return 0.0
+        }
+    }
+
+    private func tripProgressBar(_ trip: Trip) -> some View {
+        let progress = tripProgress(trip)
+        let pct = Int(progress * 100)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Trip Progress")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.5)
+                Spacer()
+                Text("\(pct)%")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+            }
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color(.tertiarySystemGroupedBackground))
+                        .frame(height: 10)
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [SierraTheme.Colors.alpineMint, SierraTheme.Colors.ember],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(width: geo.size.width * progress, height: 10)
+                        .animation(.spring(duration: 0.6), value: progress)
+                }
+            }
+            .frame(height: 10)
+        }
+        .padding(14)
+        .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .shadow(color: .black.opacity(0.04), radius: 6, y: 2)
     }
 
     // MARK: - Style Helpers
