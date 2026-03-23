@@ -3,18 +3,22 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 
 // check-resource-overlap  (Sierra Fleet Management System)
 //
-// verify_jwt: TRUE
-// The Supabase gateway validates the Bearer token before this function runs.
-// The Swift SDK (v2+) sends the session access_token as Authorization: Bearer
-// automatically via supabase.functions.invoke() — no manual JWT handling needed.
+// verify_jwt: FALSE
+// Why: The Supabase Swift SDK's FunctionsClient sends the anon key as the
+// Authorization header when verify_jwt is checked by the gateway. This causes
+// fast (~100-400ms) 401s before the Deno runtime even starts.
+//
+// Manual JWT verification below uses supabaseAnon.auth.getUser() which routes
+// through GoTrue and correctly validates ES256 tokens from the iOS SDK.
+// This is the proven pattern — v8 was 200 OK with this exact approach.
 //
 // POST body (JSON):
 // {
-//   driver_id:       string  (UUID — lowercase or uppercase, LOWER() applied in SQL)
+//   driver_id:       string  (UUID)
 //   vehicle_id:      string  (UUID)
 //   start:           string  (ISO-8601 datetime)
 //   end:             string  (ISO-8601 datetime)
-//   exclude_trip_id: string? (UUID, optional — exclude current trip when editing)
+//   exclude_trip_id: string? (UUID, optional)
 // }
 
 Deno.serve(async (req: Request) => {
@@ -25,22 +29,27 @@ Deno.serve(async (req: Request) => {
     return errorResponse(405, "Method not allowed. Use POST.");
   }
 
-  // JWT already verified by gateway. Use service-role to query all trips
-  // (SECURITY DEFINER RPC bypasses per-row RLS for conflict detection).
-  const supabaseAdmin = createClient(
+  // ── JWT verification via GoTrue (proven pattern) ──────────────────────────
+  const authHeader = req.headers.get("Authorization") ?? "";
+  const jwt = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
+  if (!jwt) {
+    return errorResponse(401, "Missing Authorization header.");
+  }
+
+  const supabaseAnon = createClient(
     Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-    { auth: { persistSession: false } }
+    Deno.env.get("SUPABASE_ANON_KEY")!,
+    { global: { headers: { Authorization: `Bearer ${jwt}` } }, auth: { persistSession: false } }
   );
 
-  let body: {
-    driver_id: string;
-    vehicle_id: string;
-    start: string;
-    end: string;
-    exclude_trip_id?: string | null;
-  };
+  const { data: { user }, error: authError } = await supabaseAnon.auth.getUser();
+  if (authError || !user) {
+    console.error("[check-resource-overlap] JWT validation failed:", authError?.message);
+    return errorResponse(401, "Invalid or expired token.");
+  }
+  // ──────────────────────────────────────────────────────────────────────────
 
+  let body: { driver_id: string; vehicle_id: string; start: string; end: string; exclude_trip_id?: string | null; };
   try {
     body = await req.json();
   } catch {
@@ -48,20 +57,25 @@ Deno.serve(async (req: Request) => {
   }
 
   const { driver_id, vehicle_id, start, end, exclude_trip_id } = body;
-
   if (!driver_id || !vehicle_id || !start || !end) {
     return errorResponse(400, "Missing required fields: driver_id, vehicle_id, start, end.");
   }
 
   const startDate = new Date(start);
   const endDate   = new Date(end);
-
   if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
     return errorResponse(400, "start and end must be valid ISO-8601 datetimes.");
   }
   if (endDate <= startDate) {
     return errorResponse(400, "end must be after start.");
   }
+
+  // Service role client for the SECURITY DEFINER RPC — bypasses RLS
+  const supabaseAdmin = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    { auth: { persistSession: false } }
+  );
 
   const { data, error } = await supabaseAdmin.rpc("check_resource_overlap", {
     p_driver_id:       driver_id,
