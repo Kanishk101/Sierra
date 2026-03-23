@@ -29,7 +29,7 @@ enum TripStatus: String, Codable, CaseIterable {
     /// Returns true for statuses where the driver still needs to act.
     var isActionable: Bool {
         switch self {
-        case .pendingAcceptance, .accepted, .active: return true
+        case .pendingAcceptance, .accepted, .scheduled, .active: return true
         default: return false
         }
     }

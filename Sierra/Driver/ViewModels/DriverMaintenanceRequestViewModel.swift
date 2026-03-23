@@ -96,10 +96,10 @@ final class DriverMaintenanceRequestViewModel {
     private func uploadPhoto(_ data: Data) async throws -> String {
         let path = "maintenance-photos/\(vehicleId.uuidString)/\(UUID().uuidString).jpg"
         try await supabase.storage
-            .from("maintenance-photos")
+            .from("sierra-uploads")
             .upload(path, data: data, options: .init(contentType: "image/jpeg"))
         let url = try supabase.storage
-            .from("maintenance-photos")
+            .from("sierra-uploads")
             .getPublicURL(path: path)
         return url.absoluteString
     }

@@ -8,9 +8,8 @@ import CoreLocation
 // MARK: - TripNavigationView
 //
 // UIViewRepresentable wrapping Mapbox Maps v3 MapView.
-// MapboxDirections is linked separately for Route / RouteStep types.
-//
-// Safeguard: MapView is created ONCE in makeUIView, never recreated.
+// The route/trail overlays are installed only after the style is ready so the
+// line sources do not silently fail during startup.
 
 struct TripNavigationView: UIViewRepresentable {
 
@@ -22,19 +21,17 @@ struct TripNavigationView: UIViewRepresentable {
                 ?? CLLocationCoordinate2D(latitude: 20.5937, longitude: 78.9629),
             zoom: 16,
             bearing: coordinator.currentLocation?.course,
-            pitch: 45  // 3D tilt for navigation feel
+            pitch: 45
         )
         let mapInitOptions = MapInitOptions(cameraOptions: cameraOptions)
         let mapView = MapView(frame: .zero, mapInitOptions: mapInitOptions)
 
-        // Puck config: road-snapped with course bearing and orange pulse
         var puck = Puck2DConfiguration.makeDefault(showBearing: true)
         puck.pulsing = .init(color: .orange)
         mapView.location.options.puckType = .puck2D(puck)
         mapView.location.options.puckBearingEnabled = true
         mapView.location.options.puckBearing = .course
 
-        // Set viewport to follow puck with navigation padding and tilt
         mapView.viewport.transition(to:
             mapView.viewport.makeFollowPuckViewportState(
                 options: FollowPuckViewportStateOptions(
@@ -46,86 +43,188 @@ struct TripNavigationView: UIViewRepresentable {
             )
         )
 
-        context.coordinator.mapView = mapView
-        addRouteLayer(to: mapView)
-        context.coordinator.renderStops(mapView: mapView, trip: coordinator.trip)
-        context.coordinator.renderEndpoints(mapView: mapView, trip: coordinator.trip)
+        context.coordinator.attach(to: mapView)
+        context.coordinator.scheduleRender(
+            mapView: mapView,
+            trip: coordinator.trip,
+            routeCoordinates: coordinator.displayedRouteCoordinates,
+            breadcrumbCoordinates: coordinator.breadcrumbCoordinates
+        )
         return mapView
     }
 
     func updateUIView(_ mapView: MapView, context: Context) {
-        context.coordinator.updateRoute(mapView: mapView, route: coordinator.currentRoute)
-        context.coordinator.renderStops(mapView: mapView, trip: coordinator.trip)
-        context.coordinator.renderEndpoints(mapView: mapView, trip: coordinator.trip)
+        context.coordinator.scheduleRender(
+            mapView: mapView,
+            trip: coordinator.trip,
+            routeCoordinates: coordinator.displayedRouteCoordinates,
+            breadcrumbCoordinates: coordinator.breadcrumbCoordinates
+        )
     }
 
     func makeCoordinator() -> MapCoordinator {
         MapCoordinator()
     }
 
-    // MARK: - Route Layer Setup
-
-    private func addRouteLayer(to mapView: MapView) {
-        var source = GeoJSONSource(id: "route-source")
-        source.data = .geometry(.lineString(.init([])))
-
-        // Casing line underneath
-        var casingLayer = LineLayer(id: "route-casing", source: "route-source")
-        casingLayer.lineColor = .constant(StyleColor(UIColor.orange.withAlphaComponent(0.3)))
-        casingLayer.lineWidth = .constant(14)
-        casingLayer.lineCap = .constant(.round)
-        casingLayer.lineJoin = .constant(.round)
-
-        // Active route line on top
-        var layer = LineLayer(id: "route-layer", source: "route-source")
-        layer.lineColor = .constant(StyleColor(.orange))
-        layer.lineWidth = .constant(8)
-        layer.lineCap = .constant(.round)
-        layer.lineJoin = .constant(.round)
-
-        try? mapView.mapboxMap.addSource(source)
-        try? mapView.mapboxMap.addLayer(casingLayer)
-        try? mapView.mapboxMap.addLayer(layer)
-    }
-
     // MARK: - Map Coordinator
 
-    class MapCoordinator {
+    final class MapCoordinator {
         weak var mapView: MapView?
-        private var routeAdded = false
 
-        func updateRoute(mapView: MapView, route: MapboxDirections.Route?) {
-            guard let route, let shape = route.shape else { return }
-            let coordinates = shape.coordinates
-            guard coordinates.count >= 2 else { return }
+        private var routeCameraApplied = false
+        private var styleIsReady = false
+        private var cancelables = Set<AnyCancelable>()
 
-            let feature = Feature(geometry: .lineString(LineString(coordinates)))
-            let geoJSON = GeoJSONObject.feature(feature)
-            mapView.mapboxMap.updateGeoJSONSource(withId: "route-source", geoJSON: geoJSON)
+        private var pendingTrip: Trip?
+        private var pendingRouteCoordinates: [CLLocationCoordinate2D] = []
+        private var pendingBreadcrumbCoordinates: [CLLocationCoordinate2D] = []
 
-            // Only zoom-to-fit on first route display
-            if !routeAdded {
-                routeAdded = true
-                let camera: CameraOptions
-                do {
-                    camera = try mapView.mapboxMap.camera(
-                        for: coordinates,
-                        camera: CameraOptions(),
-                        coordinatesPadding: UIEdgeInsets(top: 80, left: 40, bottom: 200, right: 40),
-                        maxZoom: nil,
-                        offset: nil
-                    )
-                } catch {
-                    camera = CameraOptions(center: coordinates.first, zoom: 14)
-                }
-                mapView.camera.ease(to: camera, duration: 1.0)
+        func attach(to mapView: MapView) {
+            guard self.mapView !== mapView else { return }
+            self.mapView = mapView
+
+            mapView.mapboxMap.onStyleLoaded.observeNext { [weak self, weak mapView] _ in
+                guard let self, let mapView else { return }
+                self.styleIsReady = true
+                self.ensureOverlayInfrastructure(on: mapView)
+                self.renderPending(on: mapView)
+            }
+            .store(in: &cancelables)
+        }
+
+        func scheduleRender(
+            mapView: MapView,
+            trip: Trip,
+            routeCoordinates: [CLLocationCoordinate2D],
+            breadcrumbCoordinates: [CLLocationCoordinate2D]
+        ) {
+            pendingTrip = trip
+            pendingRouteCoordinates = routeCoordinates
+            pendingBreadcrumbCoordinates = breadcrumbCoordinates
+
+            guard styleIsReady else { return }
+            renderPending(on: mapView)
+        }
+
+        private func renderPending(on mapView: MapView) {
+            ensureOverlayInfrastructure(on: mapView)
+            updateRoute(mapView: mapView, coordinates: pendingRouteCoordinates)
+            updateBreadcrumbTrail(mapView: mapView, coordinates: pendingBreadcrumbCoordinates)
+
+            if let trip = pendingTrip {
+                renderStops(mapView: mapView, trip: trip)
+                renderEndpoints(mapView: mapView, trip: trip)
             }
         }
 
-        // MARK: - Render Stops (intermediate waypoints)
+        // MARK: - Base Route / Breadcrumb Layers
 
-        func renderStops(mapView: MapView, trip: Trip) {
-            // Remove existing stop source if present to avoid duplicate adds
+        private func ensureOverlayInfrastructure(on mapView: MapView) {
+            ensureLineSource(on: mapView, id: "route-source")
+            ensureLineLayer(
+                on: mapView,
+                id: "route-casing",
+                sourceId: "route-source",
+                color: UIColor.orange.withAlphaComponent(0.28),
+                width: 14
+            )
+            ensureLineLayer(
+                on: mapView,
+                id: "route-layer",
+                sourceId: "route-source",
+                color: .orange,
+                width: 8
+            )
+
+            ensureLineSource(on: mapView, id: "breadcrumb-source")
+            ensureLineLayer(
+                on: mapView,
+                id: "breadcrumb-casing",
+                sourceId: "breadcrumb-source",
+                color: UIColor.black.withAlphaComponent(0.2),
+                width: 10
+            )
+            ensureLineLayer(
+                on: mapView,
+                id: "breadcrumb-layer",
+                sourceId: "breadcrumb-source",
+                color: UIColor.systemTeal,
+                width: 5
+            )
+        }
+
+        private func ensureLineSource(on mapView: MapView, id: String) {
+            guard (try? mapView.mapboxMap.source(withId: id)) == nil else { return }
+            var source = GeoJSONSource(id: id)
+            source.data = .geometry(.lineString(.init([])))
+            try? mapView.mapboxMap.addSource(source)
+        }
+
+        private func ensureLineLayer(
+            on mapView: MapView,
+            id: String,
+            sourceId: String,
+            color: UIColor,
+            width: Double
+        ) {
+            guard (try? mapView.mapboxMap.layer(withId: id)) == nil else { return }
+            var layer = LineLayer(id: id, source: sourceId)
+            layer.lineColor = .constant(StyleColor(color))
+            layer.lineWidth = .constant(width)
+            layer.lineCap = .constant(.round)
+            layer.lineJoin = .constant(.round)
+            try? mapView.mapboxMap.addLayer(layer)
+        }
+
+        // MARK: - Route / Breadcrumb Rendering
+
+        private func updateRoute(mapView: MapView, coordinates: [CLLocationCoordinate2D]) {
+            updateLineSource(mapView: mapView, sourceId: "route-source", coordinates: coordinates)
+
+            guard coordinates.count >= 2 else {
+                routeCameraApplied = false
+                return
+            }
+
+            guard !routeCameraApplied else { return }
+            routeCameraApplied = true
+
+            let camera: CameraOptions
+            do {
+                camera = try mapView.mapboxMap.camera(
+                    for: coordinates,
+                    camera: CameraOptions(),
+                    coordinatesPadding: UIEdgeInsets(top: 80, left: 40, bottom: 200, right: 40),
+                    maxZoom: nil,
+                    offset: nil
+                )
+            } catch {
+                camera = CameraOptions(center: coordinates.first, zoom: 14)
+            }
+            mapView.camera.ease(to: camera, duration: 1.0)
+        }
+
+        private func updateBreadcrumbTrail(mapView: MapView, coordinates: [CLLocationCoordinate2D]) {
+            updateLineSource(mapView: mapView, sourceId: "breadcrumb-source", coordinates: coordinates)
+        }
+
+        private func updateLineSource(
+            mapView: MapView,
+            sourceId: String,
+            coordinates: [CLLocationCoordinate2D]
+        ) {
+            let feature = Feature(
+                geometry: .lineString(LineString(coordinates.count >= 2 ? coordinates : []))
+            )
+            mapView.mapboxMap.updateGeoJSONSource(
+                withId: sourceId,
+                geoJSON: .feature(feature)
+            )
+        }
+
+        // MARK: - Render Stops
+
+        private func renderStops(mapView: MapView, trip: Trip) {
             if (try? mapView.mapboxMap.source(withId: "stops-source")) != nil {
                 try? mapView.mapboxMap.removeLayer(withId: "stops-labels")
                 try? mapView.mapboxMap.removeLayer(withId: "stops-circles")
@@ -136,12 +235,12 @@ struct TripNavigationView: UIViewRepresentable {
             guard !stops.isEmpty else { return }
 
             var features: [Feature] = []
-            for (i, stop) in stops.enumerated() {
+            for (index, stop) in stops.enumerated() {
                 let coord = CLLocationCoordinate2D(latitude: stop.latitude, longitude: stop.longitude)
                 var feature = Feature(geometry: .point(Point(coord)))
                 var props = JSONObject()
                 props["name"] = JSONValue(stop.name)
-                props["order"] = JSONValue(Double(i + 1))
+                props["order"] = JSONValue(Double(index + 1))
                 feature.properties = props
                 features.append(feature)
             }
@@ -151,7 +250,6 @@ struct TripNavigationView: UIViewRepresentable {
             source.data = .featureCollection(collection)
             try? mapView.mapboxMap.addSource(source)
 
-            // Circle markers for stops
             var circleLayer = CircleLayer(id: "stops-circles", source: "stops-source")
             circleLayer.circleRadius = .constant(8)
             circleLayer.circleColor = .constant(StyleColor(UIColor.orange))
@@ -159,7 +257,6 @@ struct TripNavigationView: UIViewRepresentable {
             circleLayer.circleStrokeColor = .constant(StyleColor(.white))
             try? mapView.mapboxMap.addLayer(circleLayer)
 
-            // Text labels for stops
             var textLayer = SymbolLayer(id: "stops-labels", source: "stops-source")
             textLayer.textField = .expression(Exp(.get) { "name" })
             textLayer.textSize = .constant(11)
@@ -173,7 +270,7 @@ struct TripNavigationView: UIViewRepresentable {
 
         // MARK: - Render Origin + Destination Markers
 
-        func renderEndpoints(mapView: MapView, trip: Trip) {
+        private func renderEndpoints(mapView: MapView, trip: Trip) {
             if (try? mapView.mapboxMap.source(withId: "endpoints-source")) != nil {
                 try? mapView.mapboxMap.removeLayer(withId: "endpoints-labels")
                 try? mapView.mapboxMap.removeLayer(withId: "endpoints-circles")
@@ -209,7 +306,6 @@ struct TripNavigationView: UIViewRepresentable {
             source.data = .featureCollection(collection)
             try? mapView.mapboxMap.addSource(source)
 
-            // Circles — green for origin, red for destination
             var circleLayer = CircleLayer(id: "endpoints-circles", source: "endpoints-source")
             circleLayer.circleRadius = .constant(10)
             circleLayer.circleColor = .expression(
@@ -224,7 +320,6 @@ struct TripNavigationView: UIViewRepresentable {
             circleLayer.circleStrokeColor = .constant(StyleColor(.white))
             try? mapView.mapboxMap.addLayer(circleLayer)
 
-            // Labels
             var labelLayer = SymbolLayer(id: "endpoints-labels", source: "endpoints-source")
             labelLayer.textField = .expression(Exp(.get) { "name" })
             labelLayer.textSize = .constant(12)

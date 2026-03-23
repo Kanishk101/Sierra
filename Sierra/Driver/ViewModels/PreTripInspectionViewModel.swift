@@ -93,15 +93,20 @@ final class PreTripInspectionViewModel {
 
     // MARK: - Validation computed properties
 
-    /// True only when every single checklist item has been explicitly set
-    /// (Pass, Warn, or Fail). A .notChecked result is not acceptable.
+    /// True when every checklist item has been explicitly reviewed OR is still .notChecked
+    /// (notChecked renders as green/passing — driver actively toggling OFF marks them failed).
+    /// Blocks advancement ONLY if a toggle-off item hasn't been resolved with Warn or Fail.
     var allItemsChecked: Bool {
-        checkItems.allSatisfy { $0.result != .notChecked }
+        // In FMS_SS flow: notChecked = passing (green). Only explicitly .failed blocks.
+        // We only block if there are items that are in an ambiguous state.
+        // Since toggle OFF → .failed, there are no ambiguous states anymore.
+        true // All items always have a valid state (notChecked=pass, failed=fail, etc.)
     }
 
     /// Count of items the driver has not yet reviewed.
+    /// In the reverted FMS_SS flow, notChecked = green = effectively reviewed.
     var uncheckedCount: Int {
-        checkItems.filter { $0.result == .notChecked }.count
+        0  // notChecked items are shown as green (passing) so nothing is truly "unchecked"
     }
 
     /// Items marked failed that have NO photo captured or uploaded yet.
@@ -115,15 +120,15 @@ final class PreTripInspectionViewModel {
         }
     }
 
-    var canAdvanceToPhotos: Bool { allItemsChecked && odometerValid }
+    var canAdvanceToPhotos: Bool { odometerValid }
 
     /// May advance to summary only when all failed items have at least one photo.
     /// M-06 FIX: Warning items that are flagged as needing photos are also gated.
     var canAdvanceToSummary: Bool { failedItemsMissingPhoto.isEmpty }
 
-    /// Final submit gate: all items checked + no failed/warning item missing a photo.
+    /// Final submit gate: no failed/warning item missing a photo + odometer valid.
     var canSubmit: Bool {
-        allItemsChecked && failedItemsMissingPhoto.isEmpty && odometerValid
+        failedItemsMissingPhoto.isEmpty && odometerValid
     }
 
     // MARK: - Step 3: Computed results
@@ -314,10 +319,10 @@ final class PreTripInspectionViewModel {
                 let path = "\(prefix)/\(tripId.uuidString)/\(item.id.uuidString)/\(UUID().uuidString).jpg"
                 do {
                     try await supabase.storage
-                        .from("inspection-photos")
+                        .from("sierra-uploads")
                         .upload(path, data: compressed, options: .init(contentType: "image/jpeg"))
                     let publicUrl = try supabase.storage
-                        .from("inspection-photos")
+                        .from("sierra-uploads")
                         .getPublicURL(path: path)
                     urls.append(publicUrl.absoluteString)
                 } catch {
@@ -338,10 +343,10 @@ final class PreTripInspectionViewModel {
                 let path = "\(prefix)/\(tripId.uuidString)/general/\(UUID().uuidString).jpg"
                 do {
                     try await supabase.storage
-                        .from("inspection-photos")
+                        .from("sierra-uploads")
                         .upload(path, data: compressed, options: .init(contentType: "image/jpeg"))
                     let publicUrl = try supabase.storage
-                        .from("inspection-photos")
+                        .from("sierra-uploads")
                         .getPublicURL(path: path)
                     generalUrls.append(publicUrl.absoluteString)
                 } catch {

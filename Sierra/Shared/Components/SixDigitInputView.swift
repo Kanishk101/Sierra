@@ -71,16 +71,16 @@ struct SixDigitInputView: View {
     private func handlePaste(_ pastedDigits: String, startingAt startIndex: Int) {
         let chars = Array(pastedDigits.filter { $0.isNumber }.prefix(6))
         for (offset, char) in chars.enumerated() {
-            let idx = offset
+            let idx = startIndex + offset
             guard idx < 6 else { break }
             digits[idx] = String(char)
         }
-        let filledCount = min(chars.count, 6)
-        if filledCount == 6 {
+        let nextIndex = min(startIndex + chars.count, 6)
+        if nextIndex == 6 {
             focusedIndex = nil
             onComplete()
         } else {
-            focusedIndex = filledCount
+            focusedIndex = nextIndex
         }
     }
 }
@@ -138,6 +138,13 @@ struct BackspaceDetectingTextField: UIViewRepresentable {
     func makeUIView(context: Context) -> BackspaceTextField {
         let tf = BackspaceTextField()
         tf.keyboardType = .numberPad
+        tf.textContentType = .oneTimeCode
+        tf.autocorrectionType = .no
+        tf.spellCheckingType = .no
+        tf.smartInsertDeleteType = .no
+        tf.smartDashesType = .no
+        tf.smartQuotesType = .no
+        tf.autocapitalizationType = .none
         tf.textAlignment = .center
         tf.font = .systemFont(ofSize: 22, weight: .bold)
         tf.delegate = context.coordinator

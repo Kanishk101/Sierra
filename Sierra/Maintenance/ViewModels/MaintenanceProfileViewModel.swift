@@ -206,6 +206,34 @@ final class MaintenanceProfileViewModel {
     // MARK: - Submit
     // ─────────────────────────────────
 
+    // MARK: - Image Upload Helper
+
+    private func uploadImage(_ image: UIImage, path: String) async throws -> String {
+        let resized = Self.resizeImage(image, maxDimension: 1200)
+        guard let data = resized.jpegData(compressionQuality: 0.6) else {
+            throw NSError(domain: "MaintenanceProfile", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to compress image"])
+        }
+        try await supabase.storage
+            .from("sierra-uploads")
+            .upload(path, data: data, options: .init(contentType: "image/jpeg"))
+        let url = try supabase.storage
+            .from("sierra-uploads")
+            .getPublicURL(path: path)
+        return url.absoluteString
+    }
+
+    /// Resize an image so its longest side is at most `maxDimension` points.
+    private static func resizeImage(_ image: UIImage, maxDimension: CGFloat) -> UIImage {
+        let size = image.size
+        guard max(size.width, size.height) > maxDimension else { return image }
+        let scale = maxDimension / max(size.width, size.height)
+        let newSize = CGSize(width: size.width * scale, height: size.height * scale)
+        let renderer = UIGraphicsImageRenderer(size: newSize)
+        return renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: newSize))
+        }
+    }
+
     @MainActor
     func submitProfile() async {
         page2ValidationAttempted = true
@@ -223,6 +251,27 @@ final class MaintenanceProfileViewModel {
         let now = Date()
         let fullName = "\(firstName.trimmingCharacters(in: .whitespaces)) \(lastName.trimmingCharacters(in: .whitespaces))"
 
+        // Upload document images to Supabase Storage
+        var aadhaarUrl: String?
+        var certUrl: String?
+
+        do {
+            if let front = aadhaarFrontImage {
+                let frontUrl = try await uploadImage(front, path: "onboarding/\(user.id.uuidString)/aadhaar-front.jpg")
+                if let back = aadhaarBackImage {
+                    _ = try await uploadImage(back, path: "onboarding/\(user.id.uuidString)/aadhaar-back.jpg")
+                    aadhaarUrl = frontUrl
+                }
+            }
+            if let cert = certificateImage {
+                certUrl = try await uploadImage(cert, path: "onboarding/\(user.id.uuidString)/certificate.jpg")
+            }
+        } catch {
+            errorMessage = "Document upload failed: \(error.localizedDescription)"
+            isLoading = false
+            return
+        }
+
         let application = StaffApplication(
             id: UUID(),
             staffMemberId: user.id,
@@ -239,7 +288,7 @@ final class MaintenanceProfileViewModel {
             emergencyContactName: emergencyContactName,
             emergencyContactPhone: emergencyContactPhone,
             aadhaarNumber: formattedAadhaar,
-            aadhaarDocumentUrl: nil,
+            aadhaarDocumentUrl: aadhaarUrl,
             profilePhotoUrl: nil,
             driverLicenseNumber: nil,
             driverLicenseExpiry: nil,
@@ -250,7 +299,7 @@ final class MaintenanceProfileViewModel {
             maintCertificationNumber: certificationNumber.trimmingCharacters(in: .whitespaces),
             maintIssuingAuthority: issuingAuthority.trimmingCharacters(in: .whitespaces),
             maintCertificationExpiry: dateFormatter.string(from: certExpiryDate),
-            maintCertificationDocumentUrl: nil,
+            maintCertificationDocumentUrl: certUrl,
             maintYearsOfExperience: yearsOfExperience,
             maintSpecializations: selectedSpecializations.map(\.rawValue),
             createdAt: now

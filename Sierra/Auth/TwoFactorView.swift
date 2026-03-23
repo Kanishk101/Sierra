@@ -9,6 +9,16 @@ struct TwoFactorView: View {
         ZStack {
             Color(.systemGroupedBackground)
                 .ignoresSafeArea()
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    viewModel.focusedIndex = nil
+                    UIApplication.shared.sendAction(
+                        #selector(UIResponder.resignFirstResponder),
+                        to: nil,
+                        from: nil,
+                        for: nil
+                    )
+                }
 
             GeometryReader { geo in
                 ScrollView {

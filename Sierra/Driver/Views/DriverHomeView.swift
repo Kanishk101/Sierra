@@ -1,12 +1,8 @@
 import SwiftUI
 
-/// Driver home screen.
-/// Availability toggle rules:
-///   • Going Available  → always allowed
-///   • Going Unavailable → BLOCKED if driver has an active trip OR a trip
-///     starts within 30 minutes; ALLOWED otherwise.
-/// Error handling: partial load failures show a dismissible inline banner,
-/// never a full-screen block. The main content renders regardless.
+/// Driver home screen — exact FMS_SS HomeView.
+/// Availability toggle, profile button, current route banner,
+/// upcoming rides card, recent trips with AllTripCard dual-button layout.
 struct DriverHomeView: View {
 
     @Environment(AppDataStore.self) private var store
@@ -19,6 +15,19 @@ struct DriverHomeView: View {
     @State private var isUpdatingAvailability = false
     @State private var showProfile = false
     @State private var showLoadErrorBanner = false
+    @State private var toastPulseScale: CGFloat = 1.0
+
+    // FMS_SS card action state
+    @State private var acceptedTripID: UUID?
+    @State private var showAcceptConfetti = false
+    @State private var selectedDetailTrip: Trip?
+    @State private var isAccepting = false
+    @State private var showInspection = false
+    @State private var inspectionTrip: Trip?
+    @State private var inspectionMode: InspectionMode = .pre
+    @State private var showAcceptWarning = false
+
+    enum InspectionMode { case pre, post }
 
     private var user: AuthUser? { AuthManager.shared.currentUser }
 
@@ -26,6 +35,8 @@ struct DriverHomeView: View {
         guard let userId = user?.id else { return nil }
         return store.staff.first { $0.id == userId }
     }
+
+    private var driverId: UUID? { driverMember?.id }
 
     private var driverTrips: [Trip] {
         guard let id = driverMember?.id else { return [] }
@@ -38,7 +49,6 @@ struct DriverHomeView: View {
             .sorted { $0.scheduledDate < $1.scheduledDate }
     }
 
-    // ISSUE-14 FIX: Exclude cancelled/rejected from recent trips
     private var recentTrips: [Trip] {
         Array(driverTrips.filter { $0.status != .cancelled && $0.status != .rejected }.prefix(5))
     }
@@ -51,12 +61,11 @@ struct DriverHomeView: View {
         return store.activeTrip(forDriverId: member.id)
     }
 
-    // ISSUE-15 FIX: Use centralized constant and check trip's scheduledDate is within window
     private var tripStartsWithin30Min: Bool {
         return driverTrips.contains { trip in
             (trip.status == .scheduled || trip.status == .accepted || trip.status == .pendingAcceptance)
             && trip.scheduledDate.timeIntervalSinceNow <= TripConstants.driverBlockWindowSeconds
-            && trip.scheduledDate.timeIntervalSinceNow > -3600  // exclude trips up to 1h overdue
+            && trip.scheduledDate.timeIntervalSinceNow > -3600
         }
     }
 
@@ -67,22 +76,28 @@ struct DriverHomeView: View {
         )
     }
 
+    private var displayTrips: [Trip] {
+        if let currentTrip {
+            var seen = Set<UUID>()
+            return ([currentTrip] + recentTrips).filter { seen.insert($0.id).inserted }
+        }
+        return recentTrips
+    }
+
     var body: some View {
         ZStack(alignment: .top) {
-            Color(red: 0.97, green: 0.97, blue: 0.96).ignoresSafeArea()
+            Color.appSurface.ignoresSafeArea()
 
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 0) {
                     headerSection
 
                     VStack(spacing: 16) {
-                        // Inline load-error banner (dismissible, non-blocking)
                         if showLoadErrorBanner, let err = store.loadError {
                             loadErrorBanner(err)
                                 .padding(.top, 12)
                         }
 
-                        // Loading skeleton
                         if store.isLoading {
                             ProgressView("Loading assignments\u{2026}")
                                 .frame(maxWidth: .infinity)
@@ -96,8 +111,26 @@ struct DriverHomeView: View {
                             if displayTrips.isEmpty {
                                 noTripAssignedCard.padding(.top, 4)
                             } else {
-                                recentTripsSection
-                                recentTripCards
+                                // Section title
+                                HStack {
+                                    Text("Recent Trips")
+                                        .font(.system(size: 20, weight: .bold, design: .rounded))
+                                        .foregroundColor(.appTextPrimary)
+                                    Spacer()
+                                    Button { tabSelection = .trips } label: {
+                                        Text("View All")
+                                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                            .foregroundColor(.appOrange)
+                                    }
+                                }
+                                .padding(.top, 8)
+
+                                // Trip cards — exact same as Trips tab
+                                VStack(spacing: 12) {
+                                    ForEach(displayTrips.prefix(3)) { trip in
+                                        tripCard(trip)
+                                    }
+                                }
                             }
                         }
                     }
@@ -108,6 +141,26 @@ struct DriverHomeView: View {
             .scrollIndicators(.hidden)
             .ignoresSafeArea(edges: .top)
 
+            // Overlays
+            if showAcceptConfetti {
+                AcceptSuccessOverlay()
+                    .transition(.opacity.combined(with: .scale(scale: 0.8)))
+                    .zIndex(200)
+            }
+
+            if showAcceptWarning {
+                AcceptRequiredOverlay(
+                    onAccept: {
+                        withAnimation(.easeOut(duration: 0.25)) { showAcceptWarning = false }
+                    },
+                    onDismiss: {
+                        withAnimation(.easeOut(duration: 0.25)) { showAcceptWarning = false }
+                    }
+                )
+                .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                .zIndex(250)
+            }
+
             if showToast, let message = toastMessage {
                 availabilityToast(message: message)
                     .transition(.move(edge: .top).combined(with: .opacity))
@@ -116,9 +169,45 @@ struct DriverHomeView: View {
         }
         .ignoresSafeArea(edges: .top)
         .toolbar(.hidden, for: .navigationBar)
+        // Trip Detail Popup Overlay
+        .overlay {
+            if let trip = selectedDetailTrip {
+                let vehicle: Vehicle? = {
+                    if let idStr = trip.vehicleId, let uuid = UUID(uuidString: idStr) {
+                        return store.vehicle(for: uuid)
+                    }
+                    return nil
+                }()
+                TripDetailOverlay(
+                    trip: trip,
+                    vehicle: vehicle,
+                    onDismiss: { dismissDetail() },
+                    onStartInspection: { startInspection(for: trip) }
+                )
+                .transition(.opacity)
+                .zIndex(300)
+            }
+        }
+        .fullScreenCover(isPresented: $showInspection) {
+            if let iTrip = inspectionTrip,
+               let vIdStr = iTrip.vehicleId,
+               let vehicleUUID = UUID(uuidString: vIdStr),
+               let dId = driverId {
+                PreTripInspectionView(
+                    tripId: iTrip.id,
+                    vehicleId: vehicleUUID,
+                    driverId: dId,
+                    inspectionType: inspectionMode == .post ? .postTripInspection : .preTripInspection,
+                    onComplete: {
+                        showInspection = false
+                        inspectionTrip = nil
+                    }
+                )
+                .environment(store)
+            }
+        }
         .onAppear {
             availabilitySwitch = isAvailable
-            // Show load error banner if there was a partial failure
             if store.loadError != nil { showLoadErrorBanner = true }
         }
         .onChange(of: isAvailable) { _, newValue in availabilitySwitch = newValue }
@@ -137,11 +226,21 @@ struct DriverHomeView: View {
     private var headerSection: some View {
         ZStack {
             headerGradient
+
             RadialGradient(
-                colors: [Color.white.opacity(0.25), .clear],
+                colors: [Color.white.opacity(0.25), Color.clear],
                 center: .topLeading,
-                startRadius: 20, endRadius: 320
+                startRadius: 20,
+                endRadius: 300
             )
+
+            RadialGradient(
+                colors: [Color.appDeepOrange.opacity(0.4), Color.clear],
+                center: .bottomTrailing,
+                startRadius: 10,
+                endRadius: 250
+            )
+
             VStack(spacing: 6) {
                 HStack {
                     Button { showProfile = true } label: {
@@ -155,15 +254,20 @@ struct DriverHomeView: View {
                             )
                     }
                     Spacer()
-                    HStack(spacing: 10) {
+                    HStack(spacing: 8) {
                         Circle()
-                            .fill(availabilitySwitch ? Color.green : Color.gray.opacity(0.8))
-                            .frame(width: 10, height: 10)
+                            .fill(availabilitySwitch ? Color.green : Color.gray)
+                            .frame(width: 9, height: 9)
+                            .shadow(
+                                color: availabilitySwitch ? Color.green.opacity(0.6) : Color.clear,
+                                radius: 4
+                            )
+                            .animation(.easeInOut(duration: 0.3), value: availabilitySwitch)
+
                         Toggle("", isOn: availabilityBinding)
+                            .toggleStyle(SwitchToggleStyle(tint: .green))
                             .labelsHidden()
-                            .toggleStyle(.switch)
-                            .tint(.green)
-                            .scaleEffect(0.86)
+                            .scaleEffect(0.85)
                             .disabled(isUpdatingAvailability)
                     }
                 }
@@ -172,30 +276,33 @@ struct DriverHomeView: View {
 
                 Text(timeOfDayGreeting)
                     .font(.system(size: 16, weight: .medium, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.9))
+                    .foregroundColor(.white.opacity(0.9))
                     .tracking(0.5)
 
                 Text(headerName.uppercased())
                     .font(.system(size: 28, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
+                    .foregroundColor(.white)
                     .tracking(1.2)
                     .minimumScaleFactor(0.85)
                     .lineLimit(1)
                     .padding(.horizontal, 24)
 
-                Spacer().frame(height: 50)
+                Spacer()
+                    .frame(height: 50)
             }
         }
         .frame(height: 230)
         .clipShape(
             UnevenRoundedRectangle(
-                topLeadingRadius: 0, bottomLeadingRadius: 34,
-                bottomTrailingRadius: 34, topTrailingRadius: 0, style: .continuous
+                topLeadingRadius: 0,
+                bottomLeadingRadius: 32,
+                bottomTrailingRadius: 32,
+                topTrailingRadius: 0
             )
         )
     }
 
-    // MARK: - Inline Load-Error Banner
+    // MARK: - Load Error Banner
 
     private func loadErrorBanner(_ message: String) -> some View {
         HStack(spacing: 10) {
@@ -240,31 +347,39 @@ struct DriverHomeView: View {
     private var currentRouteBannerLabel: some View {
         HStack(spacing: 14) {
             ZStack {
-                Circle().fill(Color(red: 0.11, green: 0.12, blue: 0.16)).frame(width: 44, height: 44)
+                Circle()
+                    .fill(Color.appTextPrimary)
+                    .frame(width: 44, height: 44)
                 Image(systemName: "location.north.fill")
-                    .font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundColor(.white)
                     .rotationEffect(.degrees(45))
             }
+
             Text("See your current route")
                 .font(.system(size: 16, weight: .semibold, design: .rounded))
-                .foregroundStyle(Color(red: 0.12, green: 0.12, blue: 0.14))
+                .foregroundColor(.appTextPrimary)
+
             Spacer()
+
             Image(systemName: "chevron.right")
-                .font(.system(size: 15, weight: .bold)).foregroundStyle(Color.secondary)
+                .font(.system(size: 14, weight: .bold))
+                .foregroundColor(.appTextSecondary)
         }
-        .padding(.horizontal, 18).padding(.vertical, 14)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 14)
         .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: 20)
                 .fill(.ultraThinMaterial)
-                .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(Color(red: 1.00, green: 0.84, blue: 0.62).opacity(0.28)))
-                .shadow(color: .black.opacity(0.06), radius: 12, y: 4)
+                .shadow(color: Color.black.opacity(0.06), radius: 12, x: 0, y: 4)
         )
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
-            .stroke(Color.white.opacity(0.42), lineWidth: 1))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20)
+                .stroke(Color.white.opacity(0.7), lineWidth: 1)
+        )
     }
 
-    // MARK: - Upcoming Card
+    // MARK: - Upcoming Rides Card
 
     private var upcomingRidesCard: some View {
         VStack(spacing: 0) {
@@ -272,123 +387,348 @@ struct DriverHomeView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("\(upcomingTrips.count) upcoming Rides")
                         .font(.system(size: 14, weight: .medium, design: .rounded))
-                        .foregroundStyle(Color.secondary)
+                        .foregroundColor(.appTextSecondary)
+
                     Text(nextRideHeadline)
                         .font(.system(size: 22, weight: .bold, design: .rounded))
-                        .foregroundStyle(Color(red: 0.12, green: 0.12, blue: 0.14))
-                        .lineLimit(1).minimumScaleFactor(0.8)
+                        .foregroundColor(.appTextPrimary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                 }
+
                 Spacer()
+
                 ZStack {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color(red: 0.93, green: 0.93, blue: 0.94)).frame(width: 84, height: 70)
-                    Image(systemName: "car.fill").font(.system(size: 32))
-                        .foregroundStyle(Color.secondary.opacity(0.55))
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.appSurface, Color.appDivider],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .frame(width: 80, height: 70)
+
+                    Image(systemName: "bus.fill")
+                        .font(.system(size: 32))
+                        .foregroundColor(.appTextSecondary.opacity(0.5))
                 }
             }
-            .padding(.horizontal, 22).padding(.top, 22).padding(.bottom, 16)
+            .padding(.horizontal, 22)
+            .padding(.top, 22)
+            .padding(.bottom, 16)
 
             Button { tabSelection = .trips } label: {
                 Text("View Rides")
                     .font(.system(size: 15, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity).padding(.vertical, 14)
-                    .background(Capsule().fill(Color(red: 0.11, green: 0.12, blue: 0.16)))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(
+                        Capsule()
+                            .fill(Color.appTextPrimary)
+                    )
             }
-            .padding(.horizontal, 22).padding(.bottom, 20)
+            .padding(.horizontal, 22)
+            .padding(.bottom, 20)
         }
         .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(Color.white)
-                .shadow(color: .black.opacity(0.06), radius: 16, y: 6)
+            RoundedRectangle(cornerRadius: 24)
+                .fill(Color.appCardBg)
+                .shadow(color: Color.black.opacity(0.06), radius: 16, x: 0, y: 6)
         )
-        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous)
-            .stroke(Color(red: 0.92, green: 0.92, blue: 0.93).opacity(0.6), lineWidth: 1))
+        .overlay(
+            RoundedRectangle(cornerRadius: 24)
+                .stroke(Color.appDivider.opacity(0.5), lineWidth: 1)
+        )
     }
 
-    // MARK: - Recent Trips
+    // MARK: - Trip Card (exact same as TripsView AllTripCard)
 
-    private var recentTripsSection: some View {
-        HStack {
-            Text("Recent Trips")
-                .font(.system(size: 20, weight: .bold, design: .rounded))
-                .foregroundStyle(Color(red: 0.12, green: 0.12, blue: 0.14))
-            Spacer()
-            Button { tabSelection = .trips } label: {
-                Text("View All")
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.orange)
-            }
-        }
-        .padding(.top, 8)
-    }
+    private func tripCard(_ trip: Trip) -> some View {
+        let isJustAccepted = acceptedTripID == trip.id
 
-    private var recentTripCards: some View {
-        VStack(spacing: 12) {
-            ForEach(displayTrips.prefix(3)) { trip in recentTripCard(trip) }
-        }
-    }
+        return VStack(alignment: .leading, spacing: 14) {
+            // Top row — task code + priority/status badge
+            HStack {
+                Image(systemName: "bus.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.appTextSecondary)
 
-    private func recentTripCard(_ trip: Trip) -> some View {
-        NavigationLink(value: trip.id) {
-            VStack(alignment: .leading, spacing: 12) {
                 Text(trip.taskId)
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.orange)
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(Capsule().fill(Color.orange.opacity(0.10)))
+                    .font(.system(size: 13, weight: .bold, design: .monospaced))
+                    .foregroundColor(Color.appOrange)
 
-                HStack(spacing: 8) {
-                    Text(trip.origin.uppercased())
-                        .font(.system(size: 17, weight: .bold, design: .rounded))
-                        .foregroundStyle(Color(red: 0.12, green: 0.12, blue: 0.14))
-                    HStack(spacing: 4) {
-                        Rectangle().fill(Color.orange.opacity(0.4)).frame(width: 16, height: 2)
-                        Image(systemName: "arrowtriangle.right.fill").font(.system(size: 8)).foregroundStyle(Color.orange)
-                        Rectangle().fill(Color.orange.opacity(0.4)).frame(width: 16, height: 2)
-                    }
-                    Text(trip.destination.uppercased())
-                        .font(.system(size: 17, weight: .bold, design: .rounded))
-                        .foregroundStyle(Color(red: 0.12, green: 0.12, blue: 0.14))
-                    Spacer(minLength: 0)
+                Spacer()
+
+                if trip.status == .completed {
+                    CompletedBadge()
+                } else {
+                    PriorityBadge(priority: trip.priority)
                 }
-
-                if let vehicle = vehicleForTrip(trip) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "car.fill").font(.system(size: 13)).foregroundStyle(Color.secondary)
-                        Text(vehicle.licensePlate)
-                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(Color.orange)
-                            .padding(.horizontal, 8).padding(.vertical, 3)
-                            .background(Capsule().fill(Color.orange.opacity(0.08)))
-                        Text("\(vehicle.name) \(vehicle.model)")
-                            .font(.system(size: 13, weight: .medium, design: .rounded))
-                            .foregroundStyle(Color.secondary)
-                    }
-                }
-
-                HStack(spacing: 8) {
-                    Image(systemName: "clock").font(.system(size: 13)).foregroundStyle(Color.secondary)
-                    Text(trip.scheduledDate.formatted(.dateTime.day().month(.abbreviated).hour().minute()))
-                        .font(.system(size: 13, weight: .medium, design: .rounded))
-                        .foregroundStyle(Color.secondary)
-                }
-
-                Text("View Details")
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.orange)
-                    .frame(maxWidth: .infinity).padding(.vertical, 13)
-                    .background(Capsule().fill(Color.orange.opacity(0.12)))
-                    .overlay(Capsule().stroke(Color.orange.opacity(0.2), lineWidth: 1))
-                    .padding(.top, 4)
             }
-            .padding(18)
-            .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Color.white)
-                .shadow(color: .black.opacity(0.04), radius: 10, y: 4))
-            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Color(red: 0.92, green: 0.92, blue: 0.93).opacity(0.6), lineWidth: 1))
+
+            // Route — city name (first word) big, rest smaller
+            routeRow(origin: trip.origin, destination: trip.destination)
+
+            // Vehicle info
+            vehicleInfo(trip)
+
+            // Date & time
+            HStack(spacing: 6) {
+                Image(systemName: "calendar.badge.clock")
+                    .font(.system(size: 13))
+                    .foregroundColor(.appTextSecondary)
+                Text(trip.scheduledDate.formatted(.dateTime.day().month(.abbreviated).hour().minute()))
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundColor(.appTextSecondary)
+            }
+
+            // Divider
+            Rectangle()
+                .fill(Color.appDivider)
+                .frame(height: 1)
+                .padding(.vertical, 2)
+
+            // Action buttons — exact FMS_SS flow
+            actionButtons(trip)
         }
-        .buttonStyle(.plain)
+        .padding(18)
+        .background(
+            RoundedRectangle(cornerRadius: 22)
+                .fill(Color.appCardBg)
+                .shadow(
+                    color: trip.priority.color.opacity(0.10),
+                    radius: 14,
+                    x: 0, y: 6
+                )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 22)
+                .stroke(
+                    isJustAccepted
+                        ? Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.5)
+                        : trip.priority.color.opacity(0.22),
+                    lineWidth: isJustAccepted ? 2 : 1
+                )
+        )
+        .scaleEffect(isJustAccepted ? 1.02 : 1.0)
+        .animation(.spring(response: 0.3), value: isJustAccepted)
+    }
+
+    // MARK: - Route Row (city name big, rest smaller)
+
+    private func routeRow(origin: String, destination: String) -> some View {
+        HStack(spacing: 10) {
+            cityLabel(origin)
+            RouteArrow()
+            cityLabel(destination)
+        }
+    }
+
+    private func cityLabel(_ text: String) -> some View {
+        let words = text.split(separator: " ")
+        let city = String(words.first ?? Substring(text))
+        let rest = words.dropFirst().joined(separator: " ")
+
+        return VStack(alignment: .leading, spacing: 1) {
+            Text(city.uppercased())
+                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .foregroundColor(.appTextPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            if !rest.isEmpty {
+                Text(rest)
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundColor(.appTextSecondary)
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    // MARK: - Vehicle Info
+
+    private func vehicleInfo(_ trip: Trip) -> some View {
+        Group {
+            if let vIdStr = trip.vehicleId, let vUUID = UUID(uuidString: vIdStr),
+               let vehicle = store.vehicle(for: vUUID) {
+                HStack(spacing: 8) {
+                    Text(vehicle.licensePlate)
+                        .font(.system(size: 12, weight: .bold, design: .monospaced))
+                        .foregroundColor(Color.appOrange)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(Color.appOrange.opacity(0.08)))
+
+                    Text("\(vehicle.name) \(vehicle.model)")
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundColor(.appTextSecondary)
+                        .lineLimit(1)
+                }
+            }
+        }
+    }
+
+    // MARK: - Action Buttons (exact FMS_SS flow)
+
+    @ViewBuilder
+    private func actionButtons(_ trip: Trip) -> some View {
+        let isCompleted = trip.status == .completed
+        let needsPostTrip = isCompleted && trip.postInspectionId == nil
+        let postTripDone = isCompleted && trip.postInspectionId != nil
+        let hasPreInspection = trip.preInspectionId != nil
+        let isNavigateReady = (trip.status == .accepted && hasPreInspection) || trip.status == .active
+
+        if needsPostTrip {
+            SlideToStartInspectionButton(
+                label: "Post-Trip Inspection",
+                controlHeight: 44,
+                onComplete: { openPostTripInspection(for: trip) }
+            )
+        } else if postTripDone {
+            CompletedInspectionButton()
+        } else {
+            HStack(spacing: 12) {
+                // Left: View Details
+                Button { showTripDetail(trip) } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "doc.text.magnifyingglass")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("View Details")
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                    }
+                    .foregroundColor(Color.appOrange)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Capsule().fill(Color.appOrange.opacity(0.08)))
+                    .overlay(Capsule().stroke(Color.appOrange.opacity(0.25), lineWidth: 1.5))
+                }
+                .buttonStyle(.plain)
+
+                // Right: Accept / Accepted / Navigate
+                if trip.status == .pendingAcceptance {
+                    Button { acceptTrip(trip) } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "hand.thumbsup.fill")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text("Accept Trip")
+                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                        }
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Capsule().fill(Color.appTextPrimary))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isAccepting)
+                } else if isNavigateReady {
+                    NavigationLink(value: trip.id) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "location.fill")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text("Navigate")
+                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                        }
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Capsule().fill(Color(red: 0.90, green: 0.22, blue: 0.18)))
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    // Accepted (disabled green)
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("Accepted")
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                    }
+                    .foregroundColor(Color(red: 0.20, green: 0.65, blue: 0.32))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Capsule().fill(Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.12)))
+                    .overlay(Capsule().stroke(Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.3), lineWidth: 1.5))
+                }
+            }
+        }
+    }
+
+    // MARK: - Card Actions
+
+    private func acceptTrip(_ trip: Trip) {
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.success)
+
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+            acceptedTripID = trip.id
+        }
+
+        withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
+            showAcceptConfetti = true
+        }
+
+        isAccepting = true
+        Task {
+            do {
+                try await store.acceptTrip(tripId: trip.id)
+            } catch {
+                print("[DriverHomeView] Accept failed: \(error)")
+            }
+            isAccepting = false
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
+            withAnimation(.easeOut(duration: 0.3)) {
+                showAcceptConfetti = false
+                acceptedTripID = nil
+            }
+        }
+    }
+
+    private func showTripDetail(_ trip: Trip) {
+        let generator = UIImpactFeedbackGenerator(style: .medium)
+        generator.impactOccurred()
+        withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
+            selectedDetailTrip = trip
+        }
+    }
+
+    private func dismissDetail() {
+        withAnimation(.easeOut(duration: 0.25)) {
+            selectedDetailTrip = nil
+        }
+    }
+
+    private func openPostTripInspection(for trip: Trip) {
+        guard trip.status == .completed else { return }
+        inspectionMode = .post
+        inspectionTrip = trip
+        showInspection = true
+    }
+
+    private func startInspection(for trip: Trip) {
+        if trip.status == .accepted || trip.status == .active {
+            inspectionMode = trip.status == .completed ? .post : .pre
+            inspectionTrip = trip
+            dismissDetail()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                showInspection = true
+            }
+        } else if trip.status == .pendingAcceptance {
+            let generator = UINotificationFeedbackGenerator()
+            generator.notificationOccurred(.warning)
+            dismissDetail()
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                showAcceptWarning = true
+            }
+        } else if trip.status == .completed {
+            inspectionMode = .post
+            inspectionTrip = trip
+            dismissDetail()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                showInspection = true
+            }
+        }
     }
 
     // MARK: - Empty State
@@ -434,20 +774,13 @@ struct DriverHomeView: View {
     private var headerGradient: LinearGradient {
         LinearGradient(
             colors: [
-                Color(red: 1.00, green: 0.79, blue: 0.33),
-                Color(red: 0.96, green: 0.54, blue: 0.10),
-                Color(red: 0.92, green: 0.35, blue: 0.08)
+                Color.appAmber,
+                Color.appOrange,
+                Color.appDeepOrange.opacity(0.85)
             ],
-            startPoint: .topLeading, endPoint: .bottomTrailing
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
         )
-    }
-
-    private var displayTrips: [Trip] {
-        if let currentTrip {
-            var seen = Set<UUID>()
-            return ([currentTrip] + recentTrips).filter { seen.insert($0.id).inserted }
-        }
-        return recentTrips
     }
 
     private var headerName: String {
@@ -474,35 +807,70 @@ struct DriverHomeView: View {
         return "First Ride in \(max(1, mins / 60)) hr"
     }
 
-    private func vehicleForTrip(_ trip: Trip) -> Vehicle? {
-        guard let vId = trip.vehicleId, let vUUID = UUID(uuidString: vId) else { return nil }
-        return store.vehicle(for: vUUID)
-    }
-
     private func availabilityToast(message: String) -> some View {
         HStack(spacing: 12) {
-            Circle()
-                .fill(toastIsError ? Color.red.opacity(0.85)
-                      : (availabilitySwitch ? Color.green : Color(red: 0.35, green: 0.35, blue: 0.40)))
-                .frame(width: 12, height: 12)
+            ZStack {
+                Circle()
+                    .fill(toastIsError ? Color.red.opacity(0.25)
+                          : (availabilitySwitch ? Color.green.opacity(0.25) : Color.red.opacity(0.25)))
+                    .frame(width: 28, height: 28)
+                    .scaleEffect(toastPulseScale)
+
+                Circle()
+                    .fill(toastIsError ? Color.red
+                          : (availabilitySwitch ? Color.green : Color.red.opacity(0.8)))
+                    .frame(width: 12, height: 12)
+            }
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(message)
-                    .font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+
                 if !toastIsError {
                     Text(availabilitySwitch ? "Ready to accept rides" : "You won\u{2019}t receive new rides")
-                        .font(.system(size: 12, weight: .medium, design: .rounded)).foregroundStyle(.white.opacity(0.8))
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundColor(.white.opacity(0.75))
                 }
             }
+
             Spacer()
+
+            Image(systemName: toastIsError ? "xmark.circle.fill"
+                  : (availabilitySwitch ? "checkmark.circle.fill" : "moon.fill"))
+                .font(.system(size: 22))
+                .foregroundColor(.white.opacity(0.8))
         }
-        .padding(.horizontal, 18).padding(.vertical, 14)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 14)
         .background(
             Capsule()
-                .fill(toastIsError ? Color.red.opacity(0.9)
-                      : (availabilitySwitch ? Color.green.opacity(0.9) : Color(red: 0.35, green: 0.35, blue: 0.40)))
-                .shadow(color: .black.opacity(0.25), radius: 16, y: 6)
+                .fill(
+                    toastIsError
+                        ? Color.red.opacity(0.9)
+                        : (availabilitySwitch
+                            ? Color.green.opacity(0.9)
+                            : Color(red: 0.35, green: 0.35, blue: 0.40))
+                )
+                .shadow(
+                    color: (toastIsError ? Color.red
+                            : (availabilitySwitch ? Color.green : Color.black)).opacity(0.3),
+                    radius: 16, x: 0, y: 6
+                )
         )
-        .padding(.horizontal, 20).padding(.top, 58)
+        .padding(.horizontal, 20)
+        .padding(.top, 58)
+        .onAppear {
+            withAnimation(
+                .easeInOut(duration: 0.8)
+                .repeatCount(3, autoreverses: true)
+            ) {
+                toastPulseScale = 1.5
+            }
+        }
+        .onDisappear {
+            toastPulseScale = 1.0
+        }
     }
 
     // MARK: - Availability Change Logic
@@ -510,7 +878,6 @@ struct DriverHomeView: View {
     private func requestAvailabilityChange(_ available: Bool) {
         guard !isUpdatingAvailability else { return }
 
-        // --- Pre-flight: block going Unavailable if within 30-min window or on active trip ---
         if !available {
             if let trip = currentTrip, trip.status == .active {
                 presentToast("You\u{2019}re on an active trip", isError: true)
@@ -523,7 +890,7 @@ struct DriverHomeView: View {
         }
 
         let previous = availabilitySwitch
-        availabilitySwitch = available // optimistic update
+        availabilitySwitch = available
 
         Task {
             let ok = await persistAvailability(available)
@@ -544,7 +911,6 @@ struct DriverHomeView: View {
             let expected: StaffAvailability = available ? .available : .unavailable
             let confirmed = store.staff.first(where: { $0.id == id })?.availability == expected
             if !confirmed {
-                // Force-refresh to get the authoritative value from DB
                 await store.loadDriverData(driverId: id)
             }
             await MainActor.run {

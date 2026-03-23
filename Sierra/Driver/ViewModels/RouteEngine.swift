@@ -25,9 +25,11 @@ final class RouteEngine {
     var avoidTolls: Bool = false
     var avoidHighways: Bool = false
     var lastBuildError: String? = nil
+    var isUsingStoredRouteFallback: Bool = false
 
     // MARK: - Internal State
     private(set) var decodedRouteCoordinates: [CLLocationCoordinate2D] = []
+    private(set) var totalRouteDistanceMetres: Double = 0
     private var intermediateWaypoints: [(lat: Double, lng: Double, name: String)] = []
     private var rerouteFromCurrentLocation: Bool = false
     private var isBuilding: Bool = false  // CODE-33 FIX: prevent concurrent builds
@@ -49,6 +51,7 @@ final class RouteEngine {
         let isRerouting = rerouteFromCurrentLocation
         rerouteFromCurrentLocation = false
         lastBuildError = nil
+        clearDerivedRouteState()
 
         // --- Determine origin ---
         let originCoord: CLLocationCoordinate2D
@@ -100,6 +103,16 @@ final class RouteEngine {
         if avoidHighways { avoidClasses.insert(.motorway) }
         if !avoidClasses.isEmpty { options.roadClassesToAvoid = avoidClasses }
 
+        guard MapService.hasValidToken else {
+            if applyStoredPolylineFallback(from: trip) {
+                lastBuildError = "Mapbox token missing. Showing the saved trip path only."
+            } else {
+                lastBuildError = MapService.configurationErrorDescription
+            }
+            print("[RouteEngine] \(lastBuildError!)")
+            return
+        }
+
         do {
             let response: RouteResponse = try await withCheckedThrowingContinuation { continuation in
                 Directions.shared.calculate(options) { result in
@@ -119,7 +132,9 @@ final class RouteEngine {
             if let fastestIndex = routes.indices.min(by: { routes[$0].expectedTravelTime < routes[$1].expectedTravelTime }) {
                 let fastest = routes[fastestIndex]
                 currentRoute = fastest
+                isUsingStoredRouteFallback = false
                 distanceRemainingMetres = fastest.distance
+                totalRouteDistanceMetres = fastest.distance
                 estimatedArrivalTime = Date().addingTimeInterval(fastest.expectedTravelTime)
                 if let firstStep = fastest.legs.first?.steps.first { currentStepInstruction = firstStep.instructions }
                 if routes.count > 1 { alternativeRoute = routes.enumerated().first(where: { $0.offset != fastestIndex })?.element }
@@ -128,7 +143,11 @@ final class RouteEngine {
             if hasDeviated { hasDeviated = false }
 
         } catch {
-            lastBuildError = "Route calculation failed: \(error.localizedDescription)"
+            if applyStoredPolylineFallback(from: trip) {
+                lastBuildError = "Live route unavailable: \(error.localizedDescription). Showing the saved trip path."
+            } else {
+                lastBuildError = "Route calculation failed: \(error.localizedDescription)"
+            }
             print("[RouteEngine] \(lastBuildError!)")
         }
     }
@@ -137,25 +156,77 @@ final class RouteEngine {
     func swapAlternativeRoute() {
         guard let alt = alternativeRoute else { return }
         let prev = currentRoute; currentRoute = alt; alternativeRoute = prev
-        if let shape = currentRoute?.shape { decodedRouteCoordinates = shape.coordinates }
+        if let shape = currentRoute?.shape {
+            decodedRouteCoordinates = shape.coordinates
+            totalRouteDistanceMetres = currentRoute?.distance ?? routeLength(for: shape.coordinates)
+        }
+        isUsingStoredRouteFallback = false
         if let firstStep = currentRoute?.legs.first?.steps.first { currentStepInstruction = firstStep.instructions }
         if let travel = currentRoute?.expectedTravelTime { estimatedArrivalTime = Date().addingTimeInterval(travel) }
         if let dist = currentRoute?.distance { distanceRemainingMetres = dist }
     }
 
     func rebuildRoutes(trip: Trip, currentLocation: CLLocation?) async {
-        currentRoute = nil  // force rebuild
+        clearDerivedRouteState()
         await buildRoutes(trip: trip, currentLocation: currentLocation)
     }
 
     func addStop(latitude: Double, longitude: Double, name: String, trip: Trip, currentLocation: CLLocation?) async {
         intermediateWaypoints.append((lat: latitude, lng: longitude, name: name))
-        currentRoute = nil
+        clearDerivedRouteState()
         await buildRoutes(trip: trip, currentLocation: currentLocation)
     }
 
     func triggerRerouteFromCurrentLocation() {
         rerouteFromCurrentLocation = true
+        clearDerivedRouteState()
+    }
+
+    private func clearDerivedRouteState() {
         currentRoute = nil
+        alternativeRoute = nil
+        decodedRouteCoordinates = []
+        totalRouteDistanceMetres = 0
+        currentStepInstruction = ""
+        distanceRemainingMetres = 0
+        estimatedArrivalTime = nil
+        isUsingStoredRouteFallback = false
+    }
+
+    private func applyStoredPolylineFallback(from trip: Trip) -> Bool {
+        guard let encoded = trip.routePolyline?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !encoded.isEmpty else {
+            return false
+        }
+
+        let decoded: [CLLocationCoordinate2D]? = MapboxDirections.decodePolyline(encoded, precision: 1e6)
+            ?? MapboxDirections.decodePolyline(encoded, precision: 1e5)
+        guard let decoded, decoded.count >= 2 else { return false }
+
+        decodedRouteCoordinates = decoded
+        totalRouteDistanceMetres = routeLength(for: decoded)
+        distanceRemainingMetres = totalRouteDistanceMetres
+        estimatedArrivalTime = estimateArrival(forRemainingDistance: totalRouteDistanceMetres)
+        currentStepInstruction = "Follow the highlighted trip route"
+        currentRoute = nil
+        alternativeRoute = nil
+        hasDeviated = false
+        isUsingStoredRouteFallback = true
+        return true
+    }
+
+    private func routeLength(for coordinates: [CLLocationCoordinate2D]) -> Double {
+        guard coordinates.count >= 2 else { return 0 }
+        return zip(coordinates, coordinates.dropFirst()).reduce(0) { partialResult, pair in
+            let start = CLLocation(latitude: pair.0.latitude, longitude: pair.0.longitude)
+            let end = CLLocation(latitude: pair.1.latitude, longitude: pair.1.longitude)
+            return partialResult + start.distance(from: end)
+        }
+    }
+
+    private func estimateArrival(forRemainingDistance distance: Double) -> Date? {
+        guard distance > 0 else { return nil }
+        let assumedSpeedMetresPerSecond = 35.0 / 3.6
+        return Date().addingTimeInterval(distance / assumedSpeedMetresPerSecond)
     }
 }

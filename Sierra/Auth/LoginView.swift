@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct LoginView: View {
+    private enum Field: Hashable { case email, password }
+
     @State private var viewModel = LoginViewModel()
     @State private var cardAppeared = false
     @State private var showForgotPassword = false
@@ -8,6 +10,7 @@ struct LoginView: View {
     @State private var twoFactorContext: TwoFactorContext?
     @State private var twoFactorVM: TwoFactorViewModel?
     @State private var showTwoFactor = false
+    @FocusState private var focusedField: Field?
 
     var body: some View {
         ZStack {
@@ -24,6 +27,10 @@ struct LoginView: View {
             withAnimation(.spring(duration: 0.6, bounce: 0.25)) {
                 cardAppeared = true
             }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            dismissKeyboard()
         }
         .sheet(isPresented: $showForgotPassword) {
             ForgotPasswordView()
@@ -62,6 +69,7 @@ struct LoginView: View {
                     #selector(UIResponder.resignFirstResponder),
                     to: nil, from: nil, for: nil
                 )
+                focusedField = nil
                 showTwoFactor = true
 
             default: break
@@ -150,6 +158,7 @@ struct LoginView: View {
                             .font(.system(size: 17))
                             .foregroundStyle(Color(.label))
                             .tint(.orange)
+                            .focused($focusedField, equals: .email)
                             .accessibilityLabel("Email")
                             .accessibilityHint("Enter your account email address")
                     }
@@ -188,6 +197,7 @@ struct LoginView: View {
                         .font(.system(size: 17))
                         .foregroundStyle(Color(.label))
                         .tint(.orange)
+                        .focused($focusedField, equals: .password)
                         .accessibilityLabel("Password")
                         .accessibilityHint("Enter your password")
 
@@ -235,7 +245,7 @@ struct LoginView: View {
 
             // Sign In
             Button {
-                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                dismissKeyboard()
                 Task { await viewModel.signIn() }
             } label: {
                 Text("Sign In")
@@ -331,6 +341,17 @@ struct LoginView: View {
         }
         .transition(.opacity)
         .animation(.easeInOut(duration: 0.2), value: viewModel.isLoading)
+    }
+
+    @MainActor
+    private func dismissKeyboard() {
+        focusedField = nil
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder),
+            to: nil,
+            from: nil,
+            for: nil
+        )
     }
 }
 

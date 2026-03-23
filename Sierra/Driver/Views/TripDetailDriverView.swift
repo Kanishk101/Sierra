@@ -59,13 +59,19 @@ struct TripDetailDriverView: View {
     }
 
     /// True when this trip was (or is being) routed through the driver-acceptance flow.
-    /// Used to decide whether to show the "Accept Trip" step in the flow card.
     private func usedAcceptanceFlow(_ trip: Trip) -> Bool {
         trip.acceptedAt != nil
             || trip.rejectedReason != nil
             || trip.status == .pendingAcceptance
-            || trip.status == .accepted
+            || trip.status == .scheduled   // post-acceptance
+            || trip.status == .accepted    // legacy accepted state
             || trip.status == .rejected
+    }
+
+    /// True when the trip is within 30 minutes of its scheduled start.
+    private func isInTimeWindow(_ trip: Trip) -> Bool {
+        let secsUntilStart = trip.scheduledDate.timeIntervalSinceNow
+        return secsUntilStart <= TripConstants.driverBlockWindowSeconds
     }
 
     // MARK: - Body
@@ -91,8 +97,8 @@ struct TripDetailDriverView: View {
                 ContentUnavailableView("Trip Not Found", systemImage: "exclamationmark.triangle")
             }
         }
-        .background(Color(.systemGroupedBackground).ignoresSafeArea())
-        .navigationTitle("Trip Details")
+        .background(Color.appSurface.ignoresSafeArea())
+        .navigationTitle("Trip Overview")
         .navigationBarTitleDisplayMode(.inline)
         .alert("Error", isPresented: $showError) {
             Button("OK") {}
@@ -163,85 +169,257 @@ struct TripDetailDriverView: View {
         }
     }
 
-    // MARK: - Route Map Card
+    // MARK: - Route Map Card (FMS_SS heroMapSection style)
 
     @ViewBuilder
     private func routeMapCard(_ trip: Trip) -> some View {
         let hasCoords = trip.originLatitude != nil && trip.originLongitude != nil
                      && trip.destinationLatitude != nil && trip.destinationLongitude != nil
 
-        VStack(alignment: .leading, spacing: 0) {
-            if hasCoords,
-               let oLat = trip.originLatitude, let oLng = trip.originLongitude,
-               let dLat = trip.destinationLatitude, let dLng = trip.destinationLongitude {
+        if hasCoords,
+           let oLat = trip.originLatitude, let oLng = trip.originLongitude,
+           let dLat = trip.destinationLatitude, let dLng = trip.destinationLongitude {
 
-                let originCoord = CLLocationCoordinate2D(latitude: oLat, longitude: oLng)
-                let destCoord   = CLLocationCoordinate2D(latitude: dLat, longitude: dLng)
-                let minLat = min(oLat, dLat), maxLat = max(oLat, dLat)
-                let minLng = min(oLng, dLng), maxLng = max(oLng, dLng)
-                let spanLat = max((maxLat - minLat) * 1.5, 0.05)
-                let spanLng = max((maxLng - minLng) * 1.5, 0.05)
-                let center  = CLLocationCoordinate2D(
-                    latitude:  (minLat + maxLat) / 2,
-                    longitude: (minLng + maxLng) / 2
-                )
-                let region = MKCoordinateRegion(
-                    center: center,
-                    span: MKCoordinateSpan(latitudeDelta: spanLat, longitudeDelta: spanLng)
-                )
+            // Real map when GPS coords exist
+            let originCoord = CLLocationCoordinate2D(latitude: oLat, longitude: oLng)
+            let destCoord   = CLLocationCoordinate2D(latitude: dLat, longitude: dLng)
+            let minLat = min(oLat, dLat), maxLat = max(oLat, dLat)
+            let minLng = min(oLng, dLng), maxLng = max(oLng, dLng)
+            let spanLat = max((maxLat - minLat) * 1.5, 0.05)
+            let spanLng = max((maxLng - minLng) * 1.5, 0.05)
+            let center = CLLocationCoordinate2D(latitude: (minLat + maxLat) / 2, longitude: (minLng + maxLng) / 2)
+            let region = MKCoordinateRegion(
+                center: center,
+                span: MKCoordinateSpan(latitudeDelta: spanLat, longitudeDelta: spanLng)
+            )
 
-                ZStack(alignment: .bottom) {
-                    Map(initialPosition: .region(region)) {
-                        Annotation(trip.origin, coordinate: originCoord) {
-                            ZStack {
-                                Circle().fill(SierraTheme.Colors.alpineMint).frame(width: 28, height: 28)
-                                Image(systemName: "location.fill")
-                                    .font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
-                            }.shadow(radius: 3)
-                        }
-                        Annotation(trip.destination, coordinate: destCoord) {
-                            ZStack {
-                                Circle().fill(SierraTheme.Colors.ember).frame(width: 28, height: 28)
-                                Image(systemName: "mappin")
-                                    .font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
-                            }.shadow(radius: 3)
-                        }
+            ZStack(alignment: .bottom) {
+                Map(initialPosition: .region(region)) {
+                    Annotation(trip.origin, coordinate: originCoord) {
+                        ZStack {
+                            Circle().fill(Color.green).frame(width: 28, height: 28)
+                            Image(systemName: "location.fill")
+                                .font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
+                        }.shadow(radius: 3)
                     }
-                    .frame(height: 200)
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .disabled(true)
-
-                    if trip.status == .active {
-                        Button { showNavigation = true } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: "location.fill").font(.system(size: 14, weight: .bold))
-                                Text("Tap to Open Navigation").font(.system(size: 14, weight: .bold))
-                            }
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 20).padding(.vertical, 10)
-                            .background(.black.opacity(0.55), in: Capsule())
-                        }
-                        .padding(.bottom, 12)
+                    Annotation(trip.destination, coordinate: destCoord) {
+                        ZStack {
+                            Circle().fill(Color.appOrange).frame(width: 28, height: 28)
+                            Image(systemName: "mappin")
+                                .font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
+                        }.shadow(radius: 3)
                     }
                 }
+                .frame(height: 240)
+                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .disabled(true)
 
-            } else {
-                HStack(spacing: 12) {
-                    Image(systemName: "map").font(.system(size: 28)).foregroundStyle(.secondary.opacity(0.5))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Route preview unavailable")
-                            .font(.subheadline.weight(.medium)).foregroundStyle(.secondary)
-                        Text("Ask your fleet manager to set GPS coordinates for this trip.")
-                            .font(.caption).foregroundStyle(.tertiary)
+                // "Live Tracking" chip top-left
+                VStack {
+                    HStack {
+                        mapChip(text: trip.status == .active ? "Live Tracking" : "Route Preview",
+                                icon: "circle.fill",
+                                iconColor: trip.status == .active ? .green : .orange)
+                        Spacer()
                     }
+                    .padding(.horizontal, 14)
+                    .padding(.top, 14)
+                    Spacer()
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(16)
-                .background(Color(.secondarySystemGroupedBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .frame(height: 240)
+
+                // Tap to navigate overlay for active trips
+                if trip.status == .active {
+                    Button { showNavigation = true } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "location.fill").font(.system(size: 14, weight: .bold))
+                            Text("Open Navigation").font(.system(size: 14, weight: .bold))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 20).padding(.vertical, 10)
+                        .background(.black.opacity(0.55), in: Capsule())
+                    }
+                    .padding(.bottom, 14)
+                }
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: 24)
+                    .stroke(Color.appDivider.opacity(0.8), lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(0.06), radius: 12, x: 0, y: 6)
+
+        } else {
+            // FMS_SS-style hero map (no GPS coords) — grid + bezier route art + floating summary
+            heroMapArt(trip)
+        }
+    }
+
+    /// FMS_SS-style illustrated hero map — shown when no GPS coords are stored.
+    private func heroMapArt(_ trip: Trip) -> some View {
+        ZStack(alignment: .bottom) {
+            // Gradient background
+            RoundedRectangle(cornerRadius: 30)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.90, green: 0.95, blue: 0.92),
+                            Color(red: 0.92, green: 0.93, blue: 0.98)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .frame(height: 320)
+                .overlay(mapGridOverlay)
+                .overlay(mapRoutePathOverlay)
+
+            VStack(spacing: 0) {
+                // Top — Live Tracking / Status chip
+                HStack {
+                    mapChip(
+                        text: trip.status == .active ? "Live Tracking" : "Scheduled Route",
+                        icon: "circle.fill",
+                        iconColor: trip.status == .active ? .green : .orange
+                    )
+                    Spacer()
+                }
+                .padding(.horizontal, 14)
+                .padding(.top, 14)
+
+                Spacer()
+
+                // Floating summary card at bottom
+                heroFloatingSummary(trip)
+                    .padding(12)
+            }
+            .frame(height: 320)
+        }
+        .overlay(
+            RoundedRectangle(cornerRadius: 30)
+                .stroke(Color.appDivider.opacity(0.8), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.04), radius: 12, x: 0, y: 6)
+    }
+
+    private var mapGridOverlay: some View {
+        GeometryReader { geo in
+            Path { path in
+                stride(from: 0.0, through: geo.size.width, by: 44).forEach { x in
+                    path.move(to: CGPoint(x: x, y: 0))
+                    path.addLine(to: CGPoint(x: x, y: geo.size.height))
+                }
+                stride(from: 0.0, through: geo.size.height, by: 44).forEach { y in
+                    path.move(to: CGPoint(x: 0, y: y))
+                    path.addLine(to: CGPoint(x: geo.size.width, y: y))
+                }
+            }
+            .stroke(Color.black.opacity(0.03), lineWidth: 1)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 30))
+    }
+
+    private var mapRoutePathOverlay: some View {
+        GeometryReader { geo in
+            ZStack {
+                // Dashed bezier route
+                Path { path in
+                    path.move(to: CGPoint(x: geo.size.width * 0.16, y: geo.size.height * 0.72))
+                    path.addCurve(
+                        to: CGPoint(x: geo.size.width * 0.82, y: geo.size.height * 0.18),
+                        control1: CGPoint(x: geo.size.width * 0.45, y: geo.size.height * 0.62),
+                        control2: CGPoint(x: geo.size.width * 0.57, y: geo.size.height * 0.20)
+                    )
+                }
+                .stroke(Color.blue.opacity(0.35), style: StrokeStyle(lineWidth: 4, lineCap: .round, dash: [8, 6]))
+
+                // Origin pin
+                Circle()
+                    .fill(Color.green)
+                    .frame(width: 16, height: 16)
+                    .overlay(Circle().fill(Color.white).frame(width: 6, height: 6))
+                    .shadow(radius: 3)
+                    .position(x: geo.size.width * 0.16, y: geo.size.height * 0.72)
+
+                // Destination pin
+                Circle()
+                    .fill(Color.appOrange)
+                    .frame(width: 16, height: 16)
+                    .overlay(Circle().fill(Color.white).frame(width: 6, height: 6))
+                    .shadow(radius: 3)
+                    .position(x: geo.size.width * 0.82, y: geo.size.height * 0.18)
             }
         }
-        .shadow(color: .black.opacity(0.06), radius: 8, y: 4)
+        .clipShape(RoundedRectangle(cornerRadius: 30))
+    }
+
+    private func heroFloatingSummary(_ trip: Trip) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Today's Route")
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .foregroundColor(.appTextPrimary)
+                Spacer()
+                Text(trip.taskId)
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundColor(.appOrange)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Capsule().fill(Color.appOrange.opacity(0.12)))
+            }
+
+            HStack(spacing: 12) {
+                if let km = trip.distanceKm {
+                    heroStat(icon: "arrow.up.right", label: "Distance", value: "\(Int(km)) km", tint: .blue)
+                }
+                heroStat(icon: "clock", label: "Scheduled", value: trip.scheduledDate.formatted(.dateTime.hour().minute()), tint: .green)
+                heroStat(icon: "flag.checkered", label: "Priority", value: trip.priority.rawValue, tint: .appOrange)
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 22)
+                .fill(Color.white.opacity(0.97))
+                .shadow(color: Color.black.opacity(0.08), radius: 12, x: 0, y: 6)
+        )
+    }
+
+    private func heroStat(icon: String, label: String, value: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(tint.opacity(0.13))
+                    .frame(width: 22, height: 22)
+                    .overlay(
+                        Image(systemName: icon)
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(tint)
+                    )
+                Text(label)
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundColor(.appTextSecondary)
+            }
+            Text(value)
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .foregroundColor(.appTextPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func mapChip(text: String, icon: String, iconColor: Color) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 9, weight: .bold))
+                .foregroundColor(iconColor)
+            Text(text)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundColor(.appTextPrimary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Capsule().fill(Color.white.opacity(0.96)))
+        .shadow(color: Color.black.opacity(0.08), radius: 8, x: 0, y: 4)
     }
 
     // MARK: - Flow Steps Card
@@ -271,149 +449,235 @@ struct TripDetailDriverView: View {
 
         return VStack(alignment: .leading, spacing: 0) {
             Text("TRIP FLOW")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(.secondary)
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .foregroundColor(.appTextSecondary)
                 .kerning(1)
-                .padding(.horizontal, 16)
-                .padding(.top, 14)
-                .padding(.bottom, 10)
+                .padding(.horizontal, 18)
+                .padding(.top, 16)
+                .padding(.bottom, 12)
 
             ForEach(Array(steps.enumerated()), id: \.offset) { idx, step in
                 HStack(spacing: 12) {
                     ZStack {
                         Circle()
                             .fill(step.done
-                                  ? SierraTheme.Colors.alpineMint
+                                  ? Color.green.opacity(0.14)
                                   : Color(.tertiarySystemGroupedBackground))
-                            .frame(width: 32, height: 32)
+                            .frame(width: 36, height: 36)
                         Image(systemName: step.done ? "checkmark" : step.icon)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(step.done ? .white : .secondary)
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(step.done ? .green : .appTextSecondary)
                     }
                     Text(step.label)
-                        .font(.subheadline)
-                        .foregroundStyle(step.done ? .primary : .secondary)
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .foregroundColor(step.done ? .appTextPrimary : .appTextSecondary)
                     Spacer()
                     if step.label == "Navigate" && trip.status == .active {
                         Text("TAP BELOW")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(SierraTheme.Colors.alpineMint)
-                            .padding(.horizontal, 8).padding(.vertical, 3)
-                            .background(SierraTheme.Colors.alpineMint.opacity(0.12), in: Capsule())
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .foregroundColor(.green)
+                            .padding(.horizontal, 10).padding(.vertical, 4)
+                            .background(Capsule().fill(Color.green.opacity(0.10)))
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 18)
                 .padding(.vertical, 10)
 
                 if idx < steps.count - 1 {
                     Rectangle()
-                        .fill(Color(.separator).opacity(0.4))
+                        .fill(Color.appDivider.opacity(0.5))
                         .frame(height: 1)
-                        .padding(.leading, 60)
+                        .padding(.leading, 66)
                 }
             }
-            .padding(.bottom, 6)
+            .padding(.bottom, 8)
         }
-        .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
+        .background(
+            RoundedRectangle(cornerRadius: 22)
+                .fill(Color.white)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 22)
+                .stroke(Color.appDivider.opacity(0.8), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.04), radius: 10, x: 0, y: 5)
     }
 
     // MARK: - Status Banner
 
     private func statusBanner(_ trip: Trip) -> some View {
         HStack {
-            Circle().fill(statusColor(trip.status)).frame(width: 10, height: 10)
-            Text(statusLabel(trip.status))
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(statusColor(trip.status))
+            HStack(spacing: 8) {
+                Circle().fill(statusColor(trip.status)).frame(width: 10, height: 10)
+                Text(statusLabel(trip.status))
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundColor(statusColor(trip.status))
+            }
             Spacer()
             Text(trip.priority.rawValue)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 10).padding(.vertical, 4)
-                .background(priorityColor(trip.priority), in: Capsule())
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .foregroundColor(.white)
+                .padding(.horizontal, 12).padding(.vertical, 5)
+                .background(Capsule().fill(priorityColor(trip.priority)))
         }
-        .padding(14)
-        .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .shadow(color: .black.opacity(0.04), radius: 6, y: 2)
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 18)
+                .fill(Color.white)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18)
+                .stroke(Color.appDivider.opacity(0.8), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
     }
 
     // MARK: - Trip Info Card
 
     private func tripInfoCard(_ trip: Trip) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(trip.taskId)
-                .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 8).padding(.vertical, 4)
-                .background(Color.gray.opacity(0.12), in: Capsule())
-
-            VStack(alignment: .leading, spacing: 6) {
-                Label(trip.origin, systemImage: "location.circle.fill")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(SierraTheme.Colors.alpineMint)
-                Rectangle()
-                    .fill(Color(.tertiaryLabel))
-                    .frame(width: 1, height: 16)
-                    .padding(.leading, 8)
-                Label(trip.destination, systemImage: "mappin.circle.fill")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(SierraTheme.Colors.ember)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 6) {
+                Image(systemName: "number.square.fill")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(.appOrange)
+                Text(trip.taskId)
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundColor(.appOrange)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
             }
 
-            Divider()
+            // Route plan nodes
+            HStack(alignment: .top, spacing: 12) {
+                VStack(spacing: 6) {
+                    Circle()
+                        .fill(Color.green.opacity(0.14))
+                        .frame(width: 44, height: 44)
+                        .overlay(
+                            Image(systemName: "dot.radiowaves.left.and.right")
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundColor(.green)
+                        )
 
-            Label(
-                trip.scheduledDate.formatted(.dateTime.month(.abbreviated).day().hour().minute()),
-                systemImage: "calendar"
-            )
-            .font(.caption).foregroundStyle(.secondary)
+                    Rectangle()
+                        .fill(
+                            LinearGradient(colors: [.green, .appOrange], startPoint: .top, endPoint: .bottom)
+                        )
+                        .frame(width: 3, height: 52)
 
-            if trip.status == .pendingAcceptance, let deadline = trip.acceptanceDeadline {
-                Divider()
-                Label(
-                    "Respond by \(deadline.formatted(.dateTime.month(.abbreviated).day().hour().minute()))",
-                    systemImage: "clock.badge.exclamationmark"
-                )
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.orange)
+                    Circle()
+                        .fill(Color.appOrange.opacity(0.14))
+                        .frame(width: 44, height: 44)
+                        .overlay(
+                            Image(systemName: "location.fill")
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundColor(.appOrange)
+                        )
+                }
+
+                VStack(alignment: .leading, spacing: 12) {
+                    // Origin node
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("START")
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .foregroundColor(.green)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Capsule().fill(Color.green.opacity(0.10)))
+                        Text(trip.origin.uppercased())
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundColor(.appTextPrimary)
+                        Label(
+                            trip.scheduledDate.formatted(.dateTime.hour().minute()),
+                            systemImage: "clock"
+                        )
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundColor(.appTextSecondary)
+                    }
+
+                    // Destination node
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("DESTINATION")
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .foregroundColor(.appOrange)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Capsule().fill(Color.appOrange.opacity(0.10)))
+                        Text(trip.destination.uppercased())
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundColor(.appTextPrimary)
+                        if trip.status == .pendingAcceptance, let deadline = trip.acceptanceDeadline {
+                            Label(
+                                "Respond by \(deadline.formatted(.dateTime.hour().minute()))",
+                                systemImage: "clock.badge.exclamationmark"
+                            )
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            .foregroundColor(.orange)
+                        }
+                    }
+                }
             }
 
             if !trip.deliveryInstructions.isEmpty {
-                Divider()
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Delivery Instructions")
-                        .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    Text("DELIVERY INSTRUCTIONS")
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .foregroundColor(.appTextSecondary)
+                        .kerning(1)
                     Text(trip.deliveryInstructions)
-                        .font(.caption).foregroundStyle(.primary)
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundColor(.appTextPrimary)
                 }
+                .padding(.top, 4)
             }
         }
-        .padding(16)
-        .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 26)
+                .fill(Color.white)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 26)
+                .stroke(Color.appDivider.opacity(0.8), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.04), radius: 10, x: 0, y: 5)
     }
 
     // MARK: - Vehicle Card
 
     private func vehicleCard(_ vehicle: Vehicle) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: "car.fill")
-                .font(.title2)
-                .foregroundStyle(SierraTheme.Colors.ember)
-                .frame(width: 44, height: 44)
-                .background(SierraTheme.Colors.ember.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
-            VStack(alignment: .leading, spacing: 2) {
-                Text("\(vehicle.name) \(vehicle.model)").font(.subheadline.weight(.semibold))
-                Text(vehicle.licensePlate)
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
+            Image(systemName: "bus.fill")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(.appTextSecondary)
+
+            Text(vehicle.licensePlate)
+                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                .foregroundColor(.appOrange)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(Capsule().fill(Color.appOrange.opacity(0.08)))
+
+            Text("\(vehicle.name) \(vehicle.model)")
+                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                .foregroundColor(.appTextPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+
+            Spacer(minLength: 0)
         }
-        .padding(14)
-        .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .shadow(color: .black.opacity(0.04), radius: 6, y: 2)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(Color.white)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20)
+                .stroke(Color.appDivider.opacity(0.8), lineWidth: 1)
+        )
     }
 
     // MARK: - Action Buttons (status-driven)
@@ -446,15 +710,42 @@ struct TripDetailDriverView: View {
             case .pendingAcceptance:
                 acceptanceButtons(trip)
 
-            // ── Accepted: pre-inspection gate → then start trip ─────────────
-            case .accepted:
+            // ── Scheduled (post-acceptance): pre-inspection → then Start Trip ─
+            // Start Trip is only enabled once the trip becomes Active (time window).
+            case .scheduled, .accepted:
                 if trip.preInspectionId == nil {
+                    // Step 1: Complete pre-trip inspection first
                     actionButton("Begin Pre-Trip Inspection", icon: "checklist", color: SierraTheme.Colors.ember) {
                         showPreInspection = true
                     }
-                } else {
+                } else if trip.status == .active {
+                    // Trip is in the time window — Start Trip unlocked
                     actionButton("Start Trip", icon: "play.fill", color: SierraTheme.Colors.alpineMint) {
                         showStartTrip = true
+                    }
+                } else {
+                    // Pre-inspection done but not yet in time window — show locked Start Trip
+                    VStack(spacing: 8) {
+                        HStack(spacing: 10) {
+                            Image(systemName: "lock.fill")
+                                .foregroundStyle(.secondary)
+                            Text("Start Trip")
+                                .font(.system(size: 16, weight: .bold, design: .rounded))
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(Color(.tertiarySystemGroupedBackground),
+                                    in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .stroke(Color(.separator).opacity(0.5), lineWidth: 1)
+                        )
+
+                        Text("Available when trip enters the active window (±30 min of scheduled time)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
                     }
                 }
 
@@ -552,28 +843,23 @@ struct TripDetailDriverView: View {
 
     private func navigateButton() -> some View {
         Button { showNavigation = true } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "location.fill").font(.body.weight(.bold))
-                Text("Navigate").font(.system(size: 18, weight: .bold))
+            HStack(spacing: 8) {
+                Image(systemName: "location.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                Text("Start Navigation")
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
             }
-            .foregroundStyle(.white)
+            .foregroundColor(.white)
             .frame(maxWidth: .infinity)
-            .frame(height: 56)
+            .padding(.vertical, 14)
             .background(
-                LinearGradient(
-                    colors: [SierraTheme.Colors.alpineMint, SierraTheme.Colors.alpineMint.opacity(0.8)],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                ),
-                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                Capsule()
+                    .fill(Color(red: 0.90, green: 0.22, blue: 0.18))
             )
-            .shadow(
-                color: SierraTheme.Colors.alpineMint.opacity(navigatePulse ? 0.6 : 0.2),
-                radius: navigatePulse ? 14 : 6,
-                y: 4
-            )
+            .shadow(color: Color.red.opacity(0.22), radius: 10, x: 0, y: 4)
             .scaleEffect(navigatePulse ? 1.01 : 1.0)
         }
+        .buttonStyle(.plain)
         .animation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true), value: navigatePulse)
     }
 
@@ -686,17 +972,27 @@ struct TripDetailDriverView: View {
         VStack(spacing: 10) {
             Image(systemName: "checkmark.seal.fill")
                 .font(.system(size: 40))
-                .foregroundStyle(SierraTheme.Colors.alpineMint)
-            Text("Trip Completed").font(.headline)
+                .foregroundColor(.green)
+            Text("Trip Completed")
+                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .foregroundColor(.appTextPrimary)
             if let endDate = trip.actualEndDate {
                 Text(endDate.formatted(.dateTime.month(.abbreviated).day().hour().minute()))
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundColor(.appTextSecondary)
             }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 20)
-        .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
+        .background(
+            RoundedRectangle(cornerRadius: 22)
+                .fill(Color.white)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 22)
+                .stroke(Color.appDivider.opacity(0.8), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.04), radius: 10, x: 0, y: 5)
     }
 
     private func rejectedBanner(_ trip: Trip) -> some View {
@@ -805,9 +1101,14 @@ struct TripDetailDriverView: View {
 
     private func tripProgress(_ trip: Trip) -> Double {
         switch trip.status {
-        case .scheduled:         return 0.0
-        case .pendingAcceptance: return 0.1
-        case .accepted:          return trip.preInspectionId != nil ? 0.3 : 0.2
+        case .scheduled:
+            // Post-acceptance: accepted but awaiting time window
+            if trip.acceptedAt != nil {
+                return trip.preInspectionId != nil ? 0.30 : 0.20
+            }
+            return 0.0
+        case .pendingAcceptance: return 0.10
+        case .accepted:          return trip.preInspectionId != nil ? 0.30 : 0.20
         case .active:
             if trip.postInspectionId != nil { return 0.85 }
             if trip.proofOfDeliveryId != nil { return 0.70 }
@@ -851,20 +1152,27 @@ struct TripDetailDriverView: View {
             }
             .frame(height: 10)
         }
-        .padding(14)
-        .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .shadow(color: .black.opacity(0.04), radius: 6, y: 2)
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 18)
+                .fill(Color.white)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18)
+                .stroke(Color.appDivider.opacity(0.8), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
     }
 
     // MARK: - Style Helpers
 
     private func statusLabel(_ status: TripStatus) -> String {
         switch status {
-        case .scheduled:          return "Scheduled"
+        case .scheduled:          return trip?.acceptedAt != nil ? "Accepted — Awaiting Time Window" : "Scheduled"
         case .pendingAcceptance:  return "Awaiting Your Acceptance"
         case .accepted:           return "Accepted — Ready to Start"
         case .rejected:           return "Trip Rejected"
-        case .active:             return "Active"
+        case .active:             return "Active — In Progress"
         case .completed:          return "Completed"
         case .cancelled:          return "Cancelled"
         }
@@ -872,7 +1180,7 @@ struct TripDetailDriverView: View {
 
     private func statusColor(_ status: TripStatus) -> Color {
         switch status {
-        case .scheduled:          return SierraTheme.Colors.info
+        case .scheduled:          return trip?.acceptedAt != nil ? .teal : SierraTheme.Colors.info
         case .pendingAcceptance:  return .orange
         case .accepted:           return .teal
         case .rejected:           return SierraTheme.Colors.danger

@@ -17,7 +17,7 @@ struct ContentView: View {
         Group {
             if !hasCompletedOnboarding {
                 OnboardingView()
-            } else if authManager.isAuthenticated, !authManager.needsReauth {
+            } else if authManager.isAuthenticated {
                 if let user = authManager.currentUser {
                     destinationView(for: authManager.destination(for: user))
                         .sheet(isPresented: $showBiometricEnrollment) {
@@ -31,7 +31,6 @@ struct ContentView: View {
         }
         .animation(.easeInOut(duration: 0.35), value: hasCompletedOnboarding)
         .animation(.easeInOut(duration: 0.35), value: authManager.isAuthenticated)
-        .animation(.easeInOut(duration: 0.35), value: authManager.needsReauth)
         .onReceive(
             NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
         ) { _ in

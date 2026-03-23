@@ -27,7 +27,11 @@ struct TripNavigationContainerView: View {
 
     var body: some View {
         ZStack {
-            TripNavigationView(coordinator: coordinator)
+            if MapService.hasValidToken {
+                TripNavigationView(coordinator: coordinator)
+            } else {
+                TripNavigationFallbackMapView(coordinator: coordinator)
+            }
 
             NavigationHUDOverlay(coordinator: coordinator) {
                 coordinator.stopLocationPublishing()
@@ -137,7 +141,7 @@ struct TripNavigationContainerView: View {
         await coordinator.buildRoutes()
         isBuildingRoutes = false
 
-        if coordinator.currentRoute != nil {
+        if coordinator.hasRenderableRoute {
             // Auto-select fastest route and begin tracking immediately
             startTracking()
         } else {

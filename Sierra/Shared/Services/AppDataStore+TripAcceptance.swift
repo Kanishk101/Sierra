@@ -75,10 +75,10 @@ extension AppDataStore {
         // Service call — throws TripServiceError.driverMismatch if driver_id doesn't match
         try await TripService.acceptTrip(tripId: tripId, driverId: driverId)
 
-        // Update local state
+        // Update local state — driver has accepted; trip is now Scheduled (awaiting time window)
         let now = Date()
         if let idx = trips.firstIndex(where: { $0.id == tripId }) {
-            trips[idx].status     = .accepted
+            trips[idx].status     = .scheduled
             trips[idx].acceptedAt = now
         }
 

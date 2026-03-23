@@ -1,4 +1,6 @@
 import SwiftUI
+import CoreLocation
+import MapboxDirections
 
 /// Bottom sheet for entering odometer + selecting route before starting navigation.
 struct StartTripSheet: View {
@@ -202,6 +204,14 @@ struct StartTripSheet: View {
                     destLng: destLng,
                     routePolyline: routeOptions[selectedRouteIndex].geometry
                 )
+
+                if let idx = store.trips.firstIndex(where: { $0.id == tripId }) {
+                    store.trips[idx].originLatitude = originLat
+                    store.trips[idx].originLongitude = originLng
+                    store.trips[idx].destinationLatitude = destLat
+                    store.trips[idx].destinationLongitude = destLng
+                    store.trips[idx].routePolyline = routeOptions[selectedRouteIndex].geometry
+                }
             }
 
             onStarted()
@@ -234,12 +244,45 @@ struct StartTripSheet: View {
             routeOptions = mapRoutes.map { RouteOption(from: $0) }
             selectedRouteIndex = 0
         } catch let error as MapServiceError {
-            errorMessage = error.errorDescription
-            showError = true
+            if applyStoredRouteFallback(from: trip) == false {
+                errorMessage = error.errorDescription
+                showError = true
+            }
         } catch {
-            errorMessage = error.localizedDescription
-            showError = true
+            if applyStoredRouteFallback(from: trip) == false {
+                errorMessage = error.localizedDescription
+                showError = true
+            }
         }
+    }
+
+    private func applyStoredRouteFallback(from trip: Trip) -> Bool {
+        guard let encoded = trip.routePolyline?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !encoded.isEmpty else {
+            return false
+        }
+
+        let decoded: [CLLocationCoordinate2D]? = decodePolyline(encoded, precision: 1e6)
+            ?? decodePolyline(encoded, precision: 1e5)
+        guard let decoded, decoded.count >= 2 else { return false }
+
+        let distanceMetres = zip(decoded, decoded.dropFirst()).reduce(0.0) { partial, pair in
+            let start = CLLocation(latitude: pair.0.latitude, longitude: pair.0.longitude)
+            let end = CLLocation(latitude: pair.1.latitude, longitude: pair.1.longitude)
+            return partial + start.distance(from: end)
+        }
+
+        routeOptions = [
+            RouteOption(
+                label: "Saved Trip Path",
+                distanceKm: distanceMetres / 1000,
+                durationMinutes: max((distanceMetres / 1000) * 2, 1),
+                geometry: encoded,
+                isGreen: false
+            )
+        ]
+        selectedRouteIndex = 0
+        return true
     }
 }
 
@@ -271,4 +314,3 @@ struct RouteOption {
         self.steps = mapRoute.steps
     }
 }
-

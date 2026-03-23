@@ -56,6 +56,7 @@ struct SierraApp: App {
 
     @Environment(\.scenePhase) private var scenePhase
     private var lifecycle = AppLifecycleMonitor.shared
+    @State private var foregroundTasks: [Task<Void, Never>] = []
 
     init() {
         // On first launch after a fresh install, clear stale Keychain data.
@@ -90,20 +91,31 @@ struct SierraApp: App {
         .onChange(of: scenePhase) { _, newPhase in
             lifecycle.handleScenePhaseChange(
                 to: newPhase,
-                hasSession: AuthManager.shared.currentUser != nil
+                hasSession: AuthManager.shared.isAuthenticated
             )
             switch newPhase {
             case .background:
+                foregroundTasks.forEach { $0.cancel() }
+                foregroundTasks.removeAll()
                 AuthManager.shared.appDidEnterBackground()
             case .active:
                 AuthManager.shared.appWillEnterForeground()
-                // Housekeeping on every foreground resume
-                Task { await AppDataStore.shared.checkOverdueMaintenance() }
-                Task { await AppDataStore.shared.checkExpiringDocuments() }
+                foregroundTasks.forEach { $0.cancel() }
+                foregroundTasks.removeAll()
+                // Housekeeping on every foreground resume (tracked so we can
+                // cancel immediately when app backgrounds, reducing watchdog risk).
+                foregroundTasks.append(Task {
+                    await AppDataStore.shared.checkOverdueMaintenance()
+                })
+                foregroundTasks.append(Task {
+                    await AppDataStore.shared.checkExpiringDocuments()
+                })
                 // Deliver any past-due scheduled notifications (1-hr accept /
                 // 30-min pre-inspection reminders). Non-fatal if user is not
                 // signed in yet — the function returns 401 which is swallowed.
-                Task { await NotificationService.deliverScheduledNotifications() }
+                foregroundTasks.append(Task {
+                    await NotificationService.deliverScheduledNotifications()
+                })
             default:
                 break
             }

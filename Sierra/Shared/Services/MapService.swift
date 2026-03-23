@@ -1,4 +1,8 @@
 import Foundation
+import MapKit
+import MapboxDirections
+
+let mapboxTokenSetupMessage = "Mapbox access token is missing. Add a valid MBXAccessToken to Sierra/Info.plist or MAPBOX_TOKEN to the run scheme environment."
 
 // MARK: - MapServiceError
 
@@ -10,7 +14,7 @@ enum MapServiceError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .tokenMissing:
-            return "Navigation configuration error. Please contact your fleet manager."
+            return mapboxTokenSetupMessage
         case .noRoutesFound:
             return "No routes found between the selected locations."
         case .networkError(let error):
@@ -49,9 +53,20 @@ struct MapService {
 
     /// Mapbox access token — tries env (unit tests), then Info.plist.
     /// NEVER print this value to logs.
-    private static var token: String? {
-        ProcessInfo.processInfo.environment["MAPBOX_TOKEN"]
-            ?? Bundle.main.object(forInfoDictionaryKey: "MBXAccessToken") as? String
+    static var accessToken: String? {
+        sanitizedToken(ProcessInfo.processInfo.environment["MAPBOX_TOKEN"])
+            ?? sanitizedToken(Bundle.main.object(forInfoDictionaryKey: "MBXAccessToken") as? String)
+            ?? sanitizedToken(Bundle.main.object(forInfoDictionaryKey: "MGLMapboxAccessToken") as? String)
+    }
+
+    static var hasValidToken: Bool { accessToken != nil }
+
+    static var configurationErrorDescription: String { mapboxTokenSetupMessage }
+
+    private static func sanitizedToken(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     /// Fetch driving routes between two coordinate pairs.
@@ -62,7 +77,14 @@ struct MapService {
         avoidTolls: Bool = false,
         avoidHighways: Bool = false
     ) async throws -> [MapRoute] {
-        guard let token else { throw MapServiceError.tokenMissing }
+        guard let token = accessToken else {
+            return try await fetchRoutesWithMapKit(
+                originLat: originLat,
+                originLng: originLng,
+                destLat: destLat,
+                destLng: destLng
+            )
+        }
 
         var components = URLComponents(string: "https://api.mapbox.com/directions/v5/mapbox/driving/\(originLng),\(originLat);\(destLng),\(destLat)")!
         components.queryItems = [
@@ -97,6 +119,83 @@ struct MapService {
         }
 
         return try parseMapboxResponse(data)
+    }
+
+    private static func fetchRoutesWithMapKit(
+        originLat: Double,
+        originLng: Double,
+        destLat: Double,
+        destLng: Double
+    ) async throws -> [MapRoute] {
+        let request = MKDirections.Request()
+        request.source = MKMapItem(
+            location: CLLocation(latitude: originLat, longitude: originLng),
+            address: nil
+        )
+        request.destination = MKMapItem(
+            location: CLLocation(latitude: destLat, longitude: destLng),
+            address: nil
+        )
+        request.transportType = .automobile
+        request.requestsAlternateRoutes = true
+
+        let response: MKDirections.Response
+        do {
+            response = try await withCheckedThrowingContinuation { continuation in
+                MKDirections(request: request).calculate { response, error in
+                    if let response {
+                        continuation.resume(returning: response)
+                    } else {
+                        continuation.resume(throwing: error ?? URLError(.badServerResponse))
+                    }
+                }
+            }
+        } catch {
+            throw MapServiceError.networkError(error)
+        }
+
+        let routes = response.routes.prefix(3)
+        guard !routes.isEmpty else { throw MapServiceError.noRoutesFound }
+
+        var mapRoutes: [MapRoute] = routes.enumerated().map { index, route in
+            let coordinates = route.polyline.coordinates
+            let geometry = Polyline(coordinates: coordinates, precision: 1e6).encodedPolyline
+            let steps = route.steps.compactMap { step -> RouteStep? in
+                guard step.distance > 0 else { return nil }
+                let instruction = step.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
+                return RouteStep(
+                    instruction: instruction.isEmpty ? "Continue" : instruction,
+                    distanceM: step.distance,
+                    maneuverType: "",
+                    maneuverModifier: nil
+                )
+            }
+
+            return MapRoute(
+                label: index == 0 ? "Fastest Route" : "Alternative \(index)",
+                distanceKm: route.distance / 1000.0,
+                durationMinutes: route.expectedTravelTime / 60.0,
+                geometry: geometry,
+                steps: steps,
+                isGreen: false
+            )
+        }
+
+        if mapRoutes.count > 1,
+           let greenOffset = mapRoutes.dropFirst().enumerated().min(by: { $0.element.distanceKm < $1.element.distanceKm })?.offset {
+            let greenIndex = greenOffset + 1
+            let greenRoute = mapRoutes[greenIndex]
+            mapRoutes[greenIndex] = MapRoute(
+                label: "Green Route",
+                distanceKm: greenRoute.distanceKm,
+                durationMinutes: greenRoute.durationMinutes,
+                geometry: greenRoute.geometry,
+                steps: greenRoute.steps,
+                isGreen: true
+            )
+        }
+
+        return mapRoutes
     }
 
     // MARK: - JSON Parsing
@@ -185,5 +284,16 @@ struct MapService {
         }
 
         return mapRoutes
+    }
+}
+
+private extension MKPolyline {
+    var coordinates: [CLLocationCoordinate2D] {
+        var coords = Array(
+            repeating: CLLocationCoordinate2D(latitude: 0, longitude: 0),
+            count: pointCount
+        )
+        getCoordinates(&coords, range: NSRange(location: 0, length: pointCount))
+        return coords
     }
 }

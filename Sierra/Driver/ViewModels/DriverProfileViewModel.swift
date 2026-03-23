@@ -219,7 +219,7 @@ final class DriverProfileViewModel {
 
         do {
             let userId = user.id.uuidString
-            let bucket = supabase.storage.from("kyc-documents")
+            let bucket = supabase.storage.from("sierra-uploads")
 
             // Upload Aadhaar images (front + back) as a combined document entry
             if let frontData = aadhaarFrontImage?.jpegData(compressionQuality: 0.8) {

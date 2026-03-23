@@ -37,6 +37,9 @@ final class NotificationService {
         return f
     }()
 
+    private static var lastDeliveryRunAt: Date?
+    private static let minDeliveryRunInterval: TimeInterval = 20
+
     // MARK: - Deliver scheduled notifications
     //
     // Calls the deliver-scheduled-notifications edge function to flip any
@@ -44,7 +47,14 @@ final class NotificationService {
     // the pg_net push trigger for each one.
     // Non-fatal: failures are logged and silently swallowed.
 
+    @MainActor
     static func deliverScheduledNotifications() async {
+        if let last = lastDeliveryRunAt,
+           Date().timeIntervalSince(last) < minDeliveryRunInterval {
+            return
+        }
+        lastDeliveryRunAt = Date()
+
         do {
             let options = try await SupabaseManager.functionOptionsNoBody()
             struct DeliveryResult: Decodable { let delivered: Int; let pushSent: Int? }

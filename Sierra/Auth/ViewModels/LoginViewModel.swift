@@ -120,21 +120,11 @@ final class LoginViewModel {
                 return
             }
 
-            // Dashboard-bound: generate OTP and prefetch data
+            // Dashboard-bound: generate OTP.
+            // Data loading happens only after full auth success
+            // (AuthManager.completeAuthentication), to avoid duplicate heavy
+            // network work while still on the 2FA screen.
             AuthManager.shared.generateOTP()
-
-            if let user {
-                Task.detached {
-                    switch user.role {
-                    case .fleetManager:
-                        await AppDataStore.shared.loadAll()
-                    case .driver:
-                        await AppDataStore.shared.loadDriverData(driverId: user.id)
-                    case .maintenancePersonnel:
-                        await AppDataStore.shared.loadMaintenanceData(staffId: user.id)
-                    }
-                }
-            }
 
             let context = TwoFactorContext(
                 userID: user?.id.uuidString ?? UUID().uuidString,
@@ -195,15 +185,7 @@ final class LoginViewModel {
                 return
             }
 
-            // Prefetch AFTER successful auth, not before
-            Task.detached {
-                switch user.role {
-                case .fleetManager:         await AppDataStore.shared.loadAll()
-                case .driver:               await AppDataStore.shared.loadDriverData(driverId: user.id)
-                case .maintenancePersonnel: await AppDataStore.shared.loadMaintenanceData(staffId: user.id)
-                }
-            }
-
+            // completeAuthentication() performs the role-specific data load.
             AuthManager.shared.completeAuthentication()
             AuthManager.shared.reauthCompleted()
 

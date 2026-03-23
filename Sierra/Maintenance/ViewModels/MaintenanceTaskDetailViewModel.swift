@@ -119,9 +119,9 @@ final class MaintenanceTaskDetailViewModel {
                 guard let data = try await item.loadTransferable(type: Data.self) else { continue }
                 let fileName = "\(UUID().uuidString).jpg"
                 let path = "repair-images/\(woId.uuidString)/\(fileName)"
-                try await supabase.storage.from("vehicle-images")
+                try await supabase.storage.from("sierra-uploads")
                     .upload(path, data: data, options: .init(contentType: "image/jpeg"))
-                let url = try supabase.storage.from("vehicle-images").getPublicURL(path: path).absoluteString
+                let url = try supabase.storage.from("sierra-uploads").getPublicURL(path: path).absoluteString
                 repairImageUrls.append(url)
             } catch {
                 print("[TaskDetailVM] Image upload error: \(error)")

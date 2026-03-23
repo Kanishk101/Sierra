@@ -19,6 +19,9 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     var currentRoute: MapboxDirections.Route?   { routeEngine.currentRoute }
     var alternativeRoute: MapboxDirections.Route? { routeEngine.alternativeRoute }
     var currentStepInstruction: String          { routeEngine.currentStepInstruction }
+    var displayedRouteCoordinates: [CLLocationCoordinate2D] { routeEngine.decodedRouteCoordinates }
+    var hasRenderableRoute: Bool                { routeEngine.decodedRouteCoordinates.count >= 2 }
+    var isUsingStoredRouteFallback: Bool        { routeEngine.isUsingStoredRouteFallback }
     /// The human-readable error from the last failed buildRoutes() call.
     /// Nil when routes are available or no build has been attempted yet.
     var routeEngineError: String?               { routeEngine.lastBuildError }
@@ -54,13 +57,14 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     /// Returns a value in [0.0, 1.0] representing how far along the route the driver is.
     /// 0.0 = at origin, 1.0 = arrived at destination.
     var routeProgressFraction: Double {
-        guard let route = currentRoute, route.distance > 0 else { return 0 }
-        let distanceTraveled = route.distance - distanceRemainingMetres
-        return max(0, min(1, distanceTraveled / route.distance))
+        guard routeEngine.totalRouteDistanceMetres > 0 else { return 0 }
+        let distanceTraveled = routeEngine.totalRouteDistanceMetres - distanceRemainingMetres
+        return max(0, min(1, distanceTraveled / routeEngine.totalRouteDistanceMetres))
     }
 
     let trip: Trip
     private(set) var currentLocation: CLLocation?
+    private(set) var breadcrumbCoordinates: [CLLocationCoordinate2D] = []
     private var locationManager: CLLocationManager?
     private var locationPublishTimer: Timer?
     private let locationPublishInterval: TimeInterval = 5.0
@@ -171,6 +175,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     // MARK: - Location Update
     func updateLocation(_ location: CLLocation) {
         currentLocation = location
+        appendBreadcrumbCoordinateIfNeeded(location.coordinate)
         currentSpeedKmh = max(0, location.speed * 3.6)
         updateNavigationProgress(location: location)
         checkDeviation(from: location)
@@ -180,7 +185,6 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     // BUG-06 FIX: Use polyline-walking distance instead of crow-fly for route remaining
     // ISSUE-36 FIX: Only announce on new step transitions
     private func updateNavigationProgress(location: CLLocation) {
-        guard let route = routeEngine.currentRoute, let leg = route.legs.first else { return }
         let routeCoords = routeEngine.decodedRouteCoordinates
         guard routeCoords.count >= 2 else { return }
 
@@ -211,10 +215,24 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
             NotificationCenter.default.post(name: .tripArrivedAtDestination, object: nil)
         }
 
-        // ETA using route-average speed × remaining route distance
-        let avgSpeed = route.distance / route.expectedTravelTime
+        // ETA using route-average speed when available, otherwise current speed / a sane fallback.
+        let avgSpeed: Double
+        if let route = routeEngine.currentRoute, route.expectedTravelTime > 0 {
+            avgSpeed = route.distance / route.expectedTravelTime
+        } else if location.speed > 1 {
+            avgSpeed = location.speed
+        } else {
+            avgSpeed = 35.0 / 3.6
+        }
         let remainingTime = avgSpeed > 0 ? remainingDist / avgSpeed : 0
         routeEngine.estimatedArrivalTime = Date().addingTimeInterval(remainingTime)
+
+        guard let route = routeEngine.currentRoute, let leg = route.legs.first else {
+            if routeEngine.currentStepInstruction.isEmpty {
+                routeEngine.currentStepInstruction = "Follow the highlighted trip route"
+            }
+            return
+        }
 
         // Step detection
         let steps = leg.steps
@@ -292,6 +310,18 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
                                                        vehicleIdStr: trip.vehicleId ?? "",
                                                        tripId: trip.id, currentLocation: currentLocation)
         }
+    }
+
+    private func appendBreadcrumbCoordinateIfNeeded(_ coordinate: CLLocationCoordinate2D) {
+        guard let last = breadcrumbCoordinates.last else {
+            breadcrumbCoordinates = [coordinate]
+            return
+        }
+
+        let previous = CLLocation(latitude: last.latitude, longitude: last.longitude)
+        let current = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        guard current.distance(from: previous) >= 8 else { return }
+        breadcrumbCoordinates.append(coordinate)
     }
 }
 

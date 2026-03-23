@@ -26,6 +26,10 @@ final class AppLifecycleMonitor {
             backgroundedAt = Date()
 
         case .active:
+            guard AuthManager.shared.isAuthenticated else {
+                backgroundedAt = nil
+                return
+            }
             if let bg = backgroundedAt,
                Date().timeIntervalSince(bg) > lockThresholdSeconds {
                 showBiometricLock = true

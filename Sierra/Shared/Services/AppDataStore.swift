@@ -407,7 +407,8 @@ final class AppDataStore {
         if let tripIdx = trips.firstIndex(where: { $0.id == tripId }) {
             if inspection.type == .preTripInspection { trips[tripIdx].preInspectionId = inspection.id }
             else { trips[tripIdx].postInspectionId = inspection.id }
-            try await TripService.updateTrip(trips[tripIdx])
+            // Use targeted partial update to avoid trigger rejection
+            try await TripService.setInspectionId(tripId: tripId, inspectionId: inspection.id, type: inspection.type)
         }
         if inspection.overallResult == .failed,
            let vIdx = vehicles.firstIndex(where: { $0.id == inspection.vehicleId }) {
@@ -427,7 +428,8 @@ final class AppDataStore {
         proofOfDeliveries.append(pod)
         if let tripIdx = trips.firstIndex(where: { $0.id == pod.tripId }) {
             trips[tripIdx].proofOfDeliveryId = pod.id
-            try await TripService.updateTrip(trips[tripIdx])
+            // Use targeted partial update to avoid trigger rejection
+            try await TripService.setProofOfDeliveryId(tripId: pod.tripId, podId: pod.id)
         }
     }
 

@@ -41,24 +41,46 @@ struct PreTripInspectionView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            stepIndicator
-            Divider()
+        ZStack {
+            Color.appSurface.ignoresSafeArea()
 
-            switch viewModel.currentStep {
-            case 1:  checklistStep
-            case 2:  photoStep
-            case 3:  summaryStep
-            default: EmptyView()
+            VStack(spacing: 0) {
+                // Custom nav bar
+                HStack {
+                    Button(action: { dismiss() }) {
+                        Image(systemName: viewModel.currentStep == 1 ? "xmark" : "chevron.left")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(.appTextPrimary)
+                            .frame(width: 38, height: 38)
+                            .background(Circle().fill(Color.appCardBg))
+                            .shadow(color: Color.black.opacity(0.06), radius: 6, x: 0, y: 2)
+                    }
+                    Spacer()
+                    Text(inspectionTitle)
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .foregroundColor(.appTextPrimary)
+                    Spacer()
+                    Color.clear.frame(width: 38, height: 38)
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
+
+                // Step progress bar
+                stepIndicator
+                    .padding(.horizontal, 40)
+                    .padding(.bottom, 16)
+
+                switch viewModel.currentStep {
+                case 1:  checklistStep
+                case 2:  photoStep
+                case 3:  summaryStep
+                default: EmptyView()
+                }
             }
         }
-        .navigationTitle(inspectionTitle)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") { dismiss() }
-            }
-        }
+        .navigationBarHidden(true)
+        .toolbar(.hidden, for: .tabBar)
         .sheet(isPresented: Binding(
             get: { viewModel.showOdometerCamera },
             set: { viewModel.showOdometerCamera = $0 }
@@ -91,37 +113,27 @@ struct PreTripInspectionView: View {
     private var stepIndicator: some View {
         HStack(spacing: 0) {
             ForEach(1...3, id: \.self) { step in
-                HStack(spacing: 6) {
+                ZStack {
                     Circle()
-                        .fill(step <= viewModel.currentStep
-                              ? SierraTheme.Colors.ember
-                              : Color(.tertiaryLabel))
-                        .frame(width: 24, height: 24)
-                        .overlay {
-                            if step < viewModel.currentStep {
-                                Image(systemName: "checkmark")
-                                    .font(.caption2.weight(.bold))
-                                    .foregroundStyle(.white)
-                            } else {
-                                Text("\(step)")
-                                    .font(.caption2.weight(.bold))
-                                    .foregroundStyle(
-                                        step == viewModel.currentStep ? .white : .secondary
-                                    )
-                            }
-                        }
-                    if step < 3 {
-                        Rectangle()
-                            .fill(step < viewModel.currentStep
-                                  ? SierraTheme.Colors.ember
-                                  : Color(.tertiaryLabel).opacity(0.3))
-                            .frame(height: 2)
+                        .fill(step <= viewModel.currentStep ? Color.appOrange : Color.appDivider)
+                        .frame(width: 16, height: 16)
+                    if step < viewModel.currentStep {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 8, weight: .black))
+                            .foregroundColor(.white)
                     }
+                }
+                .scaleEffect(step == viewModel.currentStep ? 1.15 : 1.0)
+                .animation(.spring(response: 0.35), value: viewModel.currentStep)
+
+                if step < 3 {
+                    Rectangle()
+                        .fill(step < viewModel.currentStep ? Color.appOrange : Color.appDivider)
+                        .frame(height: 3)
+                        .animation(.easeInOut(duration: 0.4), value: viewModel.currentStep)
                 }
             }
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 12)
     }
 
     // MARK: - Step 1: Checklist
@@ -180,59 +192,156 @@ struct PreTripInspectionView: View {
             }
 
             Button {
-                withAnimation { viewModel.currentStep = 2 }
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { viewModel.currentStep = 2 }
             } label: {
-                Text("Next: Photos")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 50)
-                    .background(
-                        viewModel.canAdvanceToPhotos
-                            ? SierraTheme.Colors.ember
-                            : Color.gray,
-                        in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    )
+                HStack(spacing: 8) {
+                    Text("Next")
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 14, weight: .bold))
+                }
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 17)
+                .background(
+                    Capsule()
+                        .fill(viewModel.canAdvanceToPhotos ? Color.appOrange : Color.appOrange.opacity(0.4))
+                )
+                .shadow(
+                    color: viewModel.canAdvanceToPhotos ? Color.appOrange.opacity(0.3) : Color.clear,
+                    radius: 12, x: 0, y: 6
+                )
             }
-            // Disabled until every item is explicitly set
+            .buttonStyle(.plain)
             .disabled(!viewModel.canAdvanceToPhotos)
-            .padding(16)
+            .scaleEffect(viewModel.canAdvanceToPhotos ? 1.0 : 0.98)
+            .animation(.spring(response: 0.3), value: viewModel.canAdvanceToPhotos)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 16)
         }
     }
 
     private func checkItemRow(item: Binding<InspectionCheckItem>) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
+        VStack(spacing: 0) {
+            // Main toggle row
+            HStack(spacing: 14) {
+                Image(systemName: item.wrappedValue.category.icon)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(.appOrange)
+                    .frame(width: 28)
+
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.wrappedValue.name)
-                        .font(.subheadline.weight(.medium))
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .foregroundColor(.appTextPrimary)
                     Text(item.wrappedValue.category.rawValue)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundColor(.appTextSecondary)
                 }
+
                 Spacer()
 
-                // Segmented picker — does NOT show .notChecked as an option;
-                // the driver must actively choose Pass, Warn, or Fail.
-                Picker("", selection: item.result) {
-                    Text("Pass").tag(InspectionResult.passed)
-                    Text("Warn").tag(InspectionResult.passedWithWarnings)
-                    Text("Fail").tag(InspectionResult.failed)
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 180)
+                Toggle("", isOn: Binding(
+                    get: { item.wrappedValue.result == .passed || item.wrappedValue.result == .notChecked },
+                    set: { newValue in
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            item.wrappedValue.result = newValue ? .passed : .failed
+                        }
+                        UISelectionFeedbackGenerator().selectionChanged()
+                    }
+                ))
+                .toggleStyle(SwitchToggleStyle(tint: .green))
+                .labelsHidden()
             }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 14)
+            .background(Color.appCardBg)
 
-            if item.wrappedValue.result == .failed
-                || item.wrappedValue.result == .passedWithWarnings {
-                TextField("Notes (optional)", text: item.notes)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.caption)
+            // Expanded issue details (when failed or warning)
+            if item.wrappedValue.result == .failed || item.wrappedValue.result == .passedWithWarnings {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Status")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundColor(.appTextPrimary)
+
+                    HStack(spacing: 12) {
+                        // Warn button
+                        Button {
+                            withAnimation(.spring(response: 0.3)) {
+                                item.wrappedValue.result = .passedWithWarnings
+                            }
+                            UISelectionFeedbackGenerator().selectionChanged()
+                        } label: {
+                            Text("Warn")
+                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                                .foregroundColor(item.wrappedValue.result == .passedWithWarnings ? .white : .appOrange)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(
+                                    Capsule()
+                                        .fill(item.wrappedValue.result == .passedWithWarnings ? Color.appOrange : Color.clear)
+                                )
+                                .overlay(
+                                    Capsule()
+                                        .stroke(Color.appOrange, lineWidth: item.wrappedValue.result == .passedWithWarnings ? 0 : 2)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .scaleEffect(item.wrappedValue.result == .passedWithWarnings ? 1.03 : 1.0)
+
+                        // Fail button
+                        Button {
+                            withAnimation(.spring(response: 0.3)) {
+                                item.wrappedValue.result = .failed
+                            }
+                            UISelectionFeedbackGenerator().selectionChanged()
+                        } label: {
+                            Text("Fail")
+                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                                .foregroundColor(item.wrappedValue.result == .failed ? .white : Color(red: 0.90, green: 0.22, blue: 0.18))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(
+                                    Capsule()
+                                        .fill(item.wrappedValue.result == .failed ? Color(red: 0.90, green: 0.22, blue: 0.18) : Color.clear)
+                                )
+                                .overlay(
+                                    Capsule()
+                                        .stroke(Color(red: 0.90, green: 0.22, blue: 0.18), lineWidth: item.wrappedValue.result == .failed ? 0 : 2)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .scaleEffect(item.wrappedValue.result == .failed ? 1.03 : 1.0)
+                    }
+
+                    Text("Issue Details")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundColor(.appTextPrimary)
+
+                    TextEditor(text: item.notes)
+                        .font(.system(size: 14, design: .rounded))
+                        .frame(minHeight: 80)
+                        .padding(12)
+                        .scrollContentBackground(.hidden)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(Color.appSurface)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(Color.appDivider, lineWidth: 1)
+                        )
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 16)
+                .background(Color.appCardBg)
+                .transition(.asymmetric(
+                    insertion: .move(edge: .top).combined(with: .opacity),
+                    removal: .opacity
+                ))
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(Color(.systemBackground))
     }
 
     // MARK: - Step 2: Photos (Phase 6 — per-item photo pickers)
@@ -324,34 +433,45 @@ struct PreTripInspectionView: View {
             // ── Navigation buttons ───────────────────────────────────────────
             HStack(spacing: 12) {
                 Button {
-                    withAnimation { viewModel.currentStep = 1 }
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { viewModel.currentStep = 1 }
                 } label: {
                     Text("Back")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.primary)
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .foregroundColor(.appTextPrimary)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 50)
+                        .padding(.vertical, 17)
                         .background(
-                            Color(.secondarySystemBackground),
-                            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            Capsule()
+                                .fill(Color.appSurface)
                         )
+                        .overlay(Capsule().stroke(Color.appDivider, lineWidth: 1))
                 }
+                .buttonStyle(.plain)
 
                 Button {
-                    withAnimation { viewModel.currentStep = 3 }
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { viewModel.currentStep = 3 }
                 } label: {
-                    Text("Next: Summary")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 50)
-                        .background(
-                            viewModel.canAdvanceToSummary
-                                ? SierraTheme.Colors.ember
-                                : Color.gray,
-                            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        )
+                    HStack(spacing: 8) {
+                        Text("Next")
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 14, weight: .bold))
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 17)
+                    .background(
+                        Capsule()
+                            .fill(viewModel.canAdvanceToSummary ? Color.appOrange : Color.appOrange.opacity(0.4))
+                    )
+                    .shadow(
+                        color: viewModel.canAdvanceToSummary ? Color.appOrange.opacity(0.3) : Color.clear,
+                        radius: 12, x: 0, y: 6
+                    )
                 }
+                .buttonStyle(.plain)
                 .disabled(!viewModel.canAdvanceToSummary)
             }
             .padding(16)
@@ -506,37 +626,53 @@ struct PreTripInspectionView: View {
 
             HStack(spacing: 12) {
                 Button {
-                    withAnimation { viewModel.currentStep = 2 }
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { viewModel.currentStep = 2 }
                 } label: {
                     Text("Back")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.primary)
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .foregroundColor(.appTextPrimary)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 50)
+                        .padding(.vertical, 17)
                         .background(
-                            Color(.secondarySystemBackground),
-                            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            Capsule()
+                                .fill(Color.appSurface)
                         )
+                        .overlay(Capsule().stroke(Color.appDivider, lineWidth: 1))
                 }
+                .buttonStyle(.plain)
 
                 Button {
+                    UINotificationFeedbackGenerator().notificationOccurred(.success)
                     Task { await viewModel.submitInspection(store: store) }
                 } label: {
-                    Text("Submit Inspection")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 50)
-                        .background(
-                            (viewModel.isSubmitting || !viewModel.canSubmit)
-                                ? Color.gray
-                                : SierraTheme.Colors.ember,
-                            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        )
+                    HStack(spacing: 8) {
+                        Text("Complete Inspection")
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                        Image(systemName: "checkmark.seal.fill")
+                            .font(.system(size: 14, weight: .bold))
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 17)
+                    .background(
+                        Capsule()
+                            .fill((viewModel.isSubmitting || !viewModel.canSubmit)
+                                ? Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.4)
+                                : Color(red: 0.20, green: 0.65, blue: 0.32))
+                    )
+                    .shadow(
+                        color: (viewModel.isSubmitting || !viewModel.canSubmit)
+                            ? Color.clear
+                            : Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.3),
+                        radius: 12, x: 0, y: 6
+                    )
                 }
+                .buttonStyle(.plain)
                 .disabled(viewModel.isSubmitting || !viewModel.canSubmit)
             }
-            .padding(16)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 16)
         }
     }
 
@@ -655,6 +791,17 @@ struct PreTripInspectionView: View {
                     )
                 }
                 .buttonStyle(.plain)
+
+                // OR separator
+                HStack(spacing: 10) {
+                    VStack { Divider() }
+                    Text("OR")
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundStyle(.secondary)
+                    VStack { Divider() }
+                }
+                .padding(.vertical, 2)
+
                 manualEntryField
 
             case .scanning:
@@ -685,6 +832,17 @@ struct PreTripInspectionView: View {
                     .padding(12)
                     .background(Color.green.opacity(0.07),
                                 in: RoundedRectangle(cornerRadius: 12))
+
+                    // OR separator
+                    HStack(spacing: 10) {
+                        VStack { Divider() }
+                        Text("OR")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundStyle(.secondary)
+                        VStack { Divider() }
+                    }
+                    .padding(.vertical, 2)
+
                     manualEntryField
                 }
 
@@ -793,6 +951,283 @@ struct OdometerCameraSheet: UIViewControllerRepresentable {
 
         func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
             parent.dismiss()
+        }
+    }
+}
+
+// MARK: - Inspection Complete Overlay
+struct InspectionCompleteOverlay: View {
+    let onDismiss: () -> Void
+    @State private var scale: CGFloat = 0.5
+    @State private var contentOpacity: Double = 0
+    @State private var confettiVisible: Bool = false
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.5)
+                .ignoresSafeArea()
+
+            VStack(spacing: 24) {
+                ZStack {
+                    ForEach(0..<3, id: \.self) { i in
+                        Circle()
+                            .stroke(
+                                Color(red: 0.20, green: 0.65, blue: 0.32).opacity(confettiVisible ? 0 : 0.3),
+                                lineWidth: 2
+                            )
+                            .frame(width: 80 + CGFloat(i) * 30, height: 80 + CGFloat(i) * 30)
+                            .scaleEffect(confettiVisible ? 1.5 : 0.8)
+                            .animation(
+                                .easeOut(duration: 1.0).delay(Double(i) * 0.15),
+                                value: confettiVisible
+                            )
+                    }
+
+                    Circle()
+                        .fill(Color(red: 0.20, green: 0.65, blue: 0.32))
+                        .frame(width: 80, height: 80)
+                        .shadow(color: Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.4), radius: 20)
+
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 36, weight: .bold))
+                        .foregroundColor(.white)
+                        .opacity(contentOpacity)
+                }
+
+                VStack(spacing: 8) {
+                    Text("Inspection Complete!")
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .foregroundColor(.appTextPrimary)
+                    Text("You're all set to start your trip")
+                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .foregroundColor(.appTextSecondary)
+                }
+                .opacity(contentOpacity)
+
+                Button(action: {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    onDismiss()
+                }) {
+                    Text("Done")
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 60)
+                        .padding(.vertical, 15)
+                        .background(Capsule().fill(Color(red: 0.20, green: 0.65, blue: 0.32)))
+                }
+                .opacity(contentOpacity)
+            }
+            .padding(40)
+            .background(
+                RoundedRectangle(cornerRadius: 32)
+                    .fill(Color.white)
+                    .shadow(color: Color.black.opacity(0.14), radius: 30)
+            )
+            .scaleEffect(scale)
+        }
+        .onAppear {
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.65)) { scale = 1.0 }
+            withAnimation(.easeOut(duration: 0.3).delay(0.3)) { contentOpacity = 1.0 }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                withAnimation { confettiVisible = true }
+            }
+        }
+    }
+}
+
+// MARK: - Vehicle Change Requested Overlay
+struct InspectionVehicleChangeOverlay: View {
+    let onDismiss: () -> Void
+    @State private var scale: CGFloat = 0.5
+    @State private var contentOpacity: Double = 0
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.5)
+                .ignoresSafeArea()
+
+            VStack(spacing: 24) {
+                ZStack {
+                    Circle()
+                        .fill(Color.appOrange)
+                        .frame(width: 80, height: 80)
+                        .shadow(color: Color.appOrange.opacity(0.4), radius: 18)
+
+                    Image(systemName: "bus.fill")
+                        .font(.system(size: 34, weight: .bold))
+                        .foregroundColor(.white)
+                }
+
+                VStack(spacing: 8) {
+                    Text("Vehicle Change Requested")
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .foregroundColor(.appTextPrimary)
+                    Text("Proof images sent. Waiting for a new vehicle to be assigned.")
+                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .foregroundColor(.appTextSecondary)
+                        .multilineTextAlignment(.center)
+                }
+                .opacity(contentOpacity)
+
+                Button(action: {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    onDismiss()
+                }) {
+                    Text("Done")
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 60)
+                        .padding(.vertical, 15)
+                        .background(Capsule().fill(Color.appOrange))
+                }
+                .opacity(contentOpacity)
+            }
+            .padding(40)
+            .background(
+                RoundedRectangle(cornerRadius: 32)
+                    .fill(.ultraThinMaterial)
+                    .shadow(color: Color.black.opacity(0.1), radius: 30)
+            )
+            .scaleEffect(scale)
+        }
+        .onAppear {
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.65)) { scale = 1.0 }
+            withAnimation(.easeOut(duration: 0.3).delay(0.25)) { contentOpacity = 1.0 }
+        }
+    }
+}
+
+// MARK: - Maintenance Request Modal
+struct InspectionMaintenanceModal: View {
+    @Binding var text: String
+    @Binding var proofImageAttached: Bool
+    let onCancel: () -> Void
+    let onSubmit: () -> Void
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            Color.black.opacity(0.62)
+                .ignoresSafeArea()
+                .onTapGesture { onCancel() }
+
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
+                    Circle()
+                        .fill(Color.appOrange.opacity(0.18))
+                        .frame(width: 40, height: 40)
+                        .overlay(
+                            Image(systemName: "wrench.and.screwdriver.fill")
+                                .font(.system(size: 17, weight: .bold))
+                                .foregroundColor(.appOrange)
+                        )
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Maintenance Request")
+                            .font(.system(size: 20, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                        Text("Add notes for required maintenance")
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundColor(.gray)
+                    }
+                }
+
+                TextEditor(text: $text)
+                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                    .foregroundColor(.white)
+                    .scrollContentBackground(.hidden)
+                    .frame(height: 110)
+                    .padding(10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Color(red: 0.16, green: 0.16, blue: 0.17))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                    )
+
+                Button(action: {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    proofImageAttached.toggle()
+                }) {
+                    HStack(spacing: 10) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(Color.white.opacity(0.06))
+                                .frame(width: 44, height: 44)
+                            Image(systemName: proofImageAttached ? "photo.fill" : "camera.fill")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(proofImageAttached ? .green : .appOrange)
+                        }
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Upload Proof Image")
+                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                .foregroundColor(.white)
+                            Text(proofImageAttached ? "1 image attached" : "Tap to attach")
+                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                                .foregroundColor(.gray)
+                        }
+
+                        Spacer()
+
+                        Image(systemName: proofImageAttached ? "checkmark.circle.fill" : "plus.circle")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(proofImageAttached ? .green : .appOrange)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Color(red: 0.16, green: 0.16, blue: 0.17))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+
+                HStack(spacing: 10) {
+                    Button(action: onCancel) {
+                        Text("Cancel")
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .fill(Color(red: 0.17, green: 0.17, blue: 0.18))
+                            )
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: onSubmit) {
+                        Text("Send")
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .fill(Color.appOrange)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .opacity(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.5 : 1)
+                }
+            }
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 22)
+                    .fill(Color(red: 0.10, green: 0.10, blue: 0.11))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 22)
+                    .stroke(Color.white.opacity(0.06), lineWidth: 1)
+            )
+            .padding(.horizontal, 20)
+            .padding(.bottom, 96)
         }
     }
 }

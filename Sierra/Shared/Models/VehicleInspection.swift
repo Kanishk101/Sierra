@@ -27,6 +27,17 @@ enum InspectionCategory: String, Codable, CaseIterable {
     case body   = "Body"
     case safety = "Safety"
     case fluids = "Fluids"
+
+    var icon: String {
+        switch self {
+        case .tyres:  return "circle.circle"
+        case .engine: return "engine.combustion"
+        case .lights: return "lightbulb.fill"
+        case .body:   return "car.side.fill"
+        case .safety: return "shield.checkered"
+        case .fluids: return "drop.fill"
+        }
+    }
 }
 
 // MARK: - Inspection Item

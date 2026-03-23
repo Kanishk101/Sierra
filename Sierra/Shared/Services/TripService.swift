@@ -352,6 +352,39 @@ struct TripService {
             .execute()
     }
 
+    /// Partial update: only sets proof_of_delivery_id.
+    /// Avoids trigger rejection when drivers send the full trip object.
+    static func setProofOfDeliveryId(tripId: UUID, podId: UUID) async throws {
+        struct Payload: Encodable {
+            let proof_of_delivery_id: String
+        }
+        try await supabase
+            .from("trips")
+            .update(Payload(proof_of_delivery_id: podId.uuidString))
+            .eq("id", value: tripId.uuidString)
+            .execute()
+    }
+
+    /// Partial update: only sets pre_inspection_id or post_inspection_id.
+    /// Avoids trigger rejection when drivers send the full trip object.
+    static func setInspectionId(tripId: UUID, inspectionId: UUID, type: InspectionType) async throws {
+        if type == .preTripInspection {
+            struct Payload: Encodable { let pre_inspection_id: String }
+            try await supabase
+                .from("trips")
+                .update(Payload(pre_inspection_id: inspectionId.uuidString))
+                .eq("id", value: tripId.uuidString)
+                .execute()
+        } else {
+            struct Payload: Encodable { let post_inspection_id: String }
+            try await supabase
+                .from("trips")
+                .update(Payload(post_inspection_id: inspectionId.uuidString))
+                .eq("id", value: tripId.uuidString)
+                .execute()
+        }
+    }
+
     // MARK: Delete
 
     static func deleteTrip(id: UUID) async throws {
@@ -404,7 +437,8 @@ struct TripService {
         let rows: [Trip] = try await supabase
             .from("trips")
             .update(Payload(
-                status: TripStatus.accepted.rawValue,
+                // Driver accepted → Scheduled (awaiting time window to go Active)
+                status: TripStatus.scheduled.rawValue,
                 accepted_at: iso.string(from: Date())
             ))
             .eq("id",        value: tripId.uuidString)

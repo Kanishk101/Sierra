@@ -11,60 +11,72 @@ struct NavigationHUDOverlay: View {
     @State private var showSOSAlert = false
     @State private var showIncidentReport = false
     @State private var isVoiceMuted = false
+    @State private var issueText = ""
+    @State private var showIssueSentToast = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Top instruction banner
-            if !coordinator.currentStepInstruction.isEmpty {
-                instructionBanner
-            }
-
-            Spacer()
-
-            // Off-route warning banner
-            if coordinator.hasDeviated {
-                deviationBanner
-            }
-
-            // Route progress bar (live distance)
-            if coordinator.currentRoute != nil && coordinator.isNavigating {
-                routeProgressBar()
-            }
-
-            // Stats row
-            statsRow
-
-            // Speed badge + speed limit
-            HStack {
-                speedBadge
-                if let limit = coordinator.currentSpeedLimit {
-                    speedLimitSign(limit)
+        ZStack {
+            VStack(spacing: 0) {
+                // Top instruction banner
+                if !coordinator.currentStepInstruction.isEmpty {
+                    instructionBanner
                 }
-                Spacer()
-            }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 8)
 
-            // Action bar
-            actionBar
-        }
-        .sheet(isPresented: $showSOSAlert) {
-            SOSAlertSheet(
-                tripId: coordinator.trip.id,
-                vehicleId: UUID(uuidString: coordinator.trip.vehicleId ?? ""),
-                currentLocation: coordinator.currentLocation  // BUG-03 FIX
-            )
-        }
-        .sheet(isPresented: $showIncidentReport) {
-            IncidentReportSheet()
-        }
-        .alert("End Trip?", isPresented: $showEndTripConfirm) {
-            Button("Cancel", role: .cancel) {}
-            Button("End Trip", role: .destructive) {
-                onEndTrip()
+                Spacer()
+
+                // Off-route warning banner
+                if coordinator.hasDeviated {
+                    deviationBanner
+                }
+
+                // Route progress bar (live distance)
+                if coordinator.hasRenderableRoute && coordinator.isNavigating {
+                    routeProgressBar()
+                }
+
+                // Stats row
+                statsRow
+
+                // Speed badge + speed limit
+                HStack {
+                    speedBadge
+                    if let limit = coordinator.currentSpeedLimit {
+                        speedLimitSign(limit)
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 8)
+
+                // Action bar
+                actionBar
             }
-        } message: {
-            Text("This will stop navigation and take you to delivery confirmation.")
+            .sheet(isPresented: $showSOSAlert) {
+                SOSAlertSheet(
+                    tripId: coordinator.trip.id,
+                    vehicleId: UUID(uuidString: coordinator.trip.vehicleId ?? ""),
+                    currentLocation: coordinator.currentLocation  // BUG-03 FIX
+                )
+            }
+
+            // Dark overlay modals
+            if showEndTripConfirm {
+                endTripModal
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    .zIndex(200)
+            }
+
+            if showIncidentReport {
+                reportIssueModal
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    .zIndex(210)
+            }
+
+            if showIssueSentToast {
+                issueSentToast
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .zIndex(220)
+            }
         }
     }
 
@@ -72,38 +84,44 @@ struct NavigationHUDOverlay: View {
 
     private var instructionBanner: some View {
         HStack(spacing: 14) {
-            // Maneuver icon — resolves from instruction text
             Image(systemName: maneuverIcon(for: coordinator.currentStepManeuver.isEmpty
                                            ? coordinator.currentStepInstruction
                                            : coordinator.currentStepManeuver))
-                .font(.system(size: 28, weight: .bold))
-                .foregroundStyle(.white)
+                .font(.system(size: 24, weight: .bold))
+                .foregroundColor(.white)
                 .frame(width: 52, height: 52)
-                .background(Color.orange, in: RoundedRectangle(cornerRadius: 14))
+                .background(
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(Color.appOrange)
+                )
 
             VStack(alignment: .leading, spacing: 3) {
-                // Distance to next turn
                 Text(formatDistance(coordinator.distanceRemainingMetres))
                     .font(.system(size: 28, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
+                    .foregroundColor(.white)
                 Text(coordinator.currentStepInstruction)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.white.opacity(0.9))
+                    .font(.system(size: 15, weight: .medium, design: .rounded))
+                    .foregroundColor(.white.opacity(0.9))
                     .lineLimit(2)
-                // Phase 10: Next step preview
                 if !coordinator.nextStepInstruction.isEmpty {
                     Text("Then: \(coordinator.nextStepInstruction)")
-                        .font(.caption)
-                        .foregroundStyle(.white.opacity(0.6))
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundColor(.white.opacity(0.55))
                         .lineLimit(1)
                 }
             }
             Spacer()
         }
-        .padding(16)
-        .background(.ultraThinMaterial.opacity(0.9))
-        .background(Color.black.opacity(0.7))
-        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .padding(18)
+        .background(
+            RoundedRectangle(cornerRadius: 24)
+                .fill(Color(red: 0.11, green: 0.12, blue: 0.16))
+                .shadow(color: Color.black.opacity(0.35), radius: 20, x: 0, y: 8)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 24)
+                .stroke(Color.white.opacity(0.06), lineWidth: 1)
+        )
         .padding(.horizontal, 16)
         .padding(.top, 60)
     }
@@ -150,17 +168,15 @@ struct NavigationHUDOverlay: View {
     // MARK: - Stats Row
 
     private var statsRow: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 10) {
             statItem(
                 value: String(format: "%.1f km", coordinator.distanceRemainingMetres / 1000),
                 label: "Distance"
             )
-            Divider().frame(height: 30)
             statItem(
                 value: coordinator.estimatedArrivalTime?.formatted(.dateTime.hour().minute()) ?? "--:--",
                 label: "ETA"
             )
-            Divider().frame(height: 30)
             statItem(
                 value: String(format: "%.0f min", coordinator.distanceRemainingMetres > 0
                               ? (coordinator.estimatedArrivalTime?.timeIntervalSinceNow ?? 0) / 60
@@ -168,39 +184,56 @@ struct NavigationHUDOverlay: View {
                 label: "Remaining"
             )
         }
-        .padding(.vertical, 10)
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
     }
 
     private func statItem(value: String, label: String) -> some View {
-        VStack(spacing: 2) {
+        VStack(spacing: 4) {
             Text(value)
-                .font(.subheadline.weight(.bold))
-                .foregroundStyle(.primary)
+                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .foregroundColor(.white)
             Text(label)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundColor(.white.opacity(0.6))
+                .textCase(.uppercase)
         }
         .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 18)
+                .fill(Color(red: 0.11, green: 0.12, blue: 0.16))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18)
+                .stroke(Color.white.opacity(0.06), lineWidth: 1)
+        )
     }
 
     // MARK: - Speed Badge
 
     private var speedBadge: some View {
-        VStack(spacing: 0) {
-            Text(String(format: "%.0f", max(0, coordinator.currentSpeedKmh)))
-                .font(.title3.weight(.bold).monospacedDigit())
-                .foregroundStyle(.primary)
-            Text("km/h")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+        ZStack {
+            // Outer ring
+            Circle()
+                .stroke(Color.appOrange.opacity(0.3), lineWidth: 4)
+                .frame(width: 80, height: 80)
+
+            // Inner fill
+            Circle()
+                .fill(Color(red: 0.11, green: 0.12, blue: 0.16))
+                .frame(width: 68, height: 68)
+
+            VStack(spacing: 1) {
+                Text(String(format: "%.0f", max(0, coordinator.currentSpeedKmh)))
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundColor(.white)
+                Text("km/h")
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white.opacity(0.6))
+            }
         }
-        .frame(width: 60, height: 60)
-        .background(.ultraThinMaterial, in: Circle())
-        .overlay(Circle().strokeBorder(Color.white.opacity(0.3), lineWidth: 1))
     }
 
     // MARK: - Speed Limit Sign
@@ -222,14 +255,14 @@ struct NavigationHUDOverlay: View {
     // MARK: - Action Bar
 
     private var actionBar: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             actionButton("SOS", icon: "sos", color: SierraTheme.Colors.danger) {
                 showSOSAlert = true
             }
-            actionButton("Incident", icon: "exclamationmark.triangle.fill", color: .orange) {
+            actionButton("Incident", icon: "exclamationmark.triangle.fill", color: .appOrange) {
                 showIncidentReport = true
             }
-            actionButton("End Trip", icon: "xmark.circle", color: SierraTheme.Colors.ember) {
+            actionButton("End Trip", icon: "xmark.circle", color: .appOrange) {
                 showEndTripConfirm = true
             }
             // Phase 10: Voice mute toggle
@@ -243,8 +276,18 @@ struct NavigationHUDOverlay: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(.ultraThinMaterial)
+        .padding(.vertical, 14)
+        .background(
+            RoundedRectangle(cornerRadius: 26)
+                .fill(Color(red: 0.11, green: 0.12, blue: 0.16))
+                .shadow(color: Color.black.opacity(0.3), radius: 16, x: 0, y: -4)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 26)
+                .stroke(Color.white.opacity(0.06), lineWidth: 1)
+        )
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
     }
 
     // MARK: - Route Progress Bar
@@ -255,51 +298,290 @@ struct NavigationHUDOverlay: View {
         return VStack(spacing: 4) {
             HStack {
                 Text("Route Progress")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.7))
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white.opacity(0.6))
                 Spacer()
                 Text("\(pct)%")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(.white)
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
             }
             .padding(.horizontal, 16)
 
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    Rectangle()
-                        .fill(Color.white.opacity(0.2))
-                        .frame(height: 6)
-                    Rectangle()
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.white.opacity(0.12))
+                        .frame(height: 8)
+                    RoundedRectangle(cornerRadius: 4)
                         .fill(
                             LinearGradient(
-                                colors: [Color(red: 0.2, green: 0.85, blue: 0.55), Color.orange],
+                                colors: [Color(red: 0.2, green: 0.85, blue: 0.55), .appOrange],
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )
                         )
-                        .frame(width: geo.size.width * progress, height: 6)
+                        .frame(width: geo.size.width * progress, height: 8)
                         .animation(.linear(duration: 0.5), value: progress)
                 }
             }
-            .frame(height: 6)
+            .frame(height: 8)
             .padding(.horizontal, 16)
         }
-        .padding(.vertical, 6)
-        .background(Color.black.opacity(0.3))
+        .padding(.vertical, 8)
+        .background(Color(red: 0.11, green: 0.12, blue: 0.16).opacity(0.6))
     }
 
     private func actionButton(_ title: String, icon: String, color: Color, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            VStack(spacing: 4) {
+            VStack(spacing: 5) {
                 Image(systemName: icon)
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(color)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(color)
                 Text(title)
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(.primary)
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white.opacity(0.8))
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
+            .padding(.vertical, 14)
+            .background(
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(Color.white.opacity(0.06))
+            )
+        }
+    }
+
+    // MARK: - End Trip Modal
+
+    private var endTripModal: some View {
+        ZStack(alignment: .bottom) {
+            Color.black.opacity(0.65)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    withAnimation(.spring(response: 0.3)) {
+                        showEndTripConfirm = false
+                    }
+                }
+
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 10) {
+                    Circle()
+                        .fill(Color.red.opacity(0.18))
+                        .frame(width: 42, height: 42)
+                        .overlay(
+                            Image(systemName: "flag.fill")
+                                .font(.system(size: 17, weight: .bold))
+                                .foregroundColor(Color.red.opacity(0.95))
+                        )
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("End Trip?")
+                            .font(.system(size: 22, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                        Text("This will complete all stops and begin post-trip inspection.")
+                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .foregroundColor(.gray)
+                    }
+                }
+
+                HStack(spacing: 10) {
+                    Button(action: {
+                        withAnimation(.spring(response: 0.3)) {
+                            showEndTripConfirm = false
+                        }
+                    }) {
+                        Text("Cancel")
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 13)
+                            .background(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .fill(Color(red: 0.17, green: 0.17, blue: 0.18))
+                            )
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: {
+                        withAnimation(.spring(response: 0.3)) {
+                            showEndTripConfirm = false
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                            onEndTrip()
+                        }
+                    }) {
+                        Text("Confirm End")
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 13)
+                            .background(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .fill(Color(red: 0.95, green: 0.23, blue: 0.20))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(18)
+            .background(
+                RoundedRectangle(cornerRadius: 22)
+                    .fill(Color(red: 0.10, green: 0.10, blue: 0.11).opacity(0.98))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 22)
+                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
+            )
+            .padding(.horizontal, 20)
+            .padding(.bottom, 104)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+        .ignoresSafeArea()
+    }
+
+    // MARK: - Report Issue Modal
+
+    private var reportIssueModal: some View {
+        ZStack(alignment: .bottom) {
+            Color.black.opacity(0.7)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    withAnimation(.spring(response: 0.3)) {
+                        showIncidentReport = false
+                    }
+                }
+
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
+                    Circle()
+                        .fill(Color.appOrange.opacity(0.2))
+                        .frame(width: 42, height: 42)
+                        .overlay(
+                            Image(systemName: "exclamationmark.bubble.fill")
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundColor(.appOrange)
+                        )
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Report Issue")
+                            .font(.system(size: 22, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                        Text("This will be sent to admin while route continues.")
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundColor(.gray)
+                    }
+                }
+
+                Text("Describe the issue")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundColor(.gray)
+
+                ZStack(alignment: .topLeading) {
+                    TextEditor(text: $issueText)
+                        .font(.system(size: 15, weight: .medium, design: .rounded))
+                        .foregroundColor(.white)
+                        .scrollContentBackground(.hidden)
+                        .frame(height: 108)
+                        .padding(10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(Color(red: 0.16, green: 0.16, blue: 0.17))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                        )
+
+                    if issueText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text("Example: Road blocked due to accident near next turn")
+                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .foregroundColor(.gray.opacity(0.7))
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 18)
+                            .allowsHitTesting(false)
+                    }
+                }
+
+                HStack(spacing: 10) {
+                    Button(action: {
+                        withAnimation(.spring(response: 0.3)) {
+                            showIncidentReport = false
+                            issueText = ""
+                        }
+                    }) {
+                        Text("Cancel")
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 13)
+                            .background(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .fill(Color(red: 0.17, green: 0.17, blue: 0.18))
+                            )
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: submitIssue) {
+                        Text("Send")
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 13)
+                            .background(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .fill(Color.appOrange)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(issueText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .opacity(issueText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.5 : 1)
+                }
+            }
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 22)
+                    .fill(Color(red: 0.11, green: 0.11, blue: 0.12))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 22)
+                    .stroke(Color.white.opacity(0.05), lineWidth: 1)
+            )
+            .padding(.horizontal, 20)
+            .padding(.bottom, 96)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+        .ignoresSafeArea()
+    }
+
+    // MARK: - Issue Sent Toast
+
+    private var issueSentToast: some View {
+        VStack {
+            HStack(spacing: 8) {
+                Image(systemName: "paperplane.circle.fill")
+                    .font(.system(size: 16, weight: .bold))
+                Text("Issue sent to admin. Continuing route.")
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(Capsule().fill(Color.appOrange))
+            .padding(.top, 60)
+            Spacer()
+        }
+    }
+
+    // MARK: - Submit Issue
+
+    private func submitIssue() {
+        withAnimation(.spring(response: 0.3)) {
+            showIncidentReport = false
+            showIssueSentToast = true
+        }
+        issueText = ""
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            withAnimation(.easeOut(duration: 0.25)) {
+                showIssueSentToast = false
+            }
         }
     }
 }

@@ -77,9 +77,10 @@ struct ProofOfDeliveryService {
 
     static func addProofOfDelivery(_ pod: ProofOfDelivery) async throws {
         let payload = ProofOfDeliveryPayload(from: pod)
+        // Use upsert so retries after partial failures don't hit the unique trip_id constraint
         try await supabase
             .from("proof_of_deliveries")
-            .insert(payload)
+            .upsert(payload, onConflict: "trip_id")
             .execute()
     }
 

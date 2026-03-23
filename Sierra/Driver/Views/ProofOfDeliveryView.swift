@@ -3,7 +3,8 @@ import PhotosUI
 import CryptoKit
 import Supabase
 
-/// Proof of delivery capture: Photo, Signature, or OTP verification.
+/// Proof of delivery capture — FMS_SS themed.
+/// Three tabs: Photo, Signature, OTP — each with the orange-accent card design.
 struct ProofOfDeliveryView: View {
 
     let tripId: UUID
@@ -30,120 +31,191 @@ struct ProofOfDeliveryView: View {
     @State private var currentLine: [CGPoint] = []
     @State private var signatureCanvasSize = CGSize(width: 1, height: 180)
 
-    // OTP — Safeguard 5: hash only, never plaintext stored
+    // OTP — hash only, never plaintext stored
     @State private var generatedOTP: String?
     @State private var otpHash: String?
     @State private var otpSalt: String?
     @State private var otpEnteredByRecipient = ""
     @State private var otpVerified = false
     @State private var otpShowMismatch = false
-    @State private var generatedOTPTime: Date?   // BUG-08 FIX: track generation time
-    @State private var otpExpired = false         // BUG-08 FIX: expired flag
+    @State private var generatedOTPTime: Date?
+    @State private var otpExpired = false
 
-    var body: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                // Method Picker
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Delivery Verification Method")
-                        .font(.subheadline.weight(.medium))
-                    Picker("Method", selection: $method) {
-                        Text("Photo").tag(ProofOfDeliveryMethod.photo)
-                        Text("Signature").tag(ProofOfDeliveryMethod.signature)
-                        Text("OTP").tag(ProofOfDeliveryMethod.otpVerification)
-                    }
-                    .pickerStyle(.segmented)
-                }
-
-                Divider()
-
-                // Method-specific content
-                switch method {
-                case .photo:       photoSection
-                case .signature:   signatureSection
-                case .otpVerification: otpSection
-                }
-
-                Divider()
-
-                // Common fields
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Recipient Name")
-                        .font(.subheadline.weight(.medium))
-                    TextField("Enter recipient name", text: $recipientName)
-                        .textFieldStyle(.roundedBorder)
-                }
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Delivery Notes")
-                        .font(.subheadline.weight(.medium))
-                    TextField("Optional notes", text: $notes, axis: .vertical)
-                        .textFieldStyle(.roundedBorder)
-                        .lineLimit(3...6)
-                }
-
-                Spacer(minLength: 20)
-
-                // Submit — Safeguard 7: Task { } not .task { }
-                Button {
-                    Task { await submitProof() }
-                } label: {
-                    HStack {
-                        if isSubmitting {
-                            ProgressView().tint(.white)
-                        } else {
-                            Image(systemName: "checkmark.circle.fill")
-                        }
-                        Text("Submit Proof of Delivery")
-                            .font(.subheadline.weight(.semibold))
-                    }
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 50)
-                    .background(canSubmit ? SierraTheme.Colors.ember : Color.gray,
-                                in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                }
-                .disabled(!canSubmit || isSubmitting)
-            }
-            .padding(16)
-        }
-        .navigationTitle("Proof of Delivery")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") { dismiss() }
-            }
-        }
-        .alert("Error", isPresented: $showError) {
-            Button("OK") {}
-        } message: {
-            Text(errorMessage ?? "Something went wrong")
-        }
-    }
-
-    // ISSUE-30 FIX: Show camera trigger and photo gallery picker
+    // Camera
     @State private var showCamera = false
     @State private var cameraImage: UIImage?
 
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.appSurface.ignoresSafeArea()
+
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: 20) {
+                        // Title section
+                        VStack(spacing: 6) {
+                            Image(systemName: "checkmark.shield.fill")
+                                .font(.system(size: 40))
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [Color.appAmber, Color.appOrange],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+
+                            Text("Delivery Verification")
+                                .font(.system(size: 22, weight: .bold, design: .rounded))
+                                .foregroundColor(.appTextPrimary)
+
+                            Text("Choose a method to verify delivery")
+                                .font(.system(size: 14, weight: .medium, design: .rounded))
+                                .foregroundColor(.appTextSecondary)
+                        }
+                        .padding(.top, 4)
+
+                        // Method tabs — FMS_SS style capsule tabs
+                        methodTabs
+
+                        // Method card
+                        methodCard
+                            .padding(.horizontal, 4)
+
+                        // Common fields card
+                        commonFieldsCard
+                            .padding(.horizontal, 4)
+
+                        // Submit button
+                        submitButton
+                            .padding(.horizontal, 4)
+
+                        Spacer(minLength: 30)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                }
+            }
+            .navigationTitle("Proof of Delivery")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 24))
+                            .foregroundColor(.appTextSecondary)
+                    }
+                }
+            }
+            .alert("Error", isPresented: $showError) {
+                Button("OK") {}
+            } message: {
+                Text(errorMessage ?? "Something went wrong")
+            }
+        }
+    }
+
+    // MARK: - Method Tabs
+
+    private var methodTabs: some View {
+        HStack(spacing: 0) {
+            methodTab(icon: "camera.fill", title: "Photo", method: .photo)
+            methodTab(icon: "signature", title: "Signature", method: .signature)
+            methodTab(icon: "number.circle.fill", title: "OTP", method: .otpVerification)
+        }
+        .padding(4)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.appCardBg)
+                .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.appDivider.opacity(0.5), lineWidth: 1)
+        )
+    }
+
+    private func methodTab(icon: String, title: String, method: ProofOfDeliveryMethod) -> some View {
+        let isSelected = self.method == method
+        return Button {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                self.method = method
+            }
+        } label: {
+            VStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .semibold))
+                Text(title)
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+            }
+            .foregroundColor(isSelected ? .white : .appTextSecondary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(isSelected ? Color.appOrange : Color.clear)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Method Card
+
+    private var methodCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            switch method {
+            case .photo:       photoSection
+            case .signature:   signatureSection
+            case .otpVerification: otpSection
+            }
+        }
+        .padding(18)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(Color.appCardBg)
+                .shadow(color: .black.opacity(0.04), radius: 10, y: 4)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20)
+                .stroke(Color.appDivider.opacity(0.5), lineWidth: 1)
+        )
+    }
+
+    // MARK: - Photo Section
+
     private var photoSection: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 12) {
+        VStack(spacing: 14) {
+            HStack(spacing: 14) {
                 // Camera button
                 Button {
                     showCamera = true
                 } label: {
-                    VStack(spacing: 8) {
-                        Image(systemName: "camera.fill")
-                            .font(.system(size: 28))
-                            .foregroundStyle(SierraTheme.Colors.ember.opacity(0.6))
+                    VStack(spacing: 10) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.appOrange.opacity(0.12))
+                                .frame(width: 52, height: 52)
+                            Image(systemName: "camera.fill")
+                                .font(.system(size: 22, weight: .semibold))
+                                .foregroundColor(.appOrange)
+                        }
                         Text("Camera")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(SierraTheme.Colors.ember)
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundColor(.appTextPrimary)
                     }
                     .frame(maxWidth: .infinity)
-                    .frame(height: 100)
-                    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .padding(.vertical, 18)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(Color.appSurface)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(Color.appDivider, lineWidth: 1)
+                    )
                 }
+                .buttonStyle(.plain)
                 .fullScreenCover(isPresented: $showCamera) {
                     CameraCapture(image: $cameraImage)
                         .ignoresSafeArea()
@@ -156,17 +228,29 @@ struct ProofOfDeliveryView: View {
 
                 // Gallery picker
                 PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                    VStack(spacing: 8) {
-                        Image(systemName: "photo.on.rectangle")
-                            .font(.system(size: 28))
-                            .foregroundStyle(SierraTheme.Colors.ember.opacity(0.6))
+                    VStack(spacing: 10) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.appOrange.opacity(0.12))
+                                .frame(width: 52, height: 52)
+                            Image(systemName: "photo.on.rectangle")
+                                .font(.system(size: 22, weight: .semibold))
+                                .foregroundColor(.appOrange)
+                        }
                         Text("Gallery")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(SierraTheme.Colors.ember)
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundColor(.appTextPrimary)
                     }
                     .frame(maxWidth: .infinity)
-                    .frame(height: 100)
-                    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .padding(.vertical, 18)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(Color.appSurface)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(Color.appDivider, lineWidth: 1)
+                    )
                 }
                 .onChange(of: selectedPhoto) { _, newItem in
                     Task {
@@ -177,14 +261,41 @@ struct ProofOfDeliveryView: View {
                 }
             }
 
-            if photoData != nil {
-                HStack {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(SierraTheme.Colors.alpineMint)
-                    Text("Photo captured ✓")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(SierraTheme.Colors.alpineMint)
+            // Photo preview
+            if let data = photoData, let uiImage = UIImage(data: data) {
+                ZStack(alignment: .topTrailing) {
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(height: 160)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+
+                    Button {
+                        photoData = nil
+                        selectedPhoto = nil
+                        cameraImage = nil
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 24))
+                            .foregroundColor(.white)
+                            .shadow(radius: 4)
+                    }
+                    .padding(8)
                 }
+
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(Color(red: 0.20, green: 0.65, blue: 0.32))
+                    Text("Photo captured")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundColor(Color(red: 0.20, green: 0.65, blue: 0.32))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(
+                    Capsule().fill(Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.12))
+                )
             }
         }
     }
@@ -192,13 +303,54 @@ struct ProofOfDeliveryView: View {
     // MARK: - Signature Section
 
     private var signatureSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Draw Signature Below")
-                .font(.subheadline.weight(.medium))
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "signature")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(.appOrange)
+                Text("Draw Signature Below")
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundColor(.appTextPrimary)
+                Spacer()
+                if !signatureLines.isEmpty {
+                    Button {
+                        signatureLines = []
+                        currentLine = []
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.counterclockwise")
+                                .font(.system(size: 12, weight: .bold))
+                            Text("Clear")
+                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                        }
+                        .foregroundColor(Color(red: 0.90, green: 0.22, blue: 0.18))
+                    }
+                }
+            }
 
             ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color(.secondarySystemBackground))
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(Color.appSurface)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(
+                                signatureLines.isEmpty
+                                    ? Color.appDivider
+                                    : Color.appOrange.opacity(0.4),
+                                style: StrokeStyle(lineWidth: 1.5, dash: signatureLines.isEmpty ? [6, 4] : [])
+                            )
+                    )
+
+                if signatureLines.isEmpty && currentLine.isEmpty {
+                    VStack(spacing: 6) {
+                        Image(systemName: "hand.draw.fill")
+                            .font(.system(size: 28))
+                            .foregroundColor(.appTextSecondary.opacity(0.3))
+                        Text("Draw here")
+                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .foregroundColor(.appTextSecondary.opacity(0.5))
+                    }
+                }
 
                 Canvas { context, _ in
                     for line in signatureLines {
@@ -206,13 +358,13 @@ struct ProofOfDeliveryView: View {
                         guard let first = line.first else { continue }
                         path.move(to: first)
                         for point in line.dropFirst() { path.addLine(to: point) }
-                        context.stroke(path, with: .color(.primary), lineWidth: 2)
+                        context.stroke(path, with: .color(.primary), lineWidth: 2.5)
                     }
                     if !currentLine.isEmpty {
                         var path = Path()
                         path.move(to: currentLine[0])
                         for point in currentLine.dropFirst() { path.addLine(to: point) }
-                        context.stroke(path, with: .color(.primary), lineWidth: 2)
+                        context.stroke(path, with: .color(.primary), lineWidth: 2.5)
                     }
                 }
                 .gesture(
@@ -235,95 +387,307 @@ struct ProofOfDeliveryView: View {
                 }
             }
 
-            Button("Clear Signature") {
-                signatureLines = []
-                currentLine = []
+            if !signatureLines.isEmpty {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(Color(red: 0.20, green: 0.65, blue: 0.32))
+                    Text("Signature captured")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundColor(Color(red: 0.20, green: 0.65, blue: 0.32))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(
+                    Capsule().fill(Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.12))
+                )
             }
-            .font(.caption)
-            .foregroundStyle(SierraTheme.Colors.danger)
         }
     }
 
-    // MARK: - OTP Section — Safeguard 5
+    // MARK: - OTP Section
 
     private var otpSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             if generatedOTP == nil {
-                Button {
-                    generateOTP()
-                } label: {
-                    HStack {
+                // Generate OTP button
+                VStack(spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.appOrange.opacity(0.12))
+                            .frame(width: 64, height: 64)
                         Image(systemName: "number.circle.fill")
-                        Text("Generate OTP")
+                            .font(.system(size: 30, weight: .bold))
+                            .foregroundColor(.appOrange)
                     }
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 44)
-                    .background(SierraTheme.Colors.info, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                    Text("Generate a one-time code\nand share it with the recipient")
+                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .foregroundColor(.appTextSecondary)
+                        .multilineTextAlignment(.center)
+
+                    Button {
+                        generateOTP()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "key.fill")
+                                .font(.system(size: 14, weight: .bold))
+                            Text("Generate OTP")
+                                .font(.system(size: 15, weight: .bold, design: .rounded))
+                        }
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(
+                            Capsule().fill(Color.appOrange)
+                        )
+                    }
+                    .buttonStyle(.plain)
                 }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
             } else {
-                VStack(spacing: 8) {
-                    Text("Read this OTP to the recipient:")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                // OTP Display
+                VStack(spacing: 10) {
+                    Text("READ THIS CODE TO RECIPIENT")
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundColor(.appTextSecondary)
+                        .tracking(1.5)
 
                     Text(generatedOTP ?? "")
-                        .font(.system(size: 36, weight: .bold, design: .monospaced))
-                        .foregroundStyle(SierraTheme.Colors.ember)
-                        .kerning(8)
+                        .font(.system(size: 38, weight: .bold, design: .monospaced))
+                        .foregroundColor(.appOrange)
+                        .kerning(10)
 
-                    Text("Valid for 10 minutes")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 4) {
+                        Image(systemName: "clock")
+                            .font(.system(size: 11))
+                        Text("Valid for 10 minutes")
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                    }
+                    .foregroundColor(.appTextSecondary)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
-                .background(SierraTheme.Colors.ember.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+                .background(
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(Color.appOrange.opacity(0.06))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16)
+                                .stroke(Color.appOrange.opacity(0.2), lineWidth: 1)
+                        )
+                )
 
-                Divider()
+                // Verification
+                Rectangle()
+                    .fill(Color.appDivider)
+                    .frame(height: 1)
 
-                Text("Enter the OTP the recipient confirms:")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("RECIPIENT ENTERS CODE")
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundColor(.appTextSecondary)
+                        .tracking(1)
 
-                TextField("Enter OTP", text: $otpEnteredByRecipient)
-                    .keyboardType(.numberPad)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(.title3, design: .monospaced))
+                    TextField("Enter OTP", text: $otpEnteredByRecipient)
+                        .keyboardType(.numberPad)
+                        .font(.system(size: 22, weight: .bold, design: .monospaced))
+                        .foregroundColor(.appTextPrimary)
+                        .padding(14)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(Color.appSurface)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 14)
+                                        .stroke(
+                                            otpVerified
+                                                ? Color(red: 0.20, green: 0.65, blue: 0.32)
+                                                : Color.appDivider,
+                                            lineWidth: 1.5
+                                        )
+                                )
+                        )
 
-                Button {
-                    verifyOTP()
-                } label: {
-                    Text(otpVerified ? "Verified ✓" : "Verify OTP")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(otpVerified ? SierraTheme.Colors.alpineMint : SierraTheme.Colors.info)
-                }
-                .disabled(otpVerified)
+                    if !otpVerified {
+                        Button {
+                            verifyOTP()
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "checkmark.shield.fill")
+                                    .font(.system(size: 14, weight: .bold))
+                                Text("Verify Code")
+                                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                            }
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(
+                                Capsule().fill(Color.appOrange)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        HStack(spacing: 6) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 14, weight: .bold))
+                            Text("OTP Verified")
+                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                        }
+                        .foregroundColor(Color(red: 0.20, green: 0.65, blue: 0.32))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(
+                            Capsule().fill(Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.12))
+                        )
+                    }
 
-                if otpShowMismatch {
-                    Text("OTP does not match. Please try again.")
-                        .font(.caption)
-                        .foregroundStyle(SierraTheme.Colors.danger)
+                    if otpShowMismatch {
+                        HStack(spacing: 4) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 12))
+                            Text("Code does not match. Try again.")
+                                .font(.system(size: 13, weight: .medium, design: .rounded))
+                        }
+                        .foregroundColor(Color(red: 0.90, green: 0.22, blue: 0.18))
+                    }
+
+                    if otpExpired {
+                        HStack(spacing: 4) {
+                            Image(systemName: "clock.badge.exclamationmark.fill")
+                                .font(.system(size: 12))
+                            Text("OTP expired. Generate a new one.")
+                                .font(.system(size: 13, weight: .medium, design: .rounded))
+                        }
+                        .foregroundColor(Color(red: 0.90, green: 0.22, blue: 0.18))
+                    }
                 }
             }
         }
     }
 
-    // MARK: - OTP Logic — Safeguard 5: hash only stored
+    // MARK: - Common Fields Card
+
+    private var commonFieldsCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 8) {
+                Image(systemName: "person.fill")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(.appOrange)
+                Text("Recipient Details")
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundColor(.appTextPrimary)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("RECIPIENT NAME")
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundColor(.appTextSecondary)
+                    .tracking(1)
+
+                TextField("Enter recipient name", text: $recipientName)
+                    .font(.system(size: 15, weight: .medium, design: .rounded))
+                    .foregroundColor(.appTextPrimary)
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.appSurface)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(Color.appDivider, lineWidth: 1)
+                            )
+                    )
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("DELIVERY NOTES")
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundColor(.appTextSecondary)
+                    .tracking(1)
+
+                TextField("Optional notes", text: $notes, axis: .vertical)
+                    .font(.system(size: 15, weight: .medium, design: .rounded))
+                    .foregroundColor(.appTextPrimary)
+                    .lineLimit(3...6)
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.appSurface)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(Color.appDivider, lineWidth: 1)
+                            )
+                    )
+            }
+        }
+        .padding(18)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(Color.appCardBg)
+                .shadow(color: .black.opacity(0.04), radius: 10, y: 4)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20)
+                .stroke(Color.appDivider.opacity(0.5), lineWidth: 1)
+        )
+    }
+
+    // MARK: - Submit Button
+
+    private var submitButton: some View {
+        Button {
+            Task { await submitProof() }
+        } label: {
+            HStack(spacing: 8) {
+                if isSubmitting {
+                    ProgressView()
+                        .tint(.white)
+                } else {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 16, weight: .bold))
+                }
+                Text("Submit Proof of Delivery")
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+            }
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
+            .background(
+                Capsule()
+                    .fill(
+                        canSubmit
+                            ? LinearGradient(
+                                colors: [Color.appAmber, Color.appOrange, Color.appDeepOrange],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                            : LinearGradient(
+                                colors: [Color.gray.opacity(0.4), Color.gray.opacity(0.3)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                    )
+            )
+            .shadow(
+                color: canSubmit ? Color.appOrange.opacity(0.3) : Color.clear,
+                radius: 12, x: 0, y: 6
+            )
+        }
+        .disabled(!canSubmit || isSubmitting)
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - OTP Logic
 
     private func generateOTP() {
         let otp = String(format: "%06d", Int.random(in: 0...999999))
         generatedOTP = otp
-        generatedOTPTime = Date() // BUG-08 FIX
+        generatedOTPTime = Date()
         otpExpired = false
 
-        // Hash OTP via CryptoService — never store plaintext
         let credential = CryptoService.hash(password: otp)
         otpHash = credential.hash
         otpSalt = credential.salt
 
-        // BUG-08 FIX: Auto-expire after 10 minutes
         Task {
             try? await Task.sleep(for: .seconds(600))
             if !otpVerified {
@@ -336,7 +700,6 @@ struct ProofOfDeliveryView: View {
     private func verifyOTP() {
         guard let hash = otpHash, let salt = otpSalt else { return }
 
-        // BUG-08 FIX: Enforce 10-minute expiry
         if let genTime = generatedOTPTime, Date().timeIntervalSince(genTime) > 600 {
             otpExpired = true
             otpShowMismatch = false
@@ -373,19 +736,17 @@ struct ProofOfDeliveryView: View {
             var photoUrl: String?
             var signatureUrl: String?
 
-            // Upload photo if needed
             if method == .photo, let data = photoData {
                 let path = "delivery-proofs/\(tripId.uuidString)/\(UUID().uuidString).jpg"
                 try await supabase.storage
-                    .from("delivery-proofs")
+                    .from("sierra-uploads")
                     .upload(path, data: data, options: .init(contentType: "image/jpeg"))
                 let url = try supabase.storage
-                    .from("delivery-proofs")
+                    .from("sierra-uploads")
                     .getPublicURL(path: path)
                 photoUrl = url.absoluteString
             }
 
-            // BUG-02 FIX: Rasterize signature canvas to UIImage, upload, store real URL
             if method == .signature {
                 let canvasWidth = max(signatureCanvasSize.width, 1)
                 let canvasHeight = max(signatureCanvasSize.height, 1)
@@ -398,7 +759,6 @@ struct ProofOfDeliveryView: View {
                     ctx.cgContext.setStrokeColor(UIColor.black.cgColor)
                     ctx.cgContext.setLineWidth(2)
                     ctx.cgContext.setLineCap(.round)
-                    // Scale points from canvas size to render size
                     for line in signatureLines {
                         guard let first = line.first else { continue }
                         ctx.cgContext.move(to: CGPoint(x: first.x * widthScale, y: first.y * heightScale))
@@ -411,10 +771,10 @@ struct ProofOfDeliveryView: View {
                 if let jpegData = signatureImage.jpegData(compressionQuality: 0.8) {
                     let path = "delivery-proofs/\(tripId.uuidString)/signature-\(UUID().uuidString).jpg"
                     try await supabase.storage
-                        .from("delivery-proofs")
+                        .from("sierra-uploads")
                         .upload(path, data: jpegData, options: .init(contentType: "image/jpeg"))
                     let url = try supabase.storage
-                        .from("delivery-proofs")
+                        .from("sierra-uploads")
                         .getPublicURL(path: path)
                     signatureUrl = url.absoluteString
                 }
