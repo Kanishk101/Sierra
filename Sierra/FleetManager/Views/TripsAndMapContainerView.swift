@@ -1,16 +1,21 @@
 import SwiftUI
 
+/// Trips tab container: Live Map (segment 0) | Trips (segment 1)
+/// Exposes `mapSegment` via a binding so AdminDashboardView can wire
+/// the search tab to vehicle search or trip search based on which
+/// segment is currently active.
 struct TripsAndMapContainerView: View {
     @Environment(AppDataStore.self) private var store
 
     let mapViewModel: FleetLiveMapViewModel
-    @State private var segment: Int = 0
+    /// Bound to AdminDashboardView so the search tab knows the active mode.
+    @Binding var mapSegment: Int
     @State private var showNotifications = false
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                Picker("", selection: $segment) {
+                Picker("", selection: $mapSegment) {
                     Text("Live Map").tag(0)
                     Text("Trips").tag(1)
                 }
@@ -19,24 +24,22 @@ struct TripsAndMapContainerView: View {
                 .padding(.vertical, 8)
                 .background(Color(.systemGroupedBackground))
 
-                if segment == 0 {
+                if mapSegment == 0 {
                     FleetLiveMapView(viewModel: mapViewModel)
                 } else {
                     TripsListView()
                 }
             }
-            .navigationTitle(segment == 0 ? "Fleet Map" : "Trips")
+            .navigationTitle(mapSegment == 0 ? "Fleet Map" : "Trips")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                if segment == 0 {
+                if mapSegment == 0 {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button { showNotifications = true } label: {
                             Image(systemName: "bell.fill")
                                 .overlay(alignment: .topTrailing) {
                                     if store.unreadNotificationCount > 0 {
-                                        Circle()
-                                            .fill(.red)
-                                            .frame(width: 8, height: 8)
-                                            .offset(x: 4, y: -4)
+                                        Circle().fill(.red).frame(width: 8, height: 8).offset(x: 4, y: -4)
                                     }
                                 }
                         }
@@ -44,14 +47,12 @@ struct TripsAndMapContainerView: View {
                 }
             }
         }
-        .animation(.none, value: segment)
-        .sheet(isPresented: $showNotifications) {
-            NotificationCentreView()
-        }
+        .animation(.none, value: mapSegment)
+        .sheet(isPresented: $showNotifications) { NotificationCentreView() }
     }
 }
 
 #Preview {
-    TripsAndMapContainerView(mapViewModel: FleetLiveMapViewModel())
+    TripsAndMapContainerView(mapViewModel: FleetLiveMapViewModel(), mapSegment: .constant(0))
         .environment(AppDataStore.shared)
 }
