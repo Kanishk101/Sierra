@@ -9,19 +9,39 @@ struct AnimatedCounterView: View {
     let font: Font
 
     @State private var displayedValue: Int = 0
+    @State private var animationTask: Task<Void, Never>?
 
     var body: some View {
         Text("\(displayedValue)")
             .font(font)
             .foregroundStyle(color)
-            .contentTransition(.numericText())
             .onAppear { animateTo(target) }
             .onChange(of: target) { _, newValue in animateTo(newValue) }
+            .onDisappear {
+                animationTask?.cancel()
+                animationTask = nil
+            }
     }
 
     private func animateTo(_ value: Int) {
         guard value != displayedValue else { return }
-        withAnimation(.easeOut(duration: 0.8)) { displayedValue = value }
+        animationTask?.cancel()
+        let startValue = displayedValue
+        let delta = abs(value - startValue)
+
+        // Fast count-up/down that settles within ~0.45s...1.8s based on distance.
+        let duration = min(1.8, max(0.45, Double(delta) * 0.012))
+        let frames = max(12, Int(duration * 60))
+
+        animationTask = Task { @MainActor in
+            for frame in 1...frames {
+                if Task.isCancelled { return }
+                let progress = Double(frame) / Double(frames)
+                displayedValue = startValue + Int((Double(value - startValue) * progress).rounded())
+                try? await Task.sleep(for: .milliseconds(16))
+            }
+            displayedValue = value
+        }
     }
 }
 
@@ -48,9 +68,12 @@ struct DashboardHomeView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
-                    kpiGrid
+                    headerActionBar
                         .padding(.horizontal, 20)
                         .padding(.top, 12)
+
+                    kpiGrid
+                        .padding(.horizontal, 20)
 
                     if vm.isLoading {
                         loadingSkeleton.padding(.horizontal, 20)
@@ -68,37 +91,6 @@ struct DashboardHomeView: View {
             .navigationTitle("Dashboard")
             .toolbarTitleDisplayMode(.inlineLarge)
             .toolbarBackground(.hidden, for: .navigationBar)
-            .toolbar {
-                // Profile avatar — leading
-                ToolbarItem(placement: .topBarLeading) {
-                    Button { showProfile = true } label: {
-                        ZStack {
-                            Circle()
-                                .fill(Color(.systemGray5))
-                                .frame(width: 34, height: 34)
-                            Text(adminInitials)
-                                .font(.system(size: 13, weight: .bold, design: .rounded))
-                                .foregroundStyle(.primary)
-                        }
-                    }
-                }
-                // Notification bell — trailing
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { showNotifications = true } label: {
-                        ZStack(alignment: .topTrailing) {
-                            Image(systemName: "bell.fill").font(.body)
-                            if store.unreadNotificationCount > 0 {
-                                Text("\(min(store.unreadNotificationCount, 9))")
-                                    .font(.system(size: 9, weight: .bold))
-                                    .foregroundStyle(.white)
-                                    .frame(width: 16, height: 16)
-                                    .background(.red, in: Circle())
-                                    .offset(x: 8, y: -8)
-                            }
-                        }
-                    }
-                }
-            }
             .sheet(isPresented: $showProfile) {
                 AdminProfileView()
                     .presentationDetents([.medium])
@@ -122,6 +114,37 @@ struct DashboardHomeView: View {
             .onAppear {
                 if viewModel == nil { viewModel = DashboardViewModel(store: store) }
             }
+        }
+    }
+
+    private var headerActionBar: some View {
+        HStack {
+            Button { showProfile = true } label: {
+                Text(adminInitials)
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .frame(width: 28, height: 28)
+            }
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.circle)
+
+            Spacer()
+
+            Button { showNotifications = true } label: {
+                ZStack(alignment: .topTrailing) {
+                    Image(systemName: "bell.fill")
+                        .font(.body.weight(.semibold))
+                    if store.unreadNotificationCount > 0 {
+                        Text("\(min(store.unreadNotificationCount, 9))")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 16, height: 16)
+                            .background(.red, in: Circle())
+                            .offset(x: 8, y: -8)
+                    }
+                }
+            }
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.circle)
         }
     }
 

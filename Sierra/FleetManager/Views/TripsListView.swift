@@ -20,11 +20,17 @@ struct TripsListView: View {
     }
 
     var body: some View {
-        Group {
-            if filtered.isEmpty {
-                SierraEmptyState(icon: "arrow.triangle.swap", title: "No trips found", message: selectedStatus == nil ? "Create a trip to get started." : "No trips match this filter.")
-            } else {
-                tripList
+        VStack(spacing: 0) {
+            topActionBar
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+
+            Group {
+                if filtered.isEmpty {
+                    SierraEmptyState(icon: "arrow.triangle.swap", title: "No trips found", message: selectedStatus == nil ? "Create a trip to get started." : "No trips match this filter.")
+                } else {
+                    tripList
+                }
             }
         }
         .background(Color(.systemGroupedBackground).ignoresSafeArea())
@@ -33,27 +39,34 @@ struct TripsListView: View {
         .toolbarBackground(.hidden, for: .navigationBar)
         .navigationDestination(for: UUID.self) { TripDetailView(tripId: $0) }
         .navigationDestination(item: $navigationTarget) { TripDetailView(tripId: $0) }
-        .toolbar {
-            // Add on LEFT, Filter on RIGHT
-            ToolbarItem(placement: .topBarLeading) {
-                Button { showCreateSheet = true } label: {
-                    Image(systemName: "plus").font(.system(size: 17, weight: .semibold)).foregroundStyle(.orange)
-                }
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { showFilterSheet = true } label: {
-                    Label(
-                        selectedStatus == nil ? "Filter" : selectedStatus!.rawValue,
-                        systemImage: selectedStatus == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill"
-                    )
-                    .foregroundStyle(selectedStatus == nil ? Color.secondary : Color.orange)
-                }
-            }
-        }
         .sheet(isPresented: $showFilterSheet) { FilterSheetView(title: "Filter Trips", options: tripFilterOptions, selectedId: filterBinding) }
         .sheet(isPresented: $showCreateSheet) { CreateTripView() }
         .task { if store.trips.isEmpty { await store.loadAll() } }
         .refreshable { await store.loadAll() }
+    }
+
+    private var topActionBar: some View {
+        HStack(spacing: 10) {
+            Button {
+                showCreateSheet = true
+            } label: {
+                Label("Create", systemImage: "plus")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+
+            Button {
+                showFilterSheet = true
+            } label: {
+                Label(
+                    selectedStatus == nil ? "Filter" : selectedStatus!.rawValue,
+                    systemImage: selectedStatus == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill"
+                )
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .tint(selectedStatus == nil ? .secondary : .orange)
+        }
     }
 
     private var tripList: some View {

@@ -24,10 +24,26 @@ struct StaffTabView: View {
     }
 
     private var visibleStaff: [StaffMember] { staffFor(segment) }
+    private var statusFilterBinding: Binding<String?> {
+        Binding(
+            get: { selectedStatus?.rawValue },
+            set: { newValue in selectedStatus = newValue.flatMap { StaffStatus(rawValue: $0) } }
+        )
+    }
+    private var statusFilterOptions: [FilterOption] {
+        [
+            FilterOption(id: StaffStatus.active.rawValue, label: "Active", icon: "checkmark.circle.fill", color: .green),
+            FilterOption(id: StaffStatus.suspended.rawValue, label: "Suspended", icon: "person.slash.fill", color: .red)
+        ]
+    }
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                topActionBar
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+
                 Picker("Segment", selection: $segment) {
                     ForEach(StaffSegment.allCases, id: \.self) { s in
                         if s == .applications {
@@ -48,31 +64,40 @@ struct StaffTabView: View {
             .toolbarTitleDisplayMode(.inlineLarge)
             .toolbarBackground(.hidden, for: .navigationBar)
             .animation(.easeInOut(duration: 0.2), value: segment)
-            .toolbar {
-                // Add on LEFT, Filter on RIGHT
-                ToolbarItem(placement: .topBarLeading) {
-                    Button { showCreateStaff = true } label: {
-                        Image(systemName: "plus").font(.body.weight(.semibold)).foregroundStyle(.orange)
-                    }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Button("All") { selectedStatus = nil }
-                        Button("Active") { selectedStatus = .active }
-                        Button("Suspended") { selectedStatus = .suspended }
-                    } label: {
-                        Image(systemName: selectedStatus == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
-                            .foregroundStyle(selectedStatus == nil ? Color.secondary : Color.orange)
-                    }
-                }
-            }
             .sheet(isPresented: $showCreateStaff) { NavigationStack { CreateStaffView() } }
+            .sheet(isPresented: $showFilterSheet) {
+                FilterSheetView(title: "Filter Staff", options: statusFilterOptions, selectedId: statusFilterBinding)
+            }
             .sheet(item: $selectedStaffMember) { member in
                 StaffDetailSheet(member: member)
                     .environment(AppDataStore.shared)
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
             }
+        }
+    }
+
+    private var topActionBar: some View {
+        HStack(spacing: 10) {
+            Button {
+                showCreateStaff = true
+            } label: {
+                Label("Create", systemImage: "plus")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+
+            Button {
+                showFilterSheet = true
+            } label: {
+                Label(
+                    selectedStatus == nil ? "Filter" : selectedStatus!.rawValue,
+                    systemImage: selectedStatus == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill"
+                )
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .tint(selectedStatus == nil ? .secondary : .orange)
         }
     }
 

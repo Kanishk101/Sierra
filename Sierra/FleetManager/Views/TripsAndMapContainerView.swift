@@ -5,12 +5,9 @@ import SwiftUI
 /// the search tab to vehicle search or trip search based on which
 /// segment is currently active.
 struct TripsAndMapContainerView: View {
-    @Environment(AppDataStore.self) private var store
-
     let mapViewModel: FleetLiveMapViewModel
     /// Bound to AdminDashboardView so the search tab knows the active mode.
     @Binding var mapSegment: Int
-    @State private var showNotifications = false
 
     var body: some View {
         NavigationStack {
@@ -32,23 +29,8 @@ struct TripsAndMapContainerView: View {
             }
             .navigationTitle(mapSegment == 0 ? "Fleet Map" : "Trips")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                if mapSegment == 0 {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button { showNotifications = true } label: {
-                            Image(systemName: "bell.fill")
-                                .overlay(alignment: .topTrailing) {
-                                    if store.unreadNotificationCount > 0 {
-                                        Circle().fill(.red).frame(width: 8, height: 8).offset(x: 4, y: -4)
-                                    }
-                                }
-                        }
-                    }
-                }
-            }
         }
         .animation(.none, value: mapSegment)
-        .sheet(isPresented: $showNotifications) { NotificationCentreView() }
     }
 }
 

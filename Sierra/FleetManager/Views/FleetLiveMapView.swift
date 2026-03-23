@@ -9,16 +9,13 @@ struct FleetLiveMapView: View {
 
     @State private var cameraPosition: MapCameraPosition = .automatic
     @State private var hasSetInitialRegion = false
-    @State private var showVehicleSearch = false
-    @State private var vehicleSearchText = ""
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
             mapContent
 
-            // Floating controls — search + filter only (no geofence create here)
+            // Floating controls — filter + fit (search is driven from tab-bar search mode)
             VStack(spacing: 12) {
-                floatingButton(icon: "magnifyingglass.circle.fill") { showVehicleSearch = true }
                 floatingButton(icon: "line.3.horizontal.decrease.circle.fill") { viewModel.showFilterPicker = true }
                 floatingButton(icon: "arrow.up.left.and.arrow.down.right.circle.fill") { fitAllVehicles() }
             }
@@ -39,7 +36,6 @@ struct FleetLiveMapView: View {
             }
         }
         .sheet(isPresented: $viewModel.showFilterPicker) { filterSheet }
-        .sheet(isPresented: $showVehicleSearch) { vehicleSearchSheet }
         .onChange(of: viewModel.selectedVehicleId) { _, newId in
             guard let newId,
                   let vehicle = store.vehicles.first(where: { $0.id == newId }) else { return }
@@ -191,71 +187,7 @@ struct FleetLiveMapView: View {
                 }
             }
             .navigationTitle("Filter Vehicles").navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { viewModel.showFilterPicker = false } }
-            }
         }
         .presentationDetents([.medium])
-    }
-
-    // MARK: - Vehicle Search Sheet
-
-    private var vehicleSearchSheet: some View {
-        NavigationStack {
-            let matches = store.vehicles.filter {
-                guard !vehicleSearchText.isEmpty else { return true }
-                return $0.name.localizedCaseInsensitiveContains(vehicleSearchText)
-                    || $0.licensePlate.localizedCaseInsensitiveContains(vehicleSearchText)
-                    || $0.model.localizedCaseInsensitiveContains(vehicleSearchText)
-            }
-            List {
-                if matches.isEmpty {
-                    HStack {
-                        Spacer()
-                        VStack(spacing: 6) {
-                            Image(systemName: "car.fill").font(.title2).foregroundStyle(.tertiary)
-                            Text(vehicleSearchText.isEmpty ? "No vehicles in fleet" : "No matches for \"\(vehicleSearchText)\"")
-                                .font(.subheadline).foregroundStyle(.secondary)
-                        }.padding(.vertical, 30)
-                        Spacer()
-                    }
-                    .listRowSeparator(.hidden)
-                } else {
-                    ForEach(matches) { vehicle in
-                        Button {
-                            viewModel.selectedVehicleId = vehicle.id
-                            showVehicleSearch = false
-                            // Camera will snap in onChange(of: selectedVehicleId)
-                            viewModel.showVehicleDetail = true
-                        } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: "car.fill")
-                                    .font(.system(size: 16, weight: .semibold))
-                                    .foregroundStyle(annotationColor(for: vehicle.status))
-                                    .frame(width: 36, height: 36)
-                                    .background(annotationColor(for: vehicle.status).opacity(0.12), in: Circle())
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(vehicle.name).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
-                                    Text(vehicle.licensePlate).font(.caption).foregroundStyle(.secondary)
-                                    if vehicle.currentLatitude == nil {
-                                        Text("No live location").font(.caption2).foregroundStyle(.orange)
-                                    }
-                                }
-                                Spacer()
-                                SierraBadge(vehicle.status, size: .compact)
-                            }
-                        }
-                    }
-                }
-            }
-            .listStyle(.plain)
-            .navigationTitle("Find Vehicle").navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $vehicleSearchText, prompt: "Name, plate or model…")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Done") { showVehicleSearch = false } }
-            }
-        }
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
     }
 }

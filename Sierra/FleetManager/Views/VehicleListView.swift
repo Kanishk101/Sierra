@@ -26,11 +26,17 @@ struct VehicleListView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
-                if filteredVehicles.isEmpty {
-                    SierraEmptyState(icon: "car.fill", title: "No vehicles found", message: selectedFilter == nil ? "Add your first vehicle to get started." : "No vehicles match this filter.")
-                } else {
-                    vehicleList
+            VStack(spacing: 0) {
+                topActionBar
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+
+                Group {
+                    if filteredVehicles.isEmpty {
+                        SierraEmptyState(icon: "car.fill", title: "No vehicles found", message: selectedFilter == nil ? "Add your first vehicle to get started." : "No vehicles match this filter.")
+                    } else {
+                        vehicleList
+                    }
                 }
             }
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
@@ -41,23 +47,6 @@ struct VehicleListView: View {
             .navigationDestination(item: $navigationTarget) { VehicleDetailView(vehicleId: $0) }
             .task { if store.vehicles.isEmpty { await store.loadAll() } }
             .refreshable { await store.loadAll() }
-            .toolbar {
-                // Add on LEFT, Filter on RIGHT
-                ToolbarItem(placement: .topBarLeading) {
-                    Button { showAddSheet = true } label: {
-                        Image(systemName: "plus").font(.system(size: 17, weight: .semibold)).foregroundStyle(.orange)
-                    }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { showFilterSheet = true } label: {
-                        Label(
-                            selectedFilter == nil ? "Filter" : selectedFilter!.rawValue,
-                            systemImage: selectedFilter == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill"
-                        )
-                        .foregroundStyle(selectedFilter == nil ? Color.secondary : Color.orange)
-                    }
-                }
-            }
             .sheet(isPresented: $showFilterSheet) {
                 FilterSheetView(title: "Filter Vehicles", options: vehicleFilterOptions, selectedId: filterBinding)
             }
@@ -69,6 +58,30 @@ struct VehicleListView: View {
                 }
                 Button("Cancel", role: .cancel) { deleteTarget = nil }
             } message: { Text("This vehicle will be permanently removed.") }
+        }
+    }
+
+    private var topActionBar: some View {
+        HStack(spacing: 10) {
+            Button {
+                showAddSheet = true
+            } label: {
+                Label("Create", systemImage: "plus")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+
+            Button {
+                showFilterSheet = true
+            } label: {
+                Label(
+                    selectedFilter == nil ? "Filter" : selectedFilter!.rawValue,
+                    systemImage: selectedFilter == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill"
+                )
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .tint(selectedFilter == nil ? .secondary : .orange)
         }
     }
 

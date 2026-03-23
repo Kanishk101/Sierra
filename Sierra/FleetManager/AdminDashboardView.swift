@@ -20,6 +20,16 @@ struct AdminDashboardView: View {
     @State private var showCreateStaff       = false
     @State private var showCreateMaintenance = false
 
+    private var mapSearchMatches: [Vehicle] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return store.vehicles }
+        return store.vehicles.filter { vehicle in
+            vehicle.name.localizedCaseInsensitiveContains(query)
+            || vehicle.licensePlate.localizedCaseInsensitiveContains(query)
+            || vehicle.model.localizedCaseInsensitiveContains(query)
+        }
+    }
+
     var body: some View {
         TabView(selection: $selectedTab) {
             Tab("Dashboard", systemImage: "square.grid.2x2.fill", value: 0) {
@@ -117,9 +127,48 @@ struct AdminDashboardView: View {
 
         case 3:
             if tripsMapSegment == 0 {
-                // Live Map segment — vehicle search that focuses the map
-                NavigationStack { VehicleListView() }
-                    .searchable(text: $searchText, prompt: "Find vehicle on map\u{2026}")
+                // Live Map segment — search and jump to selected vehicle on the map.
+                NavigationStack {
+                    List {
+                        if mapSearchMatches.isEmpty {
+                            ContentUnavailableView(
+                                "No matching vehicles",
+                                systemImage: "car.fill",
+                                description: Text("Try a different name, plate, or model.")
+                            )
+                        } else {
+                            ForEach(mapSearchMatches) { vehicle in
+                                Button {
+                                    mapViewModel.selectedVehicleId = vehicle.id
+                                    selectedTab = 3
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: "car.fill")
+                                            .font(.system(size: 16, weight: .semibold))
+                                            .frame(width: 32, height: 32)
+                                            .background(Color.blue.opacity(0.12), in: Circle())
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(vehicle.name)
+                                                .font(.subheadline.weight(.semibold))
+                                                .foregroundStyle(.primary)
+                                            Text("\(vehicle.licensePlate) · \(vehicle.model)")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        Spacer()
+                                        Image(systemName: "arrow.up.right")
+                                            .font(.caption.weight(.semibold))
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    .listStyle(.insetGrouped)
+                    .navigationTitle("Find on Live Map")
+                }
+                .searchable(text: $searchText, prompt: "Find vehicle on map…")
             } else {
                 // Trips segment — trip list search
                 NavigationStack { TripsListView() }
