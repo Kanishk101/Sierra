@@ -28,19 +28,14 @@ enum TripServiceError: LocalizedError {
 }
 
 // MARK: - TripInsertPayload
-//
-// FIX (UUID case): Swift UUID.uuidString is UPPERCASE; PostgreSQL auth.uid()::text
-// is LOWERCASE. All TEXT FK UUID columns must be lowercased at insert time so that
-// the RLS USING clause `LOWER(driver_id) = LOWER(auth.uid()::text)` succeeds.
-//
-// FIX (acceptanceDeadline): trips created as PendingAcceptance must carry the 24h
-// response deadline from the very first INSERT row. Added field here.
+// All TEXT FK UUID columns are lowercased to match auth.uid()::text (always lowercase).
+// acceptanceDeadline included so PendingAcceptance trips carry the 24h window from INSERT.
 
 struct TripInsertPayload: Encodable {
     let taskId: String
-    let driverId: String?        // always lowercased
-    let vehicleId: String?       // always lowercased
-    let createdByAdminId: String // always lowercased
+    let driverId: String?
+    let vehicleId: String?
+    let createdByAdminId: String
     let origin: String
     let destination: String
     let deliveryInstructions: String
@@ -59,7 +54,7 @@ struct TripInsertPayload: Encodable {
     let destinationLongitude: Double?
     let routePolyline: String?
     let routeStops: [RouteStop]
-    let acceptanceDeadline: String?  // NEW — required for PendingAcceptance trips
+    let acceptanceDeadline: String?
 
     enum CodingKeys: String, CodingKey {
         case taskId               = "task_id"
@@ -86,7 +81,6 @@ struct TripInsertPayload: Encodable {
 
     init(from t: Trip) {
         taskId               = t.taskId
-        // LOWERCASE — must match auth.uid()::text which PostgreSQL always returns lowercase
         driverId             = t.driverId?.lowercased()
         vehicleId            = t.vehicleId?.lowercased()
         createdByAdminId     = t.createdByAdminId.lowercased()
@@ -182,7 +176,6 @@ struct TripUpdatePayload: Encodable {
 
     init(from t: Trip) {
         taskId               = t.taskId
-        // LOWERCASE — same reason as TripInsertPayload
         driverId             = t.driverId?.lowercased()
         vehicleId            = t.vehicleId?.lowercased()
         createdByAdminId     = t.createdByAdminId.lowercased()
@@ -280,17 +273,9 @@ struct TripService {
     static func addTrip(_ trip: Trip) async throws {
         #if DEBUG
         SierraDebugLogger.banner("TripService.addTrip")
-        print("🗺️  [TripService.addTrip] Starting INSERT for trip:")
-        print("🗺️    ID          : \(trip.id.uuidString)")
-        print("🗺️    TaskID      : \(trip.taskId)")
-        print("🗺️    DriverID    : \(trip.driverId ?? "nil") → stored as: \(trip.driverId?.lowercased() ?? "nil")")
-        print("🗺️    VehicleID   : \(trip.vehicleId ?? "nil")")
-        print("🗺️    Status      : \(trip.status.rawValue)")
-        print("🗺️    Deadline    : \(trip.acceptanceDeadline?.description ?? "nil")")
+        print("🗺️  [TripService.addTrip] INSERT trip=\(trip.taskId) status=\(trip.status.rawValue) deadline=\(trip.acceptanceDeadline?.description ?? "nil")")
         await SierraDebugLogger.logSessionState(context: "TripService.addTrip")
         await SierraDebugLogger.logRLSRole(context: "TripService.addTrip")
-        let payload = TripInsertPayload(from: trip)
-        SierraDebugLogger.logPayload(label: "TripInsertPayload", payload: payload)
         let t = Date()
         #endif
 
@@ -300,19 +285,11 @@ struct TripService {
                 .insert(TripInsertPayload(from: trip))
                 .execute()
             #if DEBUG
-            let ms = Int(Date().timeIntervalSince(t) * 1000)
-            print("🗺️  [TripService.addTrip] ✅ INSERT succeeded in \(ms)ms")
+            print("🗺️  [TripService.addTrip] ✅ succeeded in \(Int(Date().timeIntervalSince(t) * 1000))ms")
             #endif
         } catch {
             #if DEBUG
-            let ms = Int(Date().timeIntervalSince(t) * 1000)
-            print("🗺️  [TripService.addTrip] ❌ INSERT FAILED in \(ms)ms")
-            SierraDebugLogger.logPostgRESTError(
-                context: "TripService.addTrip",
-                error: error,
-                table: "trips",
-                operation: "INSERT"
-            )
+            SierraDebugLogger.logPostgRESTError(context: "TripService.addTrip", error: error, table: "trips", operation: "INSERT")
             #endif
             throw error
         }
@@ -352,12 +329,9 @@ struct TripService {
             .execute()
     }
 
-    /// Partial update: only sets proof_of_delivery_id.
-    /// Avoids trigger rejection when drivers send the full trip object.
+    /// Partial update: sets only proof_of_delivery_id (avoids driver write-restriction trigger).
     static func setProofOfDeliveryId(tripId: UUID, podId: UUID) async throws {
-        struct Payload: Encodable {
-            let proof_of_delivery_id: String
-        }
+        struct Payload: Encodable { let proof_of_delivery_id: String }
         try await supabase
             .from("trips")
             .update(Payload(proof_of_delivery_id: podId.uuidString))
@@ -365,8 +339,7 @@ struct TripService {
             .execute()
     }
 
-    /// Partial update: only sets pre_inspection_id or post_inspection_id.
-    /// Avoids trigger rejection when drivers send the full trip object.
+    /// Partial update: sets only pre_ or post_inspection_id.
     static func setInspectionId(tripId: UUID, inspectionId: UUID, type: InspectionType) async throws {
         if type == .preTripInspection {
             struct Payload: Encodable { let pre_inspection_id: String }
@@ -407,7 +380,7 @@ struct TripService {
         return "TRP-\(datePart)-\(suffix)"
     }
 
-    // MARK: - Dispatch Lifecycle
+    // MARK: - Dispatch Lifecycle (FM: manual dispatch for legacy Scheduled trips)
 
     static func dispatchTrip(tripId: UUID) async throws {
         struct Payload: Encodable {
@@ -415,7 +388,7 @@ struct TripService {
             let acceptance_deadline: String
             let updated_at: String
         }
-        let deadline = Date().addingTimeInterval(24 * 3600)
+        let deadline = Date().addingTimeInterval(TripConstants.acceptanceDeadlineSeconds)
         try await supabase
             .from("trips")
             .update(Payload(
@@ -427,7 +400,8 @@ struct TripService {
             .execute()
     }
 
-    // MARK: - Acceptance Lifecycle
+    // MARK: - Accept Lifecycle
+    // Driver accepts → DB writes status = 'Scheduled' (PendingAcceptance → Scheduled)
 
     static func acceptTrip(tripId: UUID, driverId: UUID) async throws {
         struct Payload: Encodable {
@@ -437,28 +411,8 @@ struct TripService {
         let rows: [Trip] = try await supabase
             .from("trips")
             .update(Payload(
-                // Driver accepted → Scheduled (awaiting time window to go Active)
                 status: TripStatus.scheduled.rawValue,
                 accepted_at: iso.string(from: Date())
-            ))
-            .eq("id",        value: tripId.uuidString)
-            .eq("driver_id", value: driverId.uuidString.lowercased())
-            .select()
-            .execute()
-            .value
-        guard !rows.isEmpty else { throw TripServiceError.driverMismatch }
-    }
-
-    static func rejectTrip(tripId: UUID, driverId: UUID, reason: String) async throws {
-        struct Payload: Encodable {
-            let status: String
-            let rejected_reason: String
-        }
-        let rows: [Trip] = try await supabase
-            .from("trips")
-            .update(Payload(
-                status: TripStatus.rejected.rawValue,
-                rejected_reason: reason
             ))
             .eq("id",        value: tripId.uuidString)
             .eq("driver_id", value: driverId.uuidString.lowercased())
@@ -496,21 +450,16 @@ struct TripService {
         }
 
         let body = OverlapRequest(
-            driver_id:        driverId.uuidString.lowercased(),
-            vehicle_id:       vehicleId.uuidString.lowercased(),
-            start:            iso.string(from: start),
-            end:              iso.string(from: end),
-            exclude_trip_id:  excludingTripId?.uuidString.lowercased()
+            driver_id:       driverId.uuidString.lowercased(),
+            vehicle_id:      vehicleId.uuidString.lowercased(),
+            start:           iso.string(from: start),
+            end:             iso.string(from: end),
+            exclude_trip_id: excludingTripId?.uuidString.lowercased()
         )
 
         #if DEBUG
         SierraDebugLogger.banner("TripService.checkOverlap")
-        print("🗺️  [TripService.checkOverlap] Calling check-resource-overlap edge function")
-        print("🗺️    driver_id      : \(body.driver_id)")
-        print("🗺️    vehicle_id     : \(body.vehicle_id)")
-        print("🗺️    start          : \(body.start)")
-        print("🗺️    end            : \(body.end)")
-        print("🗺️    exclude_trip_id: \(body.exclude_trip_id ?? "nil")")
+        print("🗺️  [TripService.checkOverlap] driver=\(body.driver_id) vehicle=\(body.vehicle_id)")
         await SierraDebugLogger.logSessionState(context: "TripService.checkOverlap")
         let t = Date()
         #endif
@@ -523,21 +472,16 @@ struct TripService {
                 options: options
             )
             #if DEBUG
-            let ms = Int(Date().timeIntervalSince(t) * 1000)
-            print("🗺️  [TripService.checkOverlap] ✅ succeeded in \(ms)ms")
-            print("🗺️    driverConflict : \(result.driverConflict)")
-            print("🗺️    vehicleConflict: \(result.vehicleConflict)")
+            print("🗺️  [TripService.checkOverlap] ✅ \(Int(Date().timeIntervalSince(t) * 1000))ms driver=\(result.driverConflict) vehicle=\(result.vehicleConflict)")
             #endif
             return (result.driverConflict, result.vehicleConflict)
         } catch {
             #if DEBUG
-            let ms = Int(Date().timeIntervalSince(t) * 1000)
-            print("🗺️  [TripService.checkOverlap] ❌ FAILED in \(ms)ms")
             SierraDebugLogger.logEdgeFunctionError(
                 context: "TripService.checkOverlap",
                 functionName: "check-resource-overlap",
                 error: error,
-                elapsedMs: ms
+                elapsedMs: Int(Date().timeIntervalSince(t) * 1000)
             )
             #endif
             throw error
@@ -549,18 +493,12 @@ struct TripService {
     static func markResourcesBusy(driverId: UUID, vehicleId: UUID) async throws {
         struct AvailabilityPayload: Encodable { let availability: String }
         struct VehicleStatusPayload: Encodable { let status: String }
-
-        try await supabase
-            .from("staff_members")
+        try await supabase.from("staff_members")
             .update(AvailabilityPayload(availability: "Busy"))
-            .eq("id", value: driverId.uuidString.lowercased())
-            .execute()
-
-        try await supabase
-            .from("vehicles")
+            .eq("id", value: driverId.uuidString.lowercased()).execute()
+        try await supabase.from("vehicles")
             .update(VehicleStatusPayload(status: "Busy"))
-            .eq("id", value: vehicleId.uuidString.lowercased())
-            .execute()
+            .eq("id", value: vehicleId.uuidString.lowercased()).execute()
     }
 
     static func releaseResources(driverId: UUID, vehicleId: UUID) async throws {
@@ -573,18 +511,12 @@ struct TripService {
                 case assignedDriverId = "assigned_driver_id"
             }
         }
-
-        try await supabase
-            .from("staff_members")
+        try await supabase.from("staff_members")
             .update(AvailabilityPayload(availability: "Available"))
-            .eq("id", value: driverId.uuidString.lowercased())
-            .execute()
-
-        try await supabase
-            .from("vehicles")
+            .eq("id", value: driverId.uuidString.lowercased()).execute()
+        try await supabase.from("vehicles")
             .update(VehicleReleasePayload(status: "Idle", assignedDriverId: nil))
-            .eq("id", value: vehicleId.uuidString.lowercased())
-            .execute()
+            .eq("id", value: vehicleId.uuidString.lowercased()).execute()
     }
 
     // MARK: - Trip Lifecycle
@@ -595,15 +527,13 @@ struct TripService {
             let actual_start_date: String
             let start_mileage: Double
         }
-        try await supabase
-            .from("trips")
+        try await supabase.from("trips")
             .update(Payload(
                 status: TripStatus.active.rawValue,
                 actual_start_date: iso.string(from: Date()),
                 start_mileage: startMileage
             ))
-            .eq("id", value: tripId.uuidString)
-            .execute()
+            .eq("id", value: tripId.uuidString).execute()
     }
 
     static func completeTrip(tripId: UUID, endMileage: Double) async throws {
@@ -612,24 +542,20 @@ struct TripService {
             let actual_end_date: String
             let end_mileage: Double
         }
-        try await supabase
-            .from("trips")
+        try await supabase.from("trips")
             .update(Payload(
                 status: TripStatus.completed.rawValue,
                 actual_end_date: iso.string(from: Date()),
                 end_mileage: endMileage
             ))
-            .eq("id", value: tripId.uuidString)
-            .execute()
+            .eq("id", value: tripId.uuidString).execute()
     }
 
     static func cancelTrip(tripId: UUID) async throws {
         struct Payload: Encodable { let status: String }
-        try await supabase
-            .from("trips")
+        try await supabase.from("trips")
             .update(Payload(status: TripStatus.cancelled.rawValue))
-            .eq("id", value: tripId.uuidString)
-            .execute()
+            .eq("id", value: tripId.uuidString).execute()
     }
 
     // MARK: - Coordinates & Rating
@@ -647,17 +573,13 @@ struct TripService {
             let destination_longitude: Double
             let route_polyline: String
         }
-        try await supabase
-            .from("trips")
+        try await supabase.from("trips")
             .update(Payload(
-                origin_latitude: originLat,
-                origin_longitude: originLng,
-                destination_latitude: destLat,
-                destination_longitude: destLng,
+                origin_latitude: originLat, origin_longitude: originLng,
+                destination_latitude: destLat, destination_longitude: destLng,
                 route_polyline: routePolyline
             ))
-            .eq("id", value: tripId.uuidString)
-            .execute()
+            .eq("id", value: tripId.uuidString).execute()
     }
 
     static func rateDriver(tripId: UUID, rating: Int, note: String?, ratedById: UUID) async throws {
@@ -667,28 +589,23 @@ struct TripService {
             let rated_by_id: String
             let rated_at: String
         }
-        try await supabase
-            .from("trips")
+        try await supabase.from("trips")
             .update(Payload(
                 driver_rating: rating,
                 driver_rating_note: note,
                 rated_by_id: ratedById.uuidString,
                 rated_at: iso.string(from: Date())
             ))
-            .eq("id", value: tripId.uuidString)
-            .execute()
+            .eq("id", value: tripId.uuidString).execute()
     }
 
     static func reassignVehicle(tripId: UUID, newVehicleId: UUID) async throws {
         struct Payload: Encodable { let vehicle_id: String }
         struct Row: Decodable { let id: UUID; let vehicle_id: UUID? }
-        let rows: [Row] = try await supabase
-            .from("trips")
+        let rows: [Row] = try await supabase.from("trips")
             .update(Payload(vehicle_id: newVehicleId.uuidString))
             .eq("id", value: tripId.uuidString)
-            .select("id, vehicle_id")
-            .execute()
-            .value
+            .select("id, vehicle_id").execute().value
         guard !rows.isEmpty else { throw TripServiceError.tripNotFound(tripId) }
     }
 }
