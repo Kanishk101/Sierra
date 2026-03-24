@@ -2,35 +2,58 @@ import Foundation
 
 // MARK: - Trip Status
 // Maps to PostgreSQL enum: trip_status
-// New values (PendingAcceptance, Accepted, Rejected) added in
-// migration 20260322000001_full_rls_and_schema_fix.sql
+//
+// CANONICAL FLOW (post migration simplify_statuses_flow_and_security):
+//   PendingAcceptance → (driver accepts) → Scheduled
+//   Scheduled         → (pre-trip done + within 30min window) → Active
+//   Active            → (POD + post-trip) → Completed
+//   PendingAcceptance | Scheduled → (FM cancels) → Cancelled
+//
+// Removed from DB (CHECK constraint blocks writes):
+//   Accepted → maps to Scheduled (driver has accepted = trip is Scheduled)
+//   Rejected → maps to Cancelled
+//
+// Both are kept in the Swift enum ONLY for safe decoding of any residual
+// in-memory/cached data. They will never appear from a fresh DB query.
 
 enum TripStatus: String, Codable, CaseIterable {
-    case scheduled          = "Scheduled"
     case pendingAcceptance  = "PendingAcceptance"
-    case accepted           = "Accepted"
-    case rejected           = "Rejected"
+    case scheduled          = "Scheduled"
     case active             = "Active"
     case completed          = "Completed"
     case cancelled          = "Cancelled"
+    // Legacy decode-only — DB CHECK constraint blocks new writes of these values.
+    // accepted was migrated to Scheduled; rejected was migrated to Cancelled.
+    case accepted           = "Accepted"
+    case rejected           = "Rejected"
 
     var color: String {
         switch self {
-        case .scheduled:         return "blue"
         case .pendingAcceptance: return "orange"
-        case .accepted:          return "teal"
-        case .rejected:          return "red"
+        case .scheduled:         return "blue"
         case .active:            return "green"
         case .completed:         return "gray"
         case .cancelled:         return "red"
+        case .accepted:          return "blue"   // treat same as scheduled
+        case .rejected:          return "red"    // treat same as cancelled
         }
     }
 
-    /// Returns true for statuses where the driver still needs to act.
+    /// True when the driver still needs to act on this trip.
     var isActionable: Bool {
         switch self {
-        case .pendingAcceptance, .accepted, .scheduled, .active: return true
+        case .pendingAcceptance, .scheduled, .active: return true
+        case .accepted: return true   // legacy — treat as scheduled
         default: return false
+        }
+    }
+
+    /// Normalised status — maps legacy values to their canonical equivalents.
+    var normalized: TripStatus {
+        switch self {
+        case .accepted: return .scheduled
+        case .rejected: return .cancelled
+        default: return self
         }
     }
 }
@@ -47,29 +70,28 @@ enum TripPriority: String, Codable, CaseIterable {
 
 // MARK: - Trip
 // Maps to table: trips
-// FK columns (driver_id, vehicle_id, created_by_admin_id) are stored as TEXT in Supabase
-// and decoded as String/String? per schema v2 rules.
+// FK columns (driver_id, vehicle_id, created_by_admin_id) stored as TEXT in Supabase.
 
 struct Trip: Identifiable, Codable {
     // MARK: Primary key
     let id: UUID
 
     // MARK: Core fields
-    var taskId: String                    // task_id (UNIQUE)
-    var driverId: String?                 // driver_id (FK -> staff_members.id, TEXT)
-    var vehicleId: String?                // vehicle_id (FK -> vehicles.id, TEXT)
-    var createdByAdminId: String          // created_by_admin_id (FK -> staff_members.id, TEXT)
+    var taskId: String
+    var driverId: String?
+    var vehicleId: String?
+    var createdByAdminId: String
 
     // MARK: Route
     var origin: String
     var destination: String
-    var originLatitude: Double?           // origin_latitude
-    var originLongitude: Double?          // origin_longitude
-    var destinationLatitude: Double?      // destination_latitude
-    var destinationLongitude: Double?     // destination_longitude
-    var routePolyline: String?            // route_polyline
-    var routeStops: [RouteStop]?          // route_stops (JSONB array, nullable for backward compat)
-    var deliveryInstructions: String      // delivery_instructions (default '')
+    var originLatitude: Double?
+    var originLongitude: Double?
+    var destinationLatitude: Double?
+    var destinationLongitude: Double?
+    var routePolyline: String?
+    var routeStops: [RouteStop]?
+    var deliveryInstructions: String
 
     // MARK: Scheduling
     var scheduledDate: Date
@@ -82,7 +104,7 @@ struct Trip: Identifiable, Codable {
     var endMileage: Double?
 
     // MARK: Metadata
-    var notes: String                     // notes (default '')
+    var notes: String
     var status: TripStatus
     var priority: TripPriority
 
@@ -92,17 +114,15 @@ struct Trip: Identifiable, Codable {
     var postInspectionId: UUID?
 
     // MARK: Acceptance lifecycle
-    // Columns added in migration 20260322000001_full_rls_and_schema_fix.sql
-    // Default = nil so existing memberwise call-sites compile unchanged.
-    var acceptedAt: Date?           = nil  // accepted_at
-    var acceptanceDeadline: Date?   = nil  // acceptance_deadline
-    var rejectedReason: String?     = nil  // rejected_reason
+    var acceptedAt: Date?           = nil
+    var acceptanceDeadline: Date?   = nil
+    var rejectedReason: String?     = nil
 
     // MARK: Rating
-    var driverRating: Int?               // driver_rating (smallint nullable)
-    var driverRatingNote: String?        // driver_rating_note
-    var ratedById: UUID?                 // rated_by_id (FK -> staff_members.id)
-    var ratedAt: Date?                   // rated_at
+    var driverRating: Int?
+    var driverRatingNote: String?
+    var ratedById: UUID?
+    var ratedAt: Date?
 
     // MARK: Timestamps
     var createdAt: Date
@@ -146,10 +166,7 @@ struct Trip: Identifiable, Codable {
     }
 
     // MARK: - Decoder Hardening
-    // Supabase can return route_stops as either:
-    // 1) JSON array (expected), or
-    // 2) stringified JSON array.
-    // We decode both to avoid dropping the entire trips payload.
+
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
 
@@ -287,7 +304,7 @@ struct Trip: Identifiable, Codable {
     }
 
     var isOverdue: Bool {
-        status == .scheduled && scheduledDate < Date()
+        (status == .scheduled || status == .pendingAcceptance) && scheduledDate < Date()
     }
 
     var durationString: String? {
@@ -301,12 +318,9 @@ struct Trip: Identifiable, Codable {
 
     // MARK: - Helpers
 
-    /// Convenience accessors that parse the String FK back to UUID when needed.
     var driverUUID: UUID?  { driverId.flatMap(UUID.init) }
     var vehicleUUID: UUID? { vehicleId.flatMap(UUID.init) }
     var adminUUID: UUID?   { UUID(uuidString: createdByAdminId) }
-
-    // MARK: - Task ID Generation
 
     static func generateTaskId() -> String {
         let formatter = DateFormatter()
@@ -333,29 +347,18 @@ struct Trip: Identifiable, Codable {
                 createdByAdminId: adminId,
                 origin: "Mumbai Warehouse",
                 destination: "Pune Distribution Center",
-                originLatitude: nil,
-                originLongitude: nil,
-                destinationLatitude: nil,
-                destinationLongitude: nil,
-                routePolyline: nil,
-                routeStops: nil,
+                originLatitude: nil, originLongitude: nil,
+                destinationLatitude: nil, destinationLongitude: nil,
+                routePolyline: nil, routeStops: nil,
                 deliveryInstructions: "Handle with care",
                 scheduledDate: cal.date(byAdding: .hour, value: -2, to: now) ?? now,
                 scheduledEndDate: cal.date(byAdding: .hour, value: 4, to: now),
                 actualStartDate: cal.date(byAdding: .hour, value: -1, to: now),
                 actualEndDate: nil,
-                startMileage: 45230.5,
-                endMileage: nil,
-                notes: "Fragile cargo",
-                status: .active,
-                priority: .high,
-                proofOfDeliveryId: nil,
-                preInspectionId: nil,
-                postInspectionId: nil,
-                driverRating: nil,
-                driverRatingNote: nil,
-                ratedById: nil,
-                ratedAt: nil,
+                startMileage: 45230.5, endMileage: nil,
+                notes: "Fragile cargo", status: .active, priority: .high,
+                proofOfDeliveryId: nil, preInspectionId: nil, postInspectionId: nil,
+                driverRating: nil, driverRatingNote: nil, ratedById: nil, ratedAt: nil,
                 createdAt: cal.date(byAdding: .hour, value: -3, to: now) ?? now,
                 updatedAt: cal.date(byAdding: .hour, value: -1, to: now) ?? now
             ),
@@ -367,99 +370,19 @@ struct Trip: Identifiable, Codable {
                 createdByAdminId: adminId,
                 origin: "Delhi Hub",
                 destination: "Jaipur Depot",
-                originLatitude: nil,
-                originLongitude: nil,
-                destinationLatitude: nil,
-                destinationLongitude: nil,
-                routePolyline: nil,
-                routeStops: nil,
+                originLatitude: nil, originLongitude: nil,
+                destinationLatitude: nil, destinationLongitude: nil,
+                routePolyline: nil, routeStops: nil,
                 deliveryInstructions: "",
                 scheduledDate: cal.date(byAdding: .day, value: 1, to: now) ?? now,
                 scheduledEndDate: nil,
-                actualStartDate: nil,
-                actualEndDate: nil,
-                startMileage: nil,
-                endMileage: nil,
-                notes: "Regular supply route",
-                status: .pendingAcceptance,
-                priority: .normal,
-                proofOfDeliveryId: nil,
-                preInspectionId: nil,
-                postInspectionId: nil,
-                driverRating: nil,
-                driverRatingNote: nil,
-                ratedById: nil,
-                ratedAt: nil,
+                actualStartDate: nil, actualEndDate: nil,
+                startMileage: nil, endMileage: nil,
+                notes: "Regular supply route", status: .pendingAcceptance, priority: .normal,
+                proofOfDeliveryId: nil, preInspectionId: nil, postInspectionId: nil,
+                driverRating: nil, driverRatingNote: nil, ratedById: nil, ratedAt: nil,
                 createdAt: cal.date(byAdding: .hour, value: -6, to: now) ?? now,
                 updatedAt: cal.date(byAdding: .hour, value: -6, to: now) ?? now
-            ),
-            Trip(
-                id: UUID(uuidString: "B0000000-0000-0000-0000-000000000003")!,
-                taskId: "TRP-20260309-0017",
-                driverId: "D0000000-0000-0000-0000-000000000001",
-                vehicleId: "A0000000-0000-0000-0000-000000000001",
-                createdByAdminId: adminId,
-                origin: "Chennai Port",
-                destination: "Bangalore Warehouse",
-                originLatitude: nil,
-                originLongitude: nil,
-                destinationLatitude: nil,
-                destinationLongitude: nil,
-                routePolyline: nil,
-                routeStops: nil,
-                deliveryInstructions: "",
-                scheduledDate: cal.date(byAdding: .day, value: -1, to: now) ?? now,
-                scheduledEndDate: cal.date(byAdding: .hour, value: -22, to: now),
-                actualStartDate: cal.date(byAdding: .hour, value: -28, to: now),
-                actualEndDate: cal.date(byAdding: .hour, value: -22, to: now),
-                startMileage: 44800.0,
-                endMileage: 45150.5,
-                notes: "Delivered on time",
-                status: .completed,
-                priority: .normal,
-                proofOfDeliveryId: nil,
-                preInspectionId: nil,
-                postInspectionId: nil,
-                driverRating: nil,
-                driverRatingNote: nil,
-                ratedById: nil,
-                ratedAt: nil,
-                createdAt: cal.date(byAdding: .day, value: -1, to: now) ?? now,
-                updatedAt: cal.date(byAdding: .hour, value: -22, to: now) ?? now
-            ),
-            Trip(
-                id: UUID(uuidString: "B0000000-0000-0000-0000-000000000004")!,
-                taskId: "TRP-20260308-0005",
-                driverId: nil,
-                vehicleId: "A0000000-0000-0000-0000-000000000003",
-                createdByAdminId: adminId,
-                origin: "Hyderabad Yard",
-                destination: "Vizag Terminal",
-                originLatitude: nil,
-                originLongitude: nil,
-                destinationLatitude: nil,
-                destinationLongitude: nil,
-                routePolyline: nil,
-                routeStops: nil,
-                deliveryInstructions: "",
-                scheduledDate: cal.date(byAdding: .day, value: -2, to: now) ?? now,
-                scheduledEndDate: nil,
-                actualStartDate: nil,
-                actualEndDate: nil,
-                startMileage: nil,
-                endMileage: nil,
-                notes: "Vehicle entered maintenance",
-                status: .cancelled,
-                priority: .low,
-                proofOfDeliveryId: nil,
-                preInspectionId: nil,
-                postInspectionId: nil,
-                driverRating: nil,
-                driverRatingNote: nil,
-                ratedById: nil,
-                ratedAt: nil,
-                createdAt: cal.date(byAdding: .day, value: -2, to: now) ?? now,
-                updatedAt: cal.date(byAdding: .day, value: -2, to: now) ?? now
             ),
         ]
     }()
