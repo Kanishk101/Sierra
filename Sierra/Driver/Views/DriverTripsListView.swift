@@ -901,8 +901,8 @@ struct RoutePreviewMap: UIViewRepresentable {
         map.addAnnotations([originPin, destPin])
 
         let request = MKDirections.Request()
-        request.source      = MKMapItem(placemark: MKPlacemark(coordinate: o))
-        request.destination = MKMapItem(placemark: MKPlacemark(coordinate: d))
+        request.source      = mapItem(for: o)
+        request.destination = mapItem(for: d)
         request.transportType = .automobile
         request.requestsAlternateRoutes = false
 
@@ -926,9 +926,34 @@ struct RoutePreviewMap: UIViewRepresentable {
     }
 
     private func geocode(_ name: String) async -> CLLocationCoordinate2D? {
-        let geocoder = CLGeocoder()
-        let placemarks = try? await geocoder.geocodeAddressString(name)
-        return placemarks?.first?.location?.coordinate
+        if #available(iOS 26.0, *) {
+            guard let request = MKGeocodingRequest(addressString: name) else { return nil }
+            return await withCheckedContinuation { continuation in
+                request.getMapItems { items, _ in
+                    guard let first = items?.first else {
+                        continuation.resume(returning: nil)
+                        return
+                    }
+                    if #available(iOS 26.0, *) {
+                        continuation.resume(returning: first.location.coordinate)
+                    } else {
+                        continuation.resume(returning: first.placemark.coordinate)
+                    }
+                }
+            }
+        } else {
+            let geocoder = CLGeocoder()
+            let placemarks = try? await geocoder.geocodeAddressString(name)
+            return placemarks?.first?.location?.coordinate
+        }
+    }
+
+    private func mapItem(for coordinate: CLLocationCoordinate2D) -> MKMapItem {
+        if #available(iOS 26.0, *) {
+            return MKMapItem(location: CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude), address: nil)
+        } else {
+            return MKMapItem(placemark: MKPlacemark(coordinate: coordinate))
+        }
     }
 }
 
@@ -1268,12 +1293,5 @@ struct WaitingVehicleOverlay: View {
         .onAppear {
             withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) { scale = 1.0; contentOpacity = 1.0 }
         }
-    }
-}
-
-#Preview {
-    NavigationStack {
-        DriverTripsListView()
-            .environment(AppDataStore.shared)
     }
 }

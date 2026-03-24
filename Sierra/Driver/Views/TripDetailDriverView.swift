@@ -5,7 +5,7 @@ import MapKit
 ///
 /// Status → action mapping:
 ///   .scheduled         → Awaiting Assignment message
-///   .pendingAcceptance → Accept + Reject buttons
+///   .pendingAcceptance → Accept button (driver can also dismiss sheet)
 ///   .accepted          → Begin Pre-Trip Inspection (if none) or Start Trip
 ///   .active            → Navigate (primary) + Complete Delivery (secondary)
 ///   .completed         → Completion summary
@@ -29,15 +29,9 @@ struct TripDetailDriverView: View {
     @State private var showProofOfDelivery      = false
     @State private var showPostInspection       = false
 
-    // Accept / Reject
+    // Accept
     @State private var isAccepting              = false
-    @State private var isRejecting              = false
     @State private var showAcceptSuccess        = false
-
-    // Reject sheet
-    @State private var showRejectSheet          = false
-    @State private var rejectionReason          = ""
-    @State private var rejectionError: String?  = nil
 
     // End Trip
     @State private var isEndingTrip             = false
@@ -111,9 +105,6 @@ struct TripDetailDriverView: View {
             Button("OK") {}
         } message: {
             Text(errorMessage ?? "Something went wrong")
-        }
-        .sheet(isPresented: $showRejectSheet) {
-            rejectSheet
         }
         .sheet(isPresented: $showPreInspection) {
             if let trip, let vehicle, let userId = user?.id {
@@ -829,7 +820,7 @@ struct TripDetailDriverView: View {
         }
     }
 
-    // MARK: - Accept / Reject Buttons Block
+    // MARK: - Accept Button Block
 
     @ViewBuilder
     private func acceptanceButtons(_ trip: Trip) -> some View {
@@ -853,25 +844,7 @@ struct TripDetailDriverView: View {
                 .background(Color.green, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .shadow(color: Color.green.opacity(0.35), radius: 10, y: 4)
             }
-            .disabled(isAccepting || isRejecting)
-
-            Button {
-                showRejectSheet = true
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "xmark.circle.fill").font(.body.weight(.semibold))
-                    Text("Reject Trip").font(.subheadline.weight(.semibold))
-                }
-                .foregroundStyle(.red)
-                .frame(maxWidth: .infinity)
-                .frame(height: 44)
-                .background(Color.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(Color.red.opacity(0.3), lineWidth: 1)
-                )
-            }
-            .disabled(isAccepting || isRejecting)
+            .disabled(isAccepting)
         }
     }
 
@@ -929,77 +902,6 @@ struct TripDetailDriverView: View {
             .shadow(color: Color.indigo.opacity(0.35), radius: 10, y: 4)
         }
         .disabled(isEndingTrip)
-    }
-
-    // MARK: - Reject Sheet
-
-    private var rejectSheet: some View {
-        NavigationStack {
-            VStack(spacing: 20) {
-                Text("Reason for rejection helps the admin reassign this trip quickly.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
-
-                TextEditor(text: $rejectionReason)
-                    .frame(height: 120)
-                    .padding(10)
-                    .background(Color(.secondarySystemGroupedBackground),
-                                in: RoundedRectangle(cornerRadius: 12))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color(.separator), lineWidth: 1)
-                    )
-                    .padding(.horizontal)
-
-                if rejectionReason.trimmingCharacters(in: .whitespacesAndNewlines).count < 10 {
-                    Text("Minimum 10 characters required")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                if let err = rejectionError {
-                    Text(err)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                        .padding(.horizontal)
-                }
-
-                Button {
-                    Task { await handleReject() }
-                } label: {
-                    Group {
-                        if isRejecting {
-                            ProgressView().tint(.white)
-                        } else {
-                            Text("Confirm Rejection")
-                                .font(.headline)
-                        }
-                    }
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 50)
-                    .background(
-                        rejectionReason.trimmingCharacters(in: .whitespacesAndNewlines).count >= 10
-                            ? Color.red
-                            : Color.red.opacity(0.4),
-                        in: RoundedRectangle(cornerRadius: 14)
-                    )
-                }
-                .disabled(rejectionReason.trimmingCharacters(in: .whitespacesAndNewlines).count < 10 || isRejecting)
-                .padding(.horizontal)
-            }
-            .padding(.top, 24)
-            .navigationTitle("Reject Trip")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { showRejectSheet = false }
-                }
-            }
-        }
-        .presentationDetents([.medium])
     }
 
     // MARK: - Banners
@@ -1114,19 +1016,6 @@ struct TripDetailDriverView: View {
         } catch {
             errorMessage = error.localizedDescription
             showError = true
-        }
-    }
-
-    private func handleReject() async {
-        isRejecting = true
-        rejectionError = nil
-        defer { isRejecting = false }
-        do {
-            try await store.rejectTrip(tripId: tripId, reason: rejectionReason)
-            showRejectSheet = false
-            rejectionReason = ""
-        } catch {
-            rejectionError = error.localizedDescription
         }
     }
 
