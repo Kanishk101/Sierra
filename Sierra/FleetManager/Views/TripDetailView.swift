@@ -56,7 +56,6 @@ struct TripDetailView: View {
                     Text(t.taskId)
                         .font(.system(size: 20, weight: .bold, design: .monospaced))
                         .foregroundStyle(.primary)
-
                     statusBadge(t.status)
                 }
                 .frame(maxWidth: .infinity)
@@ -71,28 +70,19 @@ struct TripDetailView: View {
                         Rectangle().fill(.gray.opacity(0.3)).frame(width: 1, height: 20)
                         Circle().fill(.red).frame(width: 8, height: 8)
                     }
-
                     VStack(alignment: .leading, spacing: 12) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("From")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                            Text(t.origin)
-                                .font(.subheadline)
+                            Text("From").font(.caption2).foregroundStyle(.secondary)
+                            Text(t.origin).font(.subheadline)
                         }
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("To")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                            Text(t.destination)
-                                .font(.subheadline)
+                            Text("To").font(.caption2).foregroundStyle(.secondary)
+                            Text(t.destination).font(.subheadline)
                         }
                     }
                 }
-
                 HStack {
-                    Image(systemName: "calendar")
-                        .foregroundStyle(.secondary)
+                    Image(systemName: "calendar").foregroundStyle(.secondary)
                     Text(t.scheduledDate.formatted(.dateTime.month(.abbreviated).day().year().hour().minute()))
                         .font(.caption)
                 }
@@ -100,7 +90,6 @@ struct TripDetailView: View {
 
             // Assignment
             Section("Assignment") {
-                // Driver row
                 if let dIdStr = t.driverId,
                    let dUUID = UUID(uuidString: dIdStr),
                    let driver = store.staffMember(for: dUUID) {
@@ -114,23 +103,17 @@ struct TripDetailView: View {
                                     .foregroundStyle(.blue)
                             )
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(driver.displayName)
-                                .font(.subheadline)
+                            Text(driver.displayName).font(.subheadline)
                             if let phone = driver.phone {
-                                Text(phone)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                Text(phone).font(.caption).foregroundStyle(.secondary)
                             }
                         }
                         Spacer()
                     }
                 } else {
-                    Text("No driver assigned")
-                        .foregroundStyle(.secondary)
-                        .italic()
+                    Text("No driver assigned").foregroundStyle(.secondary).italic()
                 }
 
-                // Vehicle row
                 if let vIdStr = t.vehicleId,
                    let vUUID = UUID(uuidString: vIdStr),
                    let vehicle = store.vehicle(for: vUUID) {
@@ -141,59 +124,44 @@ struct TripDetailView: View {
                             .frame(width: 40, height: 40)
                             .background(Color.blue.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("\(vehicle.name) \(vehicle.model)")
-                                .font(.subheadline)
+                            Text("\(vehicle.name) \(vehicle.model)").font(.subheadline)
                             HStack(spacing: 6) {
                                 Text(vehicle.licensePlate)
                                     .font(.system(size: 12, design: .monospaced))
                                     .foregroundStyle(.secondary)
                                 Text("· \(vehicle.fuelType.rawValue)")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
+                                    .font(.caption2).foregroundStyle(.secondary)
                             }
                         }
                         Spacer()
                     }
                 } else {
-                    Text("No vehicle assigned")
-                        .foregroundStyle(.secondary)
-                        .italic()
+                    Text("No vehicle assigned").foregroundStyle(.secondary).italic()
                 }
             }
 
             // Details
             Section("Details") {
                 HStack {
-                    Text("Priority")
-                        .foregroundStyle(.secondary)
+                    Text("Priority").foregroundStyle(.secondary)
                     Spacer()
                     priorityBadge(t.priority)
                 }
-
                 if !t.deliveryInstructions.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Delivery Instructions")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text(t.deliveryInstructions)
-                            .font(.caption)
+                        Text("Delivery Instructions").font(.caption).foregroundStyle(.secondary)
+                        Text(t.deliveryInstructions).font(.caption)
                     }
                 }
-
                 if !t.notes.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Notes")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text(t.notes)
-                            .font(.caption)
+                        Text("Notes").font(.caption).foregroundStyle(.secondary)
+                        Text(t.notes).font(.caption)
                     }
                 }
-
                 if let km = t.distanceKm {
                     HStack {
-                        Text("Distance")
-                            .foregroundStyle(.secondary)
+                        Text("Distance").foregroundStyle(.secondary)
                         Spacer()
                         Text(String(format: "%.1f km", km))
                     }
@@ -205,10 +173,8 @@ struct TripDetailView: View {
                 Section("Timeline") {
                     if let start = t.actualStartDate {
                         HStack {
-                            Image(systemName: "play.circle.fill")
-                                .foregroundStyle(.green)
-                            Text("Started")
-                                .foregroundStyle(.secondary)
+                            Image(systemName: "play.circle.fill").foregroundStyle(.green)
+                            Text("Started").foregroundStyle(.secondary)
                             Spacer()
                             Text(start.formatted(.dateTime.month(.abbreviated).day().hour().minute()))
                                 .font(.caption)
@@ -216,10 +182,8 @@ struct TripDetailView: View {
                     }
                     if let end = t.actualEndDate {
                         HStack {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(.blue)
-                            Text("Completed")
-                                .foregroundStyle(.secondary)
+                            Image(systemName: "checkmark.circle.fill").foregroundStyle(.blue)
+                            Text("Completed").foregroundStyle(.secondary)
                             Spacer()
                             Text(end.formatted(.dateTime.month(.abbreviated).day().hour().minute()))
                                 .font(.caption)
@@ -227,20 +191,19 @@ struct TripDetailView: View {
                     }
                     if let dur = t.durationString {
                         HStack {
-                            Image(systemName: "timer")
-                                .foregroundStyle(.secondary)
-                            Text("Duration")
-                                .foregroundStyle(.secondary)
+                            Image(systemName: "timer").foregroundStyle(.secondary)
+                            Text("Duration").foregroundStyle(.secondary)
                             Spacer()
-                            Text(dur)
-                                .font(.caption)
+                            Text(dur).font(.caption)
                         }
                     }
                 }
             }
 
-            // Dispatch to Driver (only for scheduled trips with driver + vehicle assigned)
-            if t.status == .scheduled && t.driverId != nil && t.vehicleId != nil {
+            // Dispatch to Driver button:
+            // Only shown for legacy Scheduled trips that haven't been accepted yet
+            // (acceptedAt == nil means trip was not created through the new PendingAcceptance flow)
+            if t.status == .scheduled && t.acceptedAt == nil && t.driverId != nil && t.vehicleId != nil {
                 Section {
                     Button {
                         Task { await performDispatch() }
@@ -248,8 +211,7 @@ struct TripDetailView: View {
                         HStack {
                             Spacer()
                             if isDispatching {
-                                ProgressView()
-                                    .tint(.white)
+                                ProgressView().tint(.white)
                             } else {
                                 Label("Dispatch to Driver", systemImage: "paperplane.fill")
                                     .font(.system(size: 16, weight: .semibold))
@@ -267,27 +229,42 @@ struct TripDetailView: View {
                 }
             }
 
-            // Acceptance deadline info (shown when pending acceptance)
+            // Awaiting acceptance info
             if t.status == .pendingAcceptance, let deadline = t.acceptanceDeadline {
                 Section {
                     HStack(spacing: 10) {
-                        Image(systemName: "clock.badge.exclamationmark.fill")
-                            .foregroundStyle(.orange)
+                        Image(systemName: "clock.badge.exclamationmark.fill").foregroundStyle(.orange)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Dispatched — Awaiting Driver Response")
+                            Text("Dispatched — Awaiting Driver Acceptance")
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(.orange)
                             Text("Deadline: \(deadline.formatted(.dateTime.month(.abbreviated).day().hour().minute()))")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+                                .font(.caption2).foregroundStyle(.secondary)
                         }
                         Spacer()
                     }
                 }
             }
 
-            // Cancel (only for scheduled trips)
-            if t.status == .scheduled {
+            // Accepted + awaiting start info
+            if t.status == .scheduled && t.acceptedAt != nil {
+                Section {
+                    HStack(spacing: 10) {
+                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Trip Accepted by Driver")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.green)
+                            Text("Driver can start within 30 min of scheduled time: \(t.scheduledDate.formatted(.dateTime.hour().minute()))")
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                    }
+                }
+            }
+
+            // Cancel — only allowed before trip becomes Active
+            if t.status == .pendingAcceptance || t.status == .scheduled {
                 Section {
                     Button(role: .destructive) {
                         showCancelConfirm = true
@@ -308,13 +285,14 @@ struct TripDetailView: View {
 
     private func statusBadge(_ status: TripStatus) -> some View {
         let (text, color): (String, Color) = switch status {
-        case .scheduled:          ("Scheduled",  .blue)
-        case .pendingAcceptance:  ("Pending",     .orange)
-        case .accepted:           ("Accepted",    .teal)
-        case .active:             ("Active",      .green)
-        case .completed:          ("Completed",   Color.secondary)
-        case .rejected:           ("Rejected",    .red)
-        case .cancelled:          ("Cancelled",   .red)
+        case .pendingAcceptance: ("Pending Acceptance", .orange)
+        case .scheduled:         ("Scheduled",          .blue)
+        case .active:            ("Active",             .green)
+        case .completed:         ("Completed",          Color.secondary)
+        case .cancelled:         ("Cancelled",          .red)
+        // Legacy values mapped to their canonical display
+        case .accepted:          ("Scheduled",          .blue)
+        case .rejected:          ("Cancelled",          .red)
         }
         return Text(text)
             .font(.caption)
@@ -339,7 +317,7 @@ struct TripDetailView: View {
             .background(color.opacity(0.12), in: Capsule())
     }
 
-    // MARK: - Dispatch Trip (async)
+    // MARK: - Actions
 
     @MainActor
     private func performDispatch() async {
@@ -352,36 +330,30 @@ struct TripDetailView: View {
         isDispatching = false
     }
 
-    // MARK: - Cancel Trip (async)
-
     @MainActor
     private func cancelTrip() async {
         guard var t = trip else { return }
 
-        // 1. Release at DB level first
-        if let dIdStr = t.driverId,
-           let dUUID  = UUID(uuidString: dIdStr),
-           let vIdStr = t.vehicleId,
-           let vUUID  = UUID(uuidString: vIdStr) {
+        // Guard: cannot cancel Active or Completed trips
+        guard t.status == .pendingAcceptance || t.status == .scheduled else { return }
+
+        if let dIdStr = t.driverId, let dUUID = UUID(uuidString: dIdStr),
+           let vIdStr = t.vehicleId, let vUUID = UUID(uuidString: vIdStr) {
             try? await TripService.releaseResources(driverId: dUUID, vehicleId: vUUID)
         }
 
-        // 2. Sync local in-memory cache
-        if let dIdStr = t.driverId,
-           let dUUID = UUID(uuidString: dIdStr),
+        if let dIdStr = t.driverId, let dUUID = UUID(uuidString: dIdStr),
            var driver = store.staffMember(for: dUUID) {
             driver.availability = .available
             try? await store.updateStaffMember(driver)
         }
-        if let vIdStr = t.vehicleId,
-           let vUUID = UUID(uuidString: vIdStr),
+        if let vIdStr = t.vehicleId, let vUUID = UUID(uuidString: vIdStr),
            var vehicle = store.vehicle(for: vUUID) {
             vehicle.assignedDriverId = nil
             vehicle.status = .idle
             try? await store.updateVehicle(vehicle)
         }
 
-        // 3. Cancel the trip record
         t.status = .cancelled
         do {
             try await store.updateTrip(t)
