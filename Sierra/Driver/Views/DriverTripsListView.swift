@@ -705,12 +705,12 @@ struct DriverTripsListView: View {
 
     private func statusColor(_ status: TripStatus) -> Color {
         switch status {
-        case .active:            return Color(red: 0.20, green: 0.65, blue: 0.32)
-        case .scheduled:         return .blue
-        case .pendingAcceptance: return Color.appOrange
-        case .completed:         return .appTextSecondary
+        case .active:               return Color(red: 0.20, green: 0.65, blue: 0.32)
+        case .scheduled:            return .blue
+        case .pendingAcceptance:    return Color.appOrange
+        case .completed:            return .appTextSecondary
         case .rejected, .cancelled: return Color(red: 0.90, green: 0.22, blue: 0.18)
-        case .accepted:          return .blue
+        case .accepted:             return .blue
         }
     }
 }

@@ -156,7 +156,7 @@ struct VehicleListView: View {
         }
     }
     private func availabilityColor(_ a: StaffAvailability) -> Color {
-        switch a { case .available: return .green; case .busy, .onTrip, .onTask: return .orange; case .unavailable: return .red }
+        switch a { case .available: return .green; case .busy: return .orange; case .unavailable: return .red }
     }
 }
 

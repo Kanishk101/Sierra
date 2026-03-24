@@ -174,10 +174,6 @@ struct StaffListView: View {
             ("Unavailable", .red,    .red.opacity(0.12),    .red)
         case .busy:
             ("Busy",        .orange, .orange.opacity(0.12), Color(.systemOrange))
-        case .onTrip:
-            ("On Trip",     .blue,   .blue.opacity(0.12),   .blue)
-        case .onTask:
-            ("On Task",     Color(.systemOrange), Color(.systemOrange).opacity(0.12), Color(.systemOrange))
         }
         return SierraBadge(label: text, dotColor: dot, backgroundColor: bg, foregroundColor: fg, size: .compact)
     }

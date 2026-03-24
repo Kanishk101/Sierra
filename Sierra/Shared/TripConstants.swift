@@ -15,4 +15,18 @@ enum TripConstants {
 
     /// OTP validity window in seconds (10 minutes).
     static let otpExpirySeconds: TimeInterval = 600
+
+    // MARK: - Navigation Constants (Phase 7)
+
+    /// Minimum seconds between reroute attempts to prevent rapid-fire requests.
+    static let rerouteCooldownSeconds: TimeInterval = 30
+
+    /// Seconds between traffic incident API polls.
+    static let incidentPollIntervalSeconds: TimeInterval = 90
+
+    /// Buffer around the route bounding box for incident queries (km).
+    static let incidentBufferKm: Double = 2.0
+
+    /// Distance ahead (metres) at which a severe incident triggers auto-reroute.
+    static let autoRerouteProximityMetres: Double = 1000
 }

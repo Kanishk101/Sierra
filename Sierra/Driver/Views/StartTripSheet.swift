@@ -262,8 +262,8 @@ struct StartTripSheet: View {
             return false
         }
 
-        let decoded: [CLLocationCoordinate2D]? = decodePolyline(encoded, precision: 1e6)
-            ?? decodePolyline(encoded, precision: 1e5)
+        let decoded: [CLLocationCoordinate2D]? = MapboxDirections.decodePolyline(encoded, precision: 1e6)
+            ?? MapboxDirections.decodePolyline(encoded, precision: 1e5)
         guard let decoded, decoded.count >= 2 else { return false }
 
         let distanceMetres = zip(decoded, decoded.dropFirst()).reduce(0.0) { partial, pair in

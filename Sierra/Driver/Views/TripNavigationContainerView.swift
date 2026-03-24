@@ -1,5 +1,4 @@
 import SwiftUI
-import AVFoundation
 
 /// Full-screen navigation container.
 /// X button top-left to exit. Confirmation alert when navigation is active.
@@ -17,7 +16,6 @@ struct TripNavigationContainerView: View {
     @Environment(AppDataStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
-    private let speechSynthesizer = AVSpeechSynthesizer()
 
     init(trip: Trip) {
         _coordinator = State(initialValue: TripNavigationCoordinator(trip: trip))
@@ -108,15 +106,7 @@ struct TripNavigationContainerView: View {
         .navigationBarHidden(true)
         .toolbar(.hidden, for: .tabBar)
         .task { await buildAndShowRoutes() }
-        .onChange(of: coordinator.currentStepInstruction) { _, newInstruction in
-            guard !newInstruction.isEmpty, newInstruction != lastSpokenInstruction else { return }
-            lastSpokenInstruction = newInstruction
-            let utterance = AVSpeechUtterance(string: newInstruction)
-            utterance.rate = 0.52
-            utterance.voice = AVSpeechSynthesisVoice(language: "en-IN")
-            speechSynthesizer.speak(utterance)
-        }
-        .onDisappear { coordinator.stopLocationPublishing(); speechSynthesizer.stopSpeaking(at: .immediate) }
+        .onDisappear { coordinator.stopLocationPublishing(); VoiceNavigationService.shared.stop() }
         .alert("Exit Navigation?", isPresented: $showDismissAlert) {
             Button("Exit", role: .destructive) { dismissView() }
             Button("Keep Navigating", role: .cancel) {}
@@ -142,8 +132,13 @@ struct TripNavigationContainerView: View {
         isBuildingRoutes = false
 
         if coordinator.hasRenderableRoute {
-            // Auto-select fastest route and begin tracking immediately
-            startTracking()
+            if coordinator.alternativeRoute != nil {
+                // Multiple routes — let driver pick fastest vs green
+                showRouteSelection = true
+            } else {
+                // Single route — auto-start navigation
+                startTracking()
+            }
         } else {
             // Surface the specific error from RouteEngine so the driver knows what's wrong
             buildErrorMessage = coordinator.routeEngineError ?? "Could not calculate route. Check your network and try again."
@@ -161,7 +156,7 @@ struct TripNavigationContainerView: View {
 
     private func dismissView() {
         coordinator.stopLocationPublishing()
-        speechSynthesizer.stopSpeaking(at: .immediate)
+        VoiceNavigationService.shared.stop()
         dismiss()
     }
 }

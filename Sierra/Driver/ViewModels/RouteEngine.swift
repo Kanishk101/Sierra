@@ -95,7 +95,7 @@ final class RouteEngine {
         options.routeShapeResolution = .full
         options.shapeFormat = .polyline6
         options.profileIdentifier = .automobileAvoidingTraffic
-        options.attributeOptions = [.congestionLevel, .expectedTravelTime, .speed]
+        options.attributeOptions = [.congestionLevel, .expectedTravelTime, .speed, .maximumSpeedLimit]
         if trip.scheduledDate > Date() { options.departAt = trip.scheduledDate }
 
         var avoidClasses: RoadClasses = []

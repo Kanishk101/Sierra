@@ -57,18 +57,19 @@ final class DeviationDetector {
         segStart: CLLocationCoordinate2D,
         segEnd: CLLocationCoordinate2D
     ) -> Double {
-        let pointLoc = CLLocation(latitude: point.latitude, longitude: point.longitude)
-        let startLoc = CLLocation(latitude: segStart.latitude, longitude: segStart.longitude)
-        let endLoc   = CLLocation(latitude: segEnd.latitude, longitude: segEnd.longitude)
-        let segLength = startLoc.distance(from: endLoc)
-        guard segLength > 0 else { return pointLoc.distance(from: startLoc) }
-        let dx = endLoc.coordinate.longitude - startLoc.coordinate.longitude
-        let dy = endLoc.coordinate.latitude  - startLoc.coordinate.latitude
-        let px = point.longitude - startLoc.coordinate.longitude
-        let py = point.latitude  - startLoc.coordinate.latitude
-        let t = max(0, min(1, (px * dx + py * dy) / (dx * dx + dy * dy)))
-        let projLat = segStart.latitude  + t * (segEnd.latitude  - segStart.latitude)
-        let projLng = segStart.longitude + t * (segEnd.longitude - segStart.longitude)
-        return pointLoc.distance(from: CLLocation(latitude: projLat, longitude: projLng))
+        let pLoc = CLLocation(latitude: point.latitude, longitude: point.longitude)
+        let aLoc = CLLocation(latitude: segStart.latitude, longitude: segStart.longitude)
+        let bLoc = CLLocation(latitude: segEnd.latitude, longitude: segEnd.longitude)
+
+        let ab = bLoc.distance(from: aLoc)
+        guard ab > 0 else { return pLoc.distance(from: aLoc) }
+
+        let ap = pLoc.distance(from: aLoc)
+        let bp = pLoc.distance(from: bLoc)
+
+        // Heron's formula for geodesic perpendicular distance
+        let s = (ab + ap + bp) / 2
+        let area = sqrt(max(0, s * (s - ab) * (s - ap) * (s - bp)))
+        return (2 * area) / ab
     }
 }

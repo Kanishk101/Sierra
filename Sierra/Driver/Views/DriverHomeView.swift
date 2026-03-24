@@ -47,7 +47,7 @@ struct DriverHomeView: View {
 
     private var upcomingTrips: [Trip] {
         driverTrips
-            .filter { $0.status == .scheduled || $0.status == .active || $0.status == .accepted || $0.status == .pendingAcceptance }
+            .filter { $0.status == .scheduled || $0.status == .active || $0.status == .pendingAcceptance }
             .sorted { $0.scheduledDate < $1.scheduledDate }
     }
 
@@ -65,7 +65,7 @@ struct DriverHomeView: View {
 
     private var tripStartsWithin30Min: Bool {
         return driverTrips.contains { trip in
-            (trip.status == .scheduled || trip.status == .accepted || trip.status == .pendingAcceptance)
+            (trip.status == .scheduled || trip.status == .pendingAcceptance)
             && trip.scheduledDate.timeIntervalSinceNow <= TripConstants.driverBlockWindowSeconds
             && trip.scheduledDate.timeIntervalSinceNow > -3600
         }
@@ -594,10 +594,12 @@ struct DriverHomeView: View {
         let needsPostTrip = isCompleted && trip.postInspectionId == nil
         let postTripDone = isCompleted && trip.postInspectionId != nil
         let hasPreInspection = trip.preInspectionId != nil
-        let isPostAcceptanceScheduled = trip.status == .scheduled && trip.acceptedAt != nil
-        let isNavigateReady = ((trip.status == .accepted || isPostAcceptanceScheduled) && hasPreInspection && trip.scheduledDate <= Date())
-            || trip.status == .active
-        let isAcceptedAwaitingInspection = (trip.status == .accepted || isPostAcceptanceScheduled) && !hasPreInspection
+        let isAcceptedScheduled = trip.status == .scheduled && trip.acceptedAt != nil
+        let withinStartWindow = trip.scheduledDate.timeIntervalSinceNow <= TripConstants.driverBlockWindowSeconds
+            && trip.scheduledDate.timeIntervalSinceNow > -3600
+        let isReadyToStart = isAcceptedScheduled && hasPreInspection && withinStartWindow
+        let isAwaitingWindow = isAcceptedScheduled && hasPreInspection && !withinStartWindow
+        let isAwaitingInspection = isAcceptedScheduled && !hasPreInspection
 
         if needsPostTrip {
             SlideToStartInspectionButton(
@@ -641,7 +643,47 @@ struct DriverHomeView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(isAccepting)
-                } else if isNavigateReady {
+                } else if isAwaitingInspection {
+                    Button { showTripDetail(trip) } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "clipboard.fill")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text("Inspect Vehicle")
+                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                        }
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Capsule().fill(Color.appOrange))
+                    }
+                    .buttonStyle(.plain)
+                } else if isAwaitingWindow {
+                    HStack(spacing: 6) {
+                        Image(systemName: "clock.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("Starts \(trip.scheduledDate.formatted(.dateTime.hour().minute()))")
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                    }
+                    .foregroundColor(.appTextSecondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Capsule().fill(Color(.tertiarySystemGroupedBackground)))
+                    .overlay(Capsule().stroke(Color.appDivider.opacity(0.6), lineWidth: 1))
+                } else if isReadyToStart {
+                    NavigationLink(value: trip.id) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "play.circle.fill")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text("Start Trip")
+                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                        }
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Capsule().fill(Color(red: 0.90, green: 0.22, blue: 0.18)))
+                    }
+                    .buttonStyle(.plain)
+                } else if trip.status == .active {
                     Button {
                         navigationTrip = trip
                         showNavigation = true
@@ -658,19 +700,6 @@ struct DriverHomeView: View {
                             .background(Capsule().fill(Color(red: 0.90, green: 0.22, blue: 0.18)))
                     }
                     .buttonStyle(.plain)
-                } else if isAcceptedAwaitingInspection {
-                    // Accepted — awaiting pre-trip inspection (disabled green)
-                    HStack(spacing: 6) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 13, weight: .semibold))
-                        Text("Accepted")
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                    }
-                    .foregroundColor(Color(red: 0.20, green: 0.65, blue: 0.32))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(Capsule().fill(Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.12)))
-                    .overlay(Capsule().stroke(Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.3), lineWidth: 1.5))
                 } else {
                     HStack(spacing: 6) {
                         Image(systemName: "clock.fill")
@@ -742,27 +771,21 @@ struct DriverHomeView: View {
     }
 
     private func startInspection(for trip: Trip) {
-        if trip.status == .accepted || trip.status == .active || (trip.status == .scheduled && trip.acceptedAt != nil) {
-            inspectionMode = trip.status == .completed ? .post : .pre
+        if trip.status == .scheduled && trip.preInspectionId == nil {
+            inspectionMode = .pre
             inspectionTrip = trip
             dismissDetail()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                showInspection = true
-            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { showInspection = true }
+        } else if trip.status == .completed && trip.postInspectionId == nil {
+            inspectionMode = .post
+            inspectionTrip = trip
+            dismissDetail()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { showInspection = true }
         } else if trip.status == .pendingAcceptance {
             let generator = UINotificationFeedbackGenerator()
             generator.notificationOccurred(.warning)
             dismissDetail()
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
-                showAcceptWarning = true
-            }
-        } else if trip.status == .completed {
-            inspectionMode = .post
-            inspectionTrip = trip
-            dismissDetail()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                showInspection = true
-            }
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { showAcceptWarning = true }
         }
     }
 

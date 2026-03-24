@@ -193,8 +193,6 @@ struct StaffDetailSheet: View {
         case .available:   return .green
         case .unavailable: return .red
         case .busy:        return .orange
-        case .onTrip:      return .blue
-        case .onTask:      return Color(.systemOrange)
         }
     }
 }

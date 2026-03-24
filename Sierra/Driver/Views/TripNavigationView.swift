@@ -1,5 +1,5 @@
 import SwiftUI
-import MapboxNavigationCore
+import Combine
 import MapboxMaps
 import MapboxDirections
 import Turf
@@ -48,17 +48,20 @@ struct TripNavigationView: UIViewRepresentable {
             mapView: mapView,
             trip: coordinator.trip,
             routeCoordinates: coordinator.displayedRouteCoordinates,
-            breadcrumbCoordinates: coordinator.breadcrumbCoordinates
+            breadcrumbCoordinates: coordinator.breadcrumbCoordinates,
+            congestionLevels: nil
         )
         return mapView
     }
 
     func updateUIView(_ mapView: MapView, context: Context) {
+        let congestion = coordinator.currentRoute?.legs.first?.segmentCongestionLevels
         context.coordinator.scheduleRender(
             mapView: mapView,
             trip: coordinator.trip,
             routeCoordinates: coordinator.displayedRouteCoordinates,
-            breadcrumbCoordinates: coordinator.breadcrumbCoordinates
+            breadcrumbCoordinates: coordinator.breadcrumbCoordinates,
+            congestionLevels: congestion
         )
     }
 
@@ -73,11 +76,12 @@ struct TripNavigationView: UIViewRepresentable {
 
         private var routeCameraApplied = false
         private var styleIsReady = false
-        private var cancelables = Set<AnyCancelable>()
+        private var cancellables = Set<AnyCancellable>()
 
         private var pendingTrip: Trip?
         private var pendingRouteCoordinates: [CLLocationCoordinate2D] = []
         private var pendingBreadcrumbCoordinates: [CLLocationCoordinate2D] = []
+        private var pendingCongestionLevels: [MapboxDirections.CongestionLevel]?
 
         func attach(to mapView: MapView) {
             guard self.mapView !== mapView else { return }
@@ -89,18 +93,20 @@ struct TripNavigationView: UIViewRepresentable {
                 self.ensureOverlayInfrastructure(on: mapView)
                 self.renderPending(on: mapView)
             }
-            .store(in: &cancelables)
+            .store(in: &cancellables)
         }
 
         func scheduleRender(
             mapView: MapView,
             trip: Trip,
             routeCoordinates: [CLLocationCoordinate2D],
-            breadcrumbCoordinates: [CLLocationCoordinate2D]
+            breadcrumbCoordinates: [CLLocationCoordinate2D],
+            congestionLevels: [MapboxDirections.CongestionLevel]?
         ) {
             pendingTrip = trip
             pendingRouteCoordinates = routeCoordinates
             pendingBreadcrumbCoordinates = breadcrumbCoordinates
+            pendingCongestionLevels = congestionLevels
 
             guard styleIsReady else { return }
             renderPending(on: mapView)
@@ -108,7 +114,7 @@ struct TripNavigationView: UIViewRepresentable {
 
         private func renderPending(on mapView: MapView) {
             ensureOverlayInfrastructure(on: mapView)
-            updateRoute(mapView: mapView, coordinates: pendingRouteCoordinates)
+            updateRoute(mapView: mapView, coordinates: pendingRouteCoordinates, congestionLevels: pendingCongestionLevels)
             updateBreadcrumbTrail(mapView: mapView, coordinates: pendingBreadcrumbCoordinates)
 
             if let trip = pendingTrip {
@@ -178,8 +184,13 @@ struct TripNavigationView: UIViewRepresentable {
 
         // MARK: - Route / Breadcrumb Rendering
 
-        private func updateRoute(mapView: MapView, coordinates: [CLLocationCoordinate2D]) {
-            updateLineSource(mapView: mapView, sourceId: "route-source", coordinates: coordinates)
+        private func updateRoute(mapView: MapView, coordinates: [CLLocationCoordinate2D], congestionLevels: [MapboxDirections.CongestionLevel]?) {
+            // Fix 11: Use per-segment congestion colors when available
+            if let levels = congestionLevels, levels.count >= coordinates.count - 1, coordinates.count >= 2 {
+                updateCongestionColoredRoute(mapView: mapView, coordinates: coordinates, levels: levels)
+            } else {
+                updateLineSource(mapView: mapView, sourceId: "route-source", coordinates: coordinates)
+            }
 
             guard coordinates.count >= 2 else {
                 routeCameraApplied = false
@@ -202,6 +213,60 @@ struct TripNavigationView: UIViewRepresentable {
                 camera = CameraOptions(center: coordinates.first, zoom: 14)
             }
             mapView.camera.ease(to: camera, duration: 1.0)
+        }
+
+        // Fix 11: Congestion-colored route rendering
+        private func updateCongestionColoredRoute(
+            mapView: MapView,
+            coordinates: [CLLocationCoordinate2D],
+            levels: [MapboxDirections.CongestionLevel]
+        ) {
+            // Build per-segment features with congestion color properties
+            var features: [Feature] = []
+            var groupStart = 0
+
+            for i in 0..<levels.count {
+                let isLast = (i == levels.count - 1)
+                let levelChanged = !isLast && levels[i] != levels[i + 1]
+
+                if isLast || levelChanged {
+                    let end = isLast ? i + 1 : i + 1
+                    let segCoords = Array(coordinates[groupStart...end])
+                    guard segCoords.count >= 2 else { groupStart = i + 1; continue }
+
+                    var feature = Feature(geometry: .lineString(LineString(segCoords)))
+                    feature.properties = ["congestionColor": .string(congestionHexColor(levels[i]))]
+                    features.append(feature)
+                    groupStart = end
+                }
+            }
+
+            let collection = FeatureCollection(features: features)
+            mapView.mapboxMap.updateGeoJSONSource(
+                withId: "route-source",
+                geoJSON: .featureCollection(collection)
+            )
+
+            // Update route-layer to use data-driven color from feature properties
+            if var layer = try? mapView.mapboxMap.layer(withId: "route-layer", type: LineLayer.self) {
+                layer.lineColor = .expression(
+                    Exp(.get) { "congestionColor" }
+                )
+                try? mapView.mapboxMap.updateLayer(withId: "route-layer", type: LineLayer.self) { l in
+                    l.lineColor = layer.lineColor
+                }
+            }
+        }
+
+        private func congestionHexColor(_ level: MapboxDirections.CongestionLevel) -> String {
+            switch level {
+            case .low:      return "#34C759"  // green
+            case .moderate: return "#FFCC00"  // yellow
+            case .heavy:    return "#FF9500"  // orange
+            case .severe:   return "#FF3B30"  // red
+            case .unknown:  return "#FF9500"  // default orange
+            @unknown default: return "#FF9500"
+            }
         }
 
         private func updateBreadcrumbTrail(mapView: MapView, coordinates: [CLLocationCoordinate2D]) {

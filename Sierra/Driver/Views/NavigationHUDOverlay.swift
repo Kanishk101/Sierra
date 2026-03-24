@@ -1,4 +1,5 @@
 import SwiftUI
+import Supabase
 
 /// HUD overlay on top of TripNavigationView.
 /// Shows instruction banner, stats, speed badge, off-route warning, and action bar.
@@ -13,6 +14,9 @@ struct NavigationHUDOverlay: View {
     @State private var isVoiceMuted = false
     @State private var issueText = ""
     @State private var showIssueSentToast = false
+    @State private var showIncidentBanner = true
+
+    private let supabase = SupabaseManager.shared.client
 
     var body: some View {
         ZStack {
@@ -20,6 +24,12 @@ struct NavigationHUDOverlay: View {
                 // Top instruction banner
                 if !coordinator.currentStepInstruction.isEmpty {
                     instructionBanner
+                }
+
+                // GAP-1: Traffic incident banner
+                if showIncidentBanner, let incident = coordinator.trafficService.nearestIncident {
+                    incidentBanner(incident)
+                        .transition(.move(edge: .top).combined(with: .opacity))
                 }
 
                 Spacer()
@@ -143,6 +153,86 @@ struct NavigationHUDOverlay: View {
             return String(format: "%.1f km", metres / 1000)
         } else {
             return String(format: "%.0f m", metres)
+        }
+    }
+
+    // MARK: - Incident Banner (GAP-1)
+
+    private func incidentBanner(_ incident: TrafficIncident) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: incidentIcon(incident.severity))
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(incidentColor(incident.severity))
+                .frame(width: 36, height: 36)
+                .background(incidentColor(incident.severity).opacity(0.15), in: Circle())
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(incident.description)
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    if let road = incident.roadName {
+                        Text(road).font(.caption2).foregroundStyle(.white.opacity(0.6))
+                    }
+                    if let dist = incident.distanceAheadMetres {
+                        Text(formatDistance(dist))
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(incidentColor(incident.severity))
+                    }
+                }
+            }
+
+            Spacer()
+
+            Button {
+                Task { await coordinator.rebuildRoutes() }
+            } label: {
+                Text("Reroute")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(incidentColor(incident.severity), in: Capsule())
+            }
+
+            Button {
+                withAnimation(.spring(response: 0.3)) { showIncidentBanner = false }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.white.opacity(0.5))
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color(red: 0.14, green: 0.14, blue: 0.18))
+                .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(incidentColor(incident.severity).opacity(0.3), lineWidth: 1)
+        )
+        .padding(.horizontal, 16)
+        .padding(.top, 4)
+    }
+
+    private func incidentIcon(_ severity: TrafficIncident.IncidentSeverity) -> String {
+        switch severity {
+        case .minor:    return "exclamationmark.circle"
+        case .moderate: return "exclamationmark.triangle"
+        case .major:    return "exclamationmark.triangle.fill"
+        case .critical: return "xmark.octagon.fill"
+        }
+    }
+
+    private func incidentColor(_ severity: TrafficIncident.IncidentSeverity) -> Color {
+        switch severity {
+        case .minor:    return .yellow
+        case .moderate: return .orange
+        case .major:    return Color(red: 1.0, green: 0.3, blue: 0.2)
+        case .critical: return .red
         }
     }
 
@@ -573,14 +663,81 @@ struct NavigationHUDOverlay: View {
     // MARK: - Submit Issue
 
     private func submitIssue() {
+        let text = issueText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        issueText = ""
         withAnimation(.spring(response: 0.3)) {
             showIncidentReport = false
-            showIssueSentToast = true
         }
-        issueText = ""
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-            withAnimation(.easeOut(duration: 0.25)) {
-                showIssueSentToast = false
+
+        Task {
+            // Insert activity log for incident report
+            guard let driverId = AuthManager.shared.currentUser?.id else { return }
+            do {
+                struct ActivityPayload: Encodable {
+                    let type: String
+                    let title: String
+                    let description: String
+                    let actor_id: String
+                    let entity_type: String
+                    let entity_id: String
+                    let severity: String
+                    let is_read: Bool
+                    let timestamp: String
+                }
+
+                let iso = ISO8601DateFormatter()
+                iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+                try await supabase
+                    .from("activity_logs")
+                    .insert(ActivityPayload(
+                        type: "incident_report",
+                        title: "Driver Incident Report",
+                        description: text,
+                        actor_id: driverId.uuidString,
+                        entity_type: "trip",
+                        entity_id: coordinator.trip.id.uuidString,
+                        severity: "warning",
+                        is_read: false,
+                        timestamp: iso.string(from: Date())
+                    ))
+                    .execute()
+
+                // Notify fleet managers
+                struct FMIdRow: Decodable { let id: UUID }
+                let fmRows: [FMIdRow] = try await supabase
+                    .from("staff_members")
+                    .select("id")
+                    .eq("role", value: "fleetManager")
+                    .eq("status", value: "Active")
+                    .execute()
+                    .value
+                for fm in fmRows {
+                    try? await NotificationService.insertNotification(
+                        recipientId: fm.id,
+                        type: .defectAlert,
+                        title: "Driver Incident Report",
+                        body: "Trip \(coordinator.trip.taskId): \(text.prefix(100))",
+                        entityType: "trip",
+                        entityId: coordinator.trip.id
+                    )
+                }
+
+                await MainActor.run {
+                    withAnimation(.spring(response: 0.3)) { showIssueSentToast = true }
+                }
+            } catch {
+                print("[HUD] Incident report failed: \(error)")
+                // Still show toast — driver shouldn't think it failed silently
+                await MainActor.run {
+                    withAnimation(.spring(response: 0.3)) { showIssueSentToast = true }
+                }
+            }
+
+            try? await Task.sleep(for: .seconds(2))
+            await MainActor.run {
+                withAnimation(.easeOut(duration: 0.25)) { showIssueSentToast = false }
             }
         }
     }

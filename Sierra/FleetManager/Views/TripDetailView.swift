@@ -284,15 +284,14 @@ struct TripDetailView: View {
     // MARK: - Helpers
 
     private func statusBadge(_ status: TripStatus) -> some View {
-        let (text, color): (String, Color) = switch status {
+        let normalized = status.normalized
+        let (text, color): (String, Color) = switch normalized {
         case .pendingAcceptance: ("Pending Acceptance", .orange)
         case .scheduled:         ("Scheduled",          .blue)
         case .active:            ("Active",             .green)
         case .completed:         ("Completed",          Color.secondary)
         case .cancelled:         ("Cancelled",          .red)
-        // Legacy values mapped to their canonical display
-        case .accepted:          ("Scheduled",          .blue)
-        case .rejected:          ("Cancelled",          .red)
+        default:                 (normalized.rawValue,  .secondary)
         }
         return Text(text)
             .font(.caption)

@@ -269,12 +269,7 @@ struct StaffMemberService {
     // Only writes Available, Unavailable, or Busy — never the legacy On Trip / On Task.
 
     static func setAvailability(staffId: UUID, availability: StaffAvailability) async throws -> StaffAvailability {
-        // Map any legacy Busy-equivalent to canonical Busy before writing
-        let canonical: StaffAvailability
-        switch availability {
-        case .busy, .onTrip, .onTask: canonical = .busy
-        default: canonical = availability
-        }
+        let canonical: StaffAvailability = availability == .busy ? .busy : availability
 
         struct Payload: Encodable { let availability: String }
         struct Row:     Decodable { let id: UUID; let availability: String }

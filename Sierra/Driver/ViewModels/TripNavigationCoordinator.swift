@@ -14,6 +14,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     private let routeEngine        = RouteEngine()
     private let deviationDetector  = DeviationDetector()
     private let geofenceMonitor    = GeofenceMonitor()
+    let trafficService      = TrafficIncidentService()
 
     // MARK: - Forwarded Public State (from RouteEngine)
     var currentRoute: MapboxDirections.Route?   { routeEngine.currentRoute }
@@ -22,9 +23,8 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     var displayedRouteCoordinates: [CLLocationCoordinate2D] { routeEngine.decodedRouteCoordinates }
     var hasRenderableRoute: Bool                { routeEngine.decodedRouteCoordinates.count >= 2 }
     var isUsingStoredRouteFallback: Bool        { routeEngine.isUsingStoredRouteFallback }
-    /// The human-readable error from the last failed buildRoutes() call.
-    /// Nil when routes are available or no build has been attempted yet.
     var routeEngineError: String?               { routeEngine.lastBuildError }
+    var activeIncidents: [TrafficIncident]      { trafficService.activeIncidents }
 
     var distanceRemainingMetres: Double {
         get { routeEngine.distanceRemainingMetres }
@@ -70,6 +70,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     private let locationPublishInterval: TimeInterval = 5.0
     private var currentStepIndex: Int = 0
     private var lastStepChangeLocation: CLLocation?  // ISSUE-13 FIX: hysteresis tracking
+    private var lastRerouteRequestedAt: Date = .distantPast  // Fix 9: reroute cooldown
 
     // MARK: - Init / deinit
     init(trip: Trip) {
@@ -83,6 +84,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
             locationPublishTimer = nil
             locationManager?.stopUpdatingLocation()
             locationManager = nil
+            trafficService.stopPolling()
         }
     }
 
@@ -126,6 +128,9 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         manager.startUpdatingLocation()
         locationManager = manager
         isNavigating = true
+
+        // GAP-1: Start traffic incident polling
+        trafficService.startPolling(routeCoordinates: routeEngine.decodedRouteCoordinates)
         geofenceMonitor.register(AppDataStore.shared.geofences,
                                   locationManager: manager,
                                   currentLocation: currentLocation)
@@ -137,6 +142,27 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     }
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         print("[NavCoordinator] Location error: \(error)")
+    }
+    nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            switch manager.authorizationStatus {
+            case .authorizedAlways:
+                // Re-register geofences now that we have full permission
+                self.geofenceMonitor.register(
+                    AppDataStore.shared.geofences,
+                    locationManager: manager,
+                    currentLocation: self.currentLocation
+                )
+            case .denied, .restricted:
+                NotificationCenter.default.post(name: .locationPermissionDenied, object: nil)
+            case .authorizedWhenInUse:
+                // Prompt upgrade to Always for background tracking
+                manager.requestAlwaysAuthorization()
+            default:
+                break
+            }
+        }
     }
 
     // MARK: - Location Publishing
@@ -177,8 +203,16 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         currentLocation = location
         appendBreadcrumbCoordinateIfNeeded(location.coordinate)
         currentSpeedKmh = max(0, location.speed * 3.6)
+        trafficService.updateLocation(location)
         updateNavigationProgress(location: location)
         checkDeviation(from: location)
+
+        // GAP-1: Auto-reroute on severe incident nearby
+        if trafficService.hasSevereIncidentNearby(),
+           Date().timeIntervalSince(lastRerouteRequestedAt) > TripConstants.rerouteCooldownSeconds {
+            lastRerouteRequestedAt = Date()
+            Task { await rebuildRoutes() }
+        }
     }
 
     // MARK: - Navigation Progress
@@ -208,6 +242,15 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
             remainingDist += a.distance(from: b)
         }
         routeEngine.distanceRemainingMetres = remainingDist
+
+        // Fix 10: Extract speed limit from route annotations
+        if let speedLimits = routeEngine.currentRoute?.legs.first?.segmentMaximumSpeedLimits,
+           closestSegIndex < speedLimits.count,
+           let measurement = speedLimits[closestSegIndex] {
+            currentSpeedLimit = Int(measurement.converted(to: .kilometersPerHour).value)
+        } else {
+            currentSpeedLimit = nil
+        }
 
         // Arrival check using route distance, not crow-fly
         if remainingDist < 50 && !hasArrived {
@@ -252,7 +295,6 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
                     routeEngine.currentStepInstruction = step.instructions
                     currentStepManeuver = step.maneuverType.rawValue
                     nextStepInstruction = idx + 1 < steps.count ? steps[idx + 1].instructions : ""
-                    currentSpeedLimit = nil
                     // ISSUE-36 FIX: Only announce on new step transitions
                     if wasNewStep {
                         VoiceNavigationService.shared.announce(step.instructions)
@@ -290,6 +332,11 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
                 deviationMetres: deviationMetres
             )
         }
+        // Fix 9: Cooldown — don't reroute more than once every 30 seconds
+        guard Date().timeIntervalSince(lastRerouteRequestedAt) > TripConstants.rerouteCooldownSeconds else {
+            return
+        }
+        lastRerouteRequestedAt = Date()
         routeEngine.triggerRerouteFromCurrentLocation()
         Task { await routeEngine.buildRoutes(trip: trip, currentLocation: currentLocation) }
     }

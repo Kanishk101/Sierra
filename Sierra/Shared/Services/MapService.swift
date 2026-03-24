@@ -128,13 +128,13 @@ struct MapService {
         destLng: Double
     ) async throws -> [MapRoute] {
         let request = MKDirections.Request()
-        request.source = MKMapItem(
-            location: CLLocation(latitude: originLat, longitude: originLng),
-            address: nil
+        request.source = mapItem(
+            latitude: originLat,
+            longitude: originLng
         )
-        request.destination = MKMapItem(
-            location: CLLocation(latitude: destLat, longitude: destLng),
-            address: nil
+        request.destination = mapItem(
+            latitude: destLat,
+            longitude: destLng
         )
         request.transportType = .automobile
         request.requestsAlternateRoutes = true
@@ -246,10 +246,10 @@ struct MapService {
                                 maneuverType: maneuverType,
                                 maneuverModifier: maneuverMod
                             ))
-                        }
-                    }
-                }
-            }
+                        }  // for step
+                    }  // if legSteps
+                }  // for leg
+            }  // if legs
 
             mapRoutes.append(MapRoute(
                 label: index == 0 ? "Fastest Route" : "Alternative \(index)",
@@ -259,7 +259,7 @@ struct MapService {
                 steps: steps,
                 isGreen: false
             ))
-        }
+        }  // for route
 
         guard !mapRoutes.isEmpty else { throw MapServiceError.noRoutesFound }
 
@@ -284,6 +284,20 @@ struct MapService {
         }
 
         return mapRoutes
+    }
+
+    // MARK: - MKMapItem helper
+
+    private static func mapItem(latitude: Double, longitude: Double) -> MKMapItem {
+        let coord = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+        if #available(iOS 26.0, *) {
+            return MKMapItem(
+                location: CLLocation(latitude: coord.latitude, longitude: coord.longitude),
+                address: nil
+            )
+        } else {
+            return MKMapItem(placemark: MKPlacemark(coordinate: coord))
+        }
     }
 }
 

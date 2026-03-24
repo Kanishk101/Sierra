@@ -149,6 +149,21 @@ final class CreateTripViewModel {
         if let d = selectedDestination { destCoords = (d.latitude, d.longitude) }
         else { destCoords = await geocodeAddress(destination.trimmingCharacters(in: .whitespaces)) }
 
+        // Missing C FIX: Fetch and store route polyline at creation time.
+        // This ensures the stored-polyline fallback works for offline/token-less nav.
+        var routePolyline: String? = nil
+        if let origin = originCoords, let dest = destCoords {
+            do {
+                let routes = try await MapService.fetchRoutes(
+                    originLat: origin.0, originLng: origin.1,
+                    destLat: dest.0, destLng: dest.1
+                )
+                routePolyline = routes.first?.geometry
+            } catch {
+                print("[CreateTrip] Route polyline fetch failed (non-fatal): \(error)")
+            }
+        }
+
         do {
             // Validate driver
             guard let latestDriver = try await StaffMemberService.fetchStaffMember(id: driverId) else {
@@ -206,7 +221,7 @@ final class CreateTripViewModel {
                 destination: destination.trimmingCharacters(in: .whitespaces),
                 originLatitude: originCoords?.0, originLongitude: originCoords?.1,
                 destinationLatitude: destCoords?.0, destinationLongitude: destCoords?.1,
-                routePolyline: nil, routeStops: routeStops.isEmpty ? nil : routeStops,
+                routePolyline: routePolyline, routeStops: routeStops.isEmpty ? nil : routeStops,
                 deliveryInstructions: "",
                 scheduledDate: scheduledDate, scheduledEndDate: scheduledEndDate,
                 actualStartDate: nil, actualEndDate: nil,

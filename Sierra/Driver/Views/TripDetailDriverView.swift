@@ -6,10 +6,8 @@ import MapKit
 /// Status → action mapping:
 ///   .scheduled         → Awaiting Assignment message
 ///   .pendingAcceptance → Accept button (driver can also dismiss sheet)
-///   .accepted          → Begin Pre-Trip Inspection (if none) or Start Trip
 ///   .active            → Navigate (primary) + Complete Delivery (secondary)
 ///   .completed         → Completion summary
-///   .rejected          → Rejected banner with reason
 ///   .cancelled         → Cancelled banner
 ///
 /// Flow card: Accept Trip step is ONLY shown when the trip used the acceptance flow
@@ -59,8 +57,7 @@ struct TripDetailDriverView: View {
             || trip.rejectedReason != nil
             || trip.status == .pendingAcceptance
             || trip.status == .scheduled   // post-acceptance
-            || trip.status == .accepted    // legacy accepted state
-            || trip.status == .rejected
+            || trip.status == .rejected    // legacy decode safety
     }
 
     /// True when the trip is within 30 minutes of its scheduled start.
@@ -715,17 +712,18 @@ struct TripDetailDriverView: View {
 
     @ViewBuilder
     private func actionButtons(_ trip: Trip) -> some View {
+        let status = trip.status.normalized
         VStack(spacing: 12) {
-            switch trip.status {
+            switch status {
 
-            // ── Pending Acceptance: driver must accept or reject ─────────────
+            // ── Pending Acceptance: driver must accept ─────────────
             case .pendingAcceptance:
                 acceptanceButtons(trip)
 
             // ── Scheduled (post-acceptance): pre-inspection → then Start Trip ─
             // Navigate is enabled only once scheduled start time has begun.
-            case .scheduled, .accepted:
-                if trip.status == .scheduled && trip.acceptedAt == nil {
+            case .scheduled:
+                if trip.acceptedAt == nil {
                     VStack(spacing: 8) {
                         Image(systemName: "clock.badge.questionmark")
                             .font(.system(size: 28))
@@ -747,32 +745,36 @@ struct TripDetailDriverView: View {
                     actionButton("Begin Pre-Trip Inspection", icon: "checklist", color: SierraTheme.Colors.ember) {
                         showPreInspection = true
                     }
-                } else if trip.scheduledDate <= Date() {
-                    // Time slot has started — allow navigation.
-                    navigateButton()
                 } else {
-                    // Pre-inspection done but trip has not started yet.
-                    VStack(spacing: 8) {
-                        HStack(spacing: 10) {
-                            Image(systemName: "lock.fill")
-                                .foregroundStyle(.secondary)
-                            Text("Navigate")
-                                .font(.system(size: 16, weight: .bold, design: .rounded))
-                                .foregroundStyle(.secondary)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(Color(.tertiarySystemGroupedBackground),
-                                    in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .stroke(Color(.separator).opacity(0.5), lineWidth: 1)
-                        )
+                    let withinStartWindow = trip.scheduledDate.timeIntervalSinceNow <= TripConstants.driverBlockWindowSeconds
+                        && trip.scheduledDate.timeIntervalSinceNow > -3600
+                    if withinStartWindow {
+                        // Time slot has started — allow navigation.
+                        navigateButton()
+                    } else {
+                        // Pre-inspection done but trip has not started yet.
+                        VStack(spacing: 8) {
+                            HStack(spacing: 10) {
+                                Image(systemName: "lock.fill")
+                                    .foregroundStyle(.secondary)
+                                Text("Navigate")
+                                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(Color(.tertiarySystemGroupedBackground),
+                                        in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .stroke(Color(.separator).opacity(0.5), lineWidth: 1)
+                            )
 
-                        Text("Navigation unlocks when the scheduled start time begins.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
+                            Text("Navigation unlocks within 30 minutes of the scheduled start.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
                     }
                 }
 
@@ -809,13 +811,12 @@ struct TripDetailDriverView: View {
             case .completed:
                 completionSummary(trip)
 
-            // ── Rejected ───────────────────────────────────────────────────
-            case .rejected:
-                rejectedBanner(trip)
-
             // ── Cancelled ──────────────────────────────────────────────────
             case .cancelled:
                 cancelledBanner()
+
+            default:
+                EmptyView()
             }
         }
     }
@@ -1033,7 +1034,7 @@ struct TripDetailDriverView: View {
     // MARK: - Trip Progress
 
     private func tripProgress(_ trip: Trip) -> Double {
-        switch trip.status {
+        switch trip.status.normalized {
         case .scheduled:
             // Post-acceptance: accepted but awaiting time window
             if trip.acceptedAt != nil {
@@ -1041,13 +1042,15 @@ struct TripDetailDriverView: View {
             }
             return 0.0
         case .pendingAcceptance: return 0.10
-        case .accepted:          return trip.preInspectionId != nil ? 0.30 : 0.20
         case .active:
             if trip.postInspectionId != nil { return 0.85 }
             if trip.proofOfDeliveryId != nil { return 0.70 }
             return 0.50
         case .completed:         return 1.0
-        case .rejected, .cancelled: return 0.0
+        case .cancelled:         return 0.0
+        case .rejected:          return 0.0
+        case .accepted:          return trip.preInspectionId != nil ? 0.30 : 0.20
+        @unknown default:        return 0.0
         }
     }
 
@@ -1100,26 +1103,24 @@ struct TripDetailDriverView: View {
     // MARK: - Style Helpers
 
     private func statusLabel(_ status: TripStatus) -> String {
-        switch status {
-        case .scheduled:          return trip?.acceptedAt != nil ? "Accepted — Awaiting Time Window" : "Scheduled"
-        case .pendingAcceptance:  return "Awaiting Your Acceptance"
-        case .accepted:           return "Accepted — Ready to Start"
-        case .rejected:           return "Trip Rejected"
-        case .active:             return "Active — In Progress"
-        case .completed:          return "Completed"
-        case .cancelled:          return "Cancelled"
+        switch status.normalized {
+        case .scheduled:         return trip?.acceptedAt != nil ? "Accepted — Awaiting Time Window" : "Scheduled"
+        case .pendingAcceptance: return "Awaiting Your Acceptance"
+        case .active:            return "Active — In Progress"
+        case .completed:         return "Completed"
+        case .cancelled:         return "Cancelled"
+        default:                 return status.rawValue
         }
     }
 
     private func statusColor(_ status: TripStatus) -> Color {
-        switch status {
-        case .scheduled:          return trip?.acceptedAt != nil ? .teal : SierraTheme.Colors.info
-        case .pendingAcceptance:  return .orange
-        case .accepted:           return .teal
-        case .rejected:           return SierraTheme.Colors.danger
-        case .active:             return SierraTheme.Colors.alpineMint
-        case .completed:          return .gray
-        case .cancelled:          return SierraTheme.Colors.danger
+        switch status.normalized {
+        case .scheduled:         return trip?.acceptedAt != nil ? .teal : SierraTheme.Colors.info
+        case .pendingAcceptance: return .orange
+        case .active:            return SierraTheme.Colors.alpineMint
+        case .completed:         return .gray
+        case .cancelled:         return SierraTheme.Colors.danger
+        default:                 return SierraTheme.Colors.info
         }
     }
 

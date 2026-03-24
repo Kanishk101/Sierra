@@ -36,28 +36,31 @@ enum StaffStatus: String, Codable, CaseIterable {
 // MARK: - Staff Availability
 // Maps to PostgreSQL enum: staff_availability
 // Canonical values: Available | Unavailable | Busy
-// Legacy values (On Trip, On Task) are kept for decode compatibility only.
-// The DB migration normalised all existing rows to Busy and a CHECK
-// constraint blocks new writes of the legacy values.
+// Legacy values (On Trip, On Task) were normalised to Busy in the DB and are
+// mapped to .busy on decode for any stale cached payloads.
 
-enum StaffAvailability: String, Codable, CaseIterable {
+enum StaffAvailability: String, CaseIterable, Codable {
     case available   = "Available"
     case busy        = "Busy"
     case unavailable = "Unavailable"
-    // Legacy decode-only — never write these to the DB
-    case onTrip      = "On Trip"
-    case onTask      = "On Task"
 
-    /// Returns the canonical value — legacy On Trip/On Task are treated as Busy.
-    var normalized: StaffAvailability {
-        switch self {
-        case .onTrip, .onTask: return .busy
-        default: return self
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        switch raw {
+        case "On Trip", "On Task":
+            self = .busy
+        default:
+            self = StaffAvailability(rawValue: raw) ?? .busy
         }
     }
 
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+
     /// True when the driver is effectively available for a new trip.
-    var isAvailableForDispatch: Bool { normalized == .available }
+    var isAvailableForDispatch: Bool { self == .available }
 }
 
 // MARK: - StaffMember

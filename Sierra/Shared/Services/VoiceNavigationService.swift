@@ -19,8 +19,12 @@ final class VoiceNavigationService {
         guard !isMuted else { return }
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
 
-        // Respect device silent/ringer switch — if output volume is near zero, skip
+        // Activate audio session for playback (ducks music, works when locked)
         let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playback, options: [.duckOthers, .interruptSpokenAudioAndMixWithOthers])
+        try? session.setActive(true)
+
+        // Respect device silent/ringer switch — if output volume is near zero, skip
         if session.outputVolume < 0.05 { return }
 
         synthesizer.stopSpeaking(at: .immediate)
