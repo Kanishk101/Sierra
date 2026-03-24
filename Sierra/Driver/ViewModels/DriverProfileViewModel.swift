@@ -220,32 +220,116 @@ final class DriverProfileViewModel {
         do {
             let userId = user.id.uuidString
             let bucket = supabase.storage.from("sierra-uploads")
+            print("📸 [UPLOAD] Starting document uploads for user: \(userId)")
+
+            // Helper: retry an async operation (up to 3 attempts) to handle transient QUIC/network errors
+            func uploadWithRetry(label: String, maxRetries: Int = 3, operation: () async throws -> Void) async throws {
+                var lastError: Error?
+                for attempt in 1...maxRetries {
+                    do {
+                        print("📸 [UPLOAD] Attempt \(attempt)/\(maxRetries) for \(label)")
+                        try await operation()
+                        print("📸 [UPLOAD] ✅ \(label) succeeded on attempt \(attempt)")
+                        return
+                    } catch {
+                        lastError = error
+                        print("📸 [UPLOAD] ⚠️ Attempt \(attempt) failed: \(error.localizedDescription)")
+                        if attempt < maxRetries {
+                            let delay = UInt64(attempt) * 1_000_000_000 // 1s, 2s backoff
+                            print("📸 [UPLOAD] ⏳ Waiting \(attempt)s before retry...")
+                            try await Task.sleep(nanoseconds: delay)
+                        }
+                    }
+                }
+                throw lastError!
+            }
 
             // Upload Aadhaar images (front + back) as a combined document entry
-            if let frontData = aadhaarFrontImage?.jpegData(compressionQuality: 0.8) {
-                let path = "\(userId)/aadhaar-front.jpg"
-                try await bucket.upload(path, data: frontData, options: .init(contentType: "image/jpeg", upsert: true))
-                let url = try bucket.getPublicURL(path: path)
-                aadhaarDocUrl = url.absoluteString
+            if let aadhaarFront = aadhaarFrontImage {
+                print("📸 [UPLOAD] Aadhaar front — original size: \(aadhaarFront.size.width)x\(aadhaarFront.size.height)")
+                let resized = aadhaarFront.downsized(maxDimension: 800)
+                print("📸 [UPLOAD] Aadhaar front — resized to: \(resized.size.width)x\(resized.size.height)")
+                if let frontData = resized.jpegData(compressionQuality: 0.4) {
+                    print("📸 [UPLOAD] Aadhaar front — JPEG data size: \(frontData.count / 1024) KB")
+                    let path = "onboarding/\(userId)/aadhaar-front.jpg"
+                    try await uploadWithRetry(label: "aadhaar-front") {
+                        try await bucket.upload(path, data: frontData, options: .init(contentType: "image/jpeg", upsert: true))
+                    }
+                    let url = try bucket.getPublicURL(path: path)
+                    aadhaarDocUrl = url.absoluteString
+                    print("📸 [UPLOAD] ✅ Aadhaar front URL: \(url.absoluteString)")
+                } else {
+                    print("📸 [UPLOAD] ❌ Aadhaar front — failed to create JPEG data")
+                }
+            } else {
+                print("📸 [UPLOAD] ⚠️ Aadhaar front image is nil, skipping")
             }
-            if let backData = aadhaarBackImage?.jpegData(compressionQuality: 0.8) {
-                let path = "\(userId)/aadhaar-back.jpg"
-                try await bucket.upload(path, data: backData, options: .init(contentType: "image/jpeg", upsert: true))
-                // Use front URL as the primary doc URL; back is stored separately
+
+            if let aadhaarBack = aadhaarBackImage {
+                print("📸 [UPLOAD] Aadhaar back — original size: \(aadhaarBack.size.width)x\(aadhaarBack.size.height)")
+                let resized = aadhaarBack.downsized(maxDimension: 800)
+                print("📸 [UPLOAD] Aadhaar back — resized to: \(resized.size.width)x\(resized.size.height)")
+                if let backData = resized.jpegData(compressionQuality: 0.4) {
+                    print("📸 [UPLOAD] Aadhaar back — JPEG data size: \(backData.count / 1024) KB")
+                    let path = "onboarding/\(userId)/aadhaar-back.jpg"
+                    try await uploadWithRetry(label: "aadhaar-back") {
+                        try await bucket.upload(path, data: backData, options: .init(contentType: "image/jpeg", upsert: true))
+                    }
+                    print("📸 [UPLOAD] ✅ Aadhaar back uploaded successfully")
+                } else {
+                    print("📸 [UPLOAD] ❌ Aadhaar back — failed to create JPEG data")
+                }
+            } else {
+                print("📸 [UPLOAD] ⚠️ Aadhaar back image is nil, skipping")
             }
 
             // Upload License images
-            if let frontData = licenseFrontImage?.jpegData(compressionQuality: 0.8) {
-                let path = "\(userId)/license-front.jpg"
-                try await bucket.upload(path, data: frontData, options: .init(contentType: "image/jpeg", upsert: true))
-                let url = try bucket.getPublicURL(path: path)
-                licenseDocUrl = url.absoluteString
+            if let licenseFront = licenseFrontImage {
+                print("📸 [UPLOAD] License front — original size: \(licenseFront.size.width)x\(licenseFront.size.height)")
+                let resized = licenseFront.downsized(maxDimension: 800)
+                print("📸 [UPLOAD] License front — resized to: \(resized.size.width)x\(resized.size.height)")
+                if let frontData = resized.jpegData(compressionQuality: 0.4) {
+                    print("📸 [UPLOAD] License front — JPEG data size: \(frontData.count / 1024) KB")
+                    let path = "onboarding/\(userId)/license-front.jpg"
+                    try await uploadWithRetry(label: "license-front") {
+                        try await bucket.upload(path, data: frontData, options: .init(contentType: "image/jpeg", upsert: true))
+                    }
+                    let url = try bucket.getPublicURL(path: path)
+                    licenseDocUrl = url.absoluteString
+                    print("📸 [UPLOAD] ✅ License front URL: \(url.absoluteString)")
+                } else {
+                    print("📸 [UPLOAD] ❌ License front — failed to create JPEG data")
+                }
+            } else {
+                print("📸 [UPLOAD] ⚠️ License front image is nil, skipping")
             }
-            if let backData = licenseBackImage?.jpegData(compressionQuality: 0.8) {
-                let path = "\(userId)/license-back.jpg"
-                try await bucket.upload(path, data: backData, options: .init(contentType: "image/jpeg", upsert: true))
+
+            if let licenseBack = licenseBackImage {
+                print("📸 [UPLOAD] License back — original size: \(licenseBack.size.width)x\(licenseBack.size.height)")
+                let resized = licenseBack.downsized(maxDimension: 800)
+                print("📸 [UPLOAD] License back — resized to: \(resized.size.width)x\(resized.size.height)")
+                if let backData = resized.jpegData(compressionQuality: 0.4) {
+                    print("📸 [UPLOAD] License back — JPEG data size: \(backData.count / 1024) KB")
+                    let path = "onboarding/\(userId)/license-back.jpg"
+                    try await uploadWithRetry(label: "license-back") {
+                        try await bucket.upload(path, data: backData, options: .init(contentType: "image/jpeg", upsert: true))
+                    }
+                    print("📸 [UPLOAD] ✅ License back uploaded successfully")
+                } else {
+                    print("📸 [UPLOAD] ❌ License back — failed to create JPEG data")
+                }
+            } else {
+                print("📸 [UPLOAD] ⚠️ License back image is nil, skipping")
             }
+
+            print("📸 [UPLOAD] ✅ All document uploads completed")
         } catch {
+            print("📸 [UPLOAD] ❌ Upload FAILED with error: \(error)")
+            print("📸 [UPLOAD] ❌ Error localizedDescription: \(error.localizedDescription)")
+            if let nsError = error as NSError? {
+                print("📸 [UPLOAD] ❌ NSError domain: \(nsError.domain), code: \(nsError.code)")
+                print("📸 [UPLOAD] ❌ NSError userInfo: \(nsError.userInfo)")
+            }
             errorMessage = "Failed to upload documents: \(error.localizedDescription)"
             isLoading = false
             return
@@ -332,6 +416,22 @@ final class DriverProfileViewModel {
 
     func goBack() {
         currentStep = 1
+    }
+}
+
+// MARK: - Image helpers
+
+private extension UIImage {
+    /// Returns an image downsized to fit within `maxDimension` while preserving aspect ratio.
+    func downsized(maxDimension: CGFloat) -> UIImage {
+        let maxSide = max(size.width, size.height)
+        guard maxSide > maxDimension else { return self }
+        let scale = maxDimension / maxSide
+        let newSize = CGSize(width: size.width * scale, height: size.height * scale)
+        let renderer = UIGraphicsImageRenderer(size: newSize)
+        return renderer.image { _ in
+            self.draw(in: CGRect(origin: .zero, size: newSize))
+        }
     }
 }
 

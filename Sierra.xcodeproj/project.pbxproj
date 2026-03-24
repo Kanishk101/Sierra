@@ -301,7 +301,6 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = N3BHPUK6BM;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Sierra/Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Sierra uses the camera to photograph vehicle condition during inspections and capture proof of delivery.";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Sierra uses Face ID to securely unlock the app and protect fleet data.";
@@ -320,7 +319,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.Arc.Sierra;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kanishk.Sierra;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -342,7 +341,6 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = N3BHPUK6BM;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Sierra/Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Sierra uses the camera to photograph vehicle condition during inspections and capture proof of delivery.";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Sierra uses Face ID to securely unlock the app and protect fleet data.";
@@ -361,7 +359,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.Arc.Sierra;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kanishk.Sierra;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;

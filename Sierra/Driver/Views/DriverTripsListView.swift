@@ -42,7 +42,15 @@ struct DriverTripsListView: View {
     private var filtered: [Trip] {
         driverTrips
             .filter { trip in
-                if let s = selectedStatus, trip.status.normalized != s.normalized { return false }
+                // Bug 4: gate Completed filter on postInspectionId
+                if let s = selectedStatus {
+                    let normalised = trip.status.normalized
+                    if s == .completed {
+                        guard normalised == .completed && trip.postInspectionId != nil else { return false }
+                    } else {
+                        guard normalised == s.normalized else { return false }
+                    }
+                }
                 if !searchText.isEmpty {
                     let q = searchText.lowercased()
                     return trip.taskId.lowercased().contains(q)
@@ -60,7 +68,8 @@ struct DriverTripsListView: View {
 
     private var totalCount: Int    { driverTrips.count }
     private var urgentCount: Int   { driverTrips.filter { $0.priority == .urgent }.count }
-    private var activeCount: Int   { driverTrips.filter { $0.status == .scheduled || $0.status == .active }.count }
+    // Bug 7: count only accepted (scheduled + acceptedAt set) trips
+    private var acceptedCount: Int { driverTrips.filter { $0.status == .scheduled && $0.acceptedAt != nil }.count }
 
     var body: some View {
         ZStack {
@@ -211,10 +220,13 @@ struct DriverTripsListView: View {
                let vehicleUUID = UUID(uuidString: vIdStr),
                let dId = driverId {
                 if inspectionMode == .post {
-                    PostTripInspectionView(
-                        tripId: iTrip.id, vehicleId: vehicleUUID, driverId: dId
-                    )
-                    .environment(store)
+                    // Bug 3 fix: wrap in NavigationStack so .navigationTitle / toolbar render
+                    NavigationStack {
+                        PostTripInspectionView(
+                            tripId: iTrip.id, vehicleId: vehicleUUID, driverId: dId
+                        )
+                        .environment(store)
+                    }
                 } else {
                     PreTripInspectionView(
                         tripId: iTrip.id, vehicleId: vehicleUUID, driverId: dId,
@@ -342,7 +354,8 @@ struct DriverTripsListView: View {
             Divider().frame(height: 32).padding(.horizontal, 4)
             statItem(value: "\(urgentCount)", label: "Urgent", icon: "flame.fill", color: Color(red: 0.85, green: 0.18, blue: 0.15))
             Divider().frame(height: 32).padding(.horizontal, 4)
-            statItem(value: "\(activeCount)", label: "Active", icon: "checkmark.seal.fill", color: Color(red: 0.20, green: 0.65, blue: 0.32))
+            // Bug 7: label is "Accepted", counts scheduled+accepted trips only
+            statItem(value: "\(acceptedCount)", label: "Accepted", icon: "checkmark.seal.fill", color: Color(red: 0.20, green: 0.65, blue: 0.32))
         }
         .padding(.vertical, 14)
         .padding(.horizontal, 8)
@@ -467,17 +480,20 @@ struct DriverTripsListView: View {
 
     @ViewBuilder
     private func actionButtons(_ trip: Trip) -> some View {
-        let isCompleted     = trip.status == .completed
+        let status = trip.status.normalized
+        let isCompleted     = status == .completed
+        let isCancelled     = status == .cancelled
         let needsPostTrip   = isCompleted && trip.postInspectionId == nil
         let postTripDone    = isCompleted && trip.postInspectionId != nil
         let hasPreInspection = trip.preInspectionId != nil
         // isAcceptedScheduled: driver has accepted (acceptedAt set) → status is Scheduled
-        let isAcceptedScheduled = trip.status == .scheduled && trip.acceptedAt != nil
+        let isAcceptedScheduled = status == .scheduled && trip.acceptedAt != nil
         // Within 30-min departure window
         let withinStartWindow = trip.scheduledDate.timeIntervalSinceNow <= TripConstants.driverBlockWindowSeconds
             && trip.scheduledDate.timeIntervalSinceNow > -3600
-        let isReadyToStart  = isAcceptedScheduled && hasPreInspection && withinStartWindow
-        let isAwaitingWindow = isAcceptedScheduled && hasPreInspection && !withinStartWindow
+        let isStartTimeReached = trip.scheduledDate <= Date()
+        let isReadyToStart  = isAcceptedScheduled && hasPreInspection && (withinStartWindow || isStartTimeReached)
+        let isAwaitingWindow = isAcceptedScheduled && hasPreInspection && !(withinStartWindow || isStartTimeReached)
         let isAwaitingInspection = isAcceptedScheduled && !hasPreInspection
 
         if needsPostTrip {
@@ -491,7 +507,7 @@ struct DriverTripsListView: View {
         } else {
             HStack(spacing: 12) {
                 // Left: always "View Details" (opens TripDetailOverlay)
-                Button { showTripDetail(trip) } label: {
+                NavigationLink(value: trip.id) {
                     HStack(spacing: 6) {
                         Image(systemName: "doc.text.magnifyingglass").font(.system(size: 13, weight: .semibold))
                         Text("View Details").font(.system(size: 14, weight: .bold, design: .rounded))
@@ -505,7 +521,16 @@ struct DriverTripsListView: View {
                 .buttonStyle(.plain)
 
                 // Right: varies by state
-                if trip.status == .pendingAcceptance {
+                if isCancelled {
+                    HStack(spacing: 6) {
+                        Image(systemName: "xmark.circle.fill").font(.system(size: 13, weight: .semibold))
+                        Text("Cancelled").font(.system(size: 14, weight: .bold, design: .rounded))
+                    }
+                    .foregroundColor(Color(red: 0.90, green: 0.22, blue: 0.18))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Capsule().fill(Color.appDivider.opacity(0.3)))
+                } else if status == .pendingAcceptance {
                     // Accept Trip
                     Button { acceptTrip(trip) } label: {
                         HStack(spacing: 6) {
@@ -520,11 +545,10 @@ struct DriverTripsListView: View {
                     .buttonStyle(.plain)
                     .disabled(isAccepting)
                 } else if isAwaitingInspection {
-                    // Pre-trip inspection needed — open TripDetailOverlay which has the slider
-                    Button { showTripDetail(trip) } label: {
+                    Button { startInspection(for: trip) } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "clipboard.fill").font(.system(size: 13, weight: .semibold))
-                            Text("Inspect Vehicle").font(.system(size: 14, weight: .bold, design: .rounded))
+                            Text("Pre-Trip Inspection").font(.system(size: 14, weight: .bold, design: .rounded))
                         }
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
@@ -545,7 +569,6 @@ struct DriverTripsListView: View {
                     .background(Capsule().fill(Color(.tertiarySystemGroupedBackground)))
                     .overlay(Capsule().stroke(Color.appDivider.opacity(0.6), lineWidth: 1))
                 } else if isReadyToStart {
-                    // Within window + inspection done → go to TripDetailDriverView for full start flow
                     NavigationLink(value: trip.id) {
                         HStack(spacing: 6) {
                             Image(systemName: "play.circle.fill").font(.system(size: 13, weight: .semibold))
@@ -774,33 +797,38 @@ struct AcceptSuccessOverlay: View {
     @State private var scale: CGFloat = 0.5
     @State private var checkOpacity: Double = 0
     var body: some View {
-        VStack(spacing: 16) {
-            ZStack {
-                Circle()
-                    .fill(Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.15))
-                    .frame(width: 110, height: 110)
-                    .scaleEffect(scale > 0.8 ? 1.3 : 0.8)
-                Circle()
-                    .fill(Color(red: 0.20, green: 0.65, blue: 0.32))
-                    .frame(width: 80, height: 80)
-                    .shadow(color: Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.4), radius: 20)
-                Image(systemName: "checkmark")
-                    .font(.system(size: 36, weight: .bold))
-                    .foregroundColor(.white)
+        // Full-screen container so the card is centred on whatever screen it appears on
+        ZStack {
+            Color.black.opacity(0.45).ignoresSafeArea()
+
+            VStack(spacing: 16) {
+                ZStack {
+                    Circle()
+                        .fill(Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.15))
+                        .frame(width: 110, height: 110)
+                        .scaleEffect(scale > 0.8 ? 1.3 : 0.8)
+                    Circle()
+                        .fill(Color(red: 0.20, green: 0.65, blue: 0.32))
+                        .frame(width: 80, height: 80)
+                        .shadow(color: Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.4), radius: 20)
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 36, weight: .bold))
+                        .foregroundColor(.white)
+                        .opacity(checkOpacity)
+                        .scaleEffect(checkOpacity > 0 ? 1.0 : 0.3)
+                }
+                Text("Trip Accepted!")
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .foregroundColor(.appTextPrimary)
                     .opacity(checkOpacity)
-                    .scaleEffect(checkOpacity > 0 ? 1.0 : 0.3)
             }
-            Text("Trip Accepted!")
-                .font(.system(size: 20, weight: .bold, design: .rounded))
-                .foregroundColor(.appTextPrimary)
-                .opacity(checkOpacity)
-        }
-        .padding(40)
-        .background(RoundedRectangle(cornerRadius: 32).fill(.ultraThinMaterial).shadow(color: Color.black.opacity(0.1), radius: 30))
-        .scaleEffect(scale)
-        .onAppear {
-            withAnimation(.spring(response: 0.5, dampingFraction: 0.6)) { scale = 1.0 }
-            withAnimation(.easeOut(duration: 0.3).delay(0.25)) { checkOpacity = 1.0 }
+            .padding(40)
+            .background(RoundedRectangle(cornerRadius: 32).fill(.ultraThinMaterial).shadow(color: Color.black.opacity(0.1), radius: 30))
+            .scaleEffect(scale)
+            .onAppear {
+                withAnimation(.spring(response: 0.5, dampingFraction: 0.6)) { scale = 1.0 }
+                withAnimation(.easeOut(duration: 0.3).delay(0.25)) { checkOpacity = 1.0 }
+            }
         }
     }
 }

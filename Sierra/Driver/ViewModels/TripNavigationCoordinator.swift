@@ -21,6 +21,25 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     var alternativeRoute: MapboxDirections.Route? { routeEngine.alternativeRoute }
     var currentStepInstruction: String          { routeEngine.currentStepInstruction }
     var displayedRouteCoordinates: [CLLocationCoordinate2D] { routeEngine.decodedRouteCoordinates }
+    var remainingRouteCoordinates: [CLLocationCoordinate2D] {
+        let coords = routeEngine.decodedRouteCoordinates
+        guard !coords.isEmpty else { return [] }
+        guard let lastBreadcrumb = breadcrumbCoordinates.last else { return coords }
+
+        let breadcrumbLocation = CLLocation(latitude: lastBreadcrumb.latitude, longitude: lastBreadcrumb.longitude)
+
+        var dropIndex: Int?
+        for (idx, coord) in coords.enumerated() {
+            let loc = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
+            if loc.distance(from: breadcrumbLocation) < 5 {
+                dropIndex = idx
+                break
+            }
+        }
+
+        guard let idx = dropIndex else { return coords }
+        return Array(coords.dropFirst(idx))
+    }
     var hasRenderableRoute: Bool                { routeEngine.decodedRouteCoordinates.count >= 2 }
     var isUsingStoredRouteFallback: Bool        { routeEngine.isUsingStoredRouteFallback }
     var routeEngineError: String?               { routeEngine.lastBuildError }
@@ -61,6 +80,9 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         let distanceTraveled = routeEngine.totalRouteDistanceMetres - distanceRemainingMetres
         return max(0, min(1, distanceTraveled / routeEngine.totalRouteDistanceMetres))
     }
+    var simulated: Bool = false
+    private var simulationTimer: Timer?
+    private var simulationIndex: Int = 0
 
     let trip: Trip
     private(set) var currentLocation: CLLocation?
@@ -100,6 +122,14 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     func rebuildRoutes() async {
         await routeEngine.rebuildRoutes(trip: trip, currentLocation: currentLocation)
     }
+    func setSimulationEnabled(_ enabled: Bool) {
+        simulated = enabled
+        simulationTimer?.invalidate(); simulationTimer = nil
+        simulationIndex = 0
+        if enabled {
+            startSimulation()
+        }
+    }
     func addStop(latitude: Double, longitude: Double, name: String) async {
         await routeEngine.addStop(latitude: latitude, longitude: longitude, name: name,
                                    trip: trip, currentLocation: currentLocation)
@@ -107,6 +137,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
 
     // MARK: - Location Manager
     func startLocationTracking() {
+        guard !simulated else { return }
         let manager = CLLocationManager()
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
@@ -369,6 +400,26 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         let current = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
         guard current.distance(from: previous) >= 8 else { return }
         breadcrumbCoordinates.append(coordinate)
+    }
+
+    // MARK: - Simulation
+    private func startSimulation() {
+        guard routeEngine.decodedRouteCoordinates.count > 1 else { return }
+        simulationTimer?.invalidate()
+        simulationIndex = 0
+        simulationTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] timer in
+            guard let self else { return }
+            let coords = routeEngine.decodedRouteCoordinates
+            guard !coords.isEmpty else { timer.invalidate(); return }
+            let coord = coords[simulationIndex % coords.count]
+            let location = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
+            currentLocation = location
+            appendBreadcrumbCoordinateIfNeeded(coord)
+            simulationIndex = min(simulationIndex + 1, coords.count - 1)
+            if simulationIndex >= coords.count - 1 {
+                timer.invalidate()
+            }
+        }
     }
 }
 

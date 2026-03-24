@@ -13,6 +13,8 @@ struct TripNavigationContainerView: View {
     @State private var buildErrorMessage   = "Could not calculate route. Check your connection and try again."
     @State private var lastSpokenInstruction = ""
     @State private var showDismissAlert    = false
+    @State private var simulateRoute       = false
+    @State private var showDebugControls   = false
     @Environment(AppDataStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -26,7 +28,7 @@ struct TripNavigationContainerView: View {
     var body: some View {
         ZStack {
             if MapService.hasValidToken {
-                TripNavigationView(coordinator: coordinator)
+                TripNavigationView(coordinator: coordinator, simulate: simulateRoute)
             } else {
                 TripNavigationFallbackMapView(coordinator: coordinator)
             }
@@ -57,6 +59,49 @@ struct TripNavigationContainerView: View {
             }
             .ignoresSafeArea(edges: .top)
             .zIndex(10)
+
+            // Debug controls (simulator)
+            if showDebugControls {
+                VStack {
+                    Spacer()
+                    HStack {
+                        Toggle("Simulate Route", isOn: $simulateRoute)
+                            .toggleStyle(SwitchToggleStyle(tint: .orange))
+                            .padding(12)
+                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+                            .padding(.leading, 16)
+                        Spacer()
+                    }
+                    .padding(.bottom, 30)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .zIndex(9)
+            }
+
+            // Debug button (only in DEBUG)
+            #if DEBUG
+            VStack {
+                HStack {
+                    Spacer()
+                    Button {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                            showDebugControls.toggle()
+                        }
+                    } label: {
+                        Image(systemName: "ladybug.fill")
+                            .foregroundColor(.white)
+                            .padding(10)
+                            .background(Circle().fill(Color.orange))
+                            .shadow(color: .black.opacity(0.3), radius: 6, y: 2)
+                    }
+                    .padding(.trailing, 18)
+                    .padding(.top, 56)
+                }
+                Spacer()
+            }
+            .ignoresSafeArea(edges: .top)
+            .zIndex(10)
+            #endif
 
             // Route building spinner
             if isBuildingRoutes {
@@ -120,9 +165,14 @@ struct TripNavigationContainerView: View {
                     ProofOfDeliveryView(tripId: coordinator.trip.id, driverId: userId) {
                         showProofOfDelivery = false; dismiss()
                     }
+                    .environment(store)
                 }
             }
         }
+        .onChange(of: simulateRoute) { _, newValue in
+            coordinator.setSimulationEnabled(newValue)
+        }
+        .onDisappear { coordinator.setSimulationEnabled(false) }
     }
 
     private func buildAndShowRoutes() async {

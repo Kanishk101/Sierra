@@ -75,13 +75,21 @@ struct ProofOfDeliveryService {
         return rows.first
     }
 
-    static func addProofOfDelivery(_ pod: ProofOfDelivery) async throws {
+    @discardableResult
+    static func addProofOfDelivery(_ pod: ProofOfDelivery) async throws -> ProofOfDelivery {
         let payload = ProofOfDeliveryPayload(from: pod)
         // Use upsert so retries after partial failures don't hit the unique trip_id constraint
         try await supabase
             .from("proof_of_deliveries")
             .upsert(payload, onConflict: "trip_id")
             .execute()
+
+        if let saved = try await fetchProofOfDelivery(tripId: pod.tripId) {
+            return saved
+        }
+
+        throw NSError(domain: "ProofOfDeliveryService", code: -1,
+                      userInfo: [NSLocalizedDescriptionKey: "Proof of Delivery insert did not return a row"])
     }
 
     static func updateProofOfDelivery(_ pod: ProofOfDelivery) async throws {

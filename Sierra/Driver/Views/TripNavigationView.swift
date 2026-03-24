@@ -14,6 +14,8 @@ import CoreLocation
 struct TripNavigationView: UIViewRepresentable {
 
     let coordinator: TripNavigationCoordinator
+    var simulate: Bool = false
+
 
     func makeUIView(context: Context) -> MapView {
         let cameraOptions = CameraOptions(
@@ -47,7 +49,7 @@ struct TripNavigationView: UIViewRepresentable {
         context.coordinator.scheduleRender(
             mapView: mapView,
             trip: coordinator.trip,
-            routeCoordinates: coordinator.displayedRouteCoordinates,
+            routeCoordinates: coordinator.remainingRouteCoordinates,
             breadcrumbCoordinates: coordinator.breadcrumbCoordinates,
             congestionLevels: nil
         )
@@ -59,10 +61,11 @@ struct TripNavigationView: UIViewRepresentable {
         context.coordinator.scheduleRender(
             mapView: mapView,
             trip: coordinator.trip,
-            routeCoordinates: coordinator.displayedRouteCoordinates,
+            routeCoordinates: coordinator.remainingRouteCoordinates,
             breadcrumbCoordinates: coordinator.breadcrumbCoordinates,
             congestionLevels: congestion
         )
+        coordinator.setSimulationEnabled(simulate)
     }
 
     func makeCoordinator() -> MapCoordinator {

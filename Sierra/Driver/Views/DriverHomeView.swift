@@ -142,6 +142,11 @@ struct DriverHomeView: View {
             }
             .scrollIndicators(.hidden)
             .ignoresSafeArea(edges: .top)
+            .refreshable {
+                if let id = AuthManager.shared.currentUser?.id {
+                    await store.loadDriverData(driverId: id)
+                }
+            }
 
             // Overlays
             if showAcceptConfetti {
@@ -590,15 +595,18 @@ struct DriverHomeView: View {
 
     @ViewBuilder
     private func actionButtons(_ trip: Trip) -> some View {
-        let isCompleted = trip.status == .completed
+        let status = trip.status.normalized
+        let isCompleted = status == .completed
+        let isCancelled = status == .cancelled
         let needsPostTrip = isCompleted && trip.postInspectionId == nil
         let postTripDone = isCompleted && trip.postInspectionId != nil
         let hasPreInspection = trip.preInspectionId != nil
-        let isAcceptedScheduled = trip.status == .scheduled && trip.acceptedAt != nil
+        let isAcceptedScheduled = status == .scheduled && trip.acceptedAt != nil
         let withinStartWindow = trip.scheduledDate.timeIntervalSinceNow <= TripConstants.driverBlockWindowSeconds
             && trip.scheduledDate.timeIntervalSinceNow > -3600
-        let isReadyToStart = isAcceptedScheduled && hasPreInspection && withinStartWindow
-        let isAwaitingWindow = isAcceptedScheduled && hasPreInspection && !withinStartWindow
+        let isStartTimeReached = trip.scheduledDate <= Date()
+        let isReadyToStart = isAcceptedScheduled && hasPreInspection && (withinStartWindow || isStartTimeReached)
+        let isAwaitingWindow = isAcceptedScheduled && hasPreInspection && !(withinStartWindow || isStartTimeReached)
         let isAwaitingInspection = isAcceptedScheduled && !hasPreInspection
 
         if needsPostTrip {
@@ -612,7 +620,7 @@ struct DriverHomeView: View {
         } else {
             HStack(spacing: 12) {
                 // Left: View Details
-                Button { showTripDetail(trip) } label: {
+                NavigationLink(value: trip.id) {
                     HStack(spacing: 6) {
                         Image(systemName: "doc.text.magnifyingglass")
                             .font(.system(size: 13, weight: .semibold))
@@ -628,7 +636,18 @@ struct DriverHomeView: View {
                 .buttonStyle(.plain)
 
                 // Right: Accept / Accepted / Navigate
-                if trip.status == .pendingAcceptance {
+                if isCancelled {
+                    HStack(spacing: 6) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("Cancelled")
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                    }
+                    .foregroundColor(Color(red: 0.90, green: 0.22, blue: 0.18))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Capsule().fill(Color.appDivider.opacity(0.3)))
+                } else if status == .pendingAcceptance {
                     Button { acceptTrip(trip) } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "hand.thumbsup.fill")
@@ -644,11 +663,11 @@ struct DriverHomeView: View {
                     .buttonStyle(.plain)
                     .disabled(isAccepting)
                 } else if isAwaitingInspection {
-                    Button { showTripDetail(trip) } label: {
+                    Button { startInspection(for: trip) } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "clipboard.fill")
                                 .font(.system(size: 13, weight: .semibold))
-                            Text("Inspect Vehicle")
+                            Text("Pre-Trip Inspection")
                                 .font(.system(size: 14, weight: .bold, design: .rounded))
                         }
                         .foregroundColor(.white)

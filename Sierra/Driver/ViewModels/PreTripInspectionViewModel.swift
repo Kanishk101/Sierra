@@ -53,8 +53,8 @@ final class PreTripInspectionViewModel {
     }
 
     /// True when odometer required but not yet filled in (pre-trip only).
-    var odometerRequired: Bool { inspectionType == .preTripInspection }
-    var odometerValid: Bool { !odometerRequired || (odometerReading != nil) }
+    var odometerRequired: Bool { false }  // Bug 6: odometer moved to page 2 as a photo, not required for advance
+    var odometerValid: Bool { true }
 
     // MARK: - Fuel receipt (Post-trip)
     var fuelReceiptUrl: String?
@@ -91,6 +91,9 @@ final class PreTripInspectionViewModel {
     var isUploadingPhotos = false
     var uploadProgress: String = ""
 
+    // MARK: - Bug 6: Signature (Page 3)
+    var signatureImage: UIImage?
+
     // MARK: - Validation computed properties
 
     /// True when every checklist item has been explicitly reviewed OR is still .notChecked
@@ -120,15 +123,15 @@ final class PreTripInspectionViewModel {
         }
     }
 
-    var canAdvanceToPhotos: Bool { odometerValid }
+    var canAdvanceToPhotos: Bool { true }  // Bug 6: no odometer gate on page 1
 
     /// May advance to summary only when all failed items have at least one photo.
     /// M-06 FIX: Warning items that are flagged as needing photos are also gated.
     var canAdvanceToSummary: Bool { failedItemsMissingPhoto.isEmpty }
 
-    /// Final submit gate: no failed/warning item missing a photo + odometer valid.
+    /// Final submit gate: no failed item missing a photo + signature present.
     var canSubmit: Bool {
-        failedItemsMissingPhoto.isEmpty && odometerValid
+        failedItemsMissingPhoto.isEmpty && signatureImage != nil
     }
 
     // MARK: - Step 3: Computed results

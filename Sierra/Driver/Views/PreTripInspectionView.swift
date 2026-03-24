@@ -1,6 +1,7 @@
 import SwiftUI
 import PhotosUI
 import UIKit
+import PencilKit
 
 /// Multi-step pre-trip / post-trip inspection form.
 /// Step 1: Checklist  — every item must be explicitly set (Pass / Warn / Fail).
@@ -41,6 +42,7 @@ struct PreTripInspectionView: View {
     }
 
     var body: some View {
+        @Bindable var viewModel = viewModel
         ZStack {
             Color.appSurface.ignoresSafeArea()
 
@@ -73,8 +75,8 @@ struct PreTripInspectionView: View {
 
                 switch viewModel.currentStep {
                 case 1:  checklistStep
-                case 2:  photoStep
-                case 3:  summaryStep
+                case 2:  mediaStep
+                case 3:  signatureStep
                 default: EmptyView()
                 }
             }
@@ -136,20 +138,14 @@ struct PreTripInspectionView: View {
         }
     }
 
-    // MARK: - Step 1: Checklist
+    // MARK: - Step 1: Checklist (Bug 6 redesign)
+    // Odometer capture removed from this page — it now lives as a photo in Step 2.
+    // Next button label adapts: all green = "All Clear → Next", has issues = "Log Issues → Next".
 
     private var checklistStep: some View {
         VStack(spacing: 0) {
             ScrollView {
                 LazyVStack(spacing: 1) {
-                    // Odometer capture card (pre-trip only)
-                    if viewModel.inspectionType == .preTripInspection {
-                        odometerCaptureCard
-                            .padding(.horizontal, 16)
-                            .padding(.top, 12)
-                            .padding(.bottom, 4)
-                    }
-
                     ForEach($viewModel.checkItems) { $item in
                         checkItemRow(item: $item)
                     }
@@ -191,12 +187,14 @@ struct PreTripInspectionView: View {
                 .background(Color.orange.opacity(0.06))
             }
 
+            // Bug 6: Adaptive Next button — label changes based on issue state
+            let hasIssues = !viewModel.failedItems.isEmpty || !viewModel.warningItems.isEmpty
             Button {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { viewModel.currentStep = 2 }
             } label: {
                 HStack(spacing: 8) {
-                    Text("Next")
+                    Text(hasIssues ? "Log Issues → Next" : "All Clear → Next")
                         .font(.system(size: 16, weight: .bold, design: .rounded))
                     Image(systemName: "arrow.right")
                         .font(.system(size: 14, weight: .bold))
@@ -206,17 +204,14 @@ struct PreTripInspectionView: View {
                 .padding(.vertical, 17)
                 .background(
                     Capsule()
-                        .fill(viewModel.canAdvanceToPhotos ? Color.appOrange : Color.appOrange.opacity(0.4))
+                        .fill(hasIssues ? Color.appOrange : Color(red: 0.20, green: 0.65, blue: 0.32))
                 )
                 .shadow(
-                    color: viewModel.canAdvanceToPhotos ? Color.appOrange.opacity(0.3) : Color.clear,
+                    color: (hasIssues ? Color.appOrange : Color(red: 0.20, green: 0.65, blue: 0.32)).opacity(0.3),
                     radius: 12, x: 0, y: 6
                 )
             }
             .buttonStyle(.plain)
-            .disabled(!viewModel.canAdvanceToPhotos)
-            .scaleEffect(viewModel.canAdvanceToPhotos ? 1.0 : 0.98)
-            .animation(.spring(response: 0.3), value: viewModel.canAdvanceToPhotos)
             .padding(.horizontal, 20)
             .padding(.bottom, 16)
         }
@@ -344,9 +339,14 @@ struct PreTripInspectionView: View {
         }
     }
 
-    // MARK: - Step 2: Photos (Phase 6 — per-item photo pickers)
+    // MARK: - Step 2: Media Captures (Bug 6 redesign)
 
-    private var photoStep: some View {
+    @State private var fuelPhoto: UIImage?
+    @State private var odometerPhoto: UIImage?
+    @State private var showFuelCamera = false
+    @State private var showOdometerCam = false
+
+    private var mediaStep: some View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(spacing: 20) {
@@ -356,81 +356,70 @@ struct PreTripInspectionView: View {
                         Image(systemName: "camera.badge.ellipsis")
                             .font(.system(size: 36))
                             .foregroundStyle(SierraTheme.Colors.ember.opacity(0.7))
-                        Text("Document Issues")
+                        Text("Document Vehicle State")
                             .font(.headline)
-                        Text("Failed items require a photo. Warning items are recommended.")
+                        Text("Capture fuel gauge and odometer photos before departure.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
                     }
                     .padding(.top, 8)
 
-                    // ── Per-item photo pickers ───────────────────────────────
-                    if viewModel.itemsNeedingPhotos.isEmpty {
-                        HStack(spacing: 8) {
-                            Image(systemName: "checkmark.seal.fill")
-                                .foregroundStyle(SierraTheme.Colors.alpineMint)
-                            Text("No failed or warning items — no photos required.")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(16)
-                        .frame(maxWidth: .infinity)
-                        .background(Color(.secondarySystemBackground),
-                                    in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    } else {
-                        ForEach(viewModel.itemsNeedingPhotos) { item in
-                            itemPhotoRow(item: item)
-                        }
-                    }
+                    // ── Fuel Status photo ────────────────────────────────────
+                    photoCaptureRow(
+                        title: "Fuel Status",
+                        subtitle: "Photograph the fuel gauge",
+                        icon: "fuelpump.fill",
+                        accent: SierraTheme.Colors.warning,
+                        capturedImage: fuelPhoto,
+                        onTap: { showFuelCamera = true }
+                    )
 
-                    // ── General photos (optional) ────────────────────────────
-                    VStack(alignment: .leading, spacing: 10) {
-                        Label("General Vehicle Photos (Optional)", systemImage: "photo.on.rectangle.angled")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
+                    // ── Odometer photo ───────────────────────────────────────
+                    photoCaptureRow(
+                        title: "Odometer Reading",
+                        subtitle: "Photograph the odometer display",
+                        icon: "speedometer",
+                        accent: SierraTheme.Colors.ember,
+                        capturedImage: odometerPhoto,
+                        onTap: { showOdometerCam = true }
+                    )
 
-                        let generalCount = viewModel.generalPhotoSelections.count
-                        PhotosPicker(
-                            selection: Binding(
-                                get: { viewModel.generalPhotoSelections },
-                                set: { newVal in
-                                    viewModel.generalPhotoSelections = newVal
-                                    Task { @MainActor in
-                                        await viewModel.loadGeneralPhotos(selections: newVal)
-                                    }
-                                }
-                            ),
-                            maxSelectionCount: 5,
-                            matching: .images
-                        ) {
-                            HStack {
-                                Image(systemName: "plus.circle")
-                                Text(generalCount == 0
-                                     ? "Add overview photos"
-                                     : "\(generalCount) photo(s) selected")
+                    // ── Failed items still need per-item photos ──────────────
+                    if !viewModel.itemsNeedingPhotos.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Label("Issue Documentation", systemImage: "exclamationmark.triangle.fill")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(SierraTheme.Colors.danger)
+                            ForEach(viewModel.itemsNeedingPhotos) { item in
+                                itemPhotoRow(item: item)
                             }
-                            .font(.subheadline)
-                            .foregroundStyle(SierraTheme.Colors.ember)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 10)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .strokeBorder(SierraTheme.Colors.ember.opacity(0.5), lineWidth: 1.3)
-                            )
                         }
                     }
-                    .padding(14)
-                    .background(Color(.secondarySystemBackground),
-                                in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 16)
             }
+            .sheet(isPresented: $showFuelCamera) {
+                OdometerCameraSheet { img in
+                    fuelPhoto = img
+                    if let data = img.jpegData(compressionQuality: 0.8) {
+                        viewModel.generalPhotoData.append(data)
+                    }
+                }
+            }
+            .sheet(isPresented: $showOdometerCam) {
+                OdometerCameraSheet { img in
+                    odometerPhoto = img
+                    Task { @MainActor in await viewModel.handleOCRImage(img) }
+                    if let data = img.jpegData(compressionQuality: 0.8) {
+                        viewModel.generalPhotoData.append(data)
+                    }
+                }
+            }
 
             Divider()
 
-            // ── Navigation buttons ───────────────────────────────────────────
             HStack(spacing: 12) {
                 Button {
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -441,10 +430,7 @@ struct PreTripInspectionView: View {
                         .foregroundColor(.appTextPrimary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 17)
-                        .background(
-                            Capsule()
-                                .fill(Color.appSurface)
-                        )
+                        .background(Capsule().fill(Color.appSurface))
                         .overlay(Capsule().stroke(Color.appDivider, lineWidth: 1))
                 }
                 .buttonStyle(.plain)
@@ -462,21 +448,71 @@ struct PreTripInspectionView: View {
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 17)
-                    .background(
-                        Capsule()
-                            .fill(viewModel.canAdvanceToSummary ? Color.appOrange : Color.appOrange.opacity(0.4))
-                    )
-                    .shadow(
-                        color: viewModel.canAdvanceToSummary ? Color.appOrange.opacity(0.3) : Color.clear,
-                        radius: 12, x: 0, y: 6
-                    )
+                    .background(Capsule().fill(Color.appOrange))
+                    .shadow(color: Color.appOrange.opacity(0.3), radius: 12, x: 0, y: 6)
                 }
                 .buttonStyle(.plain)
-                .disabled(!viewModel.canAdvanceToSummary)
             }
             .padding(16)
         }
     }
+
+    /// Reusable camera capture row for Step 2.
+    private func photoCaptureRow(
+        title: String,
+        subtitle: String,
+        icon: String,
+        accent: Color,
+        capturedImage: UIImage?,
+        onTap: @escaping () -> Void
+    ) -> some View {
+        Button(action: onTap) {
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill(accent.opacity(0.12))
+                        .frame(width: 48, height: 48)
+                    if let img = capturedImage {
+                        Image(uiImage: img)
+                            .resizable().scaledToFill()
+                            .frame(width: 48, height: 48)
+                            .clipShape(Circle())
+                    } else {
+                        Image(systemName: icon)
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundColor(accent)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .foregroundColor(.appTextPrimary)
+                    Text(capturedImage == nil ? subtitle : "✓ Photo captured — tap to retake")
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundColor(capturedImage == nil ? .appTextSecondary : Color(red: 0.20, green: 0.65, blue: 0.32))
+                }
+
+                Spacer()
+
+                Image(systemName: capturedImage == nil ? "camera.fill" : "checkmark.circle.fill")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(capturedImage == nil ? accent : Color(red: 0.20, green: 0.65, blue: 0.32))
+            }
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(capturedImage == nil ? accent.opacity(0.06) : Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.06))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(capturedImage == nil ? accent.opacity(0.2) : Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.3), lineWidth: 1.5)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+
 
     /// A single row showing one check item with its own photo picker.
     /// Red = failed (REQUIRED), orange = warning (RECOMMENDED).
@@ -567,49 +603,83 @@ struct PreTripInspectionView: View {
         )
     }
 
-    // MARK: - Step 3: Summary + Submit
+    // MARK: - Step 3: Signature (Bug 6 redesign)
+    // PencilKit signature canvas + submit.
 
-    private var summaryStep: some View {
-        VStack(spacing: 16) {
+    @State private var canvasView = PKCanvasView()
+    @State private var signatureIsEmpty = true
+
+    private var signatureStep: some View {
+        VStack(spacing: 0) {
             ScrollView {
-                VStack(spacing: 16) {
-                    resultBanner
+                VStack(spacing: 20) {
+
+                    // ── Summary header ──────────────────────────────────────
+                    resultBanner.padding(.horizontal, 16)
 
                     if !viewModel.failedItems.isEmpty {
-                        issuesList(
-                            "Failed Items",
-                            items: viewModel.failedItems,
-                            color: SierraTheme.Colors.danger
-                        )
+                        issuesList("Failed Items", items: viewModel.failedItems, color: SierraTheme.Colors.danger)
+                            .padding(.horizontal, 16)
                     }
                     if !viewModel.warningItems.isEmpty {
-                        issuesList(
-                            "Warnings",
-                            items: viewModel.warningItems,
-                            color: SierraTheme.Colors.warning
-                        )
+                        issuesList("Warnings", items: viewModel.warningItems, color: SierraTheme.Colors.warning)
+                            .padding(.horizontal, 16)
                     }
 
-                    let totalPhotoCount = viewModel.itemPhotoData.values.flatMap { $0 }.count
-                        + viewModel.generalPhotoData.count
-                    if totalPhotoCount > 0 {
-                        HStack {
-                            Image(systemName: "photo.fill")
-                                .foregroundStyle(.secondary)
-                            Text("\(totalPhotoCount) photo(s) will be uploaded")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                    // ── Signature canvas ──────────────────────────────────
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "signature")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.appOrange)
+                            Text("Driver Signature")
+                                .font(.system(size: 15, weight: .bold, design: .rounded))
+                                .foregroundColor(.appTextPrimary)
                             Spacer()
+                            if !signatureIsEmpty {
+                                Button("Clear") {
+                                    canvasView.drawing = PKDrawing()
+                                    signatureIsEmpty = true
+                                    viewModel.signatureImage = nil
+                                }
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                .foregroundColor(.appOrange)
+                            }
                         }
-                        .padding(12)
-                        .background(
-                            Color(.secondarySystemBackground),
-                            in: RoundedRectangle(cornerRadius: 10)
-                        )
+
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(Color.white)
+                                .frame(height: 160)
+                                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.appDivider, lineWidth: 1.5))
+
+                            if signatureIsEmpty {
+                                Text("Sign here with your finger")
+                                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                                    .foregroundColor(.appTextSecondary.opacity(0.5))
+                            }
+
+                            SignatureCanvasView(canvasView: $canvasView) {
+                                let image = canvasView.drawing.image(from: canvasView.bounds, scale: 3.0)  // 3x Retina
+                                viewModel.signatureImage = image
+                                signatureIsEmpty = canvasView.drawing.strokes.isEmpty
+                            }
+                            .frame(height: 160)
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                        }
+
+                        Text("I certify that this vehicle has been inspected and is roadworthy.")
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                            .foregroundColor(.appTextSecondary)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity)
                     }
+                    .padding(16)
+                    .background(RoundedRectangle(cornerRadius: 18).fill(Color.appCardBg))
+                    .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.appDivider.opacity(0.5), lineWidth: 1))
+                    .padding(.horizontal, 16)
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
+                .padding(.bottom, 16)
             }
 
             if viewModel.isSubmitting || viewModel.isUploadingPhotos {
@@ -634,10 +704,7 @@ struct PreTripInspectionView: View {
                         .foregroundColor(.appTextPrimary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 17)
-                        .background(
-                            Capsule()
-                                .fill(Color.appSurface)
-                        )
+                        .background(Capsule().fill(Color.appSurface))
                         .overlay(Capsule().stroke(Color.appDivider, lineWidth: 1))
                 }
                 .buttonStyle(.plain)
@@ -913,9 +980,34 @@ struct PreTripInspectionView: View {
     }
 }
 
-// MARK: - OdometerCameraSheet
-// UIImagePickerController wrapper for live camera capture.
+// MARK: - SignatureCanvasView (PencilKit wrapper for Step 3)
 
+struct SignatureCanvasView: UIViewRepresentable {
+
+    @Binding var canvasView: PKCanvasView
+    var onChanged: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(onChanged: onChanged) }
+
+    func makeUIView(context: Context) -> PKCanvasView {
+        canvasView.drawingPolicy = .anyInput
+        canvasView.tool = PKInkingTool(.pen, color: .black, width: 2)
+        canvasView.backgroundColor = .clear
+        canvasView.isOpaque = false
+        canvasView.delegate = context.coordinator
+        return canvasView
+    }
+
+    func updateUIView(_ uiView: PKCanvasView, context: Context) {}
+
+    final class Coordinator: NSObject, PKCanvasViewDelegate {
+        let onChanged: () -> Void
+        init(onChanged: @escaping () -> Void) { self.onChanged = onChanged }
+        func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) { onChanged() }
+    }
+}
+
+// MARK: - OdometerCameraSheet
 struct OdometerCameraSheet: UIViewControllerRepresentable {
 
     let onCapture: (UIImage) -> Void

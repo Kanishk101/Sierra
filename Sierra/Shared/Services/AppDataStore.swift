@@ -424,12 +424,18 @@ final class AppDataStore {
     // MARK: - Proof of Delivery
 
     func addProofOfDelivery(_ pod: ProofOfDelivery) async throws {
-        try await ProofOfDeliveryService.addProofOfDelivery(pod)
-        proofOfDeliveries.append(pod)
-        if let tripIdx = trips.firstIndex(where: { $0.id == pod.tripId }) {
-            trips[tripIdx].proofOfDeliveryId = pod.id
+        let saved = try await ProofOfDeliveryService.addProofOfDelivery(pod)
+
+        if let idx = proofOfDeliveries.firstIndex(where: { $0.tripId == saved.tripId }) {
+            proofOfDeliveries[idx] = saved
+        } else {
+            proofOfDeliveries.append(saved)
+        }
+
+        if let tripIdx = trips.firstIndex(where: { $0.id == saved.tripId }) {
+            trips[tripIdx].proofOfDeliveryId = saved.id
             // Use targeted partial update to avoid trigger rejection
-            try await TripService.setProofOfDeliveryId(tripId: pod.tripId, podId: pod.id)
+            try await TripService.setProofOfDeliveryId(tripId: saved.tripId, podId: saved.id)
         }
     }
 

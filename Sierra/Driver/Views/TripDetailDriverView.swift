@@ -21,6 +21,7 @@ struct TripDetailDriverView: View {
 
     // MARK: - Presentation State
 
+    // Pre-trip entry point
     @State private var showPreInspection        = false
     @State private var showStartTrip            = false
     @State private var showNavigation           = false
@@ -103,19 +104,7 @@ struct TripDetailDriverView: View {
         } message: {
             Text(errorMessage ?? "Something went wrong")
         }
-        .sheet(isPresented: $showPreInspection) {
-            if let trip, let vehicle, let userId = user?.id {
-                NavigationStack {
-                    PreTripInspectionView(
-                        tripId: trip.id,
-                        vehicleId: vehicle.id,
-                        driverId: userId,  // ISSUE-21 FIX
-                        inspectionType: .preTripInspection,
-                        onComplete: { showPreInspection = false }
-                    )
-                }
-            }
-        }
+        // Pre-trip inspection sheet removed — entry point is exclusively via TripDetailOverlay
         .sheet(isPresented: $showStartTrip) {
             if let trip {
                 NavigationStack {
@@ -741,14 +730,15 @@ struct TripDetailDriverView: View {
                     .background(Color(.secondarySystemGroupedBackground),
                                 in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 } else if trip.preInspectionId == nil {
-                    // Step 1: Complete pre-trip inspection first
+                    // Pre-trip required
                     actionButton("Begin Pre-Trip Inspection", icon: "checklist", color: SierraTheme.Colors.ember) {
                         showPreInspection = true
                     }
                 } else {
                     let withinStartWindow = trip.scheduledDate.timeIntervalSinceNow <= TripConstants.driverBlockWindowSeconds
                         && trip.scheduledDate.timeIntervalSinceNow > -3600
-                    if withinStartWindow {
+                    let startReached = trip.scheduledDate <= Date()
+                    if withinStartWindow || startReached {
                         // Time slot has started — allow navigation.
                         navigateButton()
                     } else {
