@@ -35,13 +35,29 @@ enum StaffStatus: String, Codable, CaseIterable {
 
 // MARK: - Staff Availability
 // Maps to PostgreSQL enum: staff_availability
+// Canonical values: Available | Unavailable | Busy
+// Legacy values (On Trip, On Task) are kept for decode compatibility only.
+// The DB migration normalised all existing rows to Busy and a CHECK
+// constraint blocks new writes of the legacy values.
 
 enum StaffAvailability: String, Codable, CaseIterable {
     case available   = "Available"
     case busy        = "Busy"
     case unavailable = "Unavailable"
-    case onTrip      = "On Trip"   // legacy — read-only, never written by new code
+    // Legacy decode-only — never write these to the DB
+    case onTrip      = "On Trip"
     case onTask      = "On Task"
+
+    /// Returns the canonical value — legacy On Trip/On Task are treated as Busy.
+    var normalized: StaffAvailability {
+        switch self {
+        case .onTrip, .onTask: return .busy
+        default: return self
+        }
+    }
+
+    /// True when the driver is effectively available for a new trip.
+    var isAvailableForDispatch: Bool { normalized == .available }
 }
 
 // MARK: - StaffMember
@@ -82,10 +98,6 @@ struct StaffMember: Identifiable, Codable {
     var rejectionReason: String?
 
     // MARK: Security
-    // These MUST be in CodingKeys so account-lockout state written by the
-    // backend (sign-in edge function incrementing failed_login_attempts) is
-    // actually read back. Without CodingKeys entries the fields always decoded
-    // to their default values (0 / nil), making lockout invisible to the app.
     var failedLoginAttempts: Int
     var accountLockedUntil: Date?
 
@@ -135,8 +147,6 @@ struct StaffMember: Identifiable, Codable {
     }
 
     // MARK: - Date of Birth helpers
-    // PostgREST returns DATE as "YYYY-MM-DD". Parse on demand rather than
-    // storing as Date to avoid ISO8601 decoder mismatch.
 
     private static let dobFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -146,18 +156,15 @@ struct StaffMember: Identifiable, Codable {
         return f
     }()
 
-    /// The date of birth as a proper Date, parsed from the "YYYY-MM-DD" string.
     var dateOfBirthDate: Date? {
         dateOfBirth.flatMap { Self.dobFormatter.date(from: $0) }
     }
 
-    /// Calculated age in whole years, or nil if date of birth is not set.
     var age: Int? {
         guard let dob = dateOfBirthDate else { return nil }
         return Calendar.current.dateComponents([.year], from: dob, to: Date()).year
     }
 
-    /// Returns the dateOfBirth formatted for display (e.g. "12 May 1990").
     var dateOfBirthDisplayString: String? {
         guard let date = dateOfBirthDate else { return dateOfBirth }
         return date.formatted(.dateTime.day().month(.wide).year())
@@ -265,81 +272,6 @@ struct StaffMember: Identifiable, Codable {
             joinedDate: Date().addingTimeInterval(-86400 * 200),
             createdAt: Date().addingTimeInterval(-86400 * 200),
             updatedAt: Date().addingTimeInterval(-86400 * 2)
-        ),
-        StaffMember(
-            id: UUID(uuidString: "D0000000-0000-0000-0000-000000000005")!,
-            name: "Ahmed Khan",
-            role: .maintenancePersonnel,
-            status: .active,
-            email: "ahmed@fleet.com",
-            phone: "+91 88776 65544",
-            availability: .available,
-            dateOfBirth: nil,
-            gender: "Male",
-            address: nil,
-            emergencyContactName: nil,
-            emergencyContactPhone: nil,
-            aadhaarNumber: nil,
-            profilePhotoUrl: nil,
-            isFirstLogin: false,
-            isProfileComplete: true,
-            isApproved: true,
-            rejectionReason: nil,
-            failedLoginAttempts: 0,
-            accountLockedUntil: nil,
-            joinedDate: Date().addingTimeInterval(-86400 * 60),
-            createdAt: Date().addingTimeInterval(-86400 * 60),
-            updatedAt: Date().addingTimeInterval(-86400 * 1)
-        ),
-        StaffMember(
-            id: UUID(uuidString: "D0000000-0000-0000-0000-000000000006")!,
-            name: "Lisa Wong",
-            role: .driver,
-            status: .suspended,
-            email: "lisa@fleet.com",
-            phone: "+91 77665 54433",
-            availability: .unavailable,
-            dateOfBirth: nil,
-            gender: "Female",
-            address: nil,
-            emergencyContactName: nil,
-            emergencyContactPhone: nil,
-            aadhaarNumber: nil,
-            profilePhotoUrl: nil,
-            isFirstLogin: false,
-            isProfileComplete: true,
-            isApproved: false,
-            rejectionReason: "Policy violation",
-            failedLoginAttempts: 0,
-            accountLockedUntil: nil,
-            joinedDate: Date().addingTimeInterval(-86400 * 180),
-            createdAt: Date().addingTimeInterval(-86400 * 180),
-            updatedAt: Date().addingTimeInterval(-86400 * 30)
-        ),
-        StaffMember(
-            id: UUID(uuidString: "D0000000-0000-0000-0000-000000000007")!,
-            name: "Tom Bradley",
-            role: .maintenancePersonnel,
-            status: .pendingApproval,
-            email: "tom@fleet.com",
-            phone: "+91 66554 43322",
-            availability: .unavailable,
-            dateOfBirth: nil,
-            gender: "Male",
-            address: nil,
-            emergencyContactName: nil,
-            emergencyContactPhone: nil,
-            aadhaarNumber: nil,
-            profilePhotoUrl: nil,
-            isFirstLogin: true,
-            isProfileComplete: false,
-            isApproved: false,
-            rejectionReason: nil,
-            failedLoginAttempts: 0,
-            accountLockedUntil: nil,
-            joinedDate: Date().addingTimeInterval(-86400 * 5),
-            createdAt: Date().addingTimeInterval(-86400 * 5),
-            updatedAt: Date().addingTimeInterval(-86400 * 5)
         ),
     ]
 }
