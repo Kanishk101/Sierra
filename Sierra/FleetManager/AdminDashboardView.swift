@@ -94,7 +94,8 @@ struct AdminDashboardView: View {
                 default: break
                 }
             }
-            .presentationDetents([.fraction(0.65)])
+            .presentationDetents([.large])
+            .presentationBackground(Color(.systemBackground))
             .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showAlerts) { NavigationStack { AlertsInboxView().environment(AppDataStore.shared) } }

@@ -87,7 +87,8 @@ struct QuickActionsSheet: View {
 
             Spacer()
         }
-        .background(Color(.systemGroupedBackground).ignoresSafeArea())
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Color(.systemBackground).ignoresSafeArea())
     }
 
     // MARK: - Action Handler

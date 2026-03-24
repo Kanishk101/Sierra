@@ -35,6 +35,14 @@ struct BiometricEnrollmentSheet: View {
                 .lineSpacing(3)
                 .padding(.horizontal, 20)
 
+            if !biometric.canUseBiometrics() {
+                Text("Biometric authentication is not available on this device.")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 20)
+            }
+
             Spacer()
 
             Button {
@@ -48,6 +56,8 @@ struct BiometricEnrollmentSheet: View {
                     .frame(height: 54)
                     .background(Color.orange, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
+            .disabled(!biometric.canUseBiometrics())
+            .opacity(biometric.canUseBiometrics() ? 1 : 0.6)
 
             Button {
                 // Skip: don't enable, don't mark as permanently prompted.
@@ -70,7 +80,7 @@ struct BiometricEnrollmentSheet: View {
     /// Show the enrollment prompt whenever biometric is not enabled.
     /// This means: show on every fresh login until the user enables it.
     static func shouldPrompt() -> Bool {
-        !BiometricPreference.isEnabled
+        BiometricManager.shared.canUseBiometrics() && !BiometricPreference.isEnabled
     }
 
     static func isBiometricEnabled() -> Bool {

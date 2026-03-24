@@ -13,6 +13,7 @@ struct DriverProfileSheet: View {
     // AdminProfileView documents this as a bug and avoids it — driver sheet
     // now uses the same correct pattern: write preference directly, no challenge.
     @State private var isBiometricEnabled = BiometricPreference.isEnabled
+    private let biometric = BiometricManager.shared
 
     private var biometricLabel: String {
         let context = LAContext()
@@ -209,6 +210,7 @@ struct DriverProfileSheet: View {
                             .font(.subheadline)
                     }
                     .tint(.orange)
+                    .disabled(!biometric.canUseBiometrics())
                     // FIX: do NOT trigger a biometric challenge just to SET the preference.
                     // The challenge happens at sign-in time, not at settings-change time.
                     // Previously this called BiometricAuthManager.authenticate() which
@@ -243,6 +245,10 @@ struct DriverProfileSheet: View {
             }
             .navigationTitle("Profile")
             .navigationBarTitleDisplayMode(.inline)
+            .scrollContentBackground(.hidden)
+            .background(Color(.systemGroupedBackground))
+            .toolbarBackground(Color(.systemGroupedBackground), for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }

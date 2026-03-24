@@ -91,7 +91,7 @@ struct DashboardHomeView: View {
             .toolbarBackground(.hidden, for: .navigationBar)
             .sheet(isPresented: $showProfile) {
                 AdminProfileView()
-                    .presentationDetents([.medium])
+                    .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
             }
             .sheet(isPresented: $showAnalytics) {

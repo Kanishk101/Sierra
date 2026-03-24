@@ -3,114 +3,110 @@ import LocalAuthentication
 
 struct AdminProfileView: View {
     @Environment(\.dismiss) private var dismiss
-    private var authManager = AuthManager.shared
 
-    // Initialized from the canonical Keychain-backed preference.
-    // Updated via onChange which writes back to the same store.
+    private var authManager = AuthManager.shared
+    private let biometric = BiometricManager.shared
     @State private var isBiometricEnabled: Bool = BiometricPreference.isEnabled
 
     var body: some View {
-        VStack(spacing: 24) {
-            // Drag indicator
-            Capsule()
-                .fill(.secondary.opacity(0.3))
-                .frame(width: 36, height: 5)
-                .padding(.top, 10)
+        NavigationStack {
+            List {
+                Section {
+                    HStack(spacing: 16) {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [.blue, .blue.opacity(0.7)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 64, height: 64)
+                            .overlay(
+                                Text(initials)
+                                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                                    .foregroundStyle(.white)
+                            )
 
-            // Avatar
-            Circle()
-                .fill(Color(.systemGray5))
-                .frame(width: 72, height: 72)
-                .overlay(
-                    Text(initials)
-                        .font(.system(size: 24, weight: .bold, design: .rounded))
-                        .foregroundStyle(.primary)
-                )
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(authManager.currentUser?.name ?? "Fleet Manager")
+                                .font(.title3.weight(.bold))
+                                .foregroundStyle(.primary)
 
-            VStack(spacing: 4) {
-                Text(authManager.currentUser?.name ?? "Fleet Manager")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.primary)
-
-                Text(authManager.currentUser?.email ?? "")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-
-                Text("Fleet Manager")
-                    .font(.caption)
-                    .foregroundStyle(.blue)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 4)
-                    .background(.blue.opacity(0.1), in: Capsule())
-                    .padding(.top, 4)
-            }
-
-            // Security Section
-            VStack(alignment: .leading, spacing: 0) {
-                Text("SECURITY")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.secondary)
-                    .kerning(1)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 8)
-
-                Toggle(isOn: $isBiometricEnabled) {
-                    HStack(spacing: 12) {
-                        Image(systemName: biometricIcon)
-                            .foregroundStyle(.orange)
-                            .frame(width: 28)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(biometricName)
-                                .font(.body)
-                            Text("Sign in without typing your password")
+                            Text(authManager.currentUser?.email ?? "")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     }
+                    .padding(.vertical, 8)
                 }
-                .tint(.orange)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
-                .padding(.horizontal, 16)
-                // CRITICAL FIX: do NOT require a Face ID authentication challenge
-                // just to SET the preference. The challenge is required when USING
-                // Face ID to sign in, not when enabling the setting. Previously the
-                // LAContext challenge fired here — any failure (wrong face, cancel,
-                // simulator) silently reverted the toggle to false, making it
-                // impossible to enable biometrics on a device with Face ID issues.
-                .onChange(of: isBiometricEnabled) { _, enabled in
-                    BiometricPreference.isEnabled = enabled
+
+                Section("Account") {
+                    if let email = authManager.currentUser?.email {
+                        HStack {
+                            Label("Email", systemImage: "envelope.fill")
+                                .font(.subheadline)
+                            Spacer()
+                            Text(email)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    HStack {
+                        Label("Role", systemImage: "person.crop.rectangle")
+                            .font(.subheadline)
+                        Spacer()
+                        Text("Fleet Manager")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.blue)
+                    }
+                }
+
+                Section("Security") {
+                    Toggle(isOn: $isBiometricEnabled) {
+                        Label(biometricName, systemImage: biometricIcon)
+                            .font(.subheadline)
+                    }
+                    .tint(.orange)
+                    .disabled(!biometric.canUseBiometrics())
+                    .onChange(of: isBiometricEnabled) { _, enabled in
+                        BiometricPreference.isEnabled = enabled
+                    }
+
+                    NavigationLink {
+                        ChangePasswordView()
+                    } label: {
+                        Label("Change Password", systemImage: "lock.rotation")
+                            .font(.subheadline)
+                    }
+                }
+
+                Section {
+                    Button(role: .destructive) {
+                        AuthManager.shared.signOut()
+                        dismiss()
+                    } label: {
+                        HStack {
+                            Spacer()
+                            Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+                                .font(.subheadline.weight(.semibold))
+                            Spacer()
+                        }
+                    }
                 }
             }
-
-            Spacer()
-
-            Button {
-                AuthManager.shared.signOut()
-                dismiss()
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "rectangle.portrait.and.arrow.right")
-                        .font(.body)
-                    Text("Log Out")
-                        .font(.system(size: 17, weight: .semibold))
+            .navigationTitle("Profile")
+            .navigationBarTitleDisplayMode(.inline)
+            .scrollContentBackground(.hidden)
+            .background(Color(.systemGroupedBackground))
+            .toolbarBackground(Color(.systemGroupedBackground), for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
                 }
-                .foregroundStyle(.red)
-                .frame(maxWidth: .infinity)
-                .frame(height: 50)
-                .background(.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(.red.opacity(0.15), lineWidth: 1)
-                )
             }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 16)
         }
-        .background(Color(.systemGroupedBackground).ignoresSafeArea())
-        // Sync toggle state when the sheet re-appears (e.g. user dismissed another
-        // sheet that may have changed the preference).
         .onAppear {
             isBiometricEnabled = BiometricPreference.isEnabled
         }
@@ -127,19 +123,21 @@ struct AdminProfileView: View {
     }
 
     private var biometricIcon: String {
-        switch LAContext().biometryType {
-        case .faceID:  return "faceid"
-        case .touchID: return "touchid"
-        default:       return "lock.fill"
+        let context = LAContext()
+        var error: NSError?
+        guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) else {
+            return "lock.fill"
         }
+        return context.biometryType == .faceID ? "faceid" : "touchid"
     }
 
     private var biometricName: String {
-        switch LAContext().biometryType {
-        case .faceID:  return "Face ID"
-        case .touchID: return "Touch ID"
-        default:       return "Biometrics"
+        let context = LAContext()
+        var error: NSError?
+        guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) else {
+            return "Biometric Login"
         }
+        return context.biometryType == .faceID ? "Face ID" : "Touch ID"
     }
 }
 

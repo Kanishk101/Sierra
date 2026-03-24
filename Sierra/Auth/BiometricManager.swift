@@ -83,25 +83,52 @@ actor BiometricManager {
         context.localizedCancelTitle = "Use Password"
 
         var nsError: NSError?
-        guard context.canEvaluatePolicy(
+        let canUseBiometricOnly = context.canEvaluatePolicy(
             .deviceOwnerAuthenticationWithBiometrics,
-            error: &nsError) else {
-            throw BiometricError.notAvailable
+            error: &nsError)
+
+        if canUseBiometricOnly {
+            do {
+                let success = try await context.evaluatePolicy(
+                    .deviceOwnerAuthenticationWithBiometrics,
+                    localizedReason: reason)
+                if !success { throw BiometricError.authFailed }
+                return
+            } catch let laError as LAError {
+                throw mapLAError(laError)
+            }
         }
 
-        do {
-            let success = try await context.evaluatePolicy(
-                .deviceOwnerAuthenticationWithBiometrics,
-                localizedReason: reason)
-            if !success { throw BiometricError.authFailed }
-        } catch let laError as LAError {
-            switch laError.code {
-            case .biometryNotAvailable:  throw BiometricError.notAvailable
-            case .biometryNotEnrolled:   throw BiometricError.notEnrolled
-            case .userCancel:            throw BiometricError.userCancelled
-            case .biometryLockout:       throw BiometricError.lockedOut
-            default:                     throw BiometricError.authFailed
+        // If biometrics are temporarily locked out, allow passcode fallback.
+        if let laError = nsError as? LAError, laError.code == .biometryLockout {
+            var fallbackError: NSError?
+            guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &fallbackError) else {
+                throw BiometricError.lockedOut
             }
+            do {
+                let success = try await context.evaluatePolicy(
+                    .deviceOwnerAuthentication,
+                    localizedReason: reason)
+                if !success { throw BiometricError.authFailed }
+                return
+            } catch let passcodeError as LAError {
+                throw mapLAError(passcodeError)
+            }
+        }
+
+        if let laError = nsError as? LAError {
+            throw mapLAError(laError)
+        }
+        throw BiometricError.notAvailable
+    }
+
+    private func mapLAError(_ error: LAError) -> BiometricError {
+        switch error.code {
+        case .biometryNotAvailable:  return .notAvailable
+        case .biometryNotEnrolled:   return .notEnrolled
+        case .userCancel:            return .userCancelled
+        case .biometryLockout:       return .lockedOut
+        default:                     return .authFailed
         }
     }
 }
