@@ -7,7 +7,7 @@ import MapboxDirections
 /// Status → action mapping:
 ///   .scheduled         → Awaiting Assignment message
 ///   .pendingAcceptance → Accept button (driver can also dismiss sheet)
-///   .active            → Navigate (primary) + Complete Delivery (secondary)
+///   .active            → Navigate (primary)
 ///   .completed         → Completion summary
 ///   .cancelled         → Cancelled banner
 ///
@@ -632,7 +632,7 @@ struct TripDetailDriverView: View {
                         Text(trip.destination.uppercased())
                             .font(.system(size: 14, weight: .bold, design: .rounded))
                             .foregroundColor(.appTextPrimary)
-                        if trip.status == .pendingAcceptance, let deadline = trip.acceptanceDeadline {
+                        if let deadline = trip.responseDeadline {
                             Label(
                                 "Respond by \(deadline.formatted(.dateTime.hour().minute()))",
                                 systemImage: "clock.badge.exclamationmark"
@@ -817,15 +817,7 @@ struct TripDetailDriverView: View {
                 }
 
                 // Secondary gate — only one of these shows at a time, smaller weight
-                if !endRecorded, trip.proofOfDeliveryId == nil {
-                    secondaryActionButton(
-                        "Complete Delivery",
-                        icon: "shippingbox.fill",
-                        color: SierraTheme.Colors.ember
-                    ) {
-                        showProofOfDelivery = true
-                    }
-                } else if !endRecorded, trip.postInspectionId == nil {
+                if !endRecorded, trip.proofOfDeliveryId != nil, trip.postInspectionId == nil {
                     actionButton(
                         "Post-Trip Inspection (Required)",
                         icon: "checklist",

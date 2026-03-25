@@ -330,6 +330,42 @@ struct Trip: Identifiable, Codable {
         (status == .scheduled || status == .pendingAcceptance) && scheduledDate < Date()
     }
 
+    /// Driver response SLA cutoff for pending-acceptance trips.
+    /// Uses the earlier of explicit acceptance_deadline and scheduled trip start.
+    var responseDeadline: Date? {
+        guard status.normalized == .pendingAcceptance else { return nil }
+        if let acceptanceDeadline {
+            return min(acceptanceDeadline, scheduledDate)
+        }
+        return scheduledDate
+    }
+
+    var isResponseOverdue: Bool {
+        guard let responseDeadline else { return false }
+        return responseDeadline < Date()
+    }
+
+    var isResponseUrgent: Bool {
+        guard let responseDeadline else { return false }
+        return responseDeadline < Date().addingTimeInterval(2 * 3600) && !isResponseOverdue
+    }
+
+    /// Frontend-only assignment recency source-of-truth.
+    /// Without backend schema changes, createdAt is the stable proxy.
+    var assignmentDate: Date {
+        createdAt
+    }
+
+    static func isMoreRecentlyAssigned(_ lhs: Trip, than rhs: Trip) -> Bool {
+        if lhs.assignmentDate != rhs.assignmentDate {
+            return lhs.assignmentDate > rhs.assignmentDate
+        }
+        if lhs.createdAt != rhs.createdAt {
+            return lhs.createdAt > rhs.createdAt
+        }
+        return lhs.id.uuidString > rhs.id.uuidString
+    }
+
     var durationString: String? {
         guard let start = actualStartDate, let end = actualEndDate else { return nil }
         let interval = end.timeIntervalSince(start)
@@ -355,6 +391,21 @@ struct Trip: Identifiable, Codable {
     var isDriverWorkflowCompleted: Bool {
         status.normalized == .completed
         || (proofOfDeliveryId != nil && endMileage != nil && postInspectionId != nil)
+    }
+
+    /// Single source of truth for UI-facing status.
+    var effectiveStatusForDriver: TripStatus {
+        isDriverWorkflowCompleted ? .completed : status.normalized
+    }
+
+    /// Urgent should only count while the trip still requires driver action.
+    var isUrgentActionable: Bool {
+        priority == .urgent && effectiveStatusForDriver.isActionable
+    }
+
+    /// Accepted stat includes trips accepted by driver and currently scheduled.
+    var isAcceptedScheduled: Bool {
+        effectiveStatusForDriver == .scheduled && acceptedAt != nil
     }
 
     // MARK: - Helpers

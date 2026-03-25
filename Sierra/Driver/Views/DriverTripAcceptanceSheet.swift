@@ -134,7 +134,7 @@ struct DriverTripAcceptanceSheet: View {
             }
 
             // Acceptance Deadline
-            if let deadline = trip.acceptanceDeadline {
+            if let deadline = trip.responseDeadline {
                 Divider()
                 deadlineBanner(deadline)
             }

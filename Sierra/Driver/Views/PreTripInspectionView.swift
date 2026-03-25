@@ -258,6 +258,8 @@ struct PreTripInspectionView: View {
             let hasWarnings = !viewModel.warningItems.isEmpty
             let hasFails    = !viewModel.failedItems.isEmpty
             let isPostTrip  = inspectionType == .postTripInspection
+            let maintenanceContinueLabel = "Log Maintenance and Continue"
+            let warnContinueLabel = isPostTrip ? maintenanceContinueLabel : "Notify Admin & Continue"
             Button {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 if hasFails && !isPostTrip {
@@ -287,12 +289,12 @@ struct PreTripInspectionView: View {
                     } else {
                         Image(systemName: hasFails
                               ? (isPostTrip ? "wrench.and.screwdriver.fill" : "exclamationmark.octagon.fill")
-                              : hasWarnings ? "bell.badge.fill" : "checkmark.circle.fill")
+                              : hasWarnings ? (isPostTrip ? "wrench.and.screwdriver.fill" : "bell.badge.fill") : "checkmark.circle.fill")
                             .font(.system(size: 15, weight: .bold))
                     }
                     Text(hasFails
-                         ? (isPostTrip ? "Log Maintenance & Continue" : "Vehicle Issue — Cannot Proceed")
-                         : hasWarnings ? "Notify Admin & Continue" : "All Clear → Next")
+                         ? (isPostTrip ? maintenanceContinueLabel : "Vehicle Issue — Cannot Proceed")
+                         : hasWarnings ? warnContinueLabel : "All Clear → Next")
                         .font(.system(size: 16, weight: .bold, design: .rounded))
                 }
                 .foregroundColor(.white)
@@ -324,7 +326,7 @@ struct PreTripInspectionView: View {
             }
             // ── Warn alert: sends notification then advances ──────────
             .alert("Warnings Found", isPresented: $showWarnAlert) {
-                Button("Notify Admin & Continue") {
+                Button(warnContinueLabel) {
                     Task {
                         isSendingNotification = true
                         await sendWarnNotification()

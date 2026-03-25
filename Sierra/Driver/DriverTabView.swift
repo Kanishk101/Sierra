@@ -63,6 +63,15 @@ struct DriverTabView: View {
                 bannerCoordinator.show(.init(title: latest.title, body: latest.body))
             }
         }
+        .task {
+            guard let driverId = AuthManager.shared.currentUser?.id else { return }
+            await store.refreshDriverData(driverId: driverId)
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: UInt64(store.driverRefreshInterval * 1_000_000_000))
+                guard let currentDriverId = AuthManager.shared.currentUser?.id else { continue }
+                await store.refreshDriverData(driverId: currentDriverId)
+            }
+        }
     }
 
     private func configureTabBarAppearance() {

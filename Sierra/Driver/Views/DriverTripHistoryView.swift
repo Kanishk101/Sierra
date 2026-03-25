@@ -29,7 +29,7 @@ struct DriverTripHistoryView: View {
                 // H-02 FIX: Use loadDriverData (driver-scoped) not loadAll (admin-scoped)
                 SierraErrorView(message: error) {
                     if let uid = currentUserId {
-                        await store.loadDriverData(driverId: uid)
+                        await store.refreshDriverData(driverId: uid, force: true)
                     }
                 }
             } else if myHistoryTrips.isEmpty {

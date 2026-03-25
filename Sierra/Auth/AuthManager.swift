@@ -254,7 +254,7 @@ final class AuthManager {
         Task {
             switch user.role {
             case .fleetManager:          await AppDataStore.shared.loadAll()
-            case .driver:                await AppDataStore.shared.loadDriverData(driverId: user.id)
+            case .driver:                await AppDataStore.shared.refreshDriverData(driverId: user.id)
             case .maintenancePersonnel:  await AppDataStore.shared.loadMaintenanceData(staffId: user.id)
             }
         }
@@ -311,7 +311,7 @@ final class AuthManager {
         Task {
             switch user.role {
             case .fleetManager:         await AppDataStore.shared.loadAll()
-            case .driver:               await AppDataStore.shared.loadDriverData(driverId: user.id)
+            case .driver:               await AppDataStore.shared.refreshDriverData(driverId: user.id)
             case .maintenancePersonnel: await AppDataStore.shared.loadMaintenanceData(staffId: user.id)
             }
         }

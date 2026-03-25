@@ -40,12 +40,13 @@ extension AppDataStore {
         let trip = trips.first { $0.id == tripId }
         if let driverIdStr = trip?.driverId, let driverUUID = UUID(uuidString: driverIdStr) {
             let taskId = trip?.taskId ?? tripId.uuidString
-            let destination = trip?.destination ?? "destination"
+            let origin = trip?.origin ?? "Origin"
+            let destination = trip?.destination ?? "Destination"
             try? await NotificationService.insertNotification(
                 recipientId: driverUUID,
-                type: .general,
+                type: .tripAssigned,
                 title: "New Trip Assigned: \(taskId)",
-                body: "You have a new trip to \(destination). Please accept within 24 hours.",
+                body: "\(origin) → \(destination). Please review and accept.",
                 entityType: "trip",
                 entityId: tripId
             )

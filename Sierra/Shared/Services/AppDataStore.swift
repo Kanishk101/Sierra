@@ -47,6 +47,15 @@ final class AppDataStore {
     var routeDeviationEvents: [RouteDeviationEvent] = []
     var isLoading: Bool = false
     var loadError: String?
+    private var lastDriverRefreshAt: Date?
+    private var sentOverdueTripResponseAlerts: Set<UUID> = []
+
+    /// Shared refresh cadence for driver screens.
+    var driverRefreshInterval: TimeInterval { 30 }
+
+    private func sortTripsByAssignmentRecency() {
+        trips.sort { Trip.isMoreRecentlyAssigned($0, than: $1) }
+    }
 
     // MARK: - loadAll (Fleet Manager)
 
@@ -84,7 +93,7 @@ final class AppDataStore {
         do { staffApplications   = try await appsTask }         catch { errors.append("staffApplications: \(error.localizedDescription)") }
         do { vehicles            = try await vehiclesTask }     catch { errors.append("vehicles: \(error.localizedDescription)") }
         do { vehicleDocuments    = try await vehicleDocsTask }  catch { errors.append("vehicleDocuments: \(error.localizedDescription)") }
-        do { trips               = try await tripsTask }        catch { errors.append("trips: \(error.localizedDescription)") }
+        do { trips               = try await tripsTask; sortTripsByAssignmentRecency() }        catch { errors.append("trips: \(error.localizedDescription)") }
         do { fuelLogs            = try await fuelLogsTask }     catch { errors.append("fuelLogs: \(error.localizedDescription)") }
         do { vehicleInspections  = try await inspectionsTask }  catch { errors.append("vehicleInspections: \(error.localizedDescription)") }
         do { proofOfDeliveries   = try await podsTask }         catch { errors.append("proofOfDeliveries: \(error.localizedDescription)") }
@@ -123,10 +132,11 @@ final class AppDataStore {
 
     // MARK: - loadDriverData
 
-    func loadDriverData(driverId: UUID) async {
+    func loadDriverData(driverId: UUID, surfaceErrors: Bool = true) async {
         guard !isLoading else { return }
         await tearDownRealtimeChannels()
         isLoading = true
+        if surfaceErrors { loadError = nil }
 
         async let selfMemberTask  = StaffMemberService.fetchStaffMember(id: driverId)
         async let vehiclesTask    = VehicleService.fetchAllVehicles()
@@ -140,14 +150,16 @@ final class AppDataStore {
         do { if let m = try await selfMemberTask { staff = [m] } }
             catch { errors.append("Staff: \(error.localizedDescription)") }
         do { vehicles = try await vehiclesTask }           catch { errors.append("Vehicles: \(error.localizedDescription)") }
-        do { trips = try await tripsTask }                 catch { errors.append("Trips: \(error.localizedDescription)") }
+        do { trips = try await tripsTask; sortTripsByAssignmentRecency() }                 catch { errors.append("Trips: \(error.localizedDescription)") }
         do { fuelLogs = try await fuelLogsTask }           catch { errors.append("Fuel logs: \(error.localizedDescription)") }
         do { vehicleInspections = try await inspectionsTask } catch { errors.append("Inspections: \(error.localizedDescription)") }
         do { if let p = try await driverProfTask { driverProfiles = [p] } }
             catch { errors.append("Profile: \(error.localizedDescription)") }
 
-        if !errors.isEmpty {
-            loadError = "Some data failed to load: \(errors.joined(separator: "; "))"
+        if surfaceErrors {
+            loadError = errors.isEmpty
+                ? nil
+                : "Some data failed to load: \(errors.joined(separator: "; "))"
         }
 
         isLoading = false
@@ -155,6 +167,20 @@ final class AppDataStore {
         await loadAndSubscribeNotifications(for: driverId)
         await TripReminderService.shared.requestAuthorizationIfNeeded()
         await TripReminderService.shared.scheduleReminders(for: trips)
+        await checkOverdueTripResponses()
+    }
+
+    /// Driver refresh with shared throttling.
+    /// Set `force` to true for user-initiated pull-to-refresh.
+    func refreshDriverData(driverId: UUID, force: Bool = false) async {
+        if !force,
+           let last = lastDriverRefreshAt,
+           Date().timeIntervalSince(last) < driverRefreshInterval {
+            return
+        }
+        guard !isLoading else { return }
+        lastDriverRefreshAt = Date()
+        await loadDriverData(driverId: driverId, surfaceErrors: force)
     }
 
     // MARK: - loadMaintenanceData
@@ -397,10 +423,11 @@ final class AppDataStore {
     func addTrip(_ trip: Trip) async throws {
         try await TripService.addTrip(trip)
         trips.insert(trip, at: 0)
-        // M-11 FIX: Removed NotificationService.insertNotification here.
-        // The DB trigger fn_notify_driver_trip_assigned() already fires AFTER INSERT ON trips
-        // and sends the exact same notification, causing double "New Trip Assigned" alerts.
-        if let driverIdStr = trip.driverId, UUID(uuidString: driverIdStr) != nil {
+        sortTripsByAssignmentRecency()
+        // Trigger-safe fallback: ensure driver sees assignment notification.
+        // If backend trigger already inserted one, helper is duplicate-safe.
+        if let driverIdStr = trip.driverId, let driverUUID = UUID(uuidString: driverIdStr) {
+            await NotificationService.notifyDriverTripAssignedIfNeeded(recipientId: driverUUID, trip: trip)
             LocalNotificationService.notifyTripAssigned(
                 taskId: trip.taskId, origin: trip.origin,
                 destination: trip.destination, tripId: trip.id
@@ -410,6 +437,7 @@ final class AppDataStore {
     func updateTrip(_ trip: Trip) async throws {
         try await TripService.updateTrip(trip)
         if let idx = trips.firstIndex(where: { $0.id == trip.id }) { trips[idx] = trip }
+        sortTripsByAssignmentRecency()
     }
     func updateTripStatus(id: UUID, status: TripStatus) async throws {
         try await TripService.updateTripStatus(id: id, status: status)
@@ -418,6 +446,7 @@ final class AppDataStore {
             if status == .active    { trips[idx].actualStartDate = Date() }
             if status == .completed { trips[idx].actualEndDate   = Date() }
         }
+        sortTripsByAssignmentRecency()
     }
     func deleteTrip(id: UUID) async throws {
         try await TripService.deleteTrip(id: id); trips.removeAll { $0.id == id }
@@ -719,7 +748,11 @@ final class AppDataStore {
     func driverProfile(for staffId: UUID) -> DriverProfile? { driverProfiles.first { $0.staffMemberId == staffId } }
     func maintenanceProfile(for staffId: UUID) -> MaintenanceProfile? { maintenanceProfiles.first { $0.staffMemberId == staffId } }
     func vehicleDocuments(forVehicle vehicleId: UUID) -> [VehicleDocument] { vehicleDocuments.filter { $0.vehicleId == vehicleId } }
-    func trips(forDriver driverId: UUID) -> [Trip] { trips.filter { $0.driverId?.lowercased() == driverId.uuidString.lowercased() } }
+    func trips(forDriver driverId: UUID) -> [Trip] {
+        trips
+            .filter { $0.driverId?.lowercased() == driverId.uuidString.lowercased() }
+            .sorted { Trip.isMoreRecentlyAssigned($0, than: $1) }
+    }
     func fuelLogs(forDriver driverId: UUID) -> [FuelLog] { fuelLogs.filter { $0.driverId == driverId } }
     func fuelLogs(forVehicle vehicleId: UUID) -> [FuelLog] { fuelLogs.filter { $0.vehicleId == vehicleId } }
     func workOrders(forStaff staffId: UUID) -> [WorkOrder] { workOrders.filter { $0.assignedToId == staffId } }
@@ -766,7 +799,7 @@ final class AppDataStore {
         }
     }
     func activeTrip(forDriverId driverId: UUID) -> Trip? {
-        trips.first {
+        trips(forDriver: driverId).first {
             $0.driverId?.lowercased() == driverId.uuidString.lowercased() && $0.status.isActionable
         }
     }
@@ -884,6 +917,7 @@ final class AppDataStore {
                 if let fresh = try? await TripService.fetchTrip(id: updatedId),
                    let idx = self.trips.firstIndex(where: { $0.id == updatedId }) {
                     self.trips[idx] = fresh
+                    self.sortTripsByAssignmentRecency()
                 }
             }
         }
@@ -896,6 +930,7 @@ final class AppDataStore {
                 guard !self.trips.contains(where: { $0.id == newId }) else { return }
                 if let fresh = try? await TripService.fetchTrip(id: newId) {
                     self.trips.insert(fresh, at: 0)
+                    self.sortTripsByAssignmentRecency()
                 }
             }
         }
@@ -1190,6 +1225,22 @@ final class AppDataStore {
                     entityId: doc.id
                 )
             }
+        }
+    }
+
+    // MARK: - Overdue Trip Response Check
+
+    func checkOverdueTripResponses() async {
+        let overduePendingTrips = trips.filter {
+            $0.status.normalized == .pendingAcceptance && $0.isResponseOverdue
+        }
+
+        let overdueIds = Set(overduePendingTrips.map(\.id))
+        sentOverdueTripResponseAlerts = sentOverdueTripResponseAlerts.intersection(overdueIds)
+
+        for trip in overduePendingTrips where !sentOverdueTripResponseAlerts.contains(trip.id) {
+            await NotificationService.notifyAdminsTripResponseOverdueIfNeeded(for: trip)
+            sentOverdueTripResponseAlerts.insert(trip.id)
         }
     }
 

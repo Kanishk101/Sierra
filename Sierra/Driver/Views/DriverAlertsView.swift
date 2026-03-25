@@ -5,6 +5,8 @@ import SwiftUI
 struct DriverAlertsView: View {
 
     @Environment(AppDataStore.self) private var store
+    @State private var showClearConfirm = false
+    @State private var isClearing = false
 
     private var user: AuthUser? { AuthManager.shared.currentUser }
 
@@ -20,49 +22,95 @@ struct DriverAlertsView: View {
     }
 
     var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 12) {
-                // Unread badge header
-                if unreadCount > 0 {
-                    HStack(spacing: 8) {
-                        Circle()
-                            .fill(Color.appOrange)
-                            .frame(width: 8, height: 8)
-                        Text("\(unreadCount) unread")
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                            .foregroundColor(.appOrange)
-                        Spacer()
-                        Button { markAllRead() } label: {
-                            Text("Mark All Read")
-                                .font(.system(size: 13, weight: .bold, design: .rounded))
-                                .foregroundColor(.appOrange)
+        Group {
+            if driverNotifications.isEmpty {
+                VStack(spacing: 0) {
+                    headerBar
+                        .padding(.horizontal, 20)
+                        .padding(.top, 4)
+                    Spacer()
+                    emptyState
+                        .padding(.horizontal, 24)
+                    Spacer()
+                }
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        headerBar
+                            .padding(.bottom, 6)
+
+                        // Unread badge header
+                        if unreadCount > 0 {
+                            HStack(spacing: 8) {
+                                Circle()
+                                    .fill(Color.appOrange)
+                                    .frame(width: 8, height: 8)
+                                Text("\(unreadCount) unread")
+                                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                                    .foregroundColor(.appOrange)
+                                Spacer()
+                                Button { markAllRead() } label: {
+                                    Text("Mark All Read")
+                                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                                        .foregroundColor(.appOrange)
+                                }
+                            }
+                            .padding(.horizontal, 4)
+                        }
+
+                        ForEach(driverNotifications) { notification in
+                            alertCard(notification)
                         }
                     }
-                    .padding(.horizontal, 4)
-                }
-
-                ForEach(driverNotifications) { notification in
-                    alertCard(notification)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 4)
+                    .padding(.bottom, 24)
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 8)
-            .padding(.bottom, 24)
-        }
-        .overlay {
-            if driverNotifications.isEmpty { emptyState }
         }
         .background(Color.appSurface.ignoresSafeArea())
-        .navigationTitle("Notifications")
-        .navigationBarTitleDisplayMode(.large)
+        .toolbar(.hidden, for: .navigationBar)
+        .alert("Clear all notifications?", isPresented: $showClearConfirm) {
+            Button("Cancel", role: .cancel) {}
+            Button("Clear All", role: .destructive) {
+                clearAllNotifications()
+            }
+        } message: {
+            Text("This will remove all notifications from your alerts list.")
+        }
         .refreshable {
             if let id = user?.id {
-                await store.loadDriverData(driverId: id)
+                await store.refreshDriverData(driverId: id, force: true)
             }
         }
     }
 
     // MARK: - Alert Card
+
+    @ViewBuilder
+    private var headerBar: some View {
+        HStack {
+            Text("Notifications")
+                .font(.system(size: 30, weight: .bold, design: .rounded))
+                .foregroundColor(.appTextPrimary)
+            Spacer()
+            if !driverNotifications.isEmpty {
+                Button(role: .destructive) {
+                    showClearConfirm = true
+                } label: {
+                    if isClearing {
+                        ProgressView()
+                            .tint(.red)
+                    } else {
+                        Text("Clear")
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            .foregroundColor(.red)
+                    }
+                }
+                .disabled(isClearing)
+            }
+        }
+    }
 
     private func alertCard(_ notification: SierraNotification) -> some View {
         HStack(alignment: .top, spacing: 14) {
@@ -89,7 +137,7 @@ struct DriverAlertsView: View {
                     }
                 }
 
-                Text(notification.body)
+                Text(alertSubtitle(for: notification))
                     .font(.system(size: 13, weight: .medium, design: .rounded))
                     .foregroundColor(.appTextSecondary)
                     .lineLimit(3)
@@ -156,6 +204,42 @@ struct DriverAlertsView: View {
         for n in driverNotifications where !n.isRead {
             Task { try? await store.markNotificationRead(id: n.id) }
         }
+    }
+
+    private func clearAllNotifications() {
+        guard let userId = user?.id else { return }
+        isClearing = true
+        Task {
+            defer { isClearing = false }
+            try? await store.clearAllNotifications(userId: userId)
+        }
+    }
+
+    private func alertSubtitle(for notification: SierraNotification) -> String {
+        guard notification.type == .tripAssigned else { return notification.body }
+
+        let taskId = extractTaskId(from: notification.title)
+            ?? extractTaskId(from: notification.body)
+
+        let routeText = notification.body
+            .split(separator: ".")
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { $0.contains("→") && !$0.isEmpty }
+
+        if let taskId, let routeText {
+            return "\(taskId) | \(routeText)"
+        }
+        if let taskId {
+            return "\(taskId) | \(notification.body)"
+        }
+        return notification.body
+    }
+
+    private func extractTaskId(from text: String) -> String? {
+        guard let range = text.range(of: #"TRP-\d{8}-[A-Z0-9]+"#, options: .regularExpression) else {
+            return nil
+        }
+        return String(text[range])
     }
 
     private func iconName(for type: NotificationType) -> String {
