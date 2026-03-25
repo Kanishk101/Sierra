@@ -1,6 +1,5 @@
 import SwiftUI
 
-
 struct MaintenanceProfileSetupView: View {
     @State private var viewModel = MaintenanceProfileViewModel()
 
@@ -23,9 +22,9 @@ struct MaintenanceProfileSetupView: View {
                         ))
                 }
             }
-            .animation(.easeInOut(duration: 0.3), value: viewModel.currentStep)
+            .animation(.spring(duration: 0.4, bounce: 0.1), value: viewModel.currentStep)
         }
-        .background(Color(.systemGroupedBackground).ignoresSafeArea())
+        .background(SierraTheme.Colors.appBackground.ignoresSafeArea())
         .interactiveDismissDisabled()
         .navigationBarBackButtonHidden(true)
         .fullScreenCover(isPresented: $viewModel.profileSubmitted) {
@@ -34,32 +33,42 @@ struct MaintenanceProfileSetupView: View {
     }
 
     private var stepIndicator: some View {
-        VStack(spacing: 10) {
-            Text("Step \(viewModel.currentStep) of 2")
-                .font(.caption)
-                .foregroundStyle(.primary)
+        VStack(spacing: 12) {
+            HStack {
+                Text("Maintenance Setup")
+                    .font(SierraFont.caption1.weight(.bold))
+                    .foregroundStyle(SierraTheme.Colors.secondaryText)
+                    .textCase(.uppercase)
+                    .tracking(1.0)
+                Spacer()
+                Text("Step \(viewModel.currentStep) of 2")
+                    .font(SierraFont.caption1.weight(.semibold))
+                    .foregroundStyle(SierraTheme.Colors.ember)
+            }
 
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(Color(.separator).opacity(0.3))
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(SierraTheme.Colors.cloud.opacity(0.4))
                         .frame(height: 6)
 
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(Color.orange)
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(SierraTheme.Colors.ember)
                         .frame(
                             width: geo.size.width * (CGFloat(viewModel.currentStep) / 2.0),
                             height: 6
                         )
-                        .animation(.spring(duration: 0.4, bounce: 0.15), value: viewModel.currentStep)
                 }
             }
             .frame(height: 6)
         }
         .padding(.horizontal, 24)
-        .padding(.top, 16)
-        .padding(.bottom, 8)
-        .background(Color(.systemBackground))
+        .padding(.top, 20)
+        .padding(.bottom, 16)
+        .background(SierraTheme.Colors.appBackground)
+        .sierraShadow(SierraShadow(color: .black.opacity(0.03), radius: 4, x: 0, y: 2))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Profile setup progress: step \(viewModel.currentStep) of 2")
     }
 }
 

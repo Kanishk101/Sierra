@@ -26,7 +26,10 @@ final class StaffApprovalViewModel {
 
     @MainActor
     func approve(applicationId: UUID) async {
-        let adminId = AuthManager.shared.currentUser?.id ?? UUID()
+        guard let adminId = AuthManager.shared.currentUser?.id else {
+            errorMessage = "Session expired. Please sign in again."
+            return
+        }
         isProcessing  = true
         errorMessage  = nil
         do {
@@ -41,7 +44,10 @@ final class StaffApprovalViewModel {
 
     @MainActor
     func reject(applicationId: UUID, reason: String) async {
-        let adminId = AuthManager.shared.currentUser?.id ?? UUID()
+        guard let adminId = AuthManager.shared.currentUser?.id else {
+            errorMessage = "Session expired. Please sign in again."
+            return
+        }
         isProcessing = true
         errorMessage = nil
         do {

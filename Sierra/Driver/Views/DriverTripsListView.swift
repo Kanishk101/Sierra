@@ -505,15 +505,7 @@ struct DriverTripsListView: View {
         // isAcceptedScheduled: driver has accepted (acceptedAt set) → status is Scheduled
         let isAcceptedScheduled = status == .scheduled && trip.acceptedAt != nil
         let isReadyToStart  = isAcceptedScheduled && hasPreInspection
-        let isAwaitingInspection = isAcceptedScheduled && !hasPreInspection
-
-        if isAwaitingInspection {
-            SlideToStartInspectionButton(
-                label: "Pre-Trip Inspection",
-                controlHeight: 44,
-                onComplete: { startInspection(for: trip) }
-            )
-        } else if needsPostTrip {
+        if needsPostTrip {
             SlideToStartInspectionButton(
                 label: "Post-Trip Inspection",
                 controlHeight: 44,
@@ -547,8 +539,10 @@ struct DriverTripsListView: View {
         } else {
             HStack(spacing: 12) {
                 // Left: always "View Details" (opens TripDetailOverlay)
-                if trip.preInspectionId != nil {
-                    NavigationLink(value: trip.id) {
+                if isAcceptedScheduled && !hasPreInspection {
+                    Button {
+                        showTripDetail(trip)
+                    } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "doc.text.magnifyingglass").font(.system(size: 13, weight: .semibold))
                             Text("View Details").font(.system(size: 14, weight: .bold, design: .rounded))
@@ -561,9 +555,7 @@ struct DriverTripsListView: View {
                     }
                     .buttonStyle(.plain)
                 } else {
-                    Button {
-                        showTripDetail(trip)
-                    } label: {
+                    NavigationLink(value: trip.id) {
                         HStack(spacing: 6) {
                             Image(systemName: "doc.text.magnifyingglass").font(.system(size: 13, weight: .semibold))
                             Text("View Details").font(.system(size: 14, weight: .bold, design: .rounded))

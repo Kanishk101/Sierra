@@ -621,15 +621,7 @@ struct DriverHomeView: View {
         let navProgress = TripNavigationCoordinator.sessionProgress(for: trip.id) ?? 0
         let navigationLockedByProgress = navProgress >= 0.999
         let isReadyToStart = isAcceptedScheduled && hasPreInspection
-        let isAwaitingInspection = isAcceptedScheduled && !hasPreInspection
-
-        if isAwaitingInspection {
-            SlideToStartInspectionButton(
-                label: "Pre-Trip Inspection",
-                controlHeight: 44,
-                onComplete: { startInspection(for: trip) }
-            )
-        } else if needsPostTrip {
+        if needsPostTrip {
             SlideToStartInspectionButton(
                 label: "Post-Trip Inspection",
                 controlHeight: 44,
@@ -667,20 +659,39 @@ struct DriverHomeView: View {
         } else {
             HStack(spacing: 12) {
                 // Left: View Details
-                NavigationLink(value: trip.id) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "doc.text.magnifyingglass")
-                            .font(.system(size: 13, weight: .semibold))
-                        Text("View Details")
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                if isAcceptedScheduled && !hasPreInspection {
+                    Button {
+                        showTripDetail(trip)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "doc.text.magnifyingglass")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text("View Details")
+                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                        }
+                        .foregroundColor(Color.appOrange)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Capsule().fill(Color.appOrange.opacity(0.08)))
+                        .overlay(Capsule().stroke(Color.appOrange.opacity(0.25), lineWidth: 1.5))
                     }
-                    .foregroundColor(Color.appOrange)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(Capsule().fill(Color.appOrange.opacity(0.08)))
-                    .overlay(Capsule().stroke(Color.appOrange.opacity(0.25), lineWidth: 1.5))
+                    .buttonStyle(.plain)
+                } else {
+                    NavigationLink(value: trip.id) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "doc.text.magnifyingglass")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text("View Details")
+                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                        }
+                        .foregroundColor(Color.appOrange)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Capsule().fill(Color.appOrange.opacity(0.08)))
+                        .overlay(Capsule().stroke(Color.appOrange.opacity(0.25), lineWidth: 1.5))
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
 
                 // Right: Accept / Accepted / Navigate
                 if isCancelled {

@@ -5,6 +5,11 @@ struct MaintenanceTabView: View {
     @Environment(AppDataStore.self) private var store
     @State private var bannerCoordinator = BannerCoordinator()
     @State private var showProfile = false
+    @State private var scannedVIN = ""
+
+    init() {
+        MaintenanceTheme.configureTabBar()
+    }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -13,8 +18,8 @@ struct MaintenanceTabView: View {
                 Tab("Repair", systemImage: "wrench.and.screwdriver.fill") {
                     NavigationStack {
                         RepairTaskListView()
-                            .navigationTitle("Repair")
-                            .navigationBarTitleDisplayMode(.large)
+                            .navigationTitle("Repair Tasks")
+                            .toolbarTitleDisplayMode(.inline)
                             .toolbar {
                                 ToolbarItem(placement: .topBarLeading) {
                                     profileAvatarButton
@@ -23,6 +28,13 @@ struct MaintenanceTabView: View {
                                     notificationBell
                                 }
                             }
+                    }
+                }
+
+                // MARK: - VIN Scanner Tab
+                Tab("VIN Scan", systemImage: "barcode.viewfinder") {
+                    NavigationStack {
+                        VINScannerView(scannedVIN: $scannedVIN)
                     }
                 }
 
@@ -126,6 +138,33 @@ struct MaintenanceTabView: View {
         case 1:       return String(parts[0].prefix(2)).uppercased()
         default:      return "\(parts[0].prefix(1))\(parts[1].prefix(1))".uppercased()
         }
+    }
+}
+
+// MARK: - MaintenanceTheme (Tab Bar Appearance)
+
+enum MaintenanceTheme {
+    static func configureTabBar() {
+        let appearance = UITabBarAppearance()
+        appearance.configureWithDefaultBackground()
+        appearance.backgroundColor = UIColor.systemBackground
+
+        let selectedColor = UIColor(red: 0.95, green: 0.55, blue: 0.10, alpha: 1.0)
+        appearance.stackedLayoutAppearance.selected.iconColor = selectedColor
+        appearance.stackedLayoutAppearance.selected.titleTextAttributes = [
+            .foregroundColor: selectedColor,
+            .font: UIFont.systemFont(ofSize: 11, weight: .bold)
+        ]
+
+        let normalColor = UIColor.secondaryLabel
+        appearance.stackedLayoutAppearance.normal.iconColor = normalColor
+        appearance.stackedLayoutAppearance.normal.titleTextAttributes = [
+            .foregroundColor: normalColor,
+            .font: UIFont.systemFont(ofSize: 11, weight: .medium)
+        ]
+
+        UITabBar.appearance().standardAppearance = appearance
+        UITabBar.appearance().scrollEdgeAppearance = appearance
     }
 }
 

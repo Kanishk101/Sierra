@@ -7,12 +7,20 @@ struct StaffReviewSheet: View {
     @Environment(AppDataStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var showApproveAlert = false
+    @State private var selectedDocs: (title: String, urls: [URL])? = nil
 
     private let dateFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateStyle = .medium
         return f
     }()
+
+    private var docsCoverBinding: Binding<IdentifiableDocs?> {
+        Binding(
+            get: { selectedDocs.map { IdentifiableDocs(title: $0.title, urls: $0.urls) } },
+            set: { if $0 == nil { selectedDocs = nil } }
+        )
+    }
 
     var body: some View {
         NavigationStack {
@@ -108,7 +116,16 @@ struct StaffReviewSheet: View {
             } message: {
                 Text(viewModel.errorMessage ?? "An unexpected error occurred.")
             }
+            .fullScreenCover(item: docsCoverBinding) { docs in
+                StaffDocumentViewer(title: docs.title, urls: docs.urls)
+            }
         }
+    }
+
+    private struct IdentifiableDocs: Identifiable {
+        let id = UUID()
+        let title: String
+        let urls: [URL]
     }
 
     // MARK: - Profile Header
@@ -190,44 +207,73 @@ struct StaffReviewSheet: View {
         }
     }
 
-    private func documentCard(icon: String, title: String, number: String, expiry: String? = nil) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 18))
-                .foregroundStyle(.orange)
-                .frame(width: 38, height: 38)
-                .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.caption)
-                    .foregroundStyle(.primary)
-                Text(number)
-                    .font(.system(size: 13, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                if let expiry {
-                    Text("Expires: \(expiry)")
-                        .font(.caption2)
-                        .foregroundStyle(.orange)
-                }
+    private func documentCard(icon: String, title: String, number: String, urlString: String?, expiry: String? = nil) -> some View {
+        Button {
+            if let urls = deriveDocumentURLs(from: urlString) {
+                selectedDocs = (title: title, urls: urls)
             }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 18))
+                    .foregroundStyle(.orange)
+                    .frame(width: 38, height: 38)
+                    .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
 
-            Spacer()
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.caption)
+                        .foregroundStyle(.primary)
+                    Text(number)
+                        .font(.system(size: 13, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                    if let expiry {
+                        Text("Expires: \(expiry)")
+                            .font(.caption2)
+                            .foregroundStyle(.orange)
+                    }
+                }
 
-            Image(systemName: "checkmark.shield.fill")
-                .font(.system(size: 18))
-                .foregroundStyle(.green.opacity(0.6))
+                Spacer()
+
+                Image(systemName: urlString != nil ? "checkmark.shield.fill" : "exclamationmark.shield.fill")
+                    .font(.system(size: 18))
+                    .foregroundStyle(urlString != nil ? Color.green.opacity(0.6) : Color.red.opacity(0.6))
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(14)
+            .background(Color.clear)
         }
-        .padding(14)
+    }
+
+    private func deriveDocumentURLs(from urlString: String?) -> [URL]? {
+        guard let urlString = urlString, let url = URL(string: urlString) else { return nil }
+        
+        // Handle Aadhaar special naming (front/back)
+        if urlString.contains("aadhaar-front") {
+            let backUrlString = urlString.replacingOccurrences(of: "aadhaar-front", with: "aadhaar-back")
+            if let backUrl = URL(string: backUrlString) {
+                return [url, backUrl]
+            }
+        }
+        
+        // Default to single image if no pattern matched
+        return [url]
     }
 
     // MARK: - Driver Documents
 
     private var driverDocumentsSection: some View {
         detailSection("Documents") {
-            documentCard(icon: "creditcard.fill", title: "Aadhaar Card", number: application.aadhaarNumber)
+            documentCard(icon: "creditcard.fill", title: "Aadhaar Card",
+                         number: application.aadhaarNumber,
+                         urlString: application.aadhaarDocumentUrl)
             documentCard(icon: "car.fill", title: "Driving License",
                          number: application.driverLicenseNumber ?? "—",
+                         urlString: application.driverLicenseDocumentUrl,
                          expiry: application.driverLicenseExpiry)
         }
     }
@@ -238,21 +284,21 @@ struct StaffReviewSheet: View {
         VStack(spacing: 16) {
             // Aadhaar
             detailSection("Identity Document") {
-                documentCard(icon: "creditcard.fill", title: "Aadhaar Card", number: application.aadhaarNumber)
+                documentCard(icon: "creditcard.fill", title: "Aadhaar Card",
+                             number: application.aadhaarNumber,
+                             urlString: application.aadhaarDocumentUrl)
             }
 
             // Certification
             if let certType = application.maintCertificationType {
                 detailSection("Technical Certification") {
-                    detailRow("Type", value: certType)
-                    if let num = application.maintCertificationNumber {
-                        detailRow("Number", value: num)
-                    }
+                    documentCard(icon: "doc.badge.gearshape.fill", title: certType,
+                                 number: application.maintCertificationNumber ?? "—",
+                                 urlString: application.maintCertificationDocumentUrl,
+                                 expiry: application.maintCertificationExpiry)
+                    
                     if let auth = application.maintIssuingAuthority {
                         detailRow("Issuing Authority", value: auth)
-                    }
-                    if let exp = application.maintCertificationExpiry {
-                        detailRow("Expires", value: exp)
                     }
                 }
             }
@@ -414,6 +460,48 @@ struct StaffReviewSheet: View {
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
         .transition(.opacity)
+    }
+}
+
+private struct StaffDocumentViewer: View {
+    let title: String
+    let urls: [URL]
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if urls.isEmpty {
+                    ContentUnavailableView(
+                        "No Documents",
+                        systemImage: "doc.text",
+                        description: Text("No files are attached for this section.")
+                    )
+                } else {
+                    ForEach(Array(urls.enumerated()), id: \.offset) { index, url in
+                        Link(destination: url) {
+                            HStack(spacing: 10) {
+                                Image(systemName: "doc.text.fill")
+                                    .foregroundStyle(.orange)
+                                Text("Document \(index + 1)")
+                                    .foregroundStyle(.primary)
+                                Spacer()
+                                Image(systemName: "arrow.up.right.square")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+            }
+        }
     }
 }
 

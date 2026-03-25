@@ -20,11 +20,9 @@ struct SierraPrimaryButtonStyle: ButtonStyle {
             .frame(minHeight: 50)
             .background(
                 SierraTheme.Colors.ember,
-                in: RoundedRectangle(cornerRadius: Radius.button, style: .continuous)
+                in: Capsule(style: .continuous)
             )
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
             .opacity(configuration.isPressed ? 0.92 : 1)
-            .animation(.easeInOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 
@@ -42,11 +40,9 @@ struct SierraSecondaryButtonStyle: ButtonStyle {
             .frame(minHeight: 50)
             .background(
                 SierraTheme.Colors.summitNavy,
-                in: RoundedRectangle(cornerRadius: Radius.button, style: .continuous)
+                in: Capsule(style: .continuous)
             )
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
             .opacity(configuration.isPressed ? 0.88 : 1)
-            .animation(.easeInOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 
@@ -70,8 +66,6 @@ struct SierraGhostButtonStyle: ButtonStyle {
                 RoundedRectangle(cornerRadius: Radius.button, style: .continuous)
                     .strokeBorder(SierraTheme.Colors.ember.opacity(0.20), lineWidth: 1.5)
             )
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .animation(.easeInOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 
@@ -97,8 +91,6 @@ struct SierraOutlineButtonStyle: ButtonStyle {
                 RoundedRectangle(cornerRadius: Radius.button, style: .continuous)
                     .strokeBorder(SierraTheme.Colors.mist, lineWidth: 1.5)
             )
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .animation(.easeInOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 
@@ -122,8 +114,6 @@ struct SierraDangerButtonStyle: ButtonStyle {
                 RoundedRectangle(cornerRadius: Radius.button, style: .continuous)
                     .strokeBorder(SierraTheme.Colors.danger.opacity(0.20), lineWidth: 1.5)
             )
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .animation(.easeInOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 
@@ -138,6 +128,5 @@ struct SierraTextButtonStyle: ButtonStyle {
             .kerning(buttonKerning)
             .foregroundStyle(SierraTheme.Colors.ember)
             .opacity(configuration.isPressed ? 0.6 : 1)
-            .animation(.easeInOut(duration: 0.10), value: configuration.isPressed)
     }
 }

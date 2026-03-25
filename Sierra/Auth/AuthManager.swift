@@ -27,6 +27,7 @@ final class AuthManager {
         static let backgroundTS      = "com.sierra.backgroundTimestamp"
         static let sessionToken      = "com.sierra.sessionToken"
         static let hashedCred        = "com.sierra.hashedCredential"
+        static let hasFullAuth       = "com.sierra.hasCompletedFullAuth"
         // biometricOn + biometricPrompted moved to BiometricPreference (single canonical keys)
     }
 
@@ -35,6 +36,7 @@ final class AuthManager {
     var currentUser: AuthUser?
     var isAuthenticated: Bool = false
     var needsReauth: Bool = false
+    var hasCompletedFullAuth: Bool = false
     private var currentOTP: String = ""
     private var otpGeneratedAt: Date?
     private let otpValidSeconds: TimeInterval = 600
@@ -219,6 +221,11 @@ final class AuthManager {
         let hashed = CryptoService.hash(password: password)
         _ = KeychainService.save(hashed, forKey: Keys.hashedCred)
         _ = KeychainService.save(user, forKey: Keys.currentUser)
+        
+        // Note: hasCompletedFullAuth remains false until 2FA is verified.
+        // We do NOT clear it here, as a signing in with a password shouldn't
+        // invalidate a previous enrollment if it's the same user.
+        // However, we check it in LoginViewModel for button visibility.
 
         currentUser = user
         pendingOTPEmail = user.email
@@ -236,6 +243,12 @@ final class AuthManager {
 
     func completeAuthentication() {
         isAuthenticated = true
+        // If we reach here, either 2FA succeeded or was skipped (e.g. non-dashboard).
+        // For dashboard destinations, 2FA is required.
+        // We set hasCompletedFullAuth here to mark that some form of valid entry happened.
+        hasCompletedFullAuth = true
+        _ = KeychainService.save("true".data(using: .utf8)!, forKey: Keys.hasFullAuth)
+        
         saveSessionToken()
         guard let user = currentUser else { return }
         Task {
@@ -313,6 +326,10 @@ final class AuthManager {
         if let user = KeychainService.load(key: Keys.currentUser, as: AuthUser.self) {
             currentUser = user
         }
+        if let data = KeychainService.load(key: Keys.hasFullAuth),
+           let str = String(data: data, encoding: .utf8) {
+            hasCompletedFullAuth = (str == "true")
+        }
         Task { _ = try? await supabase.auth.session }
     }
 
@@ -324,17 +341,17 @@ final class AuthManager {
         case .driver:
             // Approved + complete drivers go straight to dashboard, even if isFirstLogin is stale
             if user.isApproved && user.isProfileComplete { return .driverDashboard }
+            if user.isFirstLogin      { return .changePassword } // <--- Force password change FIRST
             if !user.isProfileComplete { return .driverOnboarding }
-            if user.isFirstLogin      { return .changePassword }
-            if !user.isApproved {
+            if user.isApproved == false {
                 if let r = user.rejectionReason, !r.isEmpty { return .rejected }
                 return .pendingApproval
             }
             return .driverDashboard
         case .maintenancePersonnel:
             if user.isApproved && user.isProfileComplete { return .maintenanceDashboard }
+            if user.isFirstLogin        { return .changePassword } // <--- Force password change FIRST
             if !user.isProfileComplete  { return .maintenanceOnboarding }
-            if user.isFirstLogin        { return .changePassword }
             if !user.isApproved {
                 if let r = user.rejectionReason, !r.isEmpty { return .rejected }
                 return .pendingApproval
@@ -425,9 +442,9 @@ final class AuthManager {
     func refreshCurrentUser() async throws {
         guard let userId = currentUser?.id else { return }
         struct RoleRow: Decodable {
-            let role: String; let name: String?; let isFirstLogin: Bool
-            let isProfileComplete: Bool; let isApproved: Bool
-            let rejectionReason: String?; let phone: String?; let createdAt: Date?
+            let role: String; let name: String?; let isFirstLogin: Bool?
+            let isProfileComplete: Bool?; let isApproved: Bool?
+            let rejectionReason: String?; let phone: String?; let createdAt: String?
             enum CodingKeys: String, CodingKey {
                 case role, name, phone
                 case isFirstLogin      = "is_first_login"
@@ -439,31 +456,69 @@ final class AuthManager {
         }
         let rows: [RoleRow] = try await supabase.from("staff_members")
             .select("role,name,is_first_login,is_profile_complete,is_approved,rejection_reason,phone,created_at")
-            .eq("id", value: userId.uuidString).limit(1).execute().value
-        guard let row = rows.first, let current = currentUser else { return }
+            .eq("id", value: userId.uuidString.lowercased()).limit(1).execute().value
+        guard let row = rows.first, let current = currentUser else {
+            #if DEBUG
+            print("🔐 [AuthManager] refreshCurrentUser: No row found for \(userId.uuidString.lowercased())")
+            #endif
+            return
+        }
         var updated = current
-        updated.isApproved = row.isApproved; updated.isProfileComplete = row.isProfileComplete
-        updated.isFirstLogin = row.isFirstLogin; updated.rejectionReason = row.rejectionReason
+        updated.isApproved = row.isApproved ?? false
+        updated.isProfileComplete = row.isProfileComplete ?? false
+        updated.isFirstLogin = row.isFirstLogin ?? true
+        updated.rejectionReason = row.rejectionReason
         currentUser = updated; _ = KeychainService.save(updated, forKey: Keys.currentUser)
     }
 
     // MARK: - Password Reset
 
     func requestPasswordReset(email: String) async -> Bool {
-        if let last = resetOTPLastSentAt, Date().timeIntervalSince(last) < otpCooldownSeconds { return true }
-        pendingResetToken = ""
-        do {
-            struct EmailRow: Decodable { let id: String }
-            let rows: [EmailRow] = try await supabase.from("staff_members").select("id")
-                .eq("email", value: email).limit(1).execute().value
-            guard let userRow = rows.first else { return false }
+        // 1. Cooldown check - MUST NOT clear pendingResetToken here
+        if let last = resetOTPLastSentAt, Date().timeIntervalSince(last) < otpCooldownSeconds {
+            return true
+        }
 
-            pendingOTPEmail = email
+        let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        
+        // 2. Robust lookup with retries
+        var userRowId: String? = nil
+        var attempts = 0
+        while attempts < 3 && userRowId == nil {
+            attempts += 1
+            do {
+                struct EmailRow: Decodable { let id: String }
+                let rows: [EmailRow] = try await supabase.from("staff_members")
+                    .select("id")
+                    .eq("email", value: trimmed)
+                    .limit(1)
+                    .execute()
+                    .value
+                userRowId = rows.first?.id
+                if userRowId != nil { break }
+            } catch {
+                if attempts == 3 { break }
+                try? await Task.sleep(for: .milliseconds(400 * attempts))
+            }
+        }
+
+        guard let userId = userRowId else {
+            #if DEBUG
+            print("🔑 [AuthManager] No account found for \(trimmed) after \(attempts) attempts")
+            #endif
+            return false
+        }
+
+        // 3. Populate state for the reset flow
+        pendingOTPEmail = trimmed
+        pendingResetToken = "" // Safe to clear now that we are starting a fresh request
+
+        do {
             let otp = String(format: "%06d", Int.random(in: 100000...999999))
             resetOTP = otp
             resetOTPGeneratedAt = Date()
             resetOTPLastSentAt = Date()
-            EmailService.sendResetOTP(to: email, otp: otp)
+            EmailService.sendResetOTP(to: trimmed, otp: otp)
 
             let resetToken = UUID().uuidString
             pendingResetToken = resetToken
@@ -474,39 +529,65 @@ final class AuthManager {
                 let expires_at: String; let used: Bool
             }
             try await supabase.from("password_reset_tokens")
-                .insert(TokenInsert(email: email, token: resetToken, user_id: userRow.id,
+                .insert(TokenInsert(email: trimmed, token: resetToken, user_id: userId,
                                     expires_at: expiresAt, used: false))
                 .execute()
             return true
         } catch {
+            #if DEBUG
+            print("🔑 [AuthManager] Token insertion failed: \(error)")
+            #endif
             pendingResetToken = ""
             return false
         }
     }
 
     func resetPassword(code: String, newPassword: String) async throws {
-        try await Task.sleep(for: .milliseconds(600))
+        // Enforce a small UX delay if needed, though functions are already async
+        try await Task.sleep(for: .milliseconds(200))
+
         guard let generatedAt = resetOTPGeneratedAt,
               Date().timeIntervalSince(generatedAt) < otpValidSeconds else {
             throw AuthError.otpExpired
         }
-        guard code == resetOTP else { throw AuthError.invalidCredentials }
-        guard let email = pendingOTPEmail else { throw AuthError.invalidCredentials }
-        guard !pendingResetToken.isEmpty else { throw AuthError.invalidCredentials }
+        guard code == resetOTP else { throw AuthError.otpInvalid }
+        guard let email = pendingOTPEmail, !pendingResetToken.isEmpty else {
+            throw AuthError.sessionExpired
+        }
 
         struct ResetPayload: Encodable { let email: String; let reset_token: String; let new_password: String }
-        struct ResetResponse: Decodable { let success: Bool? }
+        struct ResetResponse: Decodable { let error: String?; let success: Bool? }
+        
         do {
-            let _: ResetResponse = try await supabase.functions.invoke(
+            let response: ResetResponse = try await supabase.functions.invoke(
                 "reset-password",
                 options: FunctionInvokeOptions(body: ResetPayload(
-                    email: email, reset_token: pendingResetToken, new_password: newPassword
+                    email: email,
+                    reset_token: pendingResetToken,
+                    new_password: newPassword
                 ))
             )
-        } catch { throw AuthError.invalidCredentials }
 
+            if let edgeError = response.error {
+                throw AuthError.networkError(edgeError)
+            }
+        } catch let error as AuthError {
+            throw error
+        } catch {
+            // Log full error for debugging but provide helpful user message
+            let detailedMsg = error.localizedDescription
+            #if DEBUG
+            print("🔑 [AuthManager] resetPassword failure: \(detailedMsg)")
+            #endif
+            throw AuthError.networkError(detailedMsg)
+        }
+
+        // 4. Success — persist changes locally and clear session state
         _ = KeychainService.save(CryptoService.hash(password: newPassword), forKey: Keys.hashedCred)
-        resetOTP = ""; resetOTPGeneratedAt = nil; pendingResetToken = ""; pendingOTPEmail = nil
+        resetOTP = ""
+        resetOTPGeneratedAt = nil
+        pendingResetToken = ""
+        pendingOTPEmail = nil
     }
 
     // MARK: - Email Existence Check
@@ -576,7 +657,7 @@ enum AuthError: LocalizedError, Equatable {
         case .otpExpired:                return "The verification code has expired. Please request a new one."
         case .otpInvalid:                return "Incorrect verification code. Please check and try again."
         case .edgeFunctionFailed(let d): return "Profile fetch failed (\(d)). Please try again."
-        case .networkError(let d):       return "Connection error: \(d)"
+        case .networkError(let d):       return d
         }
     }
 }

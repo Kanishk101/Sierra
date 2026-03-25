@@ -17,18 +17,31 @@ public enum SierraTheme {
         public static let summitNavy   = Color("SummitNavy")
         /// #1A3A6B - card surfaces, tab bar dark bg
         public static let sierraBlue   = Color("SierraBlue")
-        /// #F07B35 - ALL primary CTAs, active states, progress, FAB, links
-        public static let ember        = Color("Ember")
-        /// #F9A872 - ember tint on dark backgrounds
-        public static let emberLight   = Color("EmberLight")
-        /// #C45E1A - pressed states, destructive ember contexts
-        public static let emberDark    = Color("EmberDark")
+        /// #F07B35 (now using standardized appOrange) - ALL primary CTAs
+        public static let ember        = Color(red: 0.95, green: 0.55, blue: 0.10)
+        /// #F9A872 - ember tint
+        public static let emberLight   = Color(red: 1.0, green: 0.75, blue: 0.20).opacity(0.12)
+        /// #C45E1A - pressed states
+        public static let emberDark    = Color(red: 0.90, green: 0.35, blue: 0.08)
         /// #0AB891 - success, available driver, completed, checkmarks
         public static let alpineMint   = Color("AlpineMint")
         /// #4DCFB3 - mint tint on dark bg
         public static let alpineLight  = Color("AlpineLight")
         /// #078A6C - mint pressed / dark mode text
         public static let alpineDark   = Color("AlpineDark")
+
+        // ── Standard UI (Vivid & Premium) ──
+
+        /// Primary brand orange — CTAs, accents, active states
+        public static let appOrange    = Color(red: 0.95, green: 0.55, blue: 0.10)
+        /// Deep orange — gradient dark end, pressed states
+        public static let appDeepOrange = Color(red: 0.90, green: 0.35, blue: 0.08)
+        /// Warm amber — gradient endpoints
+        public static let appAmber     = Color(red: 1.0, green: 0.75, blue: 0.20)
+        /// Standardized app background
+        public static let appSurface   = Color(red: 0.97, green: 0.97, blue: 0.96)
+        /// Standardized card background
+        public static let appCardBg    = Color.white
 
         // ── Neutrals ──
 
@@ -58,8 +71,8 @@ public enum SierraTheme {
 
         // ── Adaptive (Light / Dark) ──
 
-        /// light: Snowfield (#F4F7FB), dark: Obsidian (#0A0F1E)
-        public static let appBackground  = Color("AppBackground")
+        /// light: System Grouped Background, dark: Obsidian (#0A0F1E)
+        public static let appBackground  = Color(.systemGroupedBackground)
         /// light: #FFFFFF, dark: #161C2D
         public static let cardSurface    = Color("CardSurface")
         /// light: SummitNavy (#0D1F3C), dark: #FFFFFF
@@ -92,12 +105,12 @@ public enum SierraTheme {
         public static let xs:     CGFloat = 6
         public static let sm:     CGFloat = 8
         public static let md:     CGFloat = 12
-        public static let lg:     CGFloat = 14
-        public static let xl:     CGFloat = 16
-        public static let xxl:    CGFloat = 20
-        public static let card:   CGFloat = 16
+        public static let lg:     CGFloat = 16
+        public static let xl:     CGFloat = 20
+        public static let xxl:    CGFloat = 28
+        public static let card:   CGFloat = 20
         public static let badge:  CGFloat = 20
-        public static let button: CGFloat = 14
+        public static let button: CGFloat = 16
         public static let avatar: CGFloat = 12
     }
 

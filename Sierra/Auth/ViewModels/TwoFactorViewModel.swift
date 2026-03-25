@@ -17,7 +17,6 @@ final class TwoFactorViewModel {
     var state: TwoFactorState = .idle
     var expiryCountdown: Int = 600
     var resendCooldown: Int = 0
-    var shakeCount: Int = 0
     var banner: SierraAlertType?
     var isLoading: Bool = false
 
@@ -169,7 +168,6 @@ final class TwoFactorViewModel {
                 } else {
                     let remaining = result.attemptsRemaining ?? 0
                     state = .failed(attemptsRemaining: remaining)
-                    withAnimation(.default) { shakeCount += 1 }
                     clearDigits()
                     banner = .warning("Incorrect code. \(remaining) attempt\(remaining == 1 ? "" : "s") remaining.")
                 }
@@ -183,7 +181,6 @@ final class TwoFactorViewModel {
                     banner = .warning("Code has expired. Tap Resend to get a new one.")
                 case .otpInvalid:
                     state = .failed(attemptsRemaining: 0)
-                    withAnimation(.default) { shakeCount += 1 }
                     clearDigits()
                     banner = .warning("Incorrect code. Please check and try again.")
                 case .networkError(let msg):

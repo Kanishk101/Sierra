@@ -14,25 +14,23 @@ struct LoginView: View {
 
     var body: some View {
         ZStack {
-            Color(.systemGroupedBackground).ignoresSafeArea()
+            SierraTheme.Colors.appBackground.ignoresSafeArea()
 
             ScrollView {
                 VStack(spacing: 20) {
                     Spacer(minLength: 56)
-
                     headerSection
-
                     formSection
                     actionsSection
-
                     if viewModel.showBiometricButton {
                         biometricButton
                     }
-
                     Spacer(minLength: 32)
                 }
-                .padding(.top, 4)
+                .containerRelativeFrame(.vertical, alignment: .center)
             }
+            .scrollBounceBehavior(.basedOnSize)
+            .scrollIndicators(.hidden)
             .scrollDismissesKeyboard(.interactively)
 
             if viewModel.isLoading {
@@ -80,138 +78,104 @@ struct LoginView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
 
             Text("Sierra")
-                .font(.system(size: 34, weight: .bold))
-                .foregroundStyle(.primary)
+                .font(SierraFont.body(34, weight: .bold))
+                .foregroundStyle(SierraTheme.Colors.primaryText)
 
             Text("Sign in to your account")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .font(SierraFont.subheadline)
+                .foregroundStyle(SierraTheme.Colors.secondaryText)
         }
     }
 
     private var formSection: some View {
-        VStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 6) {
-                TextField("Email", text: $viewModel.email)
-                    .textContentType(.emailAddress)
-                    .keyboardType(.emailAddress)
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
-                    .focused($focusedField, equals: .email)
-                    .padding(.horizontal, 14)
-                    .frame(height: 54)
-                    .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        VStack(spacing: 20) {
+            SierraTextField(
+                label: "Email",
+                placeholder: "Enter your email",
+                text: $viewModel.email,
+                style: .native,
+                keyboardType: .emailAddress,
+                leadingIcon: "envelope.fill",
+                errorMessage: viewModel.emailError,
+                maxLength: 100
+            )
+            .textContentType(.emailAddress)
+            .focused($focusedField, equals: .email)
 
-                if let error = viewModel.emailError {
-                    Text(error)
-                        .font(.caption2)
-                        .foregroundStyle(.red)
-                        .padding(.leading, 2)
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 10) {
-                    Group {
-                        if viewModel.isPasswordVisible {
-                            TextField("Password", text: $viewModel.password)
-                        } else {
-                            SecureField("Password", text: $viewModel.password)
-                        }
-                    }
-                    .textContentType(.password)
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
-                    .focused($focusedField, equals: .password)
-
-                    Button {
-                        viewModel.isPasswordVisible.toggle()
-                    } label: {
-                        Image(systemName: viewModel.isPasswordVisible ? "eye.slash.fill" : "eye.fill")
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.horizontal, 14)
-                .frame(height: 54)
-                .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-
-                if let error = viewModel.passwordError {
-                    Text(error)
-                        .font(.caption2)
-                        .foregroundStyle(.red)
-                        .padding(.leading, 2)
-                }
-            }
+            SierraTextField(
+                label: "Password",
+                placeholder: "Enter your password",
+                text: $viewModel.password,
+                style: .native,
+                leadingIcon: "lock.fill",
+                errorMessage: viewModel.passwordError,
+                isSecure: true,
+                maxLength: 128
+            )
+            .textContentType(.password)
+            .focused($focusedField, equals: .password)
 
             Button("Forgot Password?") {
                 showForgotPassword = true
             }
-            .font(.subheadline.weight(.medium))
-            .foregroundStyle(.secondary)
+            .font(SierraFont.subheadline)
+            .foregroundStyle(SierraTheme.Colors.granite)
             .frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 24)
     }
 
     private var actionsSection: some View {
-        VStack(spacing: 14) {
-            Button {
+        VStack(spacing: 16) {
+            SierraButton.primary("Sign In", isLoading: viewModel.isLoading) {
                 dismissKeyboard()
                 Task { await viewModel.signIn() }
-            } label: {
-                Text("Sign In")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 54)
-                    .background(Color(.systemOrange), in: Capsule())
             }
-            .disabled(viewModel.isLoading)
 
             if let error = viewModel.errorMessage {
                 Text(error)
-                    .font(.footnote)
-                    .foregroundStyle(.red)
+                    .font(SierraFont.footnote)
+                    .foregroundStyle(SierraTheme.Colors.danger)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 4)
             }
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 24)
     }
 
     private var biometricButton: some View {
         Button {
             Task { await viewModel.biometricSignIn() }
         } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 Image(systemName: viewModel.biometricIcon)
-                    .font(.system(size: 20))
+                    .font(.system(size: 22))
                 Text(viewModel.biometricLabel)
-                    .font(.system(size: 15, weight: .medium))
+                    .font(SierraFont.subheadline)
             }
-            .foregroundStyle(Color(.systemOrange))
+            .foregroundStyle(SierraTheme.Colors.ember)
             .frame(maxWidth: .infinity)
-            .frame(height: 50)
+            .frame(height: 54)
             .background(
-                Color(.systemOrange).opacity(0.09),
-                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                SierraTheme.Colors.ember.opacity(0.1),
+                in: Capsule()
             )
         }
         .disabled(viewModel.isLoading)
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 24)
     }
 
     private var loadingOverlay: some View {
         ZStack {
-            Color.black.opacity(0.3).ignoresSafeArea()
-            VStack(spacing: 12) {
-                ProgressView().tint(.orange)
+            Color.black.opacity(0.25).ignoresSafeArea()
+            VStack(spacing: 16) {
+                ProgressView().tint(SierraTheme.Colors.ember)
                 Text("Signing in...")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(SierraFont.caption1)
+                    .foregroundStyle(SierraTheme.Colors.granite)
             }
-            .padding(24)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .padding(32)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Radius.xl, style: .continuous))
         }
     }
 

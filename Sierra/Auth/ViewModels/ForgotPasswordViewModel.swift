@@ -27,7 +27,6 @@ final class ForgotPasswordViewModel {
     var digits: [String] = Array(repeating: "", count: 6)
     var focusedIndex: Int? = 0
     var codeError: String?
-    var shakeCount: Int = 0
 
     // MARK: - Step 3: New Password
 
@@ -138,9 +137,6 @@ final class ForgotPasswordViewModel {
             }
         } else {
             codeError = "Incorrect code. Please try again."
-            withAnimation(.default) {
-                shakeCount += 1
-            }
         }
     }
 
@@ -163,11 +159,9 @@ final class ForgotPasswordViewModel {
             }
         } catch let error as AuthError {
             isLoading = false
-            if error == .invalidCredentials {
-                errorMessage = "Invalid or expired reset code. Please request a new code."
-            } else {
-                errorMessage = error.errorDescription ?? "Failed to reset password. Please try again."
-            }
+            // Prioritize the errorDescription from the AuthError itself,
+            // which now includes direct messages from the edge function.
+            errorMessage = error.errorDescription ?? "Failed to reset password. Please try again."
             showErrorAlert = true
         } catch {
             isLoading = false

@@ -13,97 +13,120 @@ struct ChangePasswordView: View {
 
     var body: some View {
         ZStack {
-            List {
-                Section {
-                    VStack(spacing: 10) {
-                        Image(systemName: "lock.rotation")
-                            .font(.system(size: 42, weight: .light))
-                            .foregroundStyle(.orange)
+            SierraTheme.Colors.appBackground
+                .ignoresSafeArea()
 
-                        Text("Update your account password")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
+            GeometryReader { geo in
+                ScrollView {
+                    VStack(spacing: 24) {
+                        Spacer(minLength: 40)
 
-                Section("Current Password") {
-                    SecureField("Enter current password", text: $currentPassword)
-                        .textContentType(.password)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
+                        headerSection
 
-                    if let currentPasswordError {
-                        Text(currentPasswordError)
-                            .font(.caption2)
-                            .foregroundStyle(.red.opacity(0.9))
-                            .padding(.leading, 4)
-                    }
-                }
+                        VStack(spacing: 20) {
+                            SierraTextField(
+                                label: "Current Password",
+                                placeholder: "Enter current password",
+                                text: $currentPassword,
+                                style: .native,
+                                leadingIcon: "lock.fill",
+                                errorMessage: currentPasswordError,
+                                isSecure: true,
+                                maxLength: 128
+                            )
+                            .accessibilityLabel("Current Password")
 
-                Section("New Password") {
-                    SecureField("Enter new password", text: $newPassword)
-                        .textContentType(.newPassword)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
+                            Divider()
+                                .background(SierraTheme.Colors.cloud.opacity(0.5))
+                                .padding(.vertical, 8)
 
-                    SecureField("Confirm new password", text: $confirmPassword)
-                        .textContentType(.newPassword)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
+                            SierraTextField(
+                                label: "New Password",
+                                placeholder: "Enter new password",
+                                text: $newPassword,
+                                style: .native,
+                                leadingIcon: "lock.rotation",
+                                isSecure: true,
+                                maxLength: 128
+                            )
+                            .accessibilityLabel("New Password")
 
-                    if !confirmPassword.isEmpty, confirmPassword != newPassword {
-                        Text("Passwords do not match.")
-                            .font(.caption2)
-                            .foregroundStyle(.red.opacity(0.9))
-                            .padding(.leading, 4)
-                    }
-                    if !newPassword.isEmpty, newPassword.count < 8 {
-                        Text("Use at least 8 characters.")
-                            .font(.caption2)
-                            .foregroundStyle(.red.opacity(0.9))
-                            .padding(.leading, 4)
-                    }
-                    if !currentPassword.isEmpty, !newPassword.isEmpty, currentPassword == newPassword {
-                        Text("New password must be different from current password.")
-                            .font(.caption2)
-                            .foregroundStyle(.red.opacity(0.9))
-                            .padding(.leading, 4)
-                    }
-                }
-
-                Section {
-                    Button {
-                        Task { await updatePassword() }
-                    } label: {
-                        HStack {
-                            Spacer()
-                            if isLoading {
-                                ProgressView()
-                                    .tint(.white)
-                            } else {
-                                Text("Update Password")
+                            if !newPassword.isEmpty {
+                                PasswordStrengthView(password: newPassword)
+                                    .padding(.top, -8)
                             }
-                            Spacer()
+
+                            SierraTextField(
+                                label: "Confirm New Password",
+                                placeholder: "Confirm your password",
+                                text: $confirmPassword,
+                                style: .native,
+                                leadingIcon: "lock.shield.fill",
+                                errorMessage: confirmPasswordError,
+                                isSecure: true,
+                                maxLength: 128
+                            )
+                            .accessibilityLabel("Confirm New Password")
                         }
+                        .padding(24)
+                        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+                        .sierraShadow(SierraTheme.Shadow.card)
+                        .padding(.horizontal, 24)
+
+                        SierraButton.primary("Update Password", isLoading: isLoading) {
+                            Task { await updatePassword() }
+                        }
+                        .disabled(!canSubmit || isLoading)
+                        .padding(.horizontal, 24)
+
+                        Spacer(minLength: 40)
                     }
-                    .disabled(!canSubmit || isLoading)
+                    .frame(minHeight: geo.size.height)
                 }
+                .scrollDismissesKeyboard(.interactively)
             }
-            .navigationTitle("Change Password")
-            .navigationBarTitleDisplayMode(.inline)
-            .scrollContentBackground(.hidden)
-            .background(Color(.systemGroupedBackground))
-            .toolbarBackground(Color(.systemGroupedBackground), for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
+
+            if isLoading {
+                loadingOverlay
+            }
         }
+        .navigationTitle("Change Password")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(SierraTheme.Colors.appBackground, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .alert("Password Update Failed", isPresented: $showErrorAlert) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(errorMessage ?? "Unable to update password. Please try again.")
         }
+    }
+
+    private var headerSection: some View {
+        VStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(SierraTheme.Colors.ember.opacity(0.1))
+                    .frame(width: 80, height: 80)
+                Image(systemName: "lock.rotation")
+                    .font(.system(size: 34, weight: .light))
+                    .foregroundStyle(SierraTheme.Colors.ember)
+                    .symbolRenderingMode(.hierarchical)
+            }
+            .accessibilityHidden(true)
+
+            VStack(spacing: 4) {
+                Text("Update Password")
+                    .font(.title3.weight(.bold))
+                Text("Choose a strong password to secure your account")
+                    .font(SierraFont.caption1)
+                    .foregroundStyle(SierraTheme.Colors.secondaryText)
+            }
+        }
+    }
+
+    private var confirmPasswordError: String? {
+        guard !confirmPassword.isEmpty else { return nil }
+        return confirmPassword == newPassword ? nil : "Passwords do not match"
     }
 
     private var canSubmit: Bool {
@@ -113,6 +136,21 @@ struct ChangePasswordView: View {
             && currentPassword != newPassword
             && newPassword.count >= 8
             && confirmPassword == newPassword
+            && PasswordStrength.evaluate(newPassword).rawValue >= 2 // Requires at least Medium
+    }
+
+    private var loadingOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.3).ignoresSafeArea()
+            VStack(spacing: 16) {
+                ProgressView().tint(SierraTheme.Colors.ember)
+                Text("Updating...")
+                    .font(SierraFont.caption1)
+                    .foregroundStyle(SierraTheme.Colors.granite)
+            }
+            .padding(32)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Radius.xl, style: .continuous))
+        }
     }
 
     private func verifyCurrentPassword() -> Bool {
@@ -137,16 +175,7 @@ struct ChangePasswordView: View {
             return
         }
 
-        guard currentPassword != newPassword else {
-            errorMessage = "New password must be different from your current password."
-            showErrorAlert = true
-            return
-        }
-
         isLoading = true
-        errorMessage = nil
-        showErrorAlert = false
-
         do {
             try await AuthManager.shared.updatePassword(newPassword)
             isLoading = false

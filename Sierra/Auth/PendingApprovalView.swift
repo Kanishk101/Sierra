@@ -6,37 +6,37 @@ struct PendingApprovalView: View {
 
     var body: some View {
         ZStack {
-            Color(.systemGroupedBackground)
+            SierraTheme.Colors.appBackground
                 .ignoresSafeArea()
 
-            VStack(spacing: 28) {
+            VStack(spacing: 32) {
                 Spacer()
 
                 ZStack {
                     Circle()
-                        .fill(Color.orange.opacity(0.08))
-                        .frame(width: 120, height: 120)
+                        .fill(SierraTheme.Colors.ember.opacity(0.08))
+                        .frame(width: 140, height: 140)
                         .scaleEffect(pulseScale)
                         .onAppear {
-                            withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
-                                pulseScale = 1.05
+                            withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
+                                pulseScale = 1.12
                             }
                         }
 
                     Image(systemName: "clock.badge.checkmark.fill")
-                        .font(.system(size: 52, weight: .light))
-                        .foregroundStyle(.orange)
+                        .font(.system(size: 60, weight: .light))
+                        .foregroundStyle(SierraTheme.Colors.ember)
                         .symbolRenderingMode(.hierarchical)
                 }
 
-                VStack(spacing: 12) {
+                VStack(spacing: 16) {
                     Text("Pending Approval")
-                        .font(.title.weight(.bold))
-                        .foregroundStyle(.primary)
+                        .font(.title2.weight(.bold))
+                        .foregroundStyle(SierraTheme.Colors.primaryText)
 
                     Text("Your account is under review by the fleet administrator. You\u{2019}ll be notified once approved.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .font(SierraFont.subheadline)
+                        .foregroundStyle(SierraTheme.Colors.secondaryText)
                         .multilineTextAlignment(.center)
                         .lineSpacing(4)
                         .padding(.horizontal, 40)
@@ -48,13 +48,13 @@ struct PendingApprovalView: View {
                     AuthManager.shared.signOut()
                 } label: {
                     Text("Sign Out")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(.red)
+                        .font(SierraFont.body(16, weight: .semibold))
+                        .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 50)
-                        .background(.red.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .frame(height: 54)
+                        .background(Color(red: 0.85, green: 0.15, blue: 0.15), in: Capsule())
                 }
-                .padding(.horizontal, 40)
+                .padding(.horizontal, 24)
                 .padding(.bottom, 48)
             }
         }

@@ -24,33 +24,38 @@ struct PasswordStrengthView: View {
     // MARK: - Body
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 16) {
             // Strength bar
             strengthBar
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Password strength: \(strength.label)")
 
             // Requirements checklist
             requirementsChecklist
         }
-        .animation(.easeInOut(duration: 0.2), value: password)
+        .animation(.spring(duration: 0.35, bounce: 0.2), value: password)
     }
 
     // MARK: - Strength Bar
 
     private var strengthBar: some View {
-        VStack(spacing: 6) {
-            HStack(spacing: 4) {
-                ForEach(0..<3) { index in
+        VStack(spacing: 8) {
+            HStack(spacing: 6) {
+                ForEach(0..<4) { index in
+                    let isActive = index <= strength.rawValue
                     RoundedRectangle(cornerRadius: 3)
-                        .fill(index <= strength.rawValue
-                              ? strength.color : Color(.separator).opacity(0.3))
-                        .frame(height: 5)
+                        .fill(isActive ? strength.color : SierraTheme.Colors.cloud.opacity(0.4))
+                        .frame(height: 6)
+                        .scaleEffect(isActive ? 1.0 : 0.95)
+                        .animation(.spring(duration: 0.3, bounce: 0.3).delay(Double(index) * 0.05), value: strength)
                 }
             }
 
             HStack {
-                Text(strength.label)
-                    .font(.caption2)
+                Text(strength.label.uppercased())
+                    .font(SierraFont.caption1.weight(.bold))
                     .foregroundStyle(strength.color)
+                    .tracking(0.5)
                 Spacer()
             }
         }
@@ -59,33 +64,52 @@ struct PasswordStrengthView: View {
     // MARK: - Requirements Checklist
 
     private var requirementsChecklist: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 10) {
             requirementRow("At least 8 characters", met: hasMinLength)
             requirementRow("One uppercase letter", met: hasUppercase)
             requirementRow("One number", met: hasNumber)
             requirementRow("One special character", met: hasSpecialChar)
         }
-        .padding(14)
-        .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(16)
+        .background(
+            SierraTheme.Colors.appBackground.opacity(0.5),
+            in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
+                .strokeBorder(SierraTheme.Colors.cloud.opacity(0.5), lineWidth: 1)
+        )
     }
 
     private func requirementRow(_ text: String, met: Bool) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: met ? "checkmark.circle.fill" : "xmark.circle")
-                .font(.caption)
-                .foregroundStyle(met ? .green : .secondary)
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .strokeBorder(met ? SierraTheme.Colors.alpineMint : SierraTheme.Colors.cloud, lineWidth: 1.5)
+                    .frame(width: 18, height: 18)
+                
+                if met {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(SierraTheme.Colors.alpineMint)
+                }
+            }
+            .accessibilityHidden(true)
 
             Text(text)
-                .font(.caption)
-                .foregroundStyle(met ? .primary : .secondary)
+                .font(SierraFont.caption1)
+                .foregroundStyle(met ? SierraTheme.Colors.primaryText : SierraTheme.Colors.secondaryText)
+                .strikethrough(met, color: SierraTheme.Colors.alpineMint.opacity(0.3))
         }
-        .animation(.easeInOut(duration: 0.15), value: met)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(text): \(met ? "Met" : "Not met")")
+        .animation(.easeInOut(duration: 0.25), value: met)
     }
 }
 
 #Preview {
     ZStack {
-        Color(.systemGroupedBackground).ignoresSafeArea()
+        SierraTheme.Colors.appBackground.ignoresSafeArea()
         PasswordStrengthView(password: "Test@12")
             .padding()
     }

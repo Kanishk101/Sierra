@@ -46,6 +46,7 @@ final class LoginViewModel {
     var showBiometricButton: Bool {
         BiometricManager.shared.canUseBiometrics()
             && AuthManager.shared.currentUser != nil
+            && AuthManager.shared.hasCompletedFullAuth
             && BiometricPreference.isEnabled
     }
 

@@ -1,18 +1,5 @@
 import SwiftUI
 
-// MARK: - Shake Effect
-
-struct ShakeEffect: GeometryEffect {
-    var amount: CGFloat = 8
-    var shakesPerUnit: CGFloat = 3
-    var animatableData: CGFloat
-
-    func effectValue(size: CGSize) -> ProjectionTransform {
-        let offset = amount * sin(animatableData * .pi * shakesPerUnit)
-        return ProjectionTransform(CGAffineTransform(translationX: offset, y: 0))
-    }
-}
-
 // MARK: - Six Digit Input
 
 /// Reusable 6-digit OTP input used by TwoFactorView.
@@ -21,11 +8,10 @@ struct SixDigitInputView: View {
 
     @Binding var digits: [String] // must have exactly 6 elements
     @Binding var focusedIndex: Int?
-    var shakeCount: Int = 0
     var onComplete: () -> Void
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 12) {
             ForEach(0..<6, id: \.self) { index in
                 SingleDigitField(
                     text: Binding(
@@ -33,14 +19,20 @@ struct SixDigitInputView: View {
                         set: { newValue in handleInput(newValue, at: index) }
                     ),
                     isFocused: focusedIndex == index,
-                    onTap: { focusedIndex = index },
+                    onTap: { 
+                        withAnimation(.spring(duration: 0.2)) {
+                            focusedIndex = index 
+                        }
+                    },
                     onBackspace: { handleBackspace(at: index) },
                     onPaste: { handlePaste($0, startingAt: index) }
                 )
+                .accessibilityLabel("Digit \(index + 1)")
+                .accessibilityValue(digits[index].isEmpty ? "Empty" : digits[index])
             }
         }
+        .padding(.horizontal, 4)
         .frame(maxWidth: .infinity)
-        .modifier(ShakeEffect(animatableData: CGFloat(shakeCount)))
     }
 
     // MARK: - Input Handling
@@ -102,25 +94,22 @@ struct SingleDigitField: View {
             onBackspace: onBackspace,
             onPaste: onPaste
         )
-        .frame(width: 42, height: 56)
+        .frame(width: 48, height: 64)
         .multilineTextAlignment(.center)
-        .font(.system(size: 22, weight: .bold, design: .rounded))
-        .foregroundStyle(.primary)
+        .font(SierraFont.body(28, weight: .bold))
+        .foregroundStyle(SierraTheme.Colors.primaryText)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color(.tertiarySystemGroupedBackground))
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .fill(Color(.secondarySystemGroupedBackground))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                 .strokeBorder(
-                    isFocused ? Color.orange : Color(.separator),
+                    isFocused ? SierraTheme.Colors.ember : SierraTheme.Colors.cloud.opacity(0.8),
                     lineWidth: isFocused ? 2 : 1
                 )
         )
-        .shadow(
-            color: isFocused ? Color.orange.opacity(0.15) : .clear,
-            radius: 6, y: 2
-        )
+        .sierraShadow(isFocused ? SierraShadow(color: SierraTheme.Colors.ember.opacity(0.12), radius: 8, x: 0, y: 3) : SierraShadow(color: .clear, radius: 0, x: 0, y: 0))
         .contentShape(Rectangle())
         .onTapGesture { onTap() }
     }
@@ -146,20 +135,22 @@ struct BackspaceDetectingTextField: UIViewRepresentable {
         tf.smartQuotesType = .no
         tf.autocapitalizationType = .none
         tf.textAlignment = .center
-        tf.font = .systemFont(ofSize: 22, weight: .bold)
+        tf.font = .systemFont(ofSize: 26, weight: .bold)
         tf.delegate = context.coordinator
         tf.onBackspace = onBackspace
-        tf.textColor = UIColor.label
-        tf.tintColor = UIColor.systemOrange
+        tf.textColor = UIColor(SierraTheme.Colors.primaryText)
+        tf.tintColor = UIColor(SierraTheme.Colors.ember)
         return tf
     }
 
     func updateUIView(_ uiView: BackspaceTextField, context: Context) {
         if uiView.text != text { uiView.text = text }
-        if isFocused && !uiView.isFirstResponder {
-            DispatchQueue.main.async { uiView.becomeFirstResponder() }
-        } else if !isFocused && uiView.isFirstResponder {
-            DispatchQueue.main.async { uiView.resignFirstResponder() }
+        if isFocused {
+            if !uiView.isFirstResponder {
+                uiView.becomeFirstResponder()
+            }
+        } else if uiView.isFirstResponder {
+            uiView.resignFirstResponder()
         }
         uiView.onBackspace = onBackspace
     }
@@ -198,17 +189,14 @@ class BackspaceTextField: UITextField {
     struct DemoView: View {
         @State private var digits = Array(repeating: "", count: 6)
         @State private var focused: Int? = 0
-        @State private var shakes = 0
 
         var body: some View {
             VStack(spacing: 24) {
                 SixDigitInputView(
                     digits: $digits,
                     focusedIndex: $focused,
-                    shakeCount: shakes,
-                    onComplete: { shakes += 1 }
+                    onComplete: { }
                 )
-                Button("Shake") { withAnimation(.default) { shakes += 1 } }
             }
             .padding()
         }

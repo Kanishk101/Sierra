@@ -1,6 +1,5 @@
 import SwiftUI
 
-
 struct DriverProfilePage1View: View {
     @Bindable var viewModel: DriverProfileViewModel
 
@@ -9,203 +8,226 @@ struct DriverProfilePage1View: View {
             ScrollView {
                 VStack(spacing: 24) {
                     // Header
-                    VStack(spacing: 4) {
+                    VStack(spacing: 8) {
                         Text("Personal Details")
-                            .font(.title3.weight(.semibold))
-                            .foregroundStyle(.primary)
-                        Text("Tell us about yourself")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .font(.title3.weight(.bold))
+                            .foregroundStyle(SierraTheme.Colors.primaryText)
+                        Text("Tell us about yourself to complete your profile")
+                            .font(SierraFont.caption1)
+                            .foregroundStyle(SierraTheme.Colors.secondaryText)
                     }
-                    .padding(.top, 8)
+                    .padding(.top, 16)
 
                     // Basic Info Section
                     formSection("Basic Information") {
-                        fieldRow(icon: "person.fill", placeholder: "First Name", text: $viewModel.firstName, error: viewModel.firstNameError, autocap: .words)
-                        fieldRow(icon: "person.fill", placeholder: "Last Name", text: $viewModel.lastName, error: viewModel.lastNameError, autocap: .words)
+                        SierraTextField(
+                            label: "First Name",
+                            placeholder: "Enter first name",
+                            text: $viewModel.firstName,
+                            style: .native,
+                            leadingIcon: "person.fill",
+                            errorMessage: viewModel.firstNameError,
+                            maxLength: 50
+                        )
+
+                        SierraTextField(
+                            label: "Last Name",
+                            placeholder: "Enter last name",
+                            text: $viewModel.lastName,
+                            style: .native,
+                            leadingIcon: "person.fill",
+                            errorMessage: viewModel.lastNameError,
+                            maxLength: 50
+                        )
 
                         // Date of Birth
-                        VStack(alignment: .leading, spacing: 5) {
-                            HStack(spacing: 10) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("DATE OF BIRTH")
+                                .font(SierraFont.caption2.weight(.bold))
+                                .foregroundStyle(SierraTheme.Colors.secondaryText)
+                                .tracking(0.5)
+
+                            HStack(spacing: 12) {
                                 Image(systemName: "calendar")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .frame(width: 20)
-                                Text("Date of Birth")
                                     .font(.subheadline)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(SierraTheme.Colors.secondaryText)
+                                    .frame(width: 24)
+                                
+                                Text("Select Date")
+                                    .font(SierraFont.body(16))
+                                    .foregroundStyle(SierraTheme.Colors.primaryText)
+                                
                                 Spacer()
+                                
                                 DatePicker("", selection: $viewModel.dateOfBirth, in: ...viewModel.maxDateOfBirth, displayedComponents: .date)
                                     .labelsHidden()
+                                    .tint(SierraTheme.Colors.ember)
                             }
                             .padding(.horizontal, 16)
-                            .frame(height: 52)
-                            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                            .shadow(color: .black.opacity(0.03), radius: 4, y: 2)
+                            .frame(height: 54)
+                            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+                            .sierraShadow(SierraTheme.Shadow.card)
                         }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("Date of Birth")
 
                         // Gender
-                        HStack(spacing: 10) {
-                            Image(systemName: "person.crop.circle")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .frame(width: 20)
-                            Text("Gender")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                            Picker("", selection: $viewModel.gender) {
-                                ForEach(Gender.allCases, id: \.self) {
-                                    Text($0.rawValue).tag($0)
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("GENDER")
+                                .font(SierraFont.caption2.weight(.bold))
+                                .foregroundStyle(SierraTheme.Colors.secondaryText)
+                                .tracking(0.5)
+
+                            HStack(spacing: 12) {
+                                Image(systemName: "person.crop.circle")
+                                    .font(.subheadline)
+                                    .foregroundStyle(SierraTheme.Colors.secondaryText)
+                                    .frame(width: 24)
+                                
+                                Text("Select Gender")
+                                    .font(SierraFont.body(16))
+                                    .foregroundStyle(SierraTheme.Colors.primaryText)
+                                
+                                Spacer()
+                                
+                                Picker("", selection: $viewModel.gender) {
+                                    ForEach(Gender.allCases, id: \.self) {
+                                        Text($0.rawValue).tag($0)
+                                    }
                                 }
+                                .pickerStyle(.menu)
+                                .tint(SierraTheme.Colors.ember)
                             }
-                            .tint(.primary)
+                            .padding(.horizontal, 16)
+                            .frame(height: 54)
+                            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+                            .sierraShadow(SierraTheme.Shadow.card)
                         }
-                        .padding(.horizontal, 16)
-                        .frame(height: 52)
-                        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .shadow(color: .black.opacity(0.03), radius: 4, y: 2)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("Gender")
                     }
 
                     // Contact Section
                     formSection("Contact Information") {
-                        fieldRow(icon: "phone.fill", placeholder: "Phone Number", text: $viewModel.phoneNumber, error: viewModel.phoneError, keyboard: .phonePad)
+                        SierraTextField(
+                            label: "Phone Number",
+                            placeholder: "Enter mobile number",
+                            text: $viewModel.phoneNumber,
+                            style: .native,
+                            keyboardType: .phonePad,
+                            leadingIcon: "phone.fill",
+                            errorMessage: viewModel.phoneError,
+                            maxLength: 10,
+                            filterDigitsOnly: true
+                        )
 
                         // Address
-                        VStack(alignment: .leading, spacing: 5) {
-                            HStack(alignment: .top, spacing: 10) {
-                                Image(systemName: "location.fill")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .frame(width: 20)
-                                    .padding(.top, 14)
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("RESIDENTIAL ADDRESS")
+                                .font(SierraFont.caption2.weight(.bold))
+                                .foregroundStyle(SierraTheme.Colors.secondaryText)
+                                .tracking(0.5)
 
-                                VStack(alignment: .leading, spacing: 4) {
-                                    TextEditor(text: $viewModel.address)
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack(alignment: .top, spacing: 12) {
+                                    Image(systemName: "location.fill")
                                         .font(.subheadline)
-                                        .foregroundStyle(.primary)
+                                        .foregroundStyle(SierraTheme.Colors.secondaryText)
+                                        .frame(width: 24)
+                                        .padding(.top, 12)
+
+                                    TextEditor(text: $viewModel.address)
+                                        .font(SierraFont.body(16))
+                                        .foregroundStyle(SierraTheme.Colors.primaryText)
                                         .scrollContentBackground(.hidden)
-                                        .frame(minHeight: 72)
+                                        .frame(minHeight: 80)
+                                        .onChange(of: viewModel.address) { _, newValue in
+                                            if newValue.count > viewModel.addressMaxChars {
+                                                viewModel.address = String(newValue.prefix(viewModel.addressMaxChars))
+                                            }
+                                        }
                                         .overlay(alignment: .topLeading) {
                                             if viewModel.address.isEmpty {
-                                                Text("Address (optional)")
-                                                    .font(.subheadline)
-                                                    .foregroundStyle(.tertiary)
+                                                Text("Enter your full address")
+                                                    .font(SierraFont.body(16))
+                                                    .foregroundStyle(SierraTheme.Colors.secondaryText)
                                                     .padding(.top, 8)
+                                                    .allowsHitTesting(false)
                                             }
                                         }
-                                        .onChange(of: viewModel.address) {
-                                            if viewModel.address.count > viewModel.addressMaxChars {
-                                                viewModel.address = String(viewModel.address.prefix(viewModel.addressMaxChars))
-                                            }
-                                        }
-
-                                    HStack {
-                                        Spacer()
-                                        Text("\(viewModel.addressCharCount)/\(viewModel.addressMaxChars)")
-                                            .font(.caption2)
-                                            .foregroundStyle(.tertiary)
-                                    }
+                                }
+                                
+                                HStack {
+                                    Spacer()
+                                    Text("\(viewModel.addressCharCount)/\(viewModel.addressMaxChars)")
+                                        .font(SierraFont.caption1)
+                                        .foregroundStyle(SierraTheme.Colors.secondaryText)
                                 }
                             }
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
-                            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                            .shadow(color: .black.opacity(0.03), radius: 4, y: 2)
+                            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+                            .sierraShadow(SierraTheme.Shadow.card)
                         }
                     }
 
                     // Emergency Contact Section
                     formSection("Emergency Contact") {
-                        fieldRow(icon: "person.crop.circle.badge.exclamationmark", placeholder: "Contact Name", text: $viewModel.emergencyContactName, error: viewModel.emergencyNameError, autocap: .words)
-                        fieldRow(icon: "phone.badge.waveform.fill", placeholder: "Contact Phone", text: $viewModel.emergencyContactPhone, error: viewModel.emergencyPhoneError, keyboard: .phonePad)
+                        SierraTextField(
+                            label: "Contact Name",
+                            placeholder: "Full name",
+                            text: $viewModel.emergencyContactName,
+                            style: .native,
+                            leadingIcon: "person.crop.circle.badge.exclamationmark",
+                            errorMessage: viewModel.emergencyNameError,
+                            maxLength: 50
+                        )
+
+                        SierraTextField(
+                            label: "Contact Phone",
+                            placeholder: "Mobile number",
+                            text: $viewModel.emergencyContactPhone,
+                            style: .native,
+                            keyboardType: .phonePad,
+                            leadingIcon: "phone.badge.waveform.fill",
+                            errorMessage: viewModel.emergencyPhoneError,
+                            maxLength: 10,
+                            filterDigitsOnly: true
+                        )
                     }
                 }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 100)
+                .padding(.horizontal, 24)
+                .padding(.bottom, 120)
             }
             .scrollDismissesKeyboard(.interactively)
 
             // Next button
-            nextButton
+            VStack(spacing: 0) {
+                Divider().background(SierraTheme.Colors.cloud.opacity(0.5))
+                SierraButton.primary("Continue") {
+                    _ = viewModel.validateAndAdvance()
+                }
+                .padding(24)
+                .background(SierraTheme.Colors.appBackground)
+            }
         }
-        .animation(.easeInOut(duration: 0.2), value: viewModel.page1ValidationAttempted)
-    }
-
-    // MARK: - Next Button
-
-    private var nextButton: some View {
-        Button {
-            _ = viewModel.validateAndAdvance()
-        } label: {
-            Text("Next")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .frame(height: 54)
-                .background(Color.orange, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        }
-        .padding(.horizontal, 20)
-        .padding(.bottom, 16)
-        .background(Color(.systemBackground).shadow(.drop(color: .black.opacity(0.06), radius: 8, y: -4)))
+        .animation(.spring(duration: 0.35, bounce: 0.2), value: viewModel.page1ValidationAttempted)
     }
 
     // MARK: - Helpers
 
     private func formSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 16) {
             Text(title)
-                .font(.system(size: 14, weight: .bold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
+                .font(SierraFont.caption1.weight(.bold))
+                .foregroundStyle(SierraTheme.Colors.ember)
                 .tracking(0.5)
 
-            VStack(spacing: 10) {
+            VStack(spacing: 20) {
                 content()
             }
         }
-    }
-
-    private func fieldRow(
-        icon: String,
-        placeholder: String,
-        text: Binding<String>,
-        error: String? = nil,
-        keyboard: UIKeyboardType = .default,
-        autocap: TextInputAutocapitalization = .never
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 10) {
-                Image(systemName: icon)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 20)
-
-                TextField(placeholder, text: text)
-                    .textFieldStyle(.plain)
-                    .font(.subheadline)
-                    .foregroundStyle(.primary)
-                    .keyboardType(keyboard)
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(autocap)
-            }
-            .padding(.horizontal, 16)
-            .frame(height: 52)
-            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(error != nil ? .red.opacity(0.5) : .clear, lineWidth: 1)
-            )
-            .shadow(color: .black.opacity(0.03), radius: 4, y: 2)
-
-            if let error {
-                Text(error)
-                    .font(.caption2)
-                    .foregroundStyle(.red.opacity(0.85))
-                    .padding(.leading, 4)
-                    .transition(.opacity)
-            }
-        }
+        .padding(.vertical, 8)
     }
 }
 

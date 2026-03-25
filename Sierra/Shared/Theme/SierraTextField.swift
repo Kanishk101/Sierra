@@ -9,6 +9,8 @@ enum SierraTextFieldStyle {
     case filled
     /// Transparent, bottom border only.
     case ghost
+    /// Inset gray background, no border, higher radius (iOS Native style).
+    case native
 }
 
 // MARK: - SierraTextField
@@ -30,18 +32,41 @@ struct SierraTextField: View {
     var errorMessage: String? = nil
     var isRequired: Bool = false
     var isDisabled: Bool = false
+    var isSecure: Bool = false
+    var maxLength: Int? = nil
+    var filterDigitsOnly: Bool = false
 
     @FocusState private var isFocused: Bool
+    @State private var isPasswordVisible: Bool = false
+
+    /// A wrapped binding that enforces the character limit and digit-only filtering.
+    private var filteredText: Binding<String> {
+        Binding(
+            get: { text },
+            set: { newValue in
+                var filtered = newValue
+                if filterDigitsOnly {
+                    filtered = filtered.filter { $0.isNumber }
+                }
+                if let limit = maxLength {
+                    text = String(filtered.prefix(limit))
+                } else {
+                    text = filtered
+                }
+            }
+        )
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.xxs) {
 
             // ── Label ──
-            Text(label + (isRequired ? " *" : ""))
-                .textCase(.uppercase)
-                .font(SierraFont.caption2)
-                .foregroundStyle(SierraTheme.Colors.granite)
-                .tracking(1.5)
+            if !label.isEmpty {
+                Text(label + (isRequired ? " *" : ""))
+                    .font(SierraFont.caption1)
+                    .foregroundStyle(isFocused ? SierraTheme.Colors.ember : SierraTheme.Colors.granite)
+                    .padding(.leading, style == .native ? 4 : 0)
+            }
 
             // ── Field Container ──
             HStack(spacing: Spacing.xs) {
@@ -51,12 +76,31 @@ struct SierraTextField: View {
                         .foregroundStyle(isFocused ? SierraTheme.Colors.ember : SierraTheme.Colors.granite)
                 }
 
-                TextField(placeholder, text: $text)
-                    .font(isMonoFont ? SierraFont.mono(15, weight: .regular) : SierraFont.bodyText)
-                    .foregroundStyle(isDisabled ? SierraTheme.Colors.granite : SierraTheme.Colors.primaryText)
-                    .keyboardType(keyboardType)
-                    .focused($isFocused)
-                    .disabled(isDisabled)
+                Group {
+                    if isSecure && !isPasswordVisible {
+                        SecureField(placeholder, text: filteredText)
+                    } else {
+                        TextField(placeholder, text: filteredText)
+                    }
+                }
+                .font(isMonoFont ? SierraFont.mono(15, weight: .regular) : SierraFont.bodyText)
+                .foregroundStyle(isDisabled ? SierraTheme.Colors.granite : SierraTheme.Colors.primaryText)
+                .keyboardType(keyboardType)
+                .focused($isFocused)
+                .disabled(isDisabled)
+                .textInputAutocapitalization(isSecure ? .none : .sentences)
+                .autocorrectionDisabled(isSecure)
+
+                if isSecure {
+                    Button {
+                        isPasswordVisible.toggle()
+                    } label: {
+                        Image(systemName: isPasswordVisible ? "eye.slash.fill" : "eye.fill")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(SierraTheme.Colors.granite)
+                    }
+                    .buttonStyle(.plain)
+                }
 
                 if let trailingContent {
                     trailingContent
@@ -66,8 +110,6 @@ struct SierraTextField: View {
             .frame(height: 48)
             .background(fieldBackground, in: fieldShape)
             .overlay { fieldBorder }
-            .scaleEffect(isFocused ? 1.005 : 1)
-            .animation(.easeInOut(duration: 0.15), value: isFocused)
 
             // ── Error Message ──
             if let errorMessage {
@@ -87,11 +129,12 @@ struct SierraTextField: View {
         case .default: return SierraTheme.Colors.cardSurface
         case .filled:  return SierraTheme.Colors.snowfield
         case .ghost:   return .clear
+        case .native:  return Color(.secondarySystemGroupedBackground)
         }
     }
 
     private var fieldShape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+        RoundedRectangle(cornerRadius: style == .native ? Radius.xl : Radius.md, style: .continuous)
     }
 
     @ViewBuilder
@@ -104,6 +147,8 @@ struct SierraTextField: View {
             VStack { Spacer(); Rectangle().fill(isFocused ? SierraTheme.Colors.ember : .clear).frame(height: 2) }
         case .ghost:
             VStack { Spacer(); Rectangle().fill(borderColor).frame(height: 1) }
+        case .native:
+            EmptyView()
         }
     }
 

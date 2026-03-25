@@ -18,60 +18,64 @@ struct BiometricEnrollmentSheet: View {
         VStack(spacing: 24) {
             Spacer()
 
-            Image(systemName: "faceid")
-                .font(.system(size: 64))
-                .foregroundStyle(.orange)
-                .padding(.bottom, 8)
+            ZStack {
+                Circle()
+                    .fill(SierraTheme.Colors.ember.opacity(0.12))
+                    .frame(width: 120, height: 120)
+                
+                Image(systemName: biometric.biometricIconName)
+                    .font(.system(size: 52, weight: .light))
+                    .foregroundStyle(SierraTheme.Colors.ember)
+                    .symbolRenderingMode(.hierarchical)
+            }
+            .padding(.bottom, 8)
 
-            Text("Enable \(biometric.biometricDisplayName)?")
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(.primary)
-                .multilineTextAlignment(.center)
+            VStack(spacing: 12) {
+                Text("Enable \(biometric.biometricDisplayName)?")
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(SierraTheme.Colors.primaryText)
+                    .multilineTextAlignment(.center)
 
-            Text("Use \(biometric.biometricDisplayName) for faster, more secure sign-in to Sierra.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .lineSpacing(3)
-                .padding(.horizontal, 20)
+                Text("Use \(biometric.biometricDisplayName) for faster, more secure sign-in to Sierra. You can always change this later in Settings.")
+                    .font(SierraFont.subheadline)
+                    .foregroundStyle(SierraTheme.Colors.secondaryText)
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(4)
+                    .padding(.horizontal, 20)
+            }
 
             if !biometric.canUseBiometrics() {
                 Text("Biometric authentication is not available on this device.")
-                    .font(.caption)
-                    .foregroundStyle(.red)
+                    .font(SierraFont.caption1)
+                    .foregroundStyle(SierraTheme.Colors.danger)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 20)
             }
 
             Spacer()
 
-            Button {
-                BiometricPreference.isEnabled = true
-                dismiss()
-            } label: {
-                Text("Allow \(biometric.biometricDisplayName)")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 54)
-                    .background(Color.orange, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            }
-            .disabled(!biometric.canUseBiometrics())
-            .opacity(biometric.canUseBiometrics() ? 1 : 0.6)
+            VStack(spacing: 12) {
+                SierraButton.primary("Allow \(biometric.biometricDisplayName)") {
+                    BiometricPreference.isEnabled = true
+                    dismiss()
+                }
+                .disabled(!biometric.canUseBiometrics())
+                .opacity(biometric.canUseBiometrics() ? 1 : 0.6)
 
-            Button {
-                // Skip: don't enable, don't mark as permanently prompted.
-                // Prompt will appear again on next fresh login.
-                dismiss()
-            } label: {
-                Text("Not Now")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                Button {
+                    dismiss()
+                } label: {
+                    Text("Not Now")
+                        .font(SierraFont.body(16, weight: .semibold))
+                        .foregroundStyle(SierraTheme.Colors.secondaryText)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 54)
+                }
             }
-            .padding(.bottom, 20)
+            .padding(.bottom, 12)
         }
         .padding(24)
-        .background(Color(.systemGroupedBackground).ignoresSafeArea())
+        .background(SierraTheme.Colors.appBackground.ignoresSafeArea())
         .interactiveDismissDisabled(true)
     }
 

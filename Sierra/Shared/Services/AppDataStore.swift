@@ -253,6 +253,17 @@ final class AppDataStore {
 
     // MARK: - Staff Applications
 
+    private enum StaffApplicationFlowError: LocalizedError {
+        case applicationNotFound
+
+        var errorDescription: String? {
+            switch self {
+            case .applicationNotFound:
+                return "Application was not found. Please refresh and try again."
+            }
+        }
+    }
+
     func addStaffApplication(_ app: StaffApplication) async throws {
         try await StaffApplicationService.addStaffApplication(app); staffApplications.insert(app, at: 0)
     }
@@ -269,13 +280,24 @@ final class AppDataStore {
     // left every personal field blank and never created the profile row.
 
     func approveStaffApplication(id: UUID, reviewedBy adminId: UUID) async throws {
-        guard let idx = staffApplications.firstIndex(where: { $0.id == id }) else { return }
-        var app = staffApplications[idx]
+        var app: StaffApplication
+        if let idx = staffApplications.firstIndex(where: { $0.id == id }) {
+            app = staffApplications[idx]
+        } else if let fresh = try await StaffApplicationService.fetchStaffApplication(id: id) {
+            app = fresh
+            staffApplications.append(fresh)
+        } else {
+            throw StaffApplicationFlowError.applicationNotFound
+        }
         app.status = .approved; app.rejectionReason = nil; app.reviewedBy = adminId; app.reviewedAt = Date()
 
         // 1. Mark application as approved in staff_applications table
         try await StaffApplicationService.updateStaffApplication(app)
-        staffApplications[idx] = app
+        if let idx = staffApplications.firstIndex(where: { $0.id == id }) {
+            staffApplications[idx] = app
+        } else {
+            staffApplications.append(app)
+        }
 
         // 2. Set is_approved, status=Active, availability=Available in staff_members
         try await StaffMemberService.setApprovalStatus(staffId: app.staffMemberId, approved: true, rejectionReason: nil)
@@ -316,11 +338,22 @@ final class AppDataStore {
         if let idx = staff.firstIndex(where: { $0.id == staffId }) { staff[idx].status = status }
     }
     func rejectStaffApplication(id: UUID, reason: String, reviewedBy adminId: UUID) async throws {
-        guard let idx = staffApplications.firstIndex(where: { $0.id == id }) else { return }
-        var app = staffApplications[idx]
+        var app: StaffApplication
+        if let idx = staffApplications.firstIndex(where: { $0.id == id }) {
+            app = staffApplications[idx]
+        } else if let fresh = try await StaffApplicationService.fetchStaffApplication(id: id) {
+            app = fresh
+            staffApplications.append(fresh)
+        } else {
+            throw StaffApplicationFlowError.applicationNotFound
+        }
         app.status = .rejected; app.rejectionReason = reason; app.reviewedBy = adminId; app.reviewedAt = Date()
         try await StaffApplicationService.updateStaffApplication(app)
-        staffApplications[idx] = app
+        if let idx = staffApplications.firstIndex(where: { $0.id == id }) {
+            staffApplications[idx] = app
+        } else {
+            staffApplications.append(app)
+        }
         try await StaffMemberService.setApprovalStatus(staffId: app.staffMemberId, approved: false, rejectionReason: reason)
         if let si = staff.firstIndex(where: { $0.id == app.staffMemberId }) {
             staff[si].isApproved = false; staff[si].rejectionReason = reason; staff[si].status = .suspended

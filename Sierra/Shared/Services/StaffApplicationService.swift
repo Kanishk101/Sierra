@@ -164,6 +164,17 @@ struct StaffApplicationService {
             .value
     }
 
+    static func fetchStaffApplication(id: UUID) async throws -> StaffApplication? {
+        let rows: [StaffApplication] = try await supabase
+            .from("staff_applications")
+            .select()
+            .eq("id", value: id.uuidString)
+            .limit(1)
+            .execute()
+            .value
+        return rows.first
+    }
+
     // MARK: Insert
 
     static func addStaffApplication(_ app: StaffApplication) async throws {
