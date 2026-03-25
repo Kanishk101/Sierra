@@ -6,21 +6,17 @@ import SwiftUI
 struct TripNavigationContainerView: View {
 
     @State private var coordinator: TripNavigationCoordinator
+    @State private var showEndTripModal  = false
+    @State private var isBuildingRoutes  = false
+    @State private var routeBuildFailed  = false
+    @State private var buildErrorMessage = "Could not calculate route. Check your connection and try again."
+    @State private var showDismissAlert  = false
     @State private var showProofOfDelivery = false
-    @State private var showRouteSelection  = false
-    @State private var isBuildingRoutes    = false
-    @State private var routeBuildFailed    = false
-    @State private var buildErrorMessage   = "Could not calculate route. Check your connection and try again."
-    @State private var lastSpokenInstruction = ""
-    @State private var showDismissAlert    = false
-    @State private var simulateRoute       = false
-    @State private var showDebugControls   = false
     @Environment(AppDataStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
-
     init(trip: Trip) {
-        _coordinator = State(initialValue: TripNavigationCoordinator(trip: trip))
+        _coordinator = State(initialValue: TripNavigationCoordinator.session(for: trip))
     }
 
     private var user: AuthUser? { AuthManager.shared.currentUser }
@@ -28,15 +24,20 @@ struct TripNavigationContainerView: View {
     var body: some View {
         ZStack {
             if MapService.hasValidToken {
-                TripNavigationView(coordinator: coordinator, simulate: simulateRoute)
+                TripNavigationView(coordinator: coordinator, simulate: false)
             } else {
                 TripNavigationFallbackMapView(coordinator: coordinator)
             }
 
             NavigationHUDOverlay(coordinator: coordinator) {
-                coordinator.stopLocationPublishing()
-                coordinator.isNavigating = false
+                // End trip flow: after confirmation in HUD, open same delivery proof sheet
+                // (photo/signature/OTP) used by Trip Detail -> Complete Delivery.
                 showProofOfDelivery = true
+            }
+
+            if isPreStartScheduledTrip {
+                preStartBanner
+                    .zIndex(9)
             }
 
             // Close button — top left
@@ -60,56 +61,13 @@ struct TripNavigationContainerView: View {
             .ignoresSafeArea(edges: .top)
             .zIndex(10)
 
-            // Debug controls (simulator)
-            if showDebugControls {
-                VStack {
-                    Spacer()
-                    HStack {
-                        Toggle("Simulate Route", isOn: $simulateRoute)
-                            .toggleStyle(SwitchToggleStyle(tint: .orange))
-                            .padding(12)
-                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
-                            .padding(.leading, 16)
-                        Spacer()
-                    }
-                    .padding(.bottom, 30)
-                }
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-                .zIndex(9)
-            }
-
-            // Debug button (only in DEBUG)
-            #if DEBUG
-            VStack {
-                HStack {
-                    Spacer()
-                    Button {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                            showDebugControls.toggle()
-                        }
-                    } label: {
-                        Image(systemName: "ladybug.fill")
-                            .foregroundColor(.white)
-                            .padding(10)
-                            .background(Circle().fill(Color.orange))
-                            .shadow(color: .black.opacity(0.3), radius: 6, y: 2)
-                    }
-                    .padding(.trailing, 18)
-                    .padding(.top, 56)
-                }
-                Spacer()
-            }
-            .ignoresSafeArea(edges: .top)
-            .zIndex(10)
-            #endif
-
             // Route building spinner
             if isBuildingRoutes {
                 ZStack {
                     Color.black.opacity(0.45).ignoresSafeArea()
                     VStack(spacing: 16) {
                         ProgressView().scaleEffect(1.4).tint(.white)
-                        Text("Calculating route\u{2026}").font(.subheadline.weight(.medium)).foregroundStyle(.white)
+                        Text("Calculating route…").font(.subheadline.weight(.medium)).foregroundStyle(.white)
                     }
                     .padding(32)
                     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
@@ -150,58 +108,171 @@ struct TripNavigationContainerView: View {
         .ignoresSafeArea()
         .navigationBarHidden(true)
         .toolbar(.hidden, for: .tabBar)
-        .task { await buildAndShowRoutes() }
+        .task {
+            await buildAndShowRoutes()
+        }
+        .task {
+            while !Task.isCancelled {
+                if canStartLiveNavigation, coordinator.hasRenderableRoute {
+                    startTracking()
+                    break
+                }
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+            }
+        }
         .onDisappear { coordinator.stopLocationPublishing(); VoiceNavigationService.shared.stop() }
         .alert("Exit Navigation?", isPresented: $showDismissAlert) {
             Button("Exit", role: .destructive) { dismissView() }
             Button("Keep Navigating", role: .cancel) {}
-        } message: { Text("Your trip is still active. You can return to navigation from the trip detail screen.") }
+        } message: { Text("Your trip is still active. You can return to navigation from the trip card.") }
         .sheet(isPresented: $showRouteSelection) {
             RouteSelectionSheet(coordinator: coordinator) { startTracking() }
         }
         .sheet(isPresented: $showProofOfDelivery) {
-            if let userId = user?.id {  // ISSUE-21 FIX
+            if let driverId {
                 NavigationStack {
-                    ProofOfDeliveryView(tripId: coordinator.trip.id, driverId: userId) {
-                        showProofOfDelivery = false; dismiss()
+                    ProofOfDeliveryView(tripId: coordinator.trip.id, driverId: driverId) {
+                        showProofOfDelivery = false
+                        coordinator.stopLocationPublishing()
+                        coordinator.isNavigating = false
+                        Task {
+                            await store.loadDriverData(driverId: driverId)
+                        }
+                        dismiss()
                     }
-                    .environment(store)
                 }
+            } else {
+                VStack(spacing: 12) {
+                    Text("Delivery options unavailable")
+                        .font(.headline)
+                    Text("Could not identify the current driver session.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Button("Close") { showProofOfDelivery = false }
+                        .buttonStyle(.borderedProminent)
+                }
+                .padding(20)
             }
         }
-        .onChange(of: simulateRoute) { _, newValue in
-            coordinator.setSimulationEnabled(newValue)
-        }
-        .onDisappear { coordinator.setSimulationEnabled(false) }
     }
 
+    // MARK: - Private helpers
+
+    private var driverId: UUID? { user?.id }
+    private var canNavigateTrip: Bool {
+        let status = coordinator.trip.status.normalized
+        if status == .active { return true }
+        if status == .scheduled,
+           coordinator.trip.acceptedAt != nil,
+           coordinator.trip.preInspectionId != nil {
+            return true
+        }
+        return false
+    }
+
+    private var canStartLiveNavigation: Bool {
+        let status = coordinator.trip.status.normalized
+        if status == .active { return true }
+        guard status == .scheduled,
+              coordinator.trip.acceptedAt != nil,
+              coordinator.trip.preInspectionId != nil else {
+            return false
+        }
+        return coordinator.trip.scheduledDate.timeIntervalSinceNow <= TripConstants.driverBlockWindowSeconds
+    }
+
+    private var isPreStartScheduledTrip: Bool {
+        let status = coordinator.trip.status.normalized
+        return status == .scheduled
+            && coordinator.trip.acceptedAt != nil
+            && coordinator.trip.preInspectionId != nil
+            && !canStartLiveNavigation
+    }
+
+    @State private var showRouteSelection = false
+
     private func buildAndShowRoutes() async {
+        guard canNavigateTrip, !coordinator.trip.hasEndedNavigationPhase else {
+            dismissView()
+            return
+        }
+
+        if coordinator.hasRenderableRoute, coordinator.hasConfirmedRouteSelection {
+            startTracking()
+            return
+        }
+
         isBuildingRoutes = true
         routeBuildFailed = false
         await coordinator.buildRoutes()
         isBuildingRoutes = false
 
         if coordinator.hasRenderableRoute {
-            if coordinator.alternativeRoute != nil {
-                // Multiple routes — let driver pick fastest vs green
+            if coordinator.alternativeRoute != nil, !coordinator.hasConfirmedRouteSelection {
                 showRouteSelection = true
             } else {
-                // Single route — auto-start navigation
                 startTracking()
             }
         } else {
-            // Surface the specific error from RouteEngine so the driver knows what's wrong
             buildErrorMessage = coordinator.routeEngineError ?? "Could not calculate route. Check your network and try again."
             routeBuildFailed = true
         }
     }
 
     private func startTracking() {
+        guard canNavigateTrip, !coordinator.trip.hasEndedNavigationPhase else { return }
+        guard canStartLiveNavigation else { return }
+        guard !coordinator.isNavigating else { return }
         guard let vehicleIdStr = coordinator.trip.vehicleId,
               let vehicleId = UUID(uuidString: vehicleIdStr),
               let driverId = user?.id else { return }
         coordinator.startLocationTracking()
         coordinator.startLocationPublishing(vehicleId: vehicleId, driverId: driverId)
+    }
+
+    private var preStartBanner: some View {
+        VStack {
+            HStack {
+                Spacer()
+                TimelineView(.periodic(from: .now, by: 1)) { _ in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Trip Scheduled")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.white)
+                        Text(preStartMessage)
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(.white.opacity(0.9))
+                            .lineLimit(2)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.black.opacity(0.72))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                    )
+                }
+                .frame(maxWidth: 280)
+                .padding(.top, 56)
+                .padding(.trailing, 16)
+            }
+            Spacer()
+        }
+        .ignoresSafeArea(edges: .top)
+    }
+
+    private var preStartMessage: String {
+        let interval = max(0, coordinator.trip.scheduledDate.timeIntervalSinceNow)
+        let hours = Int(interval) / 3600
+        let minutes = (Int(interval) % 3600) / 60
+        let timeText = coordinator.trip.scheduledDate.formatted(.dateTime.hour().minute())
+        if hours > 0 {
+            return "Starts in \(hours)h \(minutes)m (\(timeText))."
+        }
+        return "Starts in \(minutes)m (\(timeText))."
     }
 
     private func dismissView() {

@@ -56,6 +56,28 @@ enum TripStatus: String, Codable, CaseIterable {
         default: return self
         }
     }
+
+    static func parse(_ raw: String) -> TripStatus? {
+        if let exact = TripStatus(rawValue: raw) { return exact }
+
+        let normalized = raw
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "_", with: "")
+            .replacingOccurrences(of: "-", with: "")
+            .replacingOccurrences(of: " ", with: "")
+
+        switch normalized {
+        case "pendingacceptance": return .pendingAcceptance
+        case "scheduled": return .scheduled
+        case "active": return .active
+        case "completed": return .completed
+        case "cancelled", "canceled": return .cancelled
+        case "accepted": return .accepted
+        case "rejected": return .rejected
+        default: return nil
+        }
+    }
 }
 
 // MARK: - Trip Priority
@@ -204,7 +226,7 @@ struct Trip: Identifiable, Codable {
 
         let statusRaw   = try c.decodeIfPresent(String.self, forKey: .status) ?? TripStatus.scheduled.rawValue
         let priorityRaw = try c.decodeIfPresent(String.self, forKey: .priority) ?? TripPriority.normal.rawValue
-        status          = TripStatus(rawValue: statusRaw) ?? .scheduled
+        status          = TripStatus.parse(statusRaw) ?? .scheduled
         priority        = TripPriority(rawValue: priorityRaw) ?? .normal
 
         proofOfDeliveryId  = try c.decodeIfPresent(UUID.self, forKey: .proofOfDeliveryId)
@@ -314,6 +336,24 @@ struct Trip: Identifiable, Codable {
         let minutes = (Int(interval) % 3600) / 60
         if hours > 0 { return "\(hours)h \(minutes)m" }
         return "\(minutes)m"
+    }
+
+    /// Trip has finished route execution (POD captured + end odometer captured),
+    /// but may still require post-trip inspection before status becomes Completed.
+    var hasEndedNavigationPhase: Bool {
+        status.normalized == .active && proofOfDeliveryId != nil && endMileage != nil
+    }
+
+    var requiresPostTripInspection: Bool {
+        (status.normalized == .completed && postInspectionId == nil)
+        || (hasEndedNavigationPhase && postInspectionId == nil)
+    }
+
+    /// Driver flow completion used by UI when backend status lags behind.
+    /// Treat as completed once POD + end odometer + post inspection are present.
+    var isDriverWorkflowCompleted: Bool {
+        status.normalized == .completed
+        || (proofOfDeliveryId != nil && endMileage != nil && postInspectionId != nil)
     }
 
     // MARK: - Helpers

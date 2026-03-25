@@ -92,17 +92,6 @@ final class CreateStaffViewModel {
         // (async, correct) and pass it as the Authorization header directly.
         // ─────────────────────────────────────────────────────────────────────
 
-        #if DEBUG
-        SierraDebugLogger.banner("CreateStaffViewModel.createStaff")
-        print("👤 [CreateStaff] Starting staff creation")
-        print("👤   Role  : \(role.rawValue)")
-        print("👤   Name  : \(trimmedName)")
-        print("👤   Email : \(trimmedEmail)")
-        await SierraDebugLogger.logSessionState(context: "CreateStaffViewModel.createStaff — BEFORE edge fn")
-        await SierraDebugLogger.logRLSRole(context: "CreateStaffViewModel.createStaff")
-        let t = Date()
-        #endif
-
         do {
             let payload = CreateStaffAccountPayload(
                 email: trimmedEmail,
@@ -111,47 +100,18 @@ final class CreateStaffViewModel {
                 role: role.rawValue
             )
 
-            #if DEBUG
-            SierraDebugLogger.logPayload(label: "CreateStaffAccountPayload", payload: payload)
-            print("👤 [CreateStaff] Getting session access token for Authorization header...")
-            #endif
-
             // CRITICAL FIX: inject the real user JWT, not the anon key
             let options = try await SupabaseManager.functionOptions(body: payload)
-
-            #if DEBUG
-            print("👤 [CreateStaff] Calling create-staff-account edge function (verify_jwt: true)...")
-            #endif
 
             let created: CreateStaffAccountResponse = try await supabase.functions.invoke(
                 "create-staff-account",
                 options: options
             )
 
-            #if DEBUG
-            let ms = Int(Date().timeIntervalSince(t) * 1000)
-            print("👤 [CreateStaff] ✅ create-staff-account succeeded in \(ms)ms")
-            print("👤   Created ID    : \(created.id)")
-            print("👤   Created Email : \(created.email)")
-            #endif
-
             guard UUID(uuidString: created.id) != nil else {
-                #if DEBUG
-                print("👤 [CreateStaff] ❌ created.id is not a valid UUID: '\(created.id)'")
-                #endif
                 throw URLError(.badServerResponse)
             }
         } catch {
-            #if DEBUG
-            let ms = Int(Date().timeIntervalSince(t) * 1000)
-            print("👤 [CreateStaff] ❌ Phase 1 FAILED in \(ms)ms")
-            SierraDebugLogger.logEdgeFunctionError(
-                context: "CreateStaffViewModel.createStaff Phase 1",
-                functionName: "create-staff-account",
-                error: error,
-                elapsedMs: ms
-            )
-            #endif
             isLoading = false
             errorMessage = error.localizedDescription.contains("already registered")
                 ? "An account with this email already exists."

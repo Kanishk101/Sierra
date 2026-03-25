@@ -51,7 +51,10 @@ struct TripNavigationView: UIViewRepresentable {
             trip: coordinator.trip,
             routeCoordinates: coordinator.remainingRouteCoordinates,
             breadcrumbCoordinates: coordinator.breadcrumbCoordinates,
-            congestionLevels: nil
+            congestionLevels: nil,
+            travelerCoordinate: coordinator.currentRouteCoordinate ?? coordinator.currentLocation?.coordinate,
+            headingTargetCoordinate: coordinator.nextRouteCoordinate,
+            geofences: coordinator.activeGeofences
         )
         return mapView
     }
@@ -63,9 +66,11 @@ struct TripNavigationView: UIViewRepresentable {
             trip: coordinator.trip,
             routeCoordinates: coordinator.remainingRouteCoordinates,
             breadcrumbCoordinates: coordinator.breadcrumbCoordinates,
-            congestionLevels: congestion
+            congestionLevels: congestion,
+            travelerCoordinate: coordinator.currentRouteCoordinate ?? coordinator.currentLocation?.coordinate,
+            headingTargetCoordinate: coordinator.nextRouteCoordinate,
+            geofences: coordinator.activeGeofences
         )
-        coordinator.setSimulationEnabled(simulate)
     }
 
     func makeCoordinator() -> MapCoordinator {
@@ -85,6 +90,9 @@ struct TripNavigationView: UIViewRepresentable {
         private var pendingRouteCoordinates: [CLLocationCoordinate2D] = []
         private var pendingBreadcrumbCoordinates: [CLLocationCoordinate2D] = []
         private var pendingCongestionLevels: [MapboxDirections.CongestionLevel]?
+        private var pendingTravelerCoordinate: CLLocationCoordinate2D?
+        private var pendingHeadingTargetCoordinate: CLLocationCoordinate2D?
+        private var pendingGeofences: [Geofence] = []
 
         func attach(to mapView: MapView) {
             guard self.mapView !== mapView else { return }
@@ -104,12 +112,18 @@ struct TripNavigationView: UIViewRepresentable {
             trip: Trip,
             routeCoordinates: [CLLocationCoordinate2D],
             breadcrumbCoordinates: [CLLocationCoordinate2D],
-            congestionLevels: [MapboxDirections.CongestionLevel]?
+            congestionLevels: [MapboxDirections.CongestionLevel]?,
+            travelerCoordinate: CLLocationCoordinate2D?,
+            headingTargetCoordinate: CLLocationCoordinate2D?,
+            geofences: [Geofence]
         ) {
             pendingTrip = trip
             pendingRouteCoordinates = routeCoordinates
             pendingBreadcrumbCoordinates = breadcrumbCoordinates
             pendingCongestionLevels = congestionLevels
+            pendingTravelerCoordinate = travelerCoordinate
+            pendingHeadingTargetCoordinate = headingTargetCoordinate
+            pendingGeofences = geofences
 
             guard styleIsReady else { return }
             renderPending(on: mapView)
@@ -119,6 +133,12 @@ struct TripNavigationView: UIViewRepresentable {
             ensureOverlayInfrastructure(on: mapView)
             updateRoute(mapView: mapView, coordinates: pendingRouteCoordinates, congestionLevels: pendingCongestionLevels)
             updateBreadcrumbTrail(mapView: mapView, coordinates: pendingBreadcrumbCoordinates)
+            updateTravelerPuck(
+                mapView: mapView,
+                coordinate: pendingTravelerCoordinate,
+                headingTarget: pendingHeadingTargetCoordinate
+            )
+            renderGeofences(mapView: mapView, geofences: pendingGeofences)
 
             if let trip = pendingTrip {
                 renderStops(mapView: mapView, trip: trip)
@@ -160,12 +180,41 @@ struct TripNavigationView: UIViewRepresentable {
                 color: UIColor.systemTeal,
                 width: 5
             )
+
+            ensureLineSource(on: mapView, id: "traveler-heading-source")
+            ensureLineLayer(
+                on: mapView,
+                id: "traveler-heading-layer",
+                sourceId: "traveler-heading-source",
+                color: UIColor.systemBlue.withAlphaComponent(0.65),
+                width: 3
+            )
+
+            ensurePointSource(on: mapView, id: "traveler-source")
+            ensureTravelerLayers(on: mapView)
+
+            ensureFillSource(on: mapView, id: "geofence-source")
+            ensureGeofenceLayers(on: mapView)
         }
 
         private func ensureLineSource(on mapView: MapView, id: String) {
             guard (try? mapView.mapboxMap.source(withId: id)) == nil else { return }
             var source = GeoJSONSource(id: id)
             source.data = .geometry(.lineString(.init([])))
+            try? mapView.mapboxMap.addSource(source)
+        }
+
+        private func ensurePointSource(on mapView: MapView, id: String) {
+            guard (try? mapView.mapboxMap.source(withId: id)) == nil else { return }
+            var source = GeoJSONSource(id: id)
+            source.data = .geometry(.point(.init(CLLocationCoordinate2D(latitude: 0, longitude: 0))))
+            try? mapView.mapboxMap.addSource(source)
+        }
+
+        private func ensureFillSource(on mapView: MapView, id: String) {
+            guard (try? mapView.mapboxMap.source(withId: id)) == nil else { return }
+            var source = GeoJSONSource(id: id)
+            source.data = .featureCollection(FeatureCollection(features: []))
             try? mapView.mapboxMap.addSource(source)
         }
 
@@ -185,11 +234,46 @@ struct TripNavigationView: UIViewRepresentable {
             try? mapView.mapboxMap.addLayer(layer)
         }
 
+        private func ensureTravelerLayers(on mapView: MapView) {
+            if (try? mapView.mapboxMap.layer(withId: "traveler-layer")) == nil {
+                var layer = CircleLayer(id: "traveler-layer", source: "traveler-source")
+                layer.circleRadius = .constant(8)
+                layer.circleColor = .constant(StyleColor(.systemBlue))
+                layer.circleStrokeColor = .constant(StyleColor(.white))
+                layer.circleStrokeWidth = .constant(3)
+                try? mapView.mapboxMap.addLayer(layer)
+            }
+
+            if (try? mapView.mapboxMap.layer(withId: "traveler-halo-layer")) == nil {
+                var layer = CircleLayer(id: "traveler-halo-layer", source: "traveler-source")
+                layer.circleRadius = .constant(14)
+                layer.circleColor = .constant(StyleColor(UIColor.systemBlue.withAlphaComponent(0.18)))
+                try? mapView.mapboxMap.addLayer(layer, layerPosition: .below("traveler-layer"))
+            }
+        }
+
+        private func ensureGeofenceLayers(on mapView: MapView) {
+            if (try? mapView.mapboxMap.layer(withId: "geofence-fill-layer")) == nil {
+                var fillLayer = FillLayer(id: "geofence-fill-layer", source: "geofence-source")
+                fillLayer.fillColor = .constant(StyleColor(UIColor.systemTeal.withAlphaComponent(0.18)))
+                fillLayer.fillOutlineColor = .constant(StyleColor(UIColor.systemTeal.withAlphaComponent(0.45)))
+                try? mapView.mapboxMap.addLayer(fillLayer, layerPosition: .below("route-casing"))
+            }
+
+            if (try? mapView.mapboxMap.layer(withId: "geofence-line-layer")) == nil {
+                var lineLayer = LineLayer(id: "geofence-line-layer", source: "geofence-source")
+                lineLayer.lineColor = .constant(StyleColor(UIColor.systemTeal.withAlphaComponent(0.7)))
+                lineLayer.lineWidth = .constant(2)
+                lineLayer.lineDasharray = .constant([2, 2])
+                try? mapView.mapboxMap.addLayer(lineLayer, layerPosition: .below("route-casing"))
+            }
+        }
+
         // MARK: - Route / Breadcrumb Rendering
 
         private func updateRoute(mapView: MapView, coordinates: [CLLocationCoordinate2D], congestionLevels: [MapboxDirections.CongestionLevel]?) {
             // Fix 11: Use per-segment congestion colors when available
-            if let levels = congestionLevels, levels.count >= coordinates.count - 1, coordinates.count >= 2 {
+            if let levels = congestionLevels, coordinates.count >= 2 {
                 updateCongestionColoredRoute(mapView: mapView, coordinates: coordinates, levels: levels)
             } else {
                 updateLineSource(mapView: mapView, sourceId: "route-source", coordinates: coordinates)
@@ -224,16 +308,26 @@ struct TripNavigationView: UIViewRepresentable {
             coordinates: [CLLocationCoordinate2D],
             levels: [MapboxDirections.CongestionLevel]
         ) {
+            let segmentCount = min(levels.count, max(0, coordinates.count - 1))
+            guard segmentCount > 0 else {
+                updateLineSource(mapView: mapView, sourceId: "route-source", coordinates: coordinates)
+                return
+            }
+
             // Build per-segment features with congestion color properties
             var features: [Feature] = []
             var groupStart = 0
 
-            for i in 0..<levels.count {
-                let isLast = (i == levels.count - 1)
+            for i in 0..<segmentCount {
+                let isLast = (i == segmentCount - 1)
                 let levelChanged = !isLast && levels[i] != levels[i + 1]
 
                 if isLast || levelChanged {
-                    let end = isLast ? i + 1 : i + 1
+                    let end = i + 1
+                    guard groupStart <= end, end < coordinates.count else {
+                        groupStart = end
+                        continue
+                    }
                     let segCoords = Array(coordinates[groupStart...end])
                     guard segCoords.count >= 2 else { groupStart = i + 1; continue }
 
@@ -242,6 +336,11 @@ struct TripNavigationView: UIViewRepresentable {
                     features.append(feature)
                     groupStart = end
                 }
+            }
+
+            guard !features.isEmpty else {
+                updateLineSource(mapView: mapView, sourceId: "route-source", coordinates: coordinates)
+                return
             }
 
             let collection = FeatureCollection(features: features)
@@ -274,6 +373,69 @@ struct TripNavigationView: UIViewRepresentable {
 
         private func updateBreadcrumbTrail(mapView: MapView, coordinates: [CLLocationCoordinate2D]) {
             updateLineSource(mapView: mapView, sourceId: "breadcrumb-source", coordinates: coordinates)
+        }
+
+        private func updateTravelerPuck(
+            mapView: MapView,
+            coordinate: CLLocationCoordinate2D?,
+            headingTarget: CLLocationCoordinate2D?
+        ) {
+            guard let coordinate else { return }
+
+            let feature = Feature(geometry: .point(Point(coordinate)))
+            mapView.mapboxMap.updateGeoJSONSource(withId: "traveler-source", geoJSON: .feature(feature))
+
+            if let headingTarget {
+                updateLineSource(
+                    mapView: mapView,
+                    sourceId: "traveler-heading-source",
+                    coordinates: [coordinate, headingTarget]
+                )
+            } else {
+                updateLineSource(mapView: mapView, sourceId: "traveler-heading-source", coordinates: [])
+            }
+        }
+
+        private func renderGeofences(mapView: MapView, geofences: [Geofence]) {
+            let features: [Feature] = geofences.compactMap { geofence in
+                let center = CLLocationCoordinate2D(latitude: geofence.latitude, longitude: geofence.longitude)
+                let ring = geodesicCircleCoordinates(center: center, radiusMeters: geofence.radiusMeters)
+                guard ring.count >= 4 else { return nil }
+                return Feature(geometry: .polygon(Polygon([ring])))
+            }
+            let collection = FeatureCollection(features: features)
+            mapView.mapboxMap.updateGeoJSONSource(withId: "geofence-source", geoJSON: .featureCollection(collection))
+        }
+
+        private func geodesicCircleCoordinates(
+            center: CLLocationCoordinate2D,
+            radiusMeters: Double,
+            segments: Int = 60
+        ) -> [CLLocationCoordinate2D] {
+            guard radiusMeters > 0, segments >= 12 else { return [] }
+
+            let earthRadius = 6_378_137.0
+            let angularDistance = radiusMeters / earthRadius
+            let lat1 = center.latitude * .pi / 180
+            let lon1 = center.longitude * .pi / 180
+
+            return (0...segments).map { index in
+                let bearing = (2 * .pi * Double(index)) / Double(segments)
+                let sinLat1 = sin(lat1)
+                let cosLat1 = cos(lat1)
+                let sinAD = sin(angularDistance)
+                let cosAD = cos(angularDistance)
+
+                let lat2 = asin(sinLat1 * cosAD + cosLat1 * sinAD * cos(bearing))
+                let lon2 = lon1 + atan2(
+                    sin(bearing) * sinAD * cosLat1,
+                    cosAD - sinLat1 * sin(lat2)
+                )
+                return CLLocationCoordinate2D(
+                    latitude: lat2 * 180 / .pi,
+                    longitude: lon2 * 180 / .pi
+                )
+            }
         }
 
         private func updateLineSource(

@@ -12,9 +12,15 @@ struct TripNavigationFallbackMapView: View {
 
     var body: some View {
         Map(position: $position) {
-            if coordinator.displayedRouteCoordinates.count >= 2 {
-                MapPolyline(coordinates: coordinator.displayedRouteCoordinates)
+            if coordinator.remainingRouteCoordinates.count >= 2 {
+                MapPolyline(coordinates: coordinator.remainingRouteCoordinates)
                     .stroke(.orange, lineWidth: 7)
+            }
+
+            ForEach(coordinator.activeGeofences) { geofence in
+                MapCircle(center: CLLocationCoordinate2D(latitude: geofence.latitude, longitude: geofence.longitude), radius: geofence.radiusMeters)
+                    .foregroundStyle(.teal.opacity(0.18))
+                    .stroke(.teal.opacity(0.65), lineWidth: 2)
             }
 
             if coordinator.breadcrumbCoordinates.count >= 2 {
@@ -59,7 +65,7 @@ struct TripNavigationFallbackMapView: View {
         .mapStyle(.standard(elevation: .realistic))
         .ignoresSafeArea()
         .onAppear(perform: updateCamera)
-        .onChange(of: coordinator.displayedRouteCoordinates.count) { _, _ in
+        .onChange(of: coordinator.remainingRouteCoordinates.count) { _, _ in
             updateCamera()
         }
     }
@@ -77,7 +83,7 @@ struct TripNavigationFallbackMapView: View {
     }
 
     private func updateCamera() {
-        var coordinates = coordinator.displayedRouteCoordinates
+        var coordinates = coordinator.remainingRouteCoordinates
 
         if let current = coordinator.currentLocation?.coordinate {
             coordinates.append(current)

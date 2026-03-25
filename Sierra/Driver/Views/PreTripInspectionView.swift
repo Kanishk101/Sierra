@@ -49,7 +49,15 @@ struct PreTripInspectionView: View {
             VStack(spacing: 0) {
                 // Custom nav bar
                 HStack {
-                    Button(action: { dismiss() }) {
+                    Button(action: {
+                        if viewModel.currentStep == 1 {
+                            dismiss()
+                        } else {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                                viewModel.currentStep = max(1, viewModel.currentStep - 1)
+                            }
+                        }
+                    }) {
                         Image(systemName: viewModel.currentStep == 1 ? "xmark" : "chevron.left")
                             .font(.system(size: 16, weight: .bold))
                             .foregroundColor(.appTextPrimary)
@@ -83,15 +91,39 @@ struct PreTripInspectionView: View {
         }
         .navigationBarHidden(true)
         .toolbar(.hidden, for: .tabBar)
-        .sheet(isPresented: Binding(
+        .fullScreenCover(isPresented: Binding(
             get: { viewModel.showOdometerCamera },
             set: { viewModel.showOdometerCamera = $0 }
-        )) {
-            OdometerCameraSheet { image in
+        ), onDismiss: {
+            viewModel.handleOdometerCaptureCancelled()
+        }) {
+            OdometerCameraSheet(onCapture: { image in
                 Task { @MainActor in
                     await viewModel.handleOCRImage(image)
                 }
-            }
+            }, onCancel: {
+                viewModel.handleOdometerCaptureCancelled()
+            })
+        }
+        .fullScreenCover(isPresented: $showFuelCamera, onDismiss: {
+            viewModel.handleFuelCaptureCancelled()
+        }) {
+            OdometerCameraSheet(onCapture: { img in
+                fuelPhoto = img
+                if let data = img.jpegData(compressionQuality: 0.8) {
+                    if let existing = fuelPhotoData,
+                       let idx = viewModel.generalPhotoData.firstIndex(of: existing) {
+                        viewModel.generalPhotoData.remove(at: idx)
+                    }
+                    fuelPhotoData = data
+                    viewModel.generalPhotoData.append(data)
+                }
+                Task { @MainActor in
+                    await viewModel.handleFuelGaugeImage(img)
+                }
+            }, onCancel: {
+                viewModel.handleFuelCaptureCancelled()
+            })
         }
         .alert("Submission Error", isPresented: .init(
             get: { viewModel.submitError != nil },
@@ -138,9 +170,10 @@ struct PreTripInspectionView: View {
         }
     }
 
-    // MARK: - Step 1: Checklist (Bug 6 redesign)
-    // Odometer capture removed from this page — it now lives as a photo in Step 2.
-    // Next button label adapts: all green = "All Clear → Next", has issues = "Log Issues → Next".
+    // MARK: - Step 1: Checklist
+    @State private var showWarnAlert = false
+    @State private var showFailAlert = false
+    @State private var isSendingNotification = false
 
     private var checklistStep: some View {
         VStack(spacing: 0) {
@@ -188,32 +221,94 @@ struct PreTripInspectionView: View {
             }
 
             // Bug 6: Adaptive Next button — label changes based on issue state
-            let hasIssues = !viewModel.failedItems.isEmpty || !viewModel.warningItems.isEmpty
+            let hasWarnings = !viewModel.warningItems.isEmpty
+            let hasFails    = !viewModel.failedItems.isEmpty
             Button {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { viewModel.currentStep = 2 }
+                if hasFails {
+                    showFailAlert = true
+                } else if hasWarnings {
+                    showWarnAlert = true
+                } else {
+                    withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { viewModel.currentStep = 2 }
+                }
             } label: {
                 HStack(spacing: 8) {
-                    Text(hasIssues ? "Log Issues → Next" : "All Clear → Next")
+                    if isSendingNotification {
+                        ProgressView().tint(.white).scaleEffect(0.8)
+                    } else {
+                        Image(systemName: hasFails ? "exclamationmark.octagon.fill" : hasWarnings ? "bell.badge.fill" : "checkmark.circle.fill")
+                            .font(.system(size: 15, weight: .bold))
+                    }
+                    Text(hasFails ? "Vehicle Issue — Cannot Proceed" : hasWarnings ? "Notify Admin & Continue" : "All Clear → Next")
                         .font(.system(size: 16, weight: .bold, design: .rounded))
-                    Image(systemName: "arrow.right")
-                        .font(.system(size: 14, weight: .bold))
                 }
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 17)
                 .background(
-                    Capsule()
-                        .fill(hasIssues ? Color.appOrange : Color(red: 0.20, green: 0.65, blue: 0.32))
+                    Capsule().fill(
+                        hasFails    ? Color(red: 0.90, green: 0.22, blue: 0.18) :
+                        hasWarnings ? Color.appOrange :
+                                      Color(red: 0.20, green: 0.65, blue: 0.32)
+                    )
                 )
                 .shadow(
-                    color: (hasIssues ? Color.appOrange : Color(red: 0.20, green: 0.65, blue: 0.32)).opacity(0.3),
+                    color: (hasFails ? Color(red: 0.90, green: 0.22, blue: 0.18) :
+                            hasWarnings ? Color.appOrange :
+                            Color(red: 0.20, green: 0.65, blue: 0.32)).opacity(0.3),
                     radius: 12, x: 0, y: 6
                 )
             }
             .buttonStyle(.plain)
             .padding(.horizontal, 20)
             .padding(.bottom, 16)
+            // ── Fail alert: blocks until vehicle is changed ──────────
+            .alert("Vehicle Change Required", isPresented: $showFailAlert) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                let names = viewModel.failedItems.map(\.name).joined(separator: ", ")
+                Text("One or more items have FAILED inspection: \(names).\n\nA maintenance request will be submitted automatically. Please contact your fleet manager to arrange a vehicle change before proceeding.")
+            }
+            // ── Warn alert: sends notification then advances ──────────
+            .alert("Warnings Found", isPresented: $showWarnAlert) {
+                Button("Notify Admin & Continue") {
+                    Task {
+                        isSendingNotification = true
+                        await sendWarnNotification()
+                        isSendingNotification = false
+                        withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+                            viewModel.currentStep = 2
+                        }
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                let names = viewModel.warningItems.map(\.name).joined(separator: ", ")
+                Text("Some items have warnings: \(names).\n\nYour fleet manager will be notified. You may continue the inspection.")
+            }
+        }
+    }
+
+    private func sendWarnNotification() async {
+        let names = viewModel.warningItems.map(\.name).joined(separator: ", ")
+        let body = "⚠️ Inspection warning(s) before trip \(tripId.uuidString.prefix(8).uppercased()). Items: \(names)."
+        let title = "⚠️ Pre-Trip Inspection Warning"
+        // Notify all fleet managers / admins visible in AppDataStore
+        let allUsers: [StaffMember] = store.staff
+        let admins = allUsers.filter { $0.role == .fleetManager }
+        for admin in admins {
+            try? await NotificationService.insertNotification(
+                recipientId: admin.id,
+                type: .defectAlert,
+                title: title,
+                body: body,
+                entityType: "trip",
+                entityId: tripId
+            )
+        }
+        if admins.isEmpty {
+            print("[PreInspection] No fleet manager found to notify for warn items")
         }
     }
 
@@ -342,9 +437,8 @@ struct PreTripInspectionView: View {
     // MARK: - Step 2: Media Captures (Bug 6 redesign)
 
     @State private var fuelPhoto: UIImage?
-    @State private var odometerPhoto: UIImage?
+    @State private var fuelPhotoData: Data?
     @State private var showFuelCamera = false
-    @State private var showOdometerCam = false
 
     private var mediaStep: some View {
         VStack(spacing: 0) {
@@ -358,32 +452,19 @@ struct PreTripInspectionView: View {
                             .foregroundStyle(SierraTheme.Colors.ember.opacity(0.7))
                         Text("Document Vehicle State")
                             .font(.headline)
-                        Text("Capture fuel gauge and odometer photos before departure.")
+                        Text(inspectionType == .preTripInspection
+                             ? "Capture fuel gauge and odometer details before departure."
+                             : "Capture fuel gauge and odometer details before completing trip.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
                     }
                     .padding(.top, 8)
 
-                    // ── Fuel Status photo ────────────────────────────────────
-                    photoCaptureRow(
-                        title: "Fuel Status",
-                        subtitle: "Photograph the fuel gauge",
-                        icon: "fuelpump.fill",
-                        accent: SierraTheme.Colors.warning,
-                        capturedImage: fuelPhoto,
-                        onTap: { showFuelCamera = true }
-                    )
+                    fuelGaugeCaptureCard
 
-                    // ── Odometer photo ───────────────────────────────────────
-                    photoCaptureRow(
-                        title: "Odometer Reading",
-                        subtitle: "Photograph the odometer display",
-                        icon: "speedometer",
-                        accent: SierraTheme.Colors.ember,
-                        capturedImage: odometerPhoto,
-                        onTap: { showOdometerCam = true }
-                    )
+                    // OCR-first odometer capture with manual fallback.
+                    odometerCaptureCard
 
                     // ── Failed items still need per-item photos ──────────────
                     if !viewModel.itemsNeedingPhotos.isEmpty {
@@ -400,116 +481,142 @@ struct PreTripInspectionView: View {
                 .padding(.horizontal, 16)
                 .padding(.bottom, 16)
             }
-            .sheet(isPresented: $showFuelCamera) {
-                OdometerCameraSheet { img in
-                    fuelPhoto = img
-                    if let data = img.jpegData(compressionQuality: 0.8) {
-                        viewModel.generalPhotoData.append(data)
-                    }
-                }
-            }
-            .sheet(isPresented: $showOdometerCam) {
-                OdometerCameraSheet { img in
-                    odometerPhoto = img
-                    Task { @MainActor in await viewModel.handleOCRImage(img) }
-                    if let data = img.jpegData(compressionQuality: 0.8) {
-                        viewModel.generalPhotoData.append(data)
-                    }
-                }
-            }
-
             Divider()
 
-            HStack(spacing: 12) {
-                Button {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { viewModel.currentStep = 1 }
-                } label: {
-                    Text("Back")
+            Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { viewModel.currentStep = 3 }
+            } label: {
+                HStack(spacing: 8) {
+                    Text("Next")
                         .font(.system(size: 16, weight: .bold, design: .rounded))
-                        .foregroundColor(.appTextPrimary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 17)
-                        .background(Capsule().fill(Color.appSurface))
-                        .overlay(Capsule().stroke(Color.appDivider, lineWidth: 1))
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 14, weight: .bold))
                 }
-                .buttonStyle(.plain)
-
-                Button {
-                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                    withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { viewModel.currentStep = 3 }
-                } label: {
-                    HStack(spacing: 8) {
-                        Text("Next")
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
-                        Image(systemName: "arrow.right")
-                            .font(.system(size: 14, weight: .bold))
-                    }
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 17)
-                    .background(Capsule().fill(Color.appOrange))
-                    .shadow(color: Color.appOrange.opacity(0.3), radius: 12, x: 0, y: 6)
-                }
-                .buttonStyle(.plain)
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 17)
+                .background(Capsule().fill(Color.appOrange))
+                .shadow(color: Color.appOrange.opacity(0.3), radius: 12, x: 0, y: 6)
             }
+            .buttonStyle(.plain)
             .padding(16)
         }
     }
 
-    /// Reusable camera capture row for Step 2.
-    private func photoCaptureRow(
-        title: String,
-        subtitle: String,
-        icon: String,
-        accent: Color,
-        capturedImage: UIImage?,
-        onTap: @escaping () -> Void
-    ) -> some View {
-        Button(action: onTap) {
-            HStack(spacing: 14) {
-                ZStack {
-                    Circle()
-                        .fill(accent.opacity(0.12))
-                        .frame(width: 48, height: 48)
-                    if let img = capturedImage {
-                        Image(uiImage: img)
-                            .resizable().scaledToFill()
+    private var fuelGaugeCaptureCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Fuel Gauge Reading", systemImage: "fuelpump.fill")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.secondary)
+
+            Button {
+                showFuelCamera = true
+                viewModel.fuelGaugeOCRState = .scanning
+            } label: {
+                HStack(spacing: 14) {
+                    ZStack {
+                        Circle()
+                            .fill(SierraTheme.Colors.warning.opacity(0.12))
                             .frame(width: 48, height: 48)
-                            .clipShape(Circle())
-                    } else {
-                        Image(systemName: icon)
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundColor(accent)
+                        if let img = fuelPhoto {
+                            Image(uiImage: img)
+                                .resizable().scaledToFill()
+                                .frame(width: 48, height: 48)
+                                .clipShape(Circle())
+                        } else {
+                            Image(systemName: "camera.fill")
+                                .font(.system(size: 20, weight: .semibold))
+                                .foregroundColor(SierraTheme.Colors.warning)
+                        }
                     }
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Scan Fuel Gauge")
+                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                            .foregroundColor(.appTextPrimary)
+                        Text(fuelPhoto == nil ? "OCR detects percentage from gauge display" : "✓ Photo captured — tap to retake")
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundColor(fuelPhoto == nil ? .appTextSecondary : Color(red: 0.20, green: 0.65, blue: 0.32))
+                    }
+
+                    Spacer()
+
+                    Image(systemName: fuelPhoto == nil ? "camera.viewfinder" : "checkmark.circle.fill")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(fuelPhoto == nil ? SierraTheme.Colors.warning : Color(red: 0.20, green: 0.65, blue: 0.32))
                 }
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title)
-                        .font(.system(size: 15, weight: .bold, design: .rounded))
-                        .foregroundColor(.appTextPrimary)
-                    Text(capturedImage == nil ? subtitle : "✓ Photo captured — tap to retake")
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundColor(capturedImage == nil ? .appTextSecondary : Color(red: 0.20, green: 0.65, blue: 0.32))
-                }
-
-                Spacer()
-
-                Image(systemName: capturedImage == nil ? "camera.fill" : "checkmark.circle.fill")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(capturedImage == nil ? accent : Color(red: 0.20, green: 0.65, blue: 0.32))
+                .padding(14)
+                .background(
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(fuelPhoto == nil ? SierraTheme.Colors.warning.opacity(0.06) : Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.06))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(fuelPhoto == nil ? SierraTheme.Colors.warning.opacity(0.2) : Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.3), lineWidth: 1.5)
+                )
             }
-            .padding(14)
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(capturedImage == nil ? accent.opacity(0.06) : Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.06))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(capturedImage == nil ? accent.opacity(0.2) : Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.3), lineWidth: 1.5)
-            )
+            .buttonStyle(.plain)
+
+            switch viewModel.fuelGaugeOCRState {
+            case .idle:
+                fuelManualEntryField
+            case .scanning:
+                HStack(spacing: 8) {
+                    ProgressView().scaleEffect(0.8)
+                    Text("Running fuel OCR…").font(.caption).foregroundStyle(.secondary)
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+            case .result(let reading):
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                        Text("OCR detected: \(reading)%").font(.subheadline.weight(.medium))
+                        Spacer()
+                        Button("Retry") {
+                            viewModel.fuelGaugeOCRState = .idle
+                            viewModel.fuelLevelText = ""
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                    }
+                    .padding(12)
+                    .background(Color.green.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
+                    fuelManualEntryField
+                }
+            case .failed:
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .foregroundStyle(.orange)
+                        Text("OCR couldn't read fuel level — enter manually")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(10)
+                    .background(Color.orange.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
+                    fuelManualEntryField
+                }
+            case .confirmed:
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .foregroundStyle(.green)
+                    Text("\(viewModel.fuelLevelText)% confirmed")
+                        .font(.subheadline.weight(.medium))
+                    Spacer()
+                    Button("Edit") { viewModel.fuelGaugeOCRState = .failed }
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+                .padding(12)
+                .background(Color.green.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
+            }
         }
-        .buttonStyle(.plain)
+        .padding(14)
+        .background(Color(.tertiarySystemGroupedBackground),
+                    in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
 
@@ -694,50 +801,34 @@ struct PreTripInspectionView: View {
                 .padding()
             }
 
-            HStack(spacing: 12) {
-                Button {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { viewModel.currentStep = 2 }
-                } label: {
-                    Text("Back")
+            Button {
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                Task { await viewModel.submitInspection(store: store) }
+            } label: {
+                HStack(spacing: 8) {
+                    Text("Complete Inspection")
                         .font(.system(size: 16, weight: .bold, design: .rounded))
-                        .foregroundColor(.appTextPrimary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 17)
-                        .background(Capsule().fill(Color.appSurface))
-                        .overlay(Capsule().stroke(Color.appDivider, lineWidth: 1))
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.system(size: 14, weight: .bold))
                 }
-                .buttonStyle(.plain)
-
-                Button {
-                    UINotificationFeedbackGenerator().notificationOccurred(.success)
-                    Task { await viewModel.submitInspection(store: store) }
-                } label: {
-                    HStack(spacing: 8) {
-                        Text("Complete Inspection")
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
-                        Image(systemName: "checkmark.seal.fill")
-                            .font(.system(size: 14, weight: .bold))
-                    }
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 17)
-                    .background(
-                        Capsule()
-                            .fill((viewModel.isSubmitting || !viewModel.canSubmit)
-                                ? Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.4)
-                                : Color(red: 0.20, green: 0.65, blue: 0.32))
-                    )
-                    .shadow(
-                        color: (viewModel.isSubmitting || !viewModel.canSubmit)
-                            ? Color.clear
-                            : Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.3),
-                        radius: 12, x: 0, y: 6
-                    )
-                }
-                .buttonStyle(.plain)
-                .disabled(viewModel.isSubmitting || !viewModel.canSubmit)
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 17)
+                .background(
+                    Capsule()
+                        .fill((viewModel.isSubmitting || !viewModel.canSubmit)
+                            ? Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.4)
+                            : Color(red: 0.20, green: 0.65, blue: 0.32))
+                )
+                .shadow(
+                    color: (viewModel.isSubmitting || !viewModel.canSubmit)
+                        ? Color.clear
+                        : Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.3),
+                    radius: 12, x: 0, y: 6
+                )
             }
+            .buttonStyle(.plain)
+            .disabled(viewModel.isSubmitting || !viewModel.canSubmit)
             .padding(.horizontal, 20)
             .padding(.bottom, 16)
         }
@@ -978,6 +1069,34 @@ struct PreTripInspectionView: View {
             }
         }
     }
+
+    private var fuelManualEntryField: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Manual fuel level (%)").font(.caption2).foregroundStyle(.tertiary)
+            HStack(spacing: 8) {
+                TextField("0 - 100", text: Binding(
+                    get: { viewModel.fuelLevelText },
+                    set: { viewModel.fuelLevelText = String($0.filter(\.isNumber).prefix(3)) }
+                ))
+                .keyboardType(.numberPad)
+                .textFieldStyle(.roundedBorder)
+
+                Text("%")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if viewModel.fuelLevelPct != nil {
+                    Button {
+                        viewModel.fuelGaugeOCRState = .confirmed
+                    } label: {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                            .font(.title3)
+                    }
+                }
+            }
+        }
+    }
 }
 
 // MARK: - SignatureCanvasView (PencilKit wrapper for Step 3)
@@ -1011,6 +1130,7 @@ struct SignatureCanvasView: UIViewRepresentable {
 struct OdometerCameraSheet: UIViewControllerRepresentable {
 
     let onCapture: (UIImage) -> Void
+    var onCancel: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
 
     func makeCoordinator() -> Coordinator {
@@ -1020,6 +1140,8 @@ struct OdometerCameraSheet: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> UIImagePickerController {
         let picker = UIImagePickerController()
         picker.sourceType = UIImagePickerController.isSourceTypeAvailable(.camera) ? .camera : .photoLibrary
+        picker.cameraCaptureMode = .photo
+        picker.showsCameraControls = true
         picker.delegate = context.coordinator
         picker.allowsEditing = false
         return picker
@@ -1035,14 +1157,19 @@ struct OdometerCameraSheet: UIViewControllerRepresentable {
             _ picker: UIImagePickerController,
             didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]
         ) {
-            if let image = info[.originalImage] as? UIImage {
-                parent.onCapture(image)
+            DispatchQueue.main.async {
+                if let image = info[.originalImage] as? UIImage {
+                    self.parent.onCapture(image)
+                }
+                self.parent.dismiss()
             }
-            parent.dismiss()
         }
 
         func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-            parent.dismiss()
+            DispatchQueue.main.async {
+                self.parent.onCancel?()
+                self.parent.dismiss()
+            }
         }
     }
 }

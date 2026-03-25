@@ -46,7 +46,7 @@ struct FuelLogView: View {
             .onChange(of: vm.submitSuccess) { _, success in
                 if success { dismiss() }
             }
-            .sheet(isPresented: $showCamera) {
+            .fullScreenCover(isPresented: $showCamera) {
                 CameraView { image in
                     Task { await vm.processReceiptWithOCR(image) }
                 }

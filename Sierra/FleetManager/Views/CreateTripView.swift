@@ -253,7 +253,7 @@ struct CreateTripView: View {
 
     private var step3View: some View {
         VStack(spacing: 0) {
-            let vehicles = store.vehicles.filter { $0.status == .idle }
+            let vehicles = store.availableVehicles()
             if vehicles.isEmpty {
                 VStack(spacing: 10) {
                     Spacer()

@@ -26,6 +26,7 @@ final class FleetLiveMapViewModel {
     var breadcrumbCoordinates: [CLLocationCoordinate2D] = []
     var breadcrumbHistory: [VehicleLocationHistory] = []
     var isFetchingBreadcrumb = false
+    var fallbackCoordinates: [UUID: CLLocationCoordinate2D] = [:]
 
     // MARK: - Speed Segments
 
@@ -90,12 +91,54 @@ final class FleetLiveMapViewModel {
     // MARK: - Filtered Vehicles (Safeguard 7: computed, never mutates source)
 
     func filteredVehicles(from vehicles: [Vehicle]) -> [Vehicle] {
-        let withLocation = vehicles.filter { $0.currentLatitude != nil && $0.currentLongitude != nil }
         switch selectedFilter {
-        case .all: return withLocation
-        case .active: return withLocation.filter { $0.status == .active || $0.status == .busy }
-        case .idle: return withLocation.filter { $0.status == .idle }
-        case .inMaintenance: return withLocation.filter { $0.status == .inMaintenance }
+        case .all: return vehicles
+        case .active: return vehicles.filter { $0.status == .active || $0.status == .busy }
+        case .idle: return vehicles.filter { $0.status == .idle }
+        case .inMaintenance: return vehicles.filter { $0.status == .inMaintenance }
+        }
+    }
+
+    func coordinate(for vehicle: Vehicle) -> CLLocationCoordinate2D? {
+        if let lat = vehicle.currentLatitude, let lng = vehicle.currentLongitude {
+            return CLLocationCoordinate2D(latitude: lat, longitude: lng)
+        }
+        return fallbackCoordinates[vehicle.id]
+    }
+
+    func sanitizedBreadcrumbCoordinates(maxJumpKm: Double = 25) -> [CLLocationCoordinate2D] {
+        guard !breadcrumbCoordinates.isEmpty else { return [] }
+        let maxJumpMetres = maxJumpKm * 1000
+        var sanitized: [CLLocationCoordinate2D] = [breadcrumbCoordinates[0]]
+        for coordinate in breadcrumbCoordinates.dropFirst() {
+            guard let last = sanitized.last else {
+                sanitized.append(coordinate)
+                continue
+            }
+            let a = CLLocation(latitude: last.latitude, longitude: last.longitude)
+            let b = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+            if a.distance(from: b) <= maxJumpMetres {
+                sanitized.append(coordinate)
+            }
+        }
+        return sanitized
+    }
+
+    func refreshFallbackCoordinates(for vehicles: [Vehicle]) async {
+        let missingLive = vehicles.filter { $0.currentLatitude == nil || $0.currentLongitude == nil }
+        guard !missingLive.isEmpty else {
+            fallbackCoordinates = [:]
+            return
+        }
+        for vehicle in missingLive {
+            do {
+                let history = try await VehicleLocationService.fetchRecentLocationHistory(vehicleId: vehicle.id, limit: 1)
+                if let last = history.last {
+                    fallbackCoordinates[vehicle.id] = CLLocationCoordinate2D(latitude: last.latitude, longitude: last.longitude)
+                }
+            } catch {
+                continue
+            }
         }
     }
 
@@ -148,8 +191,6 @@ final class FleetLiveMapViewModel {
 
     func fetchBreadcrumb(vehicleId: UUID, tripId: UUID) async {
         isFetchingBreadcrumb = true
-        breadcrumbCoordinates = []
-        breadcrumbHistory = []
         do {
             let history = try await VehicleLocationService.fetchLocationHistory(vehicleId: vehicleId, tripId: tripId)
             breadcrumbHistory = history
@@ -158,6 +199,20 @@ final class FleetLiveMapViewModel {
             }
         } catch {
             print("[FleetMapVM] Breadcrumb fetch error: \(error)")
+        }
+        isFetchingBreadcrumb = false
+    }
+
+    func fetchRecentBreadcrumb(vehicleId: UUID, limit: Int = 200) async {
+        isFetchingBreadcrumb = true
+        do {
+            let history = try await VehicleLocationService.fetchRecentLocationHistory(vehicleId: vehicleId, limit: limit)
+            breadcrumbHistory = history
+            breadcrumbCoordinates = history.map {
+                CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
+            }
+        } catch {
+            print("[FleetMapVM] Recent breadcrumb fetch error: \(error)")
         }
         isFetchingBreadcrumb = false
     }

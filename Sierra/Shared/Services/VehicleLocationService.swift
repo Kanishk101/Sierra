@@ -88,4 +88,16 @@ final class VehicleLocationService {
             .execute()
             .value
     }
+
+    static func fetchRecentLocationHistory(vehicleId: UUID, limit: Int = 200) async throws -> [VehicleLocationHistory] {
+        let rows: [VehicleLocationHistory] = try await supabase
+            .from("vehicle_location_history")
+            .select()
+            .eq("vehicle_id", value: vehicleId.uuidString)
+            .order("recorded_at", ascending: false)
+            .limit(limit)
+            .execute()
+            .value
+        return rows.sorted { $0.recordedAt < $1.recordedAt }
+    }
 }

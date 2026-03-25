@@ -11,6 +11,48 @@ enum WorkOrderStatus: String, Codable, CaseIterable {
     case closed     = "Closed"
 }
 
+// MARK: - Work Order Type
+// Maps to PostgreSQL enum: work_order_type
+
+enum WorkOrderType: String, Codable, CaseIterable {
+    case repair  = "repair"
+    case service = "service"
+}
+
+// MARK: - Parts Sub-Status
+// Maps to PostgreSQL enum: parts_sub_status
+
+enum PartsSubStatus: String, Codable, CaseIterable {
+    case none           = "none"
+    case requested      = "requested"
+    case partiallyReady = "partially_ready"
+    case approved       = "approved"
+    case orderPlaced    = "order_placed"
+    case ready          = "ready"
+
+    var displayText: String {
+        switch self {
+        case .none:           return "No Parts Needed"
+        case .requested:      return "Parts Request Sent"
+        case .partiallyReady: return "Parts Partially Ready"
+        case .approved:       return "Parts Available"
+        case .orderPlaced:    return "Parts On Order"
+        case .ready:          return "All Parts Ready"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .none:           return "shippingbox"
+        case .requested:      return "clock.fill"
+        case .partiallyReady: return "shippingbox.and.arrow.backward"
+        case .approved:       return "checkmark.circle"
+        case .orderPlaced:    return "cart.fill"
+        case .ready:          return "checkmark.seal.fill"
+        }
+    }
+}
+
 // MARK: - WorkOrder
 // Maps to table: work_orders
 
@@ -22,6 +64,10 @@ struct WorkOrder: Identifiable, Codable {
     var maintenanceTaskId: UUID          // maintenance_task_id (FK, UNIQUE)
     var vehicleId: UUID                  // vehicle_id (FK → vehicles.id)
     var assignedToId: UUID               // assigned_to_id (FK → staff_members.id)
+
+    // MARK: Type & Parts State
+    var workOrderType: WorkOrderType     // work_order_type (default 'repair')
+    var partsSubStatus: PartsSubStatus   // parts_sub_status (default 'none')
 
     // MARK: Details
     var status: WorkOrderStatus          // status (default 'Open')
@@ -53,6 +99,8 @@ struct WorkOrder: Identifiable, Codable {
         case maintenanceTaskId   = "maintenance_task_id"
         case vehicleId           = "vehicle_id"
         case assignedToId        = "assigned_to_id"
+        case workOrderType       = "work_order_type"
+        case partsSubStatus      = "parts_sub_status"
         case status
         case repairDescription   = "repair_description"
         case labourCostTotal     = "labour_cost_total"

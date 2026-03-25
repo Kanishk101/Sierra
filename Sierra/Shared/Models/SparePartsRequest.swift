@@ -37,6 +37,14 @@ struct SparePartsRequest: Identifiable, Codable, Equatable {
     var rejectionReason: String?         // rejection_reason
     var fulfilledAt: Date?               // fulfilled_at
 
+    // MARK: Partial Fulfillment
+    var quantityAvailable: Int           // quantity_available — in stock at time of admin review
+    var quantityAllocated: Int           // quantity_allocated — pulled from stock
+    var quantityOnOrder: Int             // quantity_on_order  — purchase ordered
+    var adminOrderedAt: Date?            // admin_ordered_at
+    var expectedArrivalAt: Date?         // expected_arrival_at
+    var orderReference: String?          // order_reference (PO number / supplier ref)
+
     // MARK: Timestamps
     var createdAt: Date                  // created_at
     var updatedAt: Date                  // updated_at
@@ -59,6 +67,12 @@ struct SparePartsRequest: Identifiable, Codable, Equatable {
         case reviewedAt         = "reviewed_at"
         case rejectionReason    = "rejection_reason"
         case fulfilledAt        = "fulfilled_at"
+        case quantityAvailable  = "quantity_available"
+        case quantityAllocated  = "quantity_allocated"
+        case quantityOnOrder    = "quantity_on_order"
+        case adminOrderedAt     = "admin_ordered_at"
+        case expectedArrivalAt  = "expected_arrival_at"
+        case orderReference     = "order_reference"
         case createdAt          = "created_at"
         case updatedAt          = "updated_at"
     }

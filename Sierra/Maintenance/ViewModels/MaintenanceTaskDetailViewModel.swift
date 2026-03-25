@@ -78,6 +78,8 @@ final class MaintenanceTaskDetailViewModel {
                 maintenanceTaskId: task.id,
                 vehicleId: task.vehicleId,
                 assignedToId: currentUserId,
+                workOrderType: .repair,
+                partsSubStatus: .none,
                 status: .inProgress,
                 repairDescription: "",
                 labourCostTotal: 0,

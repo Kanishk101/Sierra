@@ -10,6 +10,8 @@ final class VoiceNavigationService {
 
     private let synthesizer = AVSpeechSynthesizer()
     private var isMuted = false
+    private var lastAnnouncement: String = ""
+    private var lastAnnouncementAt: Date = .distantPast
 
     private init() {}
 
@@ -17,7 +19,16 @@ final class VoiceNavigationService {
     /// No-ops if the user has muted voice or the device ringer is off.
     func announce(_ text: String) {
         guard !isMuted else { return }
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return }
+
+        // De-dupe repeated announcements in a short window.
+        if normalized == lastAnnouncement,
+           Date().timeIntervalSince(lastAnnouncementAt) < 4 {
+            return
+        }
+        lastAnnouncement = normalized
+        lastAnnouncementAt = Date()
 
         // Activate audio session for playback (ducks music, works when locked)
         let session = AVAudioSession.sharedInstance()
@@ -28,7 +39,7 @@ final class VoiceNavigationService {
         if session.outputVolume < 0.05 { return }
 
         synthesizer.stopSpeaking(at: .immediate)
-        let utterance = AVSpeechUtterance(string: text)
+        let utterance = AVSpeechUtterance(string: normalized)
         utterance.voice = AVSpeechSynthesisVoice(language: "en-IN")
         utterance.rate  = 0.48
         utterance.pitchMultiplier = 1.05
@@ -38,10 +49,12 @@ final class VoiceNavigationService {
 
     /// Toggle mute on/off.
     func toggleMute() {
-        isMuted.toggle()
-        if isMuted {
-            synthesizer.stopSpeaking(at: .immediate)
-        }
+        setMuted(!isMuted)
+    }
+
+    func setMuted(_ muted: Bool) {
+        isMuted = muted
+        if muted { synthesizer.stopSpeaking(at: .immediate) }
     }
 
     /// Current mute state.

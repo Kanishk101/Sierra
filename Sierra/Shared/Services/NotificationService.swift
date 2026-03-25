@@ -39,6 +39,7 @@ final class NotificationService {
 
     private static var lastDeliveryRunAt: Date?
     private static let minDeliveryRunInterval: TimeInterval = 20
+    private static var deliveryUnauthorizedBackoffUntil: Date?
 
     // MARK: - Deliver scheduled notifications
     //
@@ -49,6 +50,10 @@ final class NotificationService {
 
     @MainActor
     static func deliverScheduledNotifications() async {
+        guard AuthManager.shared.currentUser != nil else { return }
+        if let backoffUntil = deliveryUnauthorizedBackoffUntil, Date() < backoffUntil {
+            return
+        }
         if let last = lastDeliveryRunAt,
            Date().timeIntervalSince(last) < minDeliveryRunInterval {
             return
@@ -67,7 +72,14 @@ final class NotificationService {
             #endif
         } catch {
             // Non-fatal — local UNUserNotificationCenter reminders are the fallback
+            let description = String(describing: error)
+            if description.contains("401") || description.contains("Unauthorized") {
+                // Avoid hammering edge function with bad token / unauthorized context.
+                deliveryUnauthorizedBackoffUntil = Date().addingTimeInterval(5 * 60)
+            }
+            #if DEBUG
             print("[NotificationService] deliver-scheduled-notifications non-fatal: \(error)")
+            #endif
         }
     }
 
@@ -205,7 +217,11 @@ final class NotificationService {
         }
         Task {
             do { try await channel.subscribeWithError() }
-            catch { print("[NotificationService] Channel error: \(error)") }
+            catch {
+                #if DEBUG
+                print("[NotificationService] Channel error: \(error)")
+                #endif
+            }
             self.notificationChannel = channel
         }
     }

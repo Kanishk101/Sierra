@@ -34,7 +34,7 @@ enum TaskPriority: String, Codable, CaseIterable {
 // MARK: - MaintenanceTask
 // Maps to table: maintenance_tasks
 
-struct MaintenanceTask: Identifiable, Codable {
+struct MaintenanceTask: Identifiable, Codable, Hashable {
     // MARK: Primary key
     let id: UUID
 

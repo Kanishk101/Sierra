@@ -9,6 +9,57 @@ import MapboxMaps
 @MainActor
 @Observable
 final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
+    private static var cachedSessions: [UUID: TripNavigationCoordinator] = [:]
+    private static let persistedProgressDefaultsKey = "trip_navigation_progress_v2"
+
+    private static var persistedProgressByTrip: [String: Double] {
+        get {
+            UserDefaults.standard.dictionary(forKey: persistedProgressDefaultsKey) as? [String: Double] ?? [:]
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: persistedProgressDefaultsKey)
+        }
+    }
+
+    static func session(for trip: Trip) -> TripNavigationCoordinator {
+        if let existing = cachedSessions[trip.id] { return existing }
+        let created = TripNavigationCoordinator(trip: trip)
+        cachedSessions[trip.id] = created
+        return created
+    }
+
+    static func sessionProgress(for tripId: UUID) -> Double? {
+        if let session = cachedSessions[tripId], session.hasRenderableRoute {
+            return max(session.routeProgressFraction, persistedProgress(for: tripId))
+        }
+        let persisted = persistedProgress(for: tripId)
+        return persisted > 0 ? persisted : nil
+    }
+
+    static func sessionRouteCoordinates(for tripId: UUID) -> [CLLocationCoordinate2D]? {
+        guard let session = cachedSessions[tripId], session.hasRenderableRoute else { return nil }
+        let coords = session.displayedRouteCoordinates
+        return coords.count >= 2 ? coords : nil
+    }
+
+    static func clearSession(for tripId: UUID) {
+        cachedSessions[tripId]?.stopLocationPublishing()
+        cachedSessions[tripId]?.stopSimulation()
+        cachedSessions[tripId] = nil
+    }
+
+    private static func persistedProgress(for tripId: UUID) -> Double {
+        persistedProgressByTrip[tripId.uuidString.lowercased()] ?? 0
+    }
+
+    private static func savePersistedProgress(_ progress: Double, for tripId: UUID) {
+        let key = tripId.uuidString.lowercased()
+        let current = persistedProgressByTrip[key] ?? 0
+        guard progress > current else { return }
+        var updated = persistedProgressByTrip
+        updated[key] = min(max(progress, 0), 1)
+        persistedProgressByTrip = updated
+    }
 
     // MARK: - Sub-components
     private let routeEngine        = RouteEngine()
@@ -24,26 +75,48 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     var remainingRouteCoordinates: [CLLocationCoordinate2D] {
         let coords = routeEngine.decodedRouteCoordinates
         guard !coords.isEmpty else { return [] }
-        guard let lastBreadcrumb = breadcrumbCoordinates.last else { return coords }
-
-        let breadcrumbLocation = CLLocation(latitude: lastBreadcrumb.latitude, longitude: lastBreadcrumb.longitude)
-
-        var dropIndex: Int?
-        for (idx, coord) in coords.enumerated() {
-            let loc = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
-            if loc.distance(from: breadcrumbLocation) < 5 {
-                dropIndex = idx
-                break
-            }
-        }
-
-        guard let idx = dropIndex else { return coords }
+        let idx = min(max(routeCursorIndex, 0), max(0, coords.count - 1))
         return Array(coords.dropFirst(idx))
     }
     var hasRenderableRoute: Bool                { routeEngine.decodedRouteCoordinates.count >= 2 }
     var isUsingStoredRouteFallback: Bool        { routeEngine.isUsingStoredRouteFallback }
     var routeEngineError: String?               { routeEngine.lastBuildError }
     var activeIncidents: [TrafficIncident]      { trafficService.activeIncidents }
+    var activeGeofences: [Geofence] {
+        let anchors: [CLLocationCoordinate2D] = {
+            var points: [CLLocationCoordinate2D] = []
+            if let lat = trip.originLatitude, let lng = trip.originLongitude {
+                points.append(CLLocationCoordinate2D(latitude: lat, longitude: lng))
+            }
+            for stop in (trip.routeStops ?? []).sorted(by: { $0.order < $1.order }) {
+                points.append(CLLocationCoordinate2D(latitude: stop.latitude, longitude: stop.longitude))
+            }
+            if let lat = trip.destinationLatitude, let lng = trip.destinationLongitude {
+                points.append(CLLocationCoordinate2D(latitude: lat, longitude: lng))
+            }
+            return points
+        }()
+        guard !anchors.isEmpty else { return [] }
+
+        return AppDataStore.shared.geofences
+            .filter(\.isActive)
+            .filter { geofence in
+                anchors.contains { anchor in
+                    let a = CLLocation(latitude: anchor.latitude, longitude: anchor.longitude)
+                    let g = CLLocation(latitude: geofence.latitude, longitude: geofence.longitude)
+                    return a.distance(from: g) <= max(geofence.radiusMeters, 80)
+                }
+            }
+    }
+    var currentRouteCoordinate: CLLocationCoordinate2D? {
+        guard routeEngine.decodedRouteCoordinates.indices.contains(routeCursorIndex) else { return currentLocation?.coordinate }
+        return routeEngine.decodedRouteCoordinates[routeCursorIndex]
+    }
+    var nextRouteCoordinate: CLLocationCoordinate2D? {
+        let nextIndex = routeCursorIndex + 1
+        guard routeEngine.decodedRouteCoordinates.indices.contains(nextIndex) else { return nil }
+        return routeEngine.decodedRouteCoordinates[nextIndex]
+    }
 
     var distanceRemainingMetres: Double {
         get { routeEngine.distanceRemainingMetres }
@@ -78,11 +151,17 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     var routeProgressFraction: Double {
         guard routeEngine.totalRouteDistanceMetres > 0 else { return 0 }
         let distanceTraveled = routeEngine.totalRouteDistanceMetres - distanceRemainingMetres
-        return max(0, min(1, distanceTraveled / routeEngine.totalRouteDistanceMetres))
+        let raw = max(0, min(1, distanceTraveled / routeEngine.totalRouteDistanceMetres))
+        return max(maxRouteProgressFraction, raw)
     }
     var simulated: Bool = false
+    var hasConfirmedRouteSelection: Bool = false
     private var simulationTimer: Timer?
     private var simulationIndex: Int = 0
+    private var routeCursorIndex: Int = 0
+    private var maxRouteProgressFraction: Double = 0
+    private var stopRouteIndices: [Int] = []
+    private var reachedStopIndices: Set<Int> = []
 
     let trip: Trip
     private(set) var currentLocation: CLLocation?
@@ -93,6 +172,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     private var currentStepIndex: Int = 0
     private var lastStepChangeLocation: CLLocation?  // ISSUE-13 FIX: hysteresis tracking
     private var lastRerouteRequestedAt: Date = .distantPast  // Fix 9: reroute cooldown
+    private var didAnnounceInitialInstruction = false
 
     // MARK: - Init / deinit
     init(trip: Trip) {
@@ -113,22 +193,25 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     // MARK: - Route Methods
     func buildRoutes() async {
         await routeEngine.buildRoutes(trip: trip, currentLocation: currentLocation)
+        recomputeStopRouteAnchors()
+        routeCursorIndex = min(max(routeCursorIndex, 0), max(0, routeEngine.decodedRouteCoordinates.count - 1))
+        maxRouteProgressFraction = max(maxRouteProgressFraction, Self.persistedProgress(for: trip.id))
+        if let location = currentLocation {
+            updateNavigationProgress(location: location)
+        }
     }
     // ISSUE-19 FIX: Renamed from selectGreenRoute
     func swapAlternativeRoute() {
         routeEngine.swapAlternativeRoute()
         currentStepIndex = 0
+        hasConfirmedRouteSelection = true
     }
     func rebuildRoutes() async {
         await routeEngine.rebuildRoutes(trip: trip, currentLocation: currentLocation)
     }
     func setSimulationEnabled(_ enabled: Bool) {
-        simulated = enabled
-        simulationTimer?.invalidate(); simulationTimer = nil
-        simulationIndex = 0
-        if enabled {
-            startSimulation()
-        }
+        if enabled { startSimulation() }
+        else { stopSimulation() }
     }
     func addStop(latitude: Double, longitude: Double, name: String) async {
         await routeEngine.addStop(latitude: latitude, longitude: longitude, name: name,
@@ -159,6 +242,8 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         manager.startUpdatingLocation()
         locationManager = manager
         isNavigating = true
+        hasConfirmedRouteSelection = true
+        announceInitialInstructionIfNeeded()
 
         // GAP-1: Start traffic incident polling
         trafficService.startPolling(routeCoordinates: routeEngine.decodedRouteCoordinates)
@@ -170,6 +255,24 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.last else { return }
         Task { @MainActor in self.updateLocation(location) }
+    }
+
+    private func announceInitialInstructionIfNeeded() {
+        guard !didAnnounceInitialInstruction else { return }
+        if !routeEngine.currentStepInstruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            VoiceNavigationService.shared.announce(routeEngine.currentStepInstruction)
+            didAnnounceInitialInstruction = true
+            return
+        }
+        if let firstInstruction = routeEngine.currentRoute?.legs.first?.steps.first?.instructions,
+           !firstInstruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            routeEngine.currentStepInstruction = firstInstruction
+            VoiceNavigationService.shared.announce(firstInstruction)
+            didAnnounceInitialInstruction = true
+            return
+        }
+        VoiceNavigationService.shared.announce("Navigation started. Follow the highlighted route.")
+        didAnnounceInitialInstruction = true
     }
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         print("[NavCoordinator] Location error: \(error)")
@@ -253,31 +356,51 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         let routeCoords = routeEngine.decodedRouteCoordinates
         guard routeCoords.count >= 2 else { return }
 
-        // BUG-06 FIX: Find closest point on polyline and sum remaining segment lengths
+        // Stop-safe progression: search forward window and never move cursor backwards.
+        let lastSegmentIndex = routeCoords.count - 2
+        let forwardStart = min(max(routeCursorIndex - 12, 0), lastSegmentIndex)
+        let forwardEnd = min(max(routeCursorIndex + 180, 0), lastSegmentIndex)
+        let candidateRange = forwardStart <= forwardEnd
+            ? Array(forwardStart...forwardEnd)
+            : Array(0...lastSegmentIndex)
+
         var minDist = Double.greatestFiniteMagnitude
-        var closestSegIndex = 0
-        for i in 0..<(routeCoords.count - 1) {
-            let segStart = CLLocation(latitude: routeCoords[i].latitude, longitude: routeCoords[i].longitude)
-            let dist = location.distance(from: segStart)
+        var closestSegIndex = routeCursorIndex
+        for i in candidateRange {
+            let dist = pointToSegmentDistance(
+                point: location.coordinate,
+                segStart: routeCoords[i],
+                segEnd: routeCoords[i + 1]
+            )
             if dist < minDist {
                 minDist = dist
                 closestSegIndex = i
             }
         }
+        routeCursorIndex = max(routeCursorIndex, closestSegIndex)
 
         // Sum remaining segment lengths from closest point forward
         var remainingDist: Double = 0
-        for i in closestSegIndex..<(routeCoords.count - 1) {
+        if routeCursorIndex + 1 < routeCoords.count {
+            let next = CLLocation(latitude: routeCoords[routeCursorIndex + 1].latitude,
+                                  longitude: routeCoords[routeCursorIndex + 1].longitude)
+            remainingDist += location.distance(from: next)
+        }
+        for i in (routeCursorIndex + 1)..<(routeCoords.count - 1) {
             let a = CLLocation(latitude: routeCoords[i].latitude, longitude: routeCoords[i].longitude)
             let b = CLLocation(latitude: routeCoords[i + 1].latitude, longitude: routeCoords[i + 1].longitude)
             remainingDist += a.distance(from: b)
         }
-        routeEngine.distanceRemainingMetres = remainingDist
+        routeEngine.distanceRemainingMetres = max(0, remainingDist)
+        maxRouteProgressFraction = max(maxRouteProgressFraction, routeProgressFraction)
+        Self.savePersistedProgress(maxRouteProgressFraction, for: trip.id)
+
+        updateStopArrivalState(using: location, routeCoordinates: routeCoords)
 
         // Fix 10: Extract speed limit from route annotations
         if let speedLimits = routeEngine.currentRoute?.legs.first?.segmentMaximumSpeedLimits,
-           closestSegIndex < speedLimits.count,
-           let measurement = speedLimits[closestSegIndex] {
+           routeCursorIndex < speedLimits.count,
+           let measurement = speedLimits[routeCursorIndex] {
             currentSpeedLimit = Int(measurement.converted(to: .kilometersPerHour).value)
         } else {
             currentSpeedLimit = nil
@@ -286,6 +409,10 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         // Arrival check using route distance, not crow-fly
         if remainingDist < 50 && !hasArrived {
             hasArrived = true
+            routeEngine.distanceRemainingMetres = 0
+            maxRouteProgressFraction = 1.0
+            Self.savePersistedProgress(1.0, for: trip.id)
+            routeCursorIndex = routeCoords.count - 1
             NotificationCenter.default.post(name: .tripArrivedAtDestination, object: nil)
         }
 
@@ -390,36 +517,161 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         }
     }
 
-    private func appendBreadcrumbCoordinateIfNeeded(_ coordinate: CLLocationCoordinate2D) {
+    private func appendBreadcrumbCoordinateIfNeeded(_ coordinate: CLLocationCoordinate2D, force: Bool = false) {
         guard let last = breadcrumbCoordinates.last else {
             breadcrumbCoordinates = [coordinate]
             return
         }
 
+        if force {
+            breadcrumbCoordinates.append(coordinate)
+            return
+        }
+
         let previous = CLLocation(latitude: last.latitude, longitude: last.longitude)
         let current = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
-        guard current.distance(from: previous) >= 8 else { return }
+        guard current.distance(from: previous) >= 2 else { return }
         breadcrumbCoordinates.append(coordinate)
     }
 
-    // MARK: - Simulation
-    private func startSimulation() {
-        guard routeEngine.decodedRouteCoordinates.count > 1 else { return }
-        simulationTimer?.invalidate()
-        simulationIndex = 0
-        simulationTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] timer in
-            guard let self else { return }
-            let coords = routeEngine.decodedRouteCoordinates
-            guard !coords.isEmpty else { timer.invalidate(); return }
-            let coord = coords[simulationIndex % coords.count]
-            let location = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
-            currentLocation = location
-            appendBreadcrumbCoordinateIfNeeded(coord)
-            simulationIndex = min(simulationIndex + 1, coords.count - 1)
-            if simulationIndex >= coords.count - 1 {
-                timer.invalidate()
+    private func recomputeStopRouteAnchors() {
+        let routeCoords = routeEngine.decodedRouteCoordinates
+        let stops = (trip.routeStops ?? []).sorted(by: { $0.order < $1.order })
+        guard !routeCoords.isEmpty, !stops.isEmpty else {
+            stopRouteIndices = []
+            reachedStopIndices = []
+            return
+        }
+
+        stopRouteIndices = stops.map { stop in
+            let stopCoord = CLLocationCoordinate2D(latitude: stop.latitude, longitude: stop.longitude)
+            var best = 0
+            var bestDist = Double.greatestFiniteMagnitude
+            for (idx, coord) in routeCoords.enumerated() {
+                let a = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
+                let b = CLLocation(latitude: stopCoord.latitude, longitude: stopCoord.longitude)
+                let dist = a.distance(from: b)
+                if dist < bestDist {
+                    bestDist = dist
+                    best = idx
+                }
+            }
+            return best
+        }
+        reachedStopIndices = reachedStopIndices.filter { $0 < stopRouteIndices.count }
+    }
+
+    private func updateStopArrivalState(using location: CLLocation, routeCoordinates: [CLLocationCoordinate2D]) {
+        guard !stopRouteIndices.isEmpty else { return }
+        let stops = (trip.routeStops ?? []).sorted(by: { $0.order < $1.order })
+        guard stops.count == stopRouteIndices.count else { return }
+
+        for (idx, stop) in stops.enumerated() where !reachedStopIndices.contains(idx) {
+            let stopLoc = CLLocation(latitude: stop.latitude, longitude: stop.longitude)
+            let dist = stopLoc.distance(from: location)
+            // Route can momentarily pause near a stop; snap cursor to stop anchor so progress continues.
+            if dist <= 45 {
+                reachedStopIndices.insert(idx)
+                routeCursorIndex = max(routeCursorIndex, min(stopRouteIndices[idx], max(0, routeCoordinates.count - 1)))
             }
         }
+    }
+
+    private func pointToSegmentDistance(
+        point: CLLocationCoordinate2D,
+        segStart: CLLocationCoordinate2D,
+        segEnd: CLLocationCoordinate2D
+    ) -> Double {
+        let pLoc = CLLocation(latitude: point.latitude, longitude: point.longitude)
+        let aLoc = CLLocation(latitude: segStart.latitude, longitude: segStart.longitude)
+        let bLoc = CLLocation(latitude: segEnd.latitude, longitude: segEnd.longitude)
+        let ab = bLoc.distance(from: aLoc)
+        guard ab > 0 else { return pLoc.distance(from: aLoc) }
+        let ap = pLoc.distance(from: aLoc)
+        let bp = pLoc.distance(from: bLoc)
+        let s = (ab + ap + bp) / 2
+        let area = sqrt(max(0, s * (s - ab) * (s - ap) * (s - bp)))
+        return (2 * area) / ab
+    }
+
+    // MARK: - Simulation
+    /// DEBUG: Current index in the decoded route coordinate array.
+    var simulationProgress: Double {
+        let total = routeEngine.decodedRouteCoordinates.count
+        guard total > 1 else { return 0 }
+        return Double(simulationIndex) / Double(total - 1)
+    }
+
+    func startSimulation() {
+        let coords = routeEngine.decodedRouteCoordinates
+        guard coords.count > 1 else { return }
+        simulated = true
+        if simulationIndex >= coords.count - 1 || simulationIndex < 0 {
+            simulationIndex = 0
+        }
+        simulationTimer?.invalidate()
+        simulationTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                let coords = self.routeEngine.decodedRouteCoordinates
+                guard coords.count > 1 else {
+                    self.simulationTimer?.invalidate()
+                    self.simulationTimer = nil
+                    self.simulated = false
+                    return
+                }
+                self.simulationIndex = min(max(self.simulationIndex, 0), coords.count - 1)
+                let coord = coords[self.simulationIndex]
+                self.applySimulatedCoordinate(coord)
+                self.routeCursorIndex = self.simulationIndex
+                self.breadcrumbCoordinates = Array(coords.prefix(self.simulationIndex + 1))
+                if self.simulationIndex >= coords.count - 1 {
+                    self.simulationTimer?.invalidate()
+                    self.simulationTimer = nil
+                    self.simulated = false
+                    self.maxRouteProgressFraction = 1.0
+                    Self.savePersistedProgress(1.0, for: self.trip.id)
+                    return
+                }
+                self.simulationIndex += 1
+            }
+        }
+    }
+
+    func stopSimulation() {
+        simulationTimer?.invalidate()
+        simulationTimer = nil
+        simulated = false
+    }
+
+    func resetSimulation() {
+        stopSimulation()
+        simulationIndex = 0
+    }
+
+    /// Scrub the simulation puck to a specific progress fraction [0-1].
+    func scrubSimulation(to fraction: Double) {
+        let coords = routeEngine.decodedRouteCoordinates
+        guard coords.count > 1 else { return }
+        simulationTimer?.invalidate()
+        simulationTimer = nil
+        simulated = false
+
+        let clamped = min(max(fraction, 0), 1)
+        let idx = Int(clamped * Double(coords.count - 1))
+        if idx == simulationIndex { return }
+        simulationIndex = min(max(idx, 0), coords.count - 1)
+        routeCursorIndex = simulationIndex
+        breadcrumbCoordinates = Array(coords.prefix(simulationIndex + 1))
+        applySimulatedCoordinate(coords[simulationIndex])
+    }
+
+    private func applySimulatedCoordinate(_ coordinate: CLLocationCoordinate2D) {
+        let location = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        currentLocation = location
+        currentSpeedKmh = max(currentSpeedKmh, 18)
+        appendBreadcrumbCoordinateIfNeeded(coordinate, force: true)
+        updateNavigationProgress(location: location)
     }
 }
 

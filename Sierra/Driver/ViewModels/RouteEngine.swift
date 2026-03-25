@@ -104,6 +104,10 @@ final class RouteEngine {
         if !avoidClasses.isEmpty { options.roadClassesToAvoid = avoidClasses }
 
         guard MapService.hasValidToken else {
+            if await applyMapServiceFallbackRoute(origin: originCoord, destination: destCoord) {
+                lastBuildError = nil
+                return
+            }
             if applyStoredPolylineFallback(from: trip) {
                 lastBuildError = "Mapbox token missing. Showing the saved trip path only."
             } else {
@@ -143,6 +147,10 @@ final class RouteEngine {
             if hasDeviated { hasDeviated = false }
 
         } catch {
+            if await applyMapServiceFallbackRoute(origin: originCoord, destination: destCoord) {
+                lastBuildError = nil
+                return
+            }
             if applyStoredPolylineFallback(from: trip) {
                 lastBuildError = "Live route unavailable: \(error.localizedDescription). Showing the saved trip path."
             } else {
@@ -228,5 +236,41 @@ final class RouteEngine {
         guard distance > 0 else { return nil }
         let assumedSpeedMetresPerSecond = 35.0 / 3.6
         return Date().addingTimeInterval(distance / assumedSpeedMetresPerSecond)
+    }
+
+    private func applyMapServiceFallbackRoute(
+        origin: CLLocationCoordinate2D,
+        destination: CLLocationCoordinate2D
+    ) async -> Bool {
+        do {
+            let routes = try await MapService.fetchRoutes(
+                originLat: origin.latitude,
+                originLng: origin.longitude,
+                destLat: destination.latitude,
+                destLng: destination.longitude,
+                avoidTolls: avoidTolls,
+                avoidHighways: avoidHighways
+            )
+            guard let fastest = routes.first else { return false }
+            let decoded: [CLLocationCoordinate2D]? = MapboxDirections.decodePolyline(fastest.geometry, precision: 1e6)
+                ?? MapboxDirections.decodePolyline(fastest.geometry, precision: 1e5)
+            guard let decoded, decoded.count >= 2 else { return false }
+
+            decodedRouteCoordinates = decoded
+            totalRouteDistanceMetres = fastest.distanceKm * 1000
+            distanceRemainingMetres = totalRouteDistanceMetres
+            estimatedArrivalTime = estimateArrival(forRemainingDistance: totalRouteDistanceMetres)
+            currentStepInstruction = fastest.steps.first?.instruction ?? "Follow the highlighted route"
+            currentRoute = nil
+            alternativeRoute = nil
+            hasDeviated = false
+            isUsingStoredRouteFallback = false
+            return true
+        } catch {
+            #if DEBUG
+            print("[RouteEngine] MapService fallback failed: \(error)")
+            #endif
+            return false
+        }
     }
 }

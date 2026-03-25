@@ -1,4 +1,5 @@
 import Foundation
+import CoreLocation
 
 // MARK: - CreateTripViewModel
 // @MainActor @Observable — extracted from CreateTripView (Phase 13 MVVM refactor).
@@ -154,9 +155,11 @@ final class CreateTripViewModel {
         var routePolyline: String? = nil
         if let origin = originCoords, let dest = destCoords {
             do {
+                let waypointCoords = stops.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
                 let routes = try await MapService.fetchRoutes(
                     originLat: origin.0, originLng: origin.1,
-                    destLat: dest.0, destLng: dest.1
+                    destLat: dest.0, destLng: dest.1,
+                    waypoints: waypointCoords
                 )
                 routePolyline = routes.first?.geometry
             } catch {
@@ -172,8 +175,8 @@ final class CreateTripViewModel {
             guard latestDriver.status == .active else {
                 errorMessage = "Selected driver is not active."; showError = true; isCreating = false; return
             }
-            if latestDriver.availability == .unavailable {
-                errorMessage = "Selected driver is currently offline. Ask them to mark themselves Available first."
+            guard latestDriver.availability == .available else {
+                errorMessage = "Selected driver is not available right now."
                 showError = true; isCreating = false; return
             }
 
@@ -181,8 +184,13 @@ final class CreateTripViewModel {
             guard let latestVehicle = try await VehicleService.fetchVehicle(id: vehicleId) else {
                 errorMessage = "Selected vehicle no longer exists."; showError = true; isCreating = false; return
             }
-            if latestVehicle.status == .inMaintenance {
-                errorMessage = "Selected vehicle is currently in maintenance."; showError = true; isCreating = false; return
+            guard latestVehicle.status == .idle else {
+                errorMessage = "Selected vehicle is not idle/available."
+                showError = true; isCreating = false; return
+            }
+            guard latestVehicle.assignedDriverId == nil else {
+                errorMessage = "Selected vehicle is already assigned."
+                showError = true; isCreating = false; return
             }
 
             // Authoritative time-based overlap check

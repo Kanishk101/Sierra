@@ -26,7 +26,6 @@ struct DriverHomeView: View {
     @State private var inspectionTrip: Trip?
     @State private var inspectionMode: InspectionMode = .pre
     @State private var showAcceptWarning = false
-    @State private var showNavigation = false
     @State private var navigationTrip: Trip?
 
     enum InspectionMode { case pre, post }
@@ -196,37 +195,54 @@ struct DriverHomeView: View {
             }
         }
         .fullScreenCover(isPresented: $showInspection) {
-            if let iTrip = inspectionTrip,
-               let vIdStr = iTrip.vehicleId,
-               let vehicleUUID = UUID(uuidString: vIdStr),
-               let dId = driverId {
-                if inspectionMode == .post {
-                    PostTripInspectionView(
-                        tripId: iTrip.id,
-                        vehicleId: vehicleUUID,
-                        driverId: dId
-                    )
-                    .environment(store)
+            Group {
+                if let iTrip = inspectionTrip,
+                   let vIdStr = iTrip.vehicleId,
+                   let vehicleUUID = UUID(uuidString: vIdStr),
+                   let dId = driverId {
+                    if inspectionMode == .post {
+                        NavigationStack {
+                            PostTripInspectionView(
+                                tripId: iTrip.id,
+                                vehicleId: vehicleUUID,
+                                driverId: dId
+                            )
+                            .environment(store)
+                        }
+                    } else {
+                        PreTripInspectionView(
+                            tripId: iTrip.id,
+                            vehicleId: vehicleUUID,
+                            driverId: dId,
+                            inspectionType: .preTripInspection,
+                            onComplete: {
+                                showInspection = false
+                                inspectionTrip = nil
+                            }
+                        )
+                        .environment(store)
+                    }
                 } else {
-                    PreTripInspectionView(
-                        tripId: iTrip.id,
-                        vehicleId: vehicleUUID,
-                        driverId: dId,
-                        inspectionType: .preTripInspection,
-                        onComplete: {
+                    VStack(spacing: 14) {
+                        Text("Inspection screen unavailable")
+                            .font(.headline)
+                        Text("Trip or vehicle data is missing. Please reopen from the trip card.")
+                            .font(.subheadline)
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(.secondary)
+                        Button("Close") {
                             showInspection = false
                             inspectionTrip = nil
                         }
-                    )
-                    .environment(store)
+                        .buttonStyle(.borderedProminent)
+                    }
+                    .padding(24)
                 }
             }
         }
-        .fullScreenCover(isPresented: $showNavigation) {
-            if let nTrip = navigationTrip {
-                TripNavigationContainerView(trip: nTrip)
-                    .environment(AppDataStore.shared)
-            }
+        .fullScreenCover(item: $navigationTrip) { nTrip in
+            TripNavigationContainerView(trip: nTrip)
+                .environment(AppDataStore.shared)
         }
         .onAppear {
             availabilitySwitch = isAvailable
@@ -483,7 +499,7 @@ struct DriverHomeView: View {
 
                 Spacer()
 
-                if trip.status == .completed {
+                if trip.isDriverWorkflowCompleted {
                     CompletedBadge()
                 } else {
                     PriorityBadge(priority: trip.priority)
@@ -595,28 +611,59 @@ struct DriverHomeView: View {
 
     @ViewBuilder
     private func actionButtons(_ trip: Trip) -> some View {
-        let status = trip.status.normalized
+        let status: TripStatus = trip.isDriverWorkflowCompleted ? .completed : trip.status.normalized
         let isCompleted = status == .completed
         let isCancelled = status == .cancelled
-        let needsPostTrip = isCompleted && trip.postInspectionId == nil
+        let needsPostTrip = trip.requiresPostTripInspection
         let postTripDone = isCompleted && trip.postInspectionId != nil
         let hasPreInspection = trip.preInspectionId != nil
         let isAcceptedScheduled = status == .scheduled && trip.acceptedAt != nil
-        let withinStartWindow = trip.scheduledDate.timeIntervalSinceNow <= TripConstants.driverBlockWindowSeconds
-            && trip.scheduledDate.timeIntervalSinceNow > -3600
-        let isStartTimeReached = trip.scheduledDate <= Date()
-        let isReadyToStart = isAcceptedScheduled && hasPreInspection && (withinStartWindow || isStartTimeReached)
-        let isAwaitingWindow = isAcceptedScheduled && hasPreInspection && !(withinStartWindow || isStartTimeReached)
+        let navProgress = TripNavigationCoordinator.sessionProgress(for: trip.id) ?? 0
+        let navigationLockedByProgress = navProgress >= 0.999
+        let isReadyToStart = isAcceptedScheduled && hasPreInspection
         let isAwaitingInspection = isAcceptedScheduled && !hasPreInspection
 
-        if needsPostTrip {
+        if isAwaitingInspection {
+            SlideToStartInspectionButton(
+                label: "Pre-Trip Inspection",
+                controlHeight: 44,
+                onComplete: { startInspection(for: trip) }
+            )
+        } else if needsPostTrip {
             SlideToStartInspectionButton(
                 label: "Post-Trip Inspection",
                 controlHeight: 44,
                 onComplete: { openPostTripInspection(for: trip) }
             )
         } else if postTripDone {
-            CompletedInspectionButton()
+            HStack(spacing: 12) {
+                NavigationLink(value: trip.id) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "doc.text.magnifyingglass")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("View Details")
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                    }
+                    .foregroundColor(Color.appOrange)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Capsule().fill(Color.appOrange.opacity(0.08)))
+                    .overlay(Capsule().stroke(Color.appOrange.opacity(0.25), lineWidth: 1.5))
+                }
+                .buttonStyle(.plain)
+
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("Completed")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                }
+                .foregroundColor(Color(red: 0.20, green: 0.65, blue: 0.32))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(Capsule().fill(Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.12)))
+                .overlay(Capsule().stroke(Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.3), lineWidth: 1.5))
+            }
         } else {
             HStack(spacing: 12) {
                 // Left: View Details
@@ -662,50 +709,37 @@ struct DriverHomeView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(isAccepting)
-                } else if isAwaitingInspection {
-                    Button { startInspection(for: trip) } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "clipboard.fill")
-                                .font(.system(size: 13, weight: .semibold))
-                            Text("Pre-Trip Inspection")
-                                .font(.system(size: 14, weight: .bold, design: .rounded))
-                        }
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(Capsule().fill(Color.appOrange))
-                    }
-                    .buttonStyle(.plain)
-                } else if isAwaitingWindow {
+                } else if isAcceptedScheduled && !hasPreInspection {
                     HStack(spacing: 6) {
-                        Image(systemName: "clock.fill")
+                        Image(systemName: "checkmark.seal.fill")
                             .font(.system(size: 13, weight: .semibold))
-                        Text("Starts \(trip.scheduledDate.formatted(.dateTime.hour().minute()))")
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                        Text("Accepted")
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
                     }
-                    .foregroundColor(.appTextSecondary)
+                    .foregroundColor(Color(red: 0.20, green: 0.65, blue: 0.32))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
-                    .background(Capsule().fill(Color(.tertiarySystemGroupedBackground)))
-                    .overlay(Capsule().stroke(Color.appDivider.opacity(0.6), lineWidth: 1))
+                    .background(Capsule().fill(Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.12)))
+                    .overlay(Capsule().stroke(Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.3), lineWidth: 1.5))
                 } else if isReadyToStart {
-                    NavigationLink(value: trip.id) {
+                    Button {
+                        navigationTrip = trip
+                    } label: {
                         HStack(spacing: 6) {
-                            Image(systemName: "play.circle.fill")
+                            Image(systemName: "location.fill")
                                 .font(.system(size: 13, weight: .semibold))
-                            Text("Start Trip")
+                            Text("Navigate")
                                 .font(.system(size: 14, weight: .bold, design: .rounded))
                         }
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
-                        .background(Capsule().fill(Color(red: 0.90, green: 0.22, blue: 0.18)))
+                        .background(Capsule().fill(Color(red: 0.20, green: 0.65, blue: 0.32)))
                     }
                     .buttonStyle(.plain)
-                } else if trip.status == .active {
+                } else if status == .active && !trip.hasEndedNavigationPhase && !navigationLockedByProgress {
                     Button {
                         navigationTrip = trip
-                        showNavigation = true
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "location.fill")
@@ -716,14 +750,14 @@ struct DriverHomeView: View {
                         .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
-                            .background(Capsule().fill(Color(red: 0.90, green: 0.22, blue: 0.18)))
+                            .background(Capsule().fill(Color(red: 0.20, green: 0.65, blue: 0.32)))
                     }
                     .buttonStyle(.plain)
                 } else {
                     HStack(spacing: 6) {
                         Image(systemName: "clock.fill")
                             .font(.system(size: 13, weight: .semibold))
-                        Text(trip.status.rawValue)
+                        Text(status.rawValue)
                             .font(.system(size: 14, weight: .bold, design: .rounded))
                     }
                     .foregroundColor(.appTextSecondary)
@@ -783,9 +817,10 @@ struct DriverHomeView: View {
     }
 
     private func openPostTripInspection(for trip: Trip) {
-        guard trip.status == .completed else { return }
+        guard trip.requiresPostTripInspection else { return }
         inspectionMode = .post
         inspectionTrip = trip
+        dismissDetail()
         showInspection = true
     }
 
@@ -795,7 +830,7 @@ struct DriverHomeView: View {
             inspectionTrip = trip
             dismissDetail()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { showInspection = true }
-        } else if trip.status == .completed && trip.postInspectionId == nil {
+        } else if trip.requiresPostTripInspection {
             inspectionMode = .post
             inspectionTrip = trip
             dismissDetail()

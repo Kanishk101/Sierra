@@ -3,36 +3,42 @@ import SwiftUI
 struct MaintenanceTabView: View {
 
     @Environment(AppDataStore.self) private var store
-    @State private var showNotifications = false
     @State private var bannerCoordinator = BannerCoordinator()
+    @State private var showProfile = false
 
     var body: some View {
-        TabView {
-            Tab("Tasks", systemImage: "wrench.and.screwdriver.fill") {
-                NavigationStack {
-                    MaintenanceDashboardView()
-                        .toolbar {
-                            ToolbarItem(placement: .topBarTrailing) {
-                                notificationBell
+        ZStack(alignment: .top) {
+            TabView {
+                // MARK: - Repair Tab
+                Tab("Repair", systemImage: "wrench.and.screwdriver.fill") {
+                    NavigationStack {
+                        RepairTaskListView()
+                            .navigationTitle("Repair")
+                            .navigationBarTitleDisplayMode(.large)
+                            .toolbar {
+                                ToolbarItem(placement: .topBarLeading) {
+                                    profileAvatarButton
+                                }
+                                ToolbarItem(placement: .topBarTrailing) {
+                                    notificationBell
+                                }
                             }
-                        }
+                    }
                 }
+
+                // MARK: - Alerts Tab
+                Tab("Alerts", systemImage: "bell.fill") {
+                    NavigationStack {
+                        NotificationCentreView()
+                            .navigationTitle("Alerts")
+                            .navigationBarTitleDisplayMode(.large)
+                    }
+                }
+                .badge(store.unreadNotificationCount > 0 ? store.unreadNotificationCount : 0)
             }
-            Tab("Schedule", systemImage: "calendar") {
-                placeholderTab(title: "Schedule", icon: "calendar.badge.clock", color: .mint)
-            }
-            Tab("Inventory", systemImage: "shippingbox.fill") {
-                placeholderTab(title: "Parts Inventory", icon: "shippingbox.fill", color: .orange)
-            }
-            Tab("Profile", systemImage: "person.fill") {
-                settingsTab()
-            }
-        }
-        .tint(.white)
-        .sheet(isPresented: $showNotifications) {
-            NotificationCentreView()
-        }
-        .overlay(alignment: .top) {
+            .tint(Color.appOrange)
+
+            // MARK: - Banner Overlay
             if let banner = bannerCoordinator.current {
                 NotificationBannerView(
                     title: banner.title,
@@ -41,9 +47,7 @@ struct MaintenanceTabView: View {
                         bannerCoordinator.dismiss()
                         banner.onTap()
                     },
-                    onDismiss: {
-                        bannerCoordinator.dismiss()
-                    }
+                    onDismiss: { bannerCoordinator.dismiss() }
                 )
             }
         }
@@ -52,83 +56,80 @@ struct MaintenanceTabView: View {
                 bannerCoordinator.show(.init(title: latest.title, body: latest.body))
             }
         }
+        .sheet(isPresented: $showProfile) {
+            MaintenanceProfileView()
+                .environment(store)
+        }
     }
+
+    // MARK: - Profile Avatar Button
+
+    private var profileAvatarButton: some View {
+        Button { showProfile = true } label: {
+            Group {
+                if let staffer = store.staff.first(where: {
+                    $0.id == AuthManager.shared.currentUser?.id
+                }) {
+                    let initials = initials(for: staffer.name ?? "MP")
+                    ZStack {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color.appOrange, Color.appDeepOrange],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 32, height: 32)
+                        Text(initials)
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                    }
+                } else {
+                    Circle()
+                        .fill(Color.appOrange.opacity(0.2))
+                        .frame(width: 32, height: 32)
+                        .overlay {
+                            Image(systemName: "person.fill")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.appOrange)
+                        }
+                }
+            }
+        }
+    }
+
+    // MARK: - Notification Bell
 
     private var notificationBell: some View {
-        Button { showNotifications = true } label: {
+        Button { } label: {
             ZStack(alignment: .topTrailing) {
                 Image(systemName: "bell.fill")
-                    .font(.body)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundColor(Color.appOrange)
                 if store.unreadNotificationCount > 0 {
-                    Text("\(store.unreadNotificationCount)")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(.white)
-                        .padding(3)
-                        .background(.red, in: Circle())
-                        .offset(x: 6, y: -6)
+                    Circle()
+                        .fill(.red)
+                        .frame(width: 8, height: 8)
+                        .offset(x: 4, y: -2)
                 }
             }
         }
     }
 
-    private func placeholderTab(title: String, icon: String, color: Color) -> some View {
-        ZStack {
-            Color(.secondarySystemGroupedBackground)
-                .ignoresSafeArea()
+    // MARK: - Helpers
 
-            VStack(spacing: 16) {
-                Image(systemName: icon)
-                    .font(.system(size: 48, weight: .light))
-                    .foregroundStyle(color)
-
-                Text(title)
-                    .font(.title2)
-                    .foregroundStyle(.orange)
-
-                Text("Coming soon")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private func settingsTab() -> some View {
-        ZStack {
-            LinearGradient(
-                colors: [SierraTheme.Colors.summitNavy, SierraTheme.Colors.sierraBlue],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
-
-            VStack(spacing: 24) {
-                Spacer()
-                Image(systemName: "person.fill")
-                    .font(.system(size: 48, weight: .light))
-                    .foregroundStyle(.white.opacity(0.6))
-
-                Text("Profile")
-                    .font(.title2)
-                    .foregroundStyle(.white)
-
-                Button {
-                    AuthManager.shared.signOut()
-                } label: {
-                    Text("Sign Out")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(.red)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 50)
-                        .background(.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                }
-                .padding(.horizontal, 40)
-
-                Spacer()
-            }
+    private func initials(for name: String) -> String {
+        let parts = name.split(separator: " ")
+        switch parts.count {
+        case 0:       return "?"
+        case 1:       return String(parts[0].prefix(2)).uppercased()
+        default:      return "\(parts[0].prefix(1))\(parts[1].prefix(1))".uppercased()
         }
     }
 }
 
 #Preview {
     MaintenanceTabView()
+        .environment(AppDataStore.shared)
 }

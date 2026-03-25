@@ -11,11 +11,12 @@ struct TripsListView: View {
         Binding(get: { selectedStatus?.rawValue }, set: { newVal in selectedStatus = newVal.flatMap { TripStatus(rawValue: $0) } })
     }
     private var tripFilterOptions: [FilterOption] {
-        TripStatus.allCases.map { FilterOption(id: $0.rawValue, label: $0.rawValue, icon: tripStatusIcon($0), color: statusColor($0)) }
+        let statuses: [TripStatus] = [.pendingAcceptance, .scheduled, .active, .completed, .cancelled]
+        return statuses.map { FilterOption(id: $0.rawValue, label: $0.rawValue, icon: tripStatusIcon($0), color: statusColor($0)) }
     }
     private var filtered: [Trip] {
         store.trips
-            .filter { selectedStatus == nil || $0.status == selectedStatus }
+            .filter { selectedStatus == nil || $0.status.normalized == selectedStatus }
             .sorted { $0.scheduledDate > $1.scheduledDate }
     }
 
@@ -86,11 +87,12 @@ struct TripsListView: View {
     }
 
     private func tripCard(_ trip: Trip) -> some View {
-        HStack(spacing: 14) {
+        let status = trip.status.normalized
+        return HStack(spacing: 14) {
             Circle()
-                .fill(statusColor(trip.status)).frame(width: 10, height: 10)
+                .fill(statusColor(status)).frame(width: 10, height: 10)
                 .padding(13)
-                .background(statusColor(trip.status).opacity(0.1), in: Circle())
+                .background(statusColor(status).opacity(0.1), in: Circle())
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(trip.origin) \u{2192} \(trip.destination)")
                     .font(.system(size: 15, weight: .semibold)).foregroundStyle(.primary).lineLimit(1)
@@ -103,16 +105,16 @@ struct TripsListView: View {
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 4) {
-                Text(trip.status.rawValue)
-                    .font(.system(size: 11, weight: .bold)).foregroundStyle(statusColor(trip.status))
+                Text(status.rawValue)
+                    .font(.system(size: 11, weight: .bold)).foregroundStyle(statusColor(status))
                     .padding(.horizontal, 8).padding(.vertical, 3)
-                    .background(statusColor(trip.status).opacity(0.1), in: Capsule())
+                    .background(statusColor(status).opacity(0.1), in: Capsule())
                 Text(trip.priority.rawValue).font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
             }
         }
         .padding(16)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
+        .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 4)
     }
 
     @ViewBuilder

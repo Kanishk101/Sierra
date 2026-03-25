@@ -164,42 +164,13 @@ struct VehicleService {
     // MARK: Insert
 
     static func addVehicle(_ vehicle: Vehicle) async throws {
-        #if DEBUG
-        SierraDebugLogger.banner("VehicleService.addVehicle")
-        print("🚗 [VehicleService.addVehicle] Starting INSERT for vehicle:")
-        print("🚗   ID          : \(vehicle.id.uuidString)")
-        print("🚗   Name        : \(vehicle.name)")
-        print("🚗   VIN         : \(vehicle.vin)")
-        print("🚗   LicensePlate: \(vehicle.licensePlate)")
-        print("🚗   Status      : \(vehicle.status.rawValue)")
-        print("🚗   FuelType    : \(vehicle.fuelType.rawValue)")
-        await SierraDebugLogger.logSessionState(context: "VehicleService.addVehicle")
-        await SierraDebugLogger.logRLSRole(context: "VehicleService.addVehicle")
-        let payload = VehicleInsertPayload(from: vehicle)
-        SierraDebugLogger.logPayload(label: "VehicleInsertPayload", payload: payload)
-        let t = Date()
-        #endif
-
         do {
             try await supabase
                 .from("vehicles")
                 .insert(VehicleInsertPayload(from: vehicle))
                 .execute()
-            #if DEBUG
-            let ms = Int(Date().timeIntervalSince(t) * 1000)
-            print("🚗 [VehicleService.addVehicle] ✅ INSERT succeeded in \(ms)ms")
-            #endif
         } catch {
-            #if DEBUG
-            let ms = Int(Date().timeIntervalSince(t) * 1000)
-            print("🚗 [VehicleService.addVehicle] ❌ INSERT FAILED in \(ms)ms")
-            SierraDebugLogger.logPostgRESTError(
-                context: "VehicleService.addVehicle",
-                error: error,
-                table: "vehicles",
-                operation: "INSERT"
-            )
-            #endif
+            print("[VehicleService] addVehicle failed: \(error)")
             throw error
         }
     }
@@ -207,37 +178,14 @@ struct VehicleService {
     // MARK: Update
 
     static func updateVehicle(_ vehicle: Vehicle) async throws {
-        #if DEBUG
-        SierraDebugLogger.banner("VehicleService.updateVehicle")
-        print("🚗 [VehicleService.updateVehicle] Updating vehicle ID=\(vehicle.id.uuidString)")
-        print("🚗   Status: \(vehicle.status.rawValue) | AssignedDriver: \(vehicle.assignedDriverId ?? "nil")")
-        await SierraDebugLogger.logSessionState(context: "VehicleService.updateVehicle")
-        let payload = VehicleUpdatePayload(from: vehicle)
-        SierraDebugLogger.logPayload(label: "VehicleUpdatePayload", payload: payload)
-        let t = Date()
-        #endif
-
         do {
             try await supabase
                 .from("vehicles")
                 .update(VehicleUpdatePayload(from: vehicle))
                 .eq("id", value: vehicle.id.uuidString)
                 .execute()
-            #if DEBUG
-            let ms = Int(Date().timeIntervalSince(t) * 1000)
-            print("🚗 [VehicleService.updateVehicle] ✅ UPDATE succeeded in \(ms)ms")
-            #endif
         } catch {
-            #if DEBUG
-            let ms = Int(Date().timeIntervalSince(t) * 1000)
-            print("🚗 [VehicleService.updateVehicle] ❌ UPDATE FAILED in \(ms)ms")
-            SierraDebugLogger.logPostgRESTError(
-                context: "VehicleService.updateVehicle",
-                error: error,
-                table: "vehicles",
-                operation: "UPDATE"
-            )
-            #endif
+            print("[VehicleService] updateVehicle failed: \(error)")
             throw error
         }
     }
@@ -245,34 +193,14 @@ struct VehicleService {
     // MARK: Delete
 
     static func deleteVehicle(id: UUID) async throws {
-        #if DEBUG
-        SierraDebugLogger.banner("VehicleService.deleteVehicle")
-        print("🚗 [VehicleService.deleteVehicle] Deleting vehicle ID=\(id.uuidString)")
-        await SierraDebugLogger.logSessionState(context: "VehicleService.deleteVehicle")
-        let t = Date()
-        #endif
-
         do {
             try await supabase
                 .from("vehicles")
                 .delete()
                 .eq("id", value: id.uuidString)
                 .execute()
-            #if DEBUG
-            let ms = Int(Date().timeIntervalSince(t) * 1000)
-            print("🚗 [VehicleService.deleteVehicle] ✅ DELETE succeeded in \(ms)ms")
-            #endif
         } catch {
-            #if DEBUG
-            let ms = Int(Date().timeIntervalSince(t) * 1000)
-            print("🚗 [VehicleService.deleteVehicle] ❌ DELETE FAILED in \(ms)ms")
-            SierraDebugLogger.logPostgRESTError(
-                context: "VehicleService.deleteVehicle",
-                error: error,
-                table: "vehicles",
-                operation: "DELETE"
-            )
-            #endif
+            print("[VehicleService] deleteVehicle failed: \(error)")
             throw error
         }
     }
@@ -283,27 +211,25 @@ struct VehicleService {
         struct Payload: Encodable {
             let assigned_driver_id: String?
         }
-        #if DEBUG
-        print("🚗 [VehicleService.assignDriver] vehicleId=\(vehicleId) driverId=\(driverId?.uuidString ?? "nil")")
-        await SierraDebugLogger.logSessionState(context: "VehicleService.assignDriver")
-        let t = Date()
-        #endif
-
         do {
             try await supabase
                 .from("vehicles")
                 .update(Payload(assigned_driver_id: driverId?.uuidString))
                 .eq("id", value: vehicleId.uuidString)
                 .execute()
-            #if DEBUG
-            print("🚗 [VehicleService.assignDriver] ✅ succeeded in \(Int(Date().timeIntervalSince(t) * 1000))ms")
-            #endif
         } catch {
-            #if DEBUG
-            SierraDebugLogger.logPostgRESTError(context: "VehicleService.assignDriver", error: error, table: "vehicles", operation: "UPDATE")
-            #endif
+            print("[VehicleService] assignDriver failed: \(error)")
             throw error
         }
+    }
+
+    static func setStatus(vehicleId: UUID, status: VehicleStatus) async throws {
+        struct Payload: Encodable { let status: String }
+        try await supabase
+            .from("vehicles")
+            .update(Payload(status: status.rawValue))
+            .eq("id", value: vehicleId.uuidString)
+            .execute()
     }
 
     // MARK: Update Location

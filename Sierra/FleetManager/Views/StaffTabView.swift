@@ -213,6 +213,12 @@ private struct ApplicationsListView: View {
                 }
             }
         }
+        .task {
+            if store.staff.isEmpty || store.staffApplications.isEmpty {
+                await store.loadAll()
+            }
+        }
+        .refreshable { await store.loadAll() }
         .animation(.easeInOut(duration: 0.2), value: viewModel.selectedFilter)
         .sheet(item: $selectedApplication) { StaffReviewSheet(application: $0, viewModel: viewModel).presentationDetents([.large]) }
     }

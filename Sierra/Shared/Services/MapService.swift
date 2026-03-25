@@ -2,7 +2,7 @@ import Foundation
 import MapKit
 import MapboxDirections
 
-let mapboxTokenSetupMessage = "Mapbox access token is missing. Add a valid MBXAccessToken to Sierra/Info.plist or MAPBOX_TOKEN to the run scheme environment."
+let mapboxTokenSetupMessage = "Mapbox access token is missing. Add a valid MBXAccessToken to Configs/Info.plist or MAPBOX_TOKEN to the run scheme environment."
 
 // MARK: - MapServiceError
 
@@ -74,6 +74,7 @@ struct MapService {
     static func fetchRoutes(
         originLat: Double, originLng: Double,
         destLat: Double, destLng: Double,
+        waypoints: [CLLocationCoordinate2D] = [],
         avoidTolls: Bool = false,
         avoidHighways: Bool = false
     ) async throws -> [MapRoute] {
@@ -86,7 +87,14 @@ struct MapService {
             )
         }
 
-        var components = URLComponents(string: "https://api.mapbox.com/directions/v5/mapbox/driving/\(originLng),\(originLat);\(destLng),\(destLat)")!
+        let waypointPath = waypoints
+            .map { "\($0.longitude),\($0.latitude)" }
+            .joined(separator: ";")
+        let routePath = waypointPath.isEmpty
+            ? "\(originLng),\(originLat);\(destLng),\(destLat)"
+            : "\(originLng),\(originLat);\(waypointPath);\(destLng),\(destLat)"
+
+        var components = URLComponents(string: "https://api.mapbox.com/directions/v5/mapbox/driving/\(routePath)")!
         components.queryItems = [
             URLQueryItem(name: "alternatives", value: "true"),
             URLQueryItem(name: "geometries",   value: "polyline6"),

@@ -309,12 +309,6 @@ struct StaffMemberService {
     static func deleteStaffMember(id: UUID) async throws {
         struct Payload: Encodable { let staffMemberId: String }
 
-        #if DEBUG
-        print("\u{1F5D1}\u{FE0F}  [StaffMemberService.deleteStaffMember] Deleting staff id=\(id.uuidString)")
-        await SierraDebugLogger.logSessionState(context: "StaffMemberService.deleteStaffMember")
-        let t = Date()
-        #endif
-
         let options = try await SupabaseManager.functionOptions(
             body: Payload(staffMemberId: id.uuidString)
         )
@@ -322,11 +316,6 @@ struct StaffMemberService {
             "delete-staff-member",
             options: options
         )
-
-        #if DEBUG
-        let ms = Int(Date().timeIntervalSince(t) * 1000)
-        print("\u{1F5D1}\u{FE0F}  [StaffMemberService.deleteStaffMember] invoke returned in \(ms)ms success=\(response.success ?? false)")
-        #endif
 
         if let errorMsg = response.error {
             throw StaffMemberServiceError.deleteFailed(errorMsg)

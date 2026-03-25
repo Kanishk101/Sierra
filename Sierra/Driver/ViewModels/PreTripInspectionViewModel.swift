@@ -42,10 +42,20 @@ final class PreTripInspectionViewModel {
         case failed         // OCR ran but found no digits
     }
 
+    enum FuelGaugeOCRState {
+        case idle
+        case scanning
+        case result(String)
+        case confirmed
+        case failed
+    }
+
     var odometerText: String = ""             // current text field value
     var odometerOCRState: OdometerOCRState = .idle
     var odometerCameraImage: UIImage?          // image captured for OCR
     var showOdometerCamera = false
+    var fuelLevelText: String = ""
+    var fuelGaugeOCRState: FuelGaugeOCRState = .idle
 
     /// Final confirmed odometer reading (nil until confirmed).
     var odometerReading: Double? {
@@ -55,6 +65,14 @@ final class PreTripInspectionViewModel {
     /// True when odometer required but not yet filled in (pre-trip only).
     var odometerRequired: Bool { false }  // Bug 6: odometer moved to page 2 as a photo, not required for advance
     var odometerValid: Bool { true }
+
+    var fuelLevelPct: Int? {
+        let cleaned = fuelLevelText
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "%", with: "")
+        guard let value = Int(cleaned) else { return nil }
+        return min(100, max(0, value))
+    }
 
     // MARK: - Fuel receipt (Post-trip)
     var fuelReceiptUrl: String?
@@ -131,7 +149,9 @@ final class PreTripInspectionViewModel {
 
     /// Final submit gate: no failed item missing a photo + signature present.
     var canSubmit: Bool {
-        failedItemsMissingPhoto.isEmpty && signatureImage != nil
+        failedItemsMissingPhoto.isEmpty
+            && signatureImage != nil
+            && (inspectionType != .preTripInspection || odometerReading != nil)
     }
 
     // MARK: - Step 3: Computed results
@@ -178,40 +198,96 @@ final class PreTripInspectionViewModel {
 
     // MARK: - OCR Odometer Parsing
 
-    /// Runs Vision text recognition on `image` and extracts the first
-    /// plausible odometer reading (4–9 consecutive digits, optional comma/period).
-    /// Calls completion on the main actor with the parsed string or nil on failure.
-    nonisolated func extractOdometerReading(from image: UIImage) async -> String? {
-        guard let cgImage = image.cgImage else { return nil }
+    private nonisolated func imageVariants(for image: UIImage) -> [CGImage] {
+        guard let base = image.cgImage else { return [] }
+        var variants: [CGImage] = [base]
 
-        return await withCheckedContinuation { continuation in
-            let request = VNRecognizeTextRequest { request, _ in
-                let candidates = (request.results as? [VNRecognizedTextObservation] ?? [])
-                    .compactMap { $0.topCandidates(1).first?.string }
-
-                // Find first string that looks like an odometer: 4-9 digit number,
-                // possibly with commas (100,000) or periods (123.4).
-                let pattern = #"\b\d[\d,\.]{2,8}\d\b"#
-                let regex = try? NSRegularExpression(pattern: pattern)
-
-                for candidate in candidates {
-                    let range = NSRange(candidate.startIndex..., in: candidate)
-                    if let match = regex?.firstMatch(in: candidate, range: range),
-                       let swiftRange = Range(match.range, in: candidate) {
-                        let raw = String(candidate[swiftRange])
-                            .replacingOccurrences(of: ",", with: "")
-                        continuation.resume(returning: raw)
-                        return
-                    }
-                }
-                continuation.resume(returning: nil)
+        let width = CGFloat(base.width)
+        let height = CGFloat(base.height)
+        let cropRects: [CGRect] = [
+            CGRect(x: 0, y: height * 0.45, width: width, height: height * 0.55),   // lower half
+            CGRect(x: width * 0.15, y: height * 0.35, width: width * 0.7, height: height * 0.5), // centered zoom
+        ]
+        for rect in cropRects {
+            if let cropped = base.cropping(to: rect.integral) {
+                variants.append(cropped)
             }
-            request.recognitionLevel = .accurate
+        }
+        return variants
+    }
+
+    private nonisolated func recognizeTextLines(from cgImage: CGImage, fastMode: Bool) async -> [String] {
+        await withCheckedContinuation { continuation in
+            let request = VNRecognizeTextRequest { request, _ in
+                let lines = (request.results as? [VNRecognizedTextObservation] ?? [])
+                    .compactMap { $0.topCandidates(1).first?.string }
+                continuation.resume(returning: lines)
+            }
+            request.recognitionLevel = fastMode ? .fast : .accurate
             request.usesLanguageCorrection = false
+            request.minimumTextHeight = fastMode ? 0.012 : 0.008
 
             let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
             try? handler.perform([request])
         }
+    }
+
+    /// Runs Vision OCR on multiple crops to reduce the need for tight manual zoom.
+    nonisolated func extractOdometerReading(from image: UIImage) async -> String? {
+        let variants = imageVariants(for: image)
+        guard !variants.isEmpty else { return nil }
+
+        let pattern = #"\b\d[\d,\.]{2,9}\d\b"#
+        let regex = try? NSRegularExpression(pattern: pattern)
+        var best: String?
+        var bestScore = 0
+
+        for cg in variants {
+            for fast in [true, false] {
+                let lines = await recognizeTextLines(from: cg, fastMode: fast)
+                for line in lines {
+                    let range = NSRange(line.startIndex..., in: line)
+                    guard let match = regex?.firstMatch(in: line, range: range),
+                          let swiftRange = Range(match.range, in: line) else { continue }
+                    let raw = String(line[swiftRange])
+                        .replacingOccurrences(of: ",", with: "")
+                        .replacingOccurrences(of: ".", with: "")
+                    let score = raw.count
+                    if score > bestScore {
+                        bestScore = score
+                        best = raw
+                    }
+                }
+            }
+        }
+
+        return best
+    }
+
+    nonisolated func extractFuelGaugeReading(from image: UIImage) async -> String? {
+        let variants = imageVariants(for: image)
+        guard !variants.isEmpty else { return nil }
+
+        let pctRegex = try? NSRegularExpression(pattern: #"\b(100|[1-9]?\d)\s*%?\b"#)
+        var candidates: [Int] = []
+
+        for cg in variants {
+            for fast in [true, false] {
+                let lines = await recognizeTextLines(from: cg, fastMode: fast)
+                for line in lines {
+                    let range = NSRange(line.startIndex..., in: line)
+                    let matches = pctRegex?.matches(in: line, range: range) ?? []
+                    for match in matches {
+                        guard let r = Range(match.range(at: 1), in: line),
+                              let value = Int(line[r]) else { continue }
+                        candidates.append(value)
+                    }
+                }
+            }
+        }
+
+        guard let best = candidates.sorted(by: { abs($0 - 50) < abs($1 - 50) }).first else { return nil }
+        return String(best)
     }
 
     /// Called when camera dismisses with a captured image.
@@ -223,6 +299,29 @@ final class PreTripInspectionViewModel {
             odometerOCRState = .result(reading)
         } else {
             odometerOCRState = .failed
+        }
+    }
+
+    func handleFuelGaugeImage(_ image: UIImage) async {
+        fuelGaugeOCRState = .scanning
+        if let reading = await extractFuelGaugeReading(from: image) {
+            fuelLevelText = reading
+            fuelGaugeOCRState = .result(reading)
+        } else {
+            fuelGaugeOCRState = .failed
+        }
+    }
+
+    func handleOdometerCaptureCancelled() {
+        showOdometerCamera = false
+        if case .scanning = odometerOCRState {
+            odometerOCRState = odometerText.isEmpty ? .idle : .confirmed
+        }
+    }
+
+    func handleFuelCaptureCancelled() {
+        if case .scanning = fuelGaugeOCRState {
+            fuelGaugeOCRState = fuelLevelText.isEmpty ? .idle : .confirmed
         }
     }
 
@@ -372,6 +471,8 @@ final class PreTripInspectionViewModel {
         guard canSubmit else {
             if !allItemsChecked {
                 submitError = "All \(uncheckedCount) item(s) must be checked before submitting."
+            } else if inspectionType == .preTripInspection && odometerReading == nil {
+                submitError = "Please scan or enter odometer reading before completing pre-trip inspection."
             } else {
                 let names = failedItemsMissingPhoto.map(\.name).joined(separator: ", ")
                 submitError = "Please add at least one photo for failed items: \(names)"
@@ -423,6 +524,7 @@ final class PreTripInspectionViewModel {
                 driverSignatureUrl: nil,
                 photoUrls: allPhotoUrls,
                 odometerReading: confirmedOdometer,
+                fuelLevelPct: fuelLevelPct,
                 fuelReceiptUrl: fuelReceiptUrl,
                 isDefectRaised: isDefectRaised,
                 raisedTaskId: nil
@@ -446,6 +548,7 @@ final class PreTripInspectionViewModel {
                 )
                 // Only now commit to local store
                 store.trips[idx] = updatedTrip
+
             }
 
             // 5. Auto-create maintenance task for defects

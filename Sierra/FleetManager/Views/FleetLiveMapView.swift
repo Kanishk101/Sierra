@@ -8,24 +8,46 @@ struct FleetLiveMapView: View {
     @Bindable var viewModel: FleetLiveMapViewModel
 
     @State private var cameraPosition: MapCameraPosition = .automatic
+    @State private var visibleRegion: MKCoordinateRegion?
     @State private var hasSetInitialRegion = false
+    @State private var breadcrumbPollTask: Task<Void, Never>?
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
             mapContent
 
-            // Floating controls — filter + fit (search is driven from tab-bar search mode)
-            VStack(spacing: 12) {
-                floatingButton(icon: "line.3.horizontal.decrease.circle.fill") { viewModel.showFilterPicker = true }
-                floatingButton(icon: "arrow.up.left.and.arrow.down.right.circle.fill") { fitAllVehicles() }
+            VStack(spacing: 10) {
+                mapToolButton(icon: "plus") { zoom(by: 0.6) }
+                mapToolButton(icon: "minus") { zoom(by: 1.7) }
+                Capsule()
+                    .fill(Color.white.opacity(0.22))
+                    .frame(width: 30, height: 1)
+                mapToolButton(icon: "arrow.up.left.and.arrow.down.right") { fitAllVehicles() }
+                mapToolButton(icon: "line.3.horizontal.decrease") { viewModel.showFilterPicker = true }
             }
-            .padding(.top, 60).padding(.trailing, 16)
+            .frame(width: 60)
+            .padding(.vertical, 10)
+            .padding(.horizontal, 8)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.2), radius: 8, y: 2)
+            .padding(.top, 60)
+            .padding(.trailing, 16)
         }
         .onAppear {
             if !hasSetInitialRegion {
                 hasSetInitialRegion = true
                 fitAllVehicles()
             }
+            Task { await viewModel.refreshFallbackCoordinates(for: store.vehicles) }
+            startBreadcrumbPollingIfNeeded()
+        }
+        .onDisappear {
+            breadcrumbPollTask?.cancel()
+            breadcrumbPollTask = nil
         }
         .sheet(isPresented: $viewModel.showVehicleDetail) {
             if let vehicleId = viewModel.selectedVehicleId,
@@ -48,16 +70,18 @@ struct FleetLiveMapView: View {
                 // No GPS — show vehicle detail sheet even without map movement
                 viewModel.showVehicleDetail = true
             }
+            startBreadcrumbPollingIfNeeded()
+        }
+        .onChange(of: store.vehicles.count) { _, _ in
+            Task { await viewModel.refreshFallbackCoordinates(for: store.vehicles) }
+            startBreadcrumbPollingIfNeeded()
         }
     }
 
     // MARK: - Fit All Vehicles
 
     private func fitAllVehicles() {
-        let active = store.vehicles.compactMap { v -> CLLocationCoordinate2D? in
-            guard let lat = v.currentLatitude, let lng = v.currentLongitude else { return nil }
-            return CLLocationCoordinate2D(latitude: lat, longitude: lng)
-        }
+        let active = store.vehicles.compactMap { viewModel.coordinate(for: $0) }
         if active.isEmpty {
             // Default to India centre if no live vehicles
             cameraPosition = .region(MKCoordinateRegion(
@@ -85,8 +109,8 @@ struct FleetLiveMapView: View {
 
         Map(position: $cameraPosition) {
             ForEach(displayedVehicles) { vehicle in
-                if let lat = vehicle.currentLatitude, let lng = vehicle.currentLongitude {
-                    Annotation(vehicle.licensePlate, coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lng)) {
+                if let coordinate = viewModel.coordinate(for: vehicle) {
+                    Annotation(vehicle.licensePlate, coordinate: coordinate) {
                         vehicleAnnotationView(vehicle)
                             .onTapGesture {
                                 viewModel.selectedVehicleId = vehicle.id
@@ -105,13 +129,17 @@ struct FleetLiveMapView: View {
                 .stroke(geofenceColor(geofence.geofenceType).opacity(0.8), lineWidth: 1.5)
             }
 
-            if viewModel.breadcrumbCoordinates.count >= 2 {
-                MapPolyline(coordinates: viewModel.breadcrumbCoordinates)
+            let breadcrumb = viewModel.sanitizedBreadcrumbCoordinates()
+            if breadcrumb.count >= 2 {
+                MapPolyline(coordinates: breadcrumb)
                     .stroke(.orange, lineWidth: 3)
             }
         }
+        .onMapCameraChange(frequency: .continuous) { context in
+            visibleRegion = context.region
+        }
         .mapStyle(.standard)
-        .mapControls { MapCompass(); MapScaleView() }
+        .mapControls { MapCompass() }
     }
 
     // MARK: - Vehicle Annotation
@@ -155,12 +183,28 @@ struct FleetLiveMapView: View {
 
     // MARK: - Floating Button
 
-    private func floatingButton(icon: String, action: @escaping () -> Void) -> some View {
+    private func mapToolButton(icon: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: icon).font(.title2).foregroundStyle(.white)
+            Image(systemName: icon)
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(.white)
                 .frame(width: 44, height: 44)
-                .background(.regularMaterial, in: Circle())
-                .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
+                .background(Color.black.opacity(0.22), in: Circle())
+                .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 1))
+        }
+    }
+
+    private func zoom(by factor: Double) {
+        guard var region = visibleRegion else {
+            fitAllVehicles()
+            return
+        }
+        let minDelta = 0.002
+        let maxDelta = 90.0
+        region.span.latitudeDelta = min(max(region.span.latitudeDelta * factor, minDelta), maxDelta)
+        region.span.longitudeDelta = min(max(region.span.longitudeDelta * factor, minDelta), maxDelta)
+        withAnimation(.easeInOut(duration: 0.25)) {
+            cameraPosition = .region(region)
         }
     }
 
@@ -187,5 +231,48 @@ struct FleetLiveMapView: View {
             .navigationTitle("Filter Vehicles").navigationBarTitleDisplayMode(.inline)
         }
         .presentationDetents([.medium])
+    }
+
+    private func startBreadcrumbPollingIfNeeded() {
+        breadcrumbPollTask?.cancel()
+        breadcrumbPollTask = nil
+
+        if viewModel.selectedVehicleId == nil {
+            if let firstLiveVehicle = viewModel
+                .filteredVehicles(from: store.vehicles)
+                .first(where: { viewModel.coordinate(for: $0) != nil }) {
+                viewModel.selectedVehicleId = firstLiveVehicle.id
+            }
+        }
+
+        guard viewModel.selectedVehicleId != nil else {
+            viewModel.clearBreadcrumb()
+            return
+        }
+
+        breadcrumbPollTask = Task {
+            while !Task.isCancelled {
+                await refreshSelectedVehicleBreadcrumb()
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+            }
+        }
+    }
+
+    private func refreshSelectedVehicleBreadcrumb() async {
+        guard let selectedVehicleId = viewModel.selectedVehicleId else { return }
+        let selectedVehicleIdText = selectedVehicleId.uuidString.lowercased()
+        let activeTrip = store.trips
+            .filter {
+                $0.vehicleId?.lowercased() == selectedVehicleIdText &&
+                $0.status.normalized == .active
+            }
+            .sorted { ($0.actualStartDate ?? $0.scheduledDate) > ($1.actualStartDate ?? $1.scheduledDate) }
+            .first
+
+        guard let trip = activeTrip else {
+            await viewModel.fetchRecentBreadcrumb(vehicleId: selectedVehicleId)
+            return
+        }
+        await viewModel.fetchBreadcrumb(vehicleId: selectedVehicleId, tripId: trip.id)
     }
 }

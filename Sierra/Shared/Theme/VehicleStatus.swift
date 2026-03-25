@@ -57,4 +57,39 @@ enum VehicleStatus: String, SierraStatus, CaseIterable, Codable {
 
     /// Convenience: border accent color (used on VehicleCard left border).
     var accentBorderColor: Color { dotColor }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let raw = try container.decode(String.self)
+        if let parsed = Self.parse(raw) {
+            self = parsed
+        } else {
+            self = .idle
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+
+    private static func parse(_ raw: String) -> VehicleStatus? {
+        if let exact = VehicleStatus(rawValue: raw) { return exact }
+
+        let normalized = raw
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+
+        switch normalized {
+        case "active": return .active
+        case "idle": return .idle
+        case "busy": return .busy
+        case "in maintenance", "inmaintenance": return .inMaintenance
+        case "out of service", "outofservice": return .outOfService
+        case "decommissioned": return .decommissioned
+        default: return nil
+        }
+    }
 }

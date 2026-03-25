@@ -87,6 +87,7 @@ struct DashboardHomeView: View {
                     Spacer(minLength: 40)
                 }
             }
+            .refreshable { await store.loadAll() }
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
             .toolbarBackground(.hidden, for: .navigationBar)
             .sheet(isPresented: $showProfile) {

@@ -42,6 +42,7 @@ final class AppDataStore {
     var currentTripDeviations: [RouteDeviationEvent] = []
     var activeTripExpenses: [TripExpense] = []
     var sparePartsRequests: [SparePartsRequest] = []
+    var workOrderPhases: [WorkOrderPhase] = []
     var vehicleLocations: [String: VehicleLocationHistory] = [:]
     var routeDeviationEvents: [RouteDeviationEvent] = []
     var isLoading: Bool = false
@@ -681,8 +682,32 @@ final class AppDataStore {
     func application(for staffMemberId: UUID) -> StaffApplication? {
         staffApplications.filter { $0.staffMemberId == staffMemberId }.sorted { $0.createdAt > $1.createdAt }.first
     }
-    func availableDrivers() -> [StaffMember] { staff.filter { $0.role == .driver && $0.status == .active && $0.availability == .available } }
-    func availableVehicles() -> [Vehicle] { vehicles.filter { $0.status == .idle && $0.assignedDriverId == nil } }
+    func availableDrivers() -> [StaffMember] {
+        let activeDriverIds = Set(
+            trips
+                .filter { $0.status.normalized == .active }
+                .compactMap(\.driverUUID)
+        )
+        return staff.filter {
+            $0.role == .driver
+            && $0.status == .active
+            && $0.availability == .available
+            && !activeDriverIds.contains($0.id)
+        }
+    }
+
+    func availableVehicles() -> [Vehicle] {
+        let activeVehicleIds = Set(
+            trips
+                .filter { $0.status.normalized == .active }
+                .compactMap(\.vehicleUUID)
+        )
+        return vehicles.filter {
+            $0.status == .idle
+            && $0.assignedDriverId == nil
+            && !activeVehicleIds.contains($0.id)
+        }
+    }
     func activeTrip(forDriverId driverId: UUID) -> Trip? {
         trips.first {
             $0.driverId?.lowercased() == driverId.uuidString.lowercased() && $0.status.isActionable
@@ -690,7 +715,33 @@ final class AppDataStore {
     }
     func workOrder(forMaintenanceTask taskId: UUID) -> WorkOrder? { workOrders.first { $0.maintenanceTaskId == taskId } }
     func sparePartsRequests(forTask taskId: UUID) -> [SparePartsRequest] { sparePartsRequests.filter { $0.maintenanceTaskId == taskId } }
+    func sparePartsRequests(forWorkOrder woId: UUID) -> [SparePartsRequest] { sparePartsRequests.filter { $0.workOrderId == woId } }
     func pendingSparePartsRequests() -> [SparePartsRequest] { sparePartsRequests.filter { $0.status == .pending } }
+    func phases(forWorkOrder woId: UUID) -> [WorkOrderPhase] { workOrderPhases.filter { $0.workOrderId == woId }.sorted { $0.phaseNumber < $1.phaseNumber } }
+
+    func loadWorkOrderPhases(workOrderId: UUID) async {
+        do {
+            let phases = try await WorkOrderPhaseService().fetchPhases(workOrderId: workOrderId)
+            await MainActor.run {
+                workOrderPhases.removeAll { $0.workOrderId == workOrderId }
+                workOrderPhases.append(contentsOf: phases)
+            }
+        } catch {
+            print("[AppDataStore] loadWorkOrderPhases error: \(error.localizedDescription)")
+        }
+    }
+
+    func completePhase(_ phase: WorkOrderPhase) async throws {
+        guard let personnelId = AuthManager.shared.currentUser?.id else { return }
+        try await WorkOrderPhaseService().completePhase(phaseId: phase.id, completedById: personnelId)
+        await MainActor.run {
+            if let idx = workOrderPhases.firstIndex(where: { $0.id == phase.id }) {
+                workOrderPhases[idx].isCompleted = true
+                workOrderPhases[idx].completedAt = Date()
+                workOrderPhases[idx].completedById = personnelId
+            }
+        }
+    }
     func routeDeviations(forTrip tripId: UUID) -> [RouteDeviationEvent] { routeDeviationEvents.filter { $0.tripId == tripId } }
 
     // MARK: - Computed Aggregates
@@ -848,6 +899,86 @@ final class AppDataStore {
         } catch { print("[AppDataStore] Location publish failed (non-fatal): \(error)") }
     }
 
+    private enum StartTripPreflightError: LocalizedError {
+        case tripNotFound
+        case invalidStatus(String)
+        case missingAssignment
+        case tripNotAccepted
+        case missingPreInspection
+        case driverUnavailable
+        case vehicleUnavailable
+        case resourceConflict
+
+        var errorDescription: String? {
+            switch self {
+            case .tripNotFound:
+                return "Trip not found."
+            case .invalidStatus(let status):
+                return "Trip cannot be started from status \(status)."
+            case .missingAssignment:
+                return "Trip is missing driver or vehicle assignment."
+            case .tripNotAccepted:
+                return "Trip must be accepted before it can start."
+            case .missingPreInspection:
+                return "Complete pre-trip inspection before starting."
+            case .driverUnavailable:
+                return "Driver is not available to start this trip."
+            case .vehicleUnavailable:
+                return "Vehicle is not available to start this trip."
+            case .resourceConflict:
+                return "Driver or vehicle has another active trip."
+            }
+        }
+    }
+
+    private func validateStartTripPreflight(tripId: UUID) async throws -> (trip: Trip, driverId: UUID, vehicleId: UUID) {
+        guard let idx = trips.firstIndex(where: { $0.id == tripId }) else {
+            throw StartTripPreflightError.tripNotFound
+        }
+        let trip = trips[idx]
+        let normalized = trip.status.normalized
+        guard normalized == .scheduled || normalized == .active else {
+            throw StartTripPreflightError.invalidStatus(trip.status.rawValue)
+        }
+        guard let driverId = trip.driverUUID, let vehicleId = trip.vehicleUUID else {
+            throw StartTripPreflightError.missingAssignment
+        }
+        guard trip.acceptedAt != nil else {
+            throw StartTripPreflightError.tripNotAccepted
+        }
+        guard trip.preInspectionId != nil else {
+            throw StartTripPreflightError.missingPreInspection
+        }
+
+        if let driver = staff.first(where: { $0.id == driverId }) {
+            guard driver.status == .active else { throw StartTripPreflightError.driverUnavailable }
+            if normalized == .scheduled {
+                guard driver.availability == .available else {
+                    throw StartTripPreflightError.driverUnavailable
+                }
+            }
+        }
+        if let vehicle = vehicles.first(where: { $0.id == vehicleId }) {
+            if normalized == .scheduled {
+                guard vehicle.status == .idle else {
+                    throw StartTripPreflightError.vehicleUnavailable
+                }
+            }
+        }
+
+        let hasDriverConflict = trips.contains {
+            $0.id != tripId && $0.status.normalized == .active && $0.driverUUID == driverId
+        }
+        let hasVehicleConflict = trips.contains {
+            $0.id != tripId && $0.status.normalized == .active && $0.vehicleUUID == vehicleId
+        }
+        if hasDriverConflict || hasVehicleConflict {
+            throw StartTripPreflightError.resourceConflict
+        }
+
+        return (trip, driverId, vehicleId)
+    }
+
     // MARK: - Trip Lifecycle
     //
     // AVAILABILITY MANAGEMENT:
@@ -858,30 +989,41 @@ final class AppDataStore {
     // These are best-effort (non-fatal if availability update fails).
 
     func startActiveTrip(tripId: UUID, startMileage: Double) async throws {
+        let preflight = try await validateStartTripPreflight(tripId: tripId)
         try await TripService.startTrip(tripId: tripId, startMileage: startMileage)
         if let idx = trips.firstIndex(where: { $0.id == tripId }) {
             trips[idx].status = .active
             trips[idx].actualStartDate = Date()
             trips[idx].startMileage = startMileage
-            // Set driver to Busy
-            if let driverIdStr = trips[idx].driverId, let driverId = UUID(uuidString: driverIdStr) {
-                try? await {
-                    let _ = try await StaffMemberService.setAvailability(staffId: driverId, availability: .busy)
-                    if let si = self.staff.firstIndex(where: { $0.id == driverId }) {
-                        self.staff[si].availability = .busy
-                    }
-                }()
-            }
         }
+
+        // Set driver to Busy
+        try? await {
+            let _ = try await StaffMemberService.setAvailability(staffId: preflight.driverId, availability: .busy)
+            if let si = self.staff.firstIndex(where: { $0.id == preflight.driverId }) {
+                self.staff[si].availability = .busy
+            }
+        }()
+
+        // Set vehicle to Busy
+        try? await {
+            try await VehicleService.setStatus(vehicleId: preflight.vehicleId, status: .busy)
+            if let vi = self.vehicles.firstIndex(where: { $0.id == preflight.vehicleId }) {
+                self.vehicles[vi].status = .busy
+            }
+        }()
     }
 
-    func endTrip(tripId: UUID, endMileage: Double) async throws {
+    func endTrip(tripId: UUID, endMileage: Double? = nil) async throws {
         try await TripService.completeTrip(tripId: tripId, endMileage: endMileage)
         if let idx = trips.firstIndex(where: { $0.id == tripId }) {
             let driverIdStr = trips[idx].driverId
+            let vehicleId = trips[idx].vehicleUUID
             trips[idx].status = .completed
             trips[idx].actualEndDate = Date()
-            trips[idx].endMileage = endMileage
+            if let endMileage {
+                trips[idx].endMileage = endMileage
+            }
             // Set driver back to Available
             if let driverIdStr, let driverId = UUID(uuidString: driverIdStr) {
                 try? await {
@@ -891,8 +1033,30 @@ final class AppDataStore {
                     }
                 }()
             }
+            if let vehicleId {
+                try? await {
+                    try await VehicleService.setStatus(vehicleId: vehicleId, status: .idle)
+                    if let vi = self.vehicles.firstIndex(where: { $0.id == vehicleId }) {
+                        self.vehicles[vi].status = .idle
+                    }
+                }()
+            }
         }
         activeTripLocationHistory = []; currentTripDeviations = []; activeTripExpenses = []
+    }
+
+    func finalizeCompletedTrip(tripId: UUID, endMileage: Double) async throws {
+        try await TripService.updateCompletedTripDetails(tripId: tripId, endMileage: endMileage)
+        if let idx = trips.firstIndex(where: { $0.id == tripId }) {
+            trips[idx].endMileage = endMileage
+        }
+    }
+
+    func recordTripEndOdometer(tripId: UUID, endMileage: Double) async throws {
+        try await TripService.recordEndOdometer(tripId: tripId, endMileage: endMileage)
+        if let idx = trips.firstIndex(where: { $0.id == tripId }) {
+            trips[idx].endMileage = endMileage
+        }
     }
 
     func abortTrip(tripId: UUID) async throws {

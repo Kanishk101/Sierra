@@ -15,12 +15,28 @@ struct NavigationHUDOverlay: View {
     @State private var issueText = ""
     @State private var showIssueSentToast = false
     @State private var showIncidentBanner = true
+    @State private var isEndingTrip = false
+    @State private var endTripError: String?
+    #if DEBUG
+    @State private var showSimPanel = false
+    @State private var simScrubValue: Double = 0
+    #endif
 
     private let supabase = SupabaseManager.shared.client
 
     var body: some View {
         ZStack {
             VStack(spacing: 0) {
+                if !coordinator.currentStepInstruction.isEmpty {
+                    HStack {
+                        turnIndicatorPill
+                        Spacer()
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 54)
+                    .padding(.bottom, 6)
+                }
+
                 // Top instruction banner
                 if !coordinator.currentStepInstruction.isEmpty {
                     instructionBanner
@@ -39,24 +55,19 @@ struct NavigationHUDOverlay: View {
                     deviationBanner
                 }
 
-                // Route progress bar (live distance)
-                if coordinator.hasRenderableRoute && coordinator.isNavigating {
-                    routeProgressBar()
-                }
-
-                // Stats row
-                statsRow
-
-                // Speed badge + speed limit
+                // Speed badge + speed limit + compact progress
                 HStack {
                     speedBadge
-                    if let limit = coordinator.currentSpeedLimit {
-                        speedLimitSign(limit)
+                    if coordinator.hasRenderableRoute {
+                        routeProgressBadge
                     }
-                    Spacer()
+                    Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 8)
+
+                // Stats row (below speed, above actions)
+                statsRow
 
                 // Action bar
                 actionBar
@@ -87,10 +98,45 @@ struct NavigationHUDOverlay: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
                     .zIndex(220)
             }
+
+            #if DEBUG
+            if showSimPanel {
+                debugSimPanel
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    .zIndex(230)
+            }
+            #endif
         }
     }
 
     // MARK: - Instruction Banner
+
+    private var turnIndicatorPill: some View {
+        HStack(spacing: 8) {
+            Image(systemName: maneuverIcon(for: coordinator.currentStepManeuver.isEmpty
+                                           ? coordinator.currentStepInstruction
+                                           : coordinator.currentStepManeuver))
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 30, height: 30)
+                .background(Color.appOrange, in: Circle())
+
+            Text(shortTurnInstruction(coordinator.currentStepInstruction))
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundColor(.white)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            Capsule()
+                .fill(Color(red: 0.11, green: 0.12, blue: 0.16).opacity(0.98))
+        )
+        .overlay(
+            Capsule()
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        )
+    }
 
     private var instructionBanner: some View {
         HStack(spacing: 14) {
@@ -142,10 +188,20 @@ struct NavigationHUDOverlay: View {
         if lower.contains("right")   { return "arrow.turn.up.right" }
         if lower.contains("u-turn")  { return "arrow.uturn.left" }
         if lower.contains("merge")   { return "arrow.merge" }
+        if lower.contains("flyover") || lower.contains("overpass") { return "arrow.up.forward" }
+        if lower.contains("roundabout") { return "arrow.triangle.2.circlepath" }
         if lower.contains("exit")    { return "arrow.triangle.turn.up.right.circle" }
         if lower.contains("arrive")  { return "mappin.circle.fill" }
         if lower.contains("depart")  { return "arrow.up.circle.fill" }
         return "arrow.up"
+    }
+
+    private func shortTurnInstruction(_ full: String) -> String {
+        let text = full.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return "Continue on route" }
+        if text.count <= 46 { return text }
+        let idx = text.index(text.startIndex, offsetBy: 46)
+        return "\(text[..<idx])…"
     }
 
     private func formatDistance(_ metres: Double) -> String {
@@ -268,14 +324,23 @@ struct NavigationHUDOverlay: View {
                 label: "ETA"
             )
             statItem(
-                value: String(format: "%.0f min", coordinator.distanceRemainingMetres > 0
-                              ? (coordinator.estimatedArrivalTime?.timeIntervalSinceNow ?? 0) / 60
-                              : 0),
+                value: formatRemainingTime(coordinator.estimatedArrivalTime),
                 label: "Remaining"
             )
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
+    }
+
+    private func formatRemainingTime(_ eta: Date?) -> String {
+        guard let eta else { return "0m" }
+        let totalMinutes = max(0, Int(eta.timeIntervalSinceNow / 60))
+        let hours = totalMinutes / 60
+        let minutes = totalMinutes % 60
+        if hours > 0 {
+            return "\(hours)h \(minutes)m"
+        }
+        return "\(minutes)m"
     }
 
     private func statItem(value: String, label: String) -> some View {
@@ -301,19 +366,15 @@ struct NavigationHUDOverlay: View {
     }
 
     // MARK: - Speed Badge
-
+    // Triple-tap opens the #if DEBUG simulator panel.
     private var speedBadge: some View {
         ZStack {
-            // Outer ring
             Circle()
                 .stroke(Color.appOrange.opacity(0.3), lineWidth: 4)
                 .frame(width: 80, height: 80)
-
-            // Inner fill
             Circle()
                 .fill(Color(red: 0.11, green: 0.12, blue: 0.16))
                 .frame(width: 68, height: 68)
-
             VStack(spacing: 1) {
                 Text(String(format: "%.0f", max(0, coordinator.currentSpeedKmh)))
                     .font(.system(size: 26, weight: .bold, design: .rounded))
@@ -324,22 +385,11 @@ struct NavigationHUDOverlay: View {
                     .foregroundColor(.white.opacity(0.6))
             }
         }
-    }
-
-    // MARK: - Speed Limit Sign
-
-    private func speedLimitSign(_ limit: Int) -> some View {
-        VStack(spacing: 2) {
-            Circle()
-                .stroke(.red, lineWidth: 4)
-                .frame(width: 52, height: 52)
-                .overlay(
-                    Text("\(limit)")
-                        .font(.system(size: 22, weight: .bold))
-                        .foregroundStyle(.primary)
-                )
-            Text("km/h").font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary)
+        #if DEBUG
+        .onTapGesture(count: 3) {
+            withAnimation(.spring(response: 0.35)) { showSimPanel = true }
         }
+        #endif
     }
 
     // MARK: - Action Bar
@@ -352,7 +402,7 @@ struct NavigationHUDOverlay: View {
             actionButton("Incident", icon: "exclamationmark.triangle.fill", color: .appOrange) {
                 showIncidentReport = true
             }
-            actionButton("End Trip", icon: "xmark.circle", color: .appOrange) {
+            actionButton("End Trip", icon: "xmark.circle", color: .red) {
                 showEndTripConfirm = true
             }
             // Phase 10: Voice mute toggle
@@ -380,29 +430,33 @@ struct NavigationHUDOverlay: View {
         .padding(.bottom, 8)
     }
 
-    // MARK: - Route Progress Bar
+    // MARK: - Route Progress
 
-    private func routeProgressBar() -> some View {
+    private var routeProgressBadge: some View {
         let progress = coordinator.routeProgressFraction
         let pct = Int(progress * 100)
-        return VStack(spacing: 4) {
+        return VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("Route Progress")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundColor(.white.opacity(0.6))
-                Spacer()
                 Text("\(pct)%")
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
+                Text("Route")
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white.opacity(0.62))
+                    .textCase(.uppercase)
             }
-            .padding(.horizontal, 16)
+
+            Text(shortTurnInstruction(coordinator.currentStepInstruction))
+                .font(.system(size: 10, weight: .medium, design: .rounded))
+                .foregroundColor(.white.opacity(0.82))
+                .lineLimit(1)
 
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 4)
+                    RoundedRectangle(cornerRadius: 5)
                         .fill(Color.white.opacity(0.12))
-                        .frame(height: 8)
-                    RoundedRectangle(cornerRadius: 4)
+                        .frame(height: 10)
+                    RoundedRectangle(cornerRadius: 5)
                         .fill(
                             LinearGradient(
                                 colors: [Color(red: 0.2, green: 0.85, blue: 0.55), .appOrange],
@@ -410,15 +464,23 @@ struct NavigationHUDOverlay: View {
                                 endPoint: .trailing
                             )
                         )
-                        .frame(width: geo.size.width * progress, height: 8)
+                        .frame(width: geo.size.width * progress, height: 10)
                         .animation(.linear(duration: 0.5), value: progress)
                 }
             }
-            .frame(height: 8)
-            .padding(.horizontal, 16)
+            .frame(height: 10)
         }
-        .padding(.vertical, 8)
-        .background(Color(red: 0.11, green: 0.12, blue: 0.16).opacity(0.6))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(width: 180)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color(red: 0.11, green: 0.12, blue: 0.16))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.white.opacity(0.06), lineWidth: 1)
+        )
     }
 
     private func actionButton(_ title: String, icon: String, color: Color, action: @escaping () -> Void) -> some View {
@@ -447,85 +509,99 @@ struct NavigationHUDOverlay: View {
             Color.black.opacity(0.65)
                 .ignoresSafeArea()
                 .onTapGesture {
-                    withAnimation(.spring(response: 0.3)) {
-                        showEndTripConfirm = false
+                    if !isEndingTrip {
+                        withAnimation(.spring(response: 0.3)) { showEndTripConfirm = false }
                     }
                 }
 
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 16) {
+                // Header
+                HStack(spacing: 12) {
                     Circle()
                         .fill(Color.red.opacity(0.18))
-                        .frame(width: 42, height: 42)
+                        .frame(width: 46, height: 46)
                         .overlay(
-                            Image(systemName: "flag.fill")
-                                .font(.system(size: 17, weight: .bold))
+                            Image(systemName: "flag.checkered")
+                                .font(.system(size: 18, weight: .bold))
                                 .foregroundColor(Color.red.opacity(0.95))
                         )
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("End Trip?")
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("End Navigation")
                             .font(.system(size: 22, weight: .bold, design: .rounded))
                             .foregroundColor(.white)
-                        Text("This will complete all stops and begin post-trip inspection.")
+                        Text("Delivery options will open next.")
                             .font(.system(size: 13, weight: .medium, design: .rounded))
                             .foregroundColor(.gray)
                     }
                 }
 
+                // Error
+                if let err = endTripError {
+                    Text(err)
+                        .font(.caption.weight(.medium))
+                        .foregroundColor(Color(red: 1.0, green: 0.4, blue: 0.35))
+                }
+
+                // Buttons
                 HStack(spacing: 10) {
-                    Button(action: {
-                        withAnimation(.spring(response: 0.3)) {
-                            showEndTripConfirm = false
-                        }
-                    }) {
+                    Button {
+                        withAnimation(.spring(response: 0.3)) { showEndTripConfirm = false }
+                        endTripError = nil
+                    } label: {
                         Text("Cancel")
                             .font(.system(size: 16, weight: .bold, design: .rounded))
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 13)
-                            .background(
-                                RoundedRectangle(cornerRadius: 14)
-                                    .fill(Color(red: 0.17, green: 0.17, blue: 0.18))
-                            )
+                            .padding(.vertical, 14)
+                            .background(RoundedRectangle(cornerRadius: 14).fill(Color(red: 0.17, green: 0.17, blue: 0.18)))
                     }
                     .buttonStyle(.plain)
+                    .disabled(isEndingTrip)
 
-                    Button(action: {
-                        withAnimation(.spring(response: 0.3)) {
-                            showEndTripConfirm = false
+                    Button {
+                        Task { await confirmEndTrip() }
+                    } label: {
+                        Group {
+                            if isEndingTrip {
+                                ProgressView().tint(.white)
+                            } else {
+                                Text("End Navigation")
+                                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                                    .foregroundColor(.white)
+                            }
                         }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                            onEndTrip()
-                        }
-                    }) {
-                        Text("Confirm End")
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 13)
-                            .background(
-                                RoundedRectangle(cornerRadius: 14)
-                                    .fill(Color(red: 0.95, green: 0.23, blue: 0.20))
-                            )
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(Color(red: 0.95, green: 0.23, blue: 0.20))
+                        )
                     }
                     .buttonStyle(.plain)
+                    .disabled(isEndingTrip)
                 }
             }
-            .padding(18)
+            .padding(20)
             .background(
-                RoundedRectangle(cornerRadius: 22)
-                    .fill(Color(red: 0.10, green: 0.10, blue: 0.11).opacity(0.98))
+                RoundedRectangle(cornerRadius: 24)
+                    .fill(Color(red: 0.10, green: 0.10, blue: 0.12).opacity(0.98))
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 22)
-                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
-            )
+            .overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.white.opacity(0.08), lineWidth: 1))
             .padding(.horizontal, 20)
-            .padding(.bottom, 104)
+            .padding(.bottom, 108)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }
         .ignoresSafeArea()
+    }
+
+    private func confirmEndTrip() async {
+        isEndingTrip = true
+        endTripError = nil
+        withAnimation(.spring(response: 0.3)) { showEndTripConfirm = false }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            onEndTrip()
+        }
+        isEndingTrip = false
     }
 
     // MARK: - Report Issue Modal
@@ -666,12 +742,9 @@ struct NavigationHUDOverlay: View {
         let text = issueText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         issueText = ""
-        withAnimation(.spring(response: 0.3)) {
-            showIncidentReport = false
-        }
+        withAnimation(.spring(response: 0.3)) { showIncidentReport = false }
 
         Task {
-            // Insert activity log for incident report
             guard let driverId = AuthManager.shared.currentUser?.id else { return }
             do {
                 struct ActivityPayload: Encodable {
@@ -685,10 +758,8 @@ struct NavigationHUDOverlay: View {
                     let is_read: Bool
                     let timestamp: String
                 }
-
                 let iso = ISO8601DateFormatter()
                 iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-
                 try await supabase
                     .from("activity_logs")
                     .insert(ActivityPayload(
@@ -703,8 +774,6 @@ struct NavigationHUDOverlay: View {
                         timestamp: iso.string(from: Date())
                     ))
                     .execute()
-
-                // Notify fleet managers
                 struct FMIdRow: Decodable { let id: UUID }
                 let fmRows: [FMIdRow] = try await supabase
                     .from("staff_members")
@@ -723,22 +792,126 @@ struct NavigationHUDOverlay: View {
                         entityId: coordinator.trip.id
                     )
                 }
-
                 await MainActor.run {
                     withAnimation(.spring(response: 0.3)) { showIssueSentToast = true }
                 }
             } catch {
                 print("[HUD] Incident report failed: \(error)")
-                // Still show toast — driver shouldn't think it failed silently
                 await MainActor.run {
                     withAnimation(.spring(response: 0.3)) { showIssueSentToast = true }
                 }
             }
-
             try? await Task.sleep(for: .seconds(2))
             await MainActor.run {
                 withAnimation(.easeOut(duration: 0.25)) { showIssueSentToast = false }
             }
         }
     }
+
+    // MARK: - #if DEBUG Simulator Panel
+    #if DEBUG
+    private var debugSimPanel: some View {
+        ZStack(alignment: .bottom) {
+            Color.black.opacity(0.6).ignoresSafeArea()
+                .onTapGesture { withAnimation { showSimPanel = false } }
+
+            VStack(spacing: 14) {
+                // Title
+                HStack {
+                    Label("Route Simulator", systemImage: "ladybug.fill")
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .foregroundColor(.yellow)
+                    Spacer()
+                    Text("DEBUG ONLY")
+                        .font(.caption2.weight(.bold))
+                        .foregroundColor(.yellow.opacity(0.6))
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(Color.yellow.opacity(0.12), in: Capsule())
+                }
+
+                // Progress label
+                HStack {
+                    Text(String(format: "Progress: %.0f%%", coordinator.simulationProgress * 100))
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundColor(.white.opacity(0.7))
+                    Spacer()
+                    Text(coordinator.simulated ? "▶ Running" : "⏸ Paused")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(coordinator.simulated ? .green : .orange)
+                }
+
+                // Scrubber
+                Slider(
+                    value: Binding(
+                        get: { simScrubValue },
+                        set: { newVal in
+                            simScrubValue = newVal
+                            coordinator.scrubSimulation(to: newVal)
+                        }
+                    ),
+                    in: 0...1
+                )
+                .tint(.yellow)
+
+                // Controls
+                HStack(spacing: 12) {
+                    Button {
+                        coordinator.resetSimulation()
+                    } label: {
+                        Label("Reset", systemImage: "backward.end.fill")
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        if coordinator.simulated { coordinator.stopSimulation() }
+                        else { coordinator.startSimulation() }
+                        simScrubValue = coordinator.simulationProgress
+                    } label: {
+                        Label(coordinator.simulated ? "Stop" : "Play",
+                              systemImage: coordinator.simulated ? "stop.fill" : "play.fill")
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundColor(.black)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(coordinator.simulated ? Color.red : Color.yellow,
+                                        in: RoundedRectangle(cornerRadius: 10))
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        withAnimation { showSimPanel = false }
+                    } label: {
+                        Label("Close", systemImage: "xmark")
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(20)
+            .background(
+                RoundedRectangle(cornerRadius: 24)
+                    .fill(Color(red: 0.10, green: 0.10, blue: 0.12).opacity(0.98))
+            )
+            .overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.yellow.opacity(0.2), lineWidth: 1))
+            .padding(.horizontal, 20)
+            .padding(.bottom, 108)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+        .ignoresSafeArea()
+        .onAppear { simScrubValue = coordinator.simulationProgress }
+        .onChange(of: coordinator.simulationProgress) { _, newVal in
+            guard !coordinator.simulated else { return }
+            simScrubValue = newVal
+        }
+    }
+    #endif
 }

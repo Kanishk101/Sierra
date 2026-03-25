@@ -60,7 +60,7 @@ struct ContentView: View {
         case .pendingApproval:        PendingApprovalView()
         case .rejected:               RejectedView()
         case .driverDashboard:        DriverTabView()
-        case .maintenanceDashboard:   MaintenanceDashboardView()
+        case .maintenanceDashboard:   MaintenanceTabView()
         }
     }
 }

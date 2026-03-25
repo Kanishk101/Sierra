@@ -10,7 +10,9 @@ struct CameraView: UIViewControllerRepresentable {
 
     func makeUIViewController(context: Context) -> UIImagePickerController {
         let picker = UIImagePickerController()
-        picker.sourceType = .camera
+        picker.sourceType = UIImagePickerController.isSourceTypeAvailable(.camera) ? .camera : .photoLibrary
+        picker.cameraCaptureMode = .photo
+        picker.showsCameraControls = true
         picker.allowsEditing = false
         picker.delegate = context.coordinator
         return picker
@@ -35,14 +37,18 @@ struct CameraView: UIViewControllerRepresentable {
             _ picker: UIImagePickerController,
             didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]
         ) {
-            if let image = info[.originalImage] as? UIImage {
-                onCapture(image)
+            DispatchQueue.main.async {
+                if let image = info[.originalImage] as? UIImage {
+                    self.onCapture(image)
+                }
+                self.dismiss()
             }
-            dismiss()
         }
 
         func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-            dismiss()
+            DispatchQueue.main.async {
+                self.dismiss()
+            }
         }
     }
 }

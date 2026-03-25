@@ -1,0 +1,82 @@
+import Foundation
+import Supabase
+
+// MARK: - WorkOrderPhaseService
+/// Manages CRUD operations for work order completion phases.
+/// All methods throw on network/auth errors; callers should handle accordingly.
+
+final class WorkOrderPhaseService {
+
+    private let client = SupabaseManager.shared.client
+
+    // MARK: - Fetch
+
+    func fetchPhases(workOrderId: UUID) async throws -> [WorkOrderPhase] {
+        try await client
+            .from("work_order_phases")
+            .select()
+            .eq("work_order_id", value: workOrderId.uuidString)
+            .order("phase_number", ascending: true)
+            .execute()
+            .value
+    }
+
+    // MARK: - Create
+
+    func createPhase(
+        workOrderId: UUID,
+        phaseNumber: Int,
+        title: String,
+        description: String? = nil
+    ) async throws -> WorkOrderPhase {
+        let payload: [String: AnyJSON] = [
+            "work_order_id": .string(workOrderId.uuidString),
+            "phase_number":  .double(Double(phaseNumber)),
+            "title":         .string(title),
+            "description":   description.map { .string($0) } ?? .null,
+            "is_completed":  .bool(false)
+        ]
+        return try await client
+            .from("work_order_phases")
+            .insert(payload)
+            .select()
+            .single()
+            .execute()
+            .value
+    }
+
+    // MARK: - Complete Phase
+
+    func completePhase(phaseId: UUID, completedById: UUID) async throws {
+        let now = ISO8601DateFormatter().string(from: Date())
+        let payload: [String: AnyJSON] = [
+            "is_completed":    .bool(true),
+            "completed_at":    .string(now),
+            "completed_by_id": .string(completedById.uuidString)
+        ]
+        try await client
+            .from("work_order_phases")
+            .update(payload)
+            .eq("id", value: phaseId.uuidString)
+            .execute()
+    }
+
+    // MARK: - Check All Complete
+
+    /// Returns true if every phase for the given work order is marked complete.
+    func allPhasesComplete(workOrderId: UUID) async throws -> Bool {
+        let phases: [WorkOrderPhase] = try await fetchPhases(workOrderId: workOrderId)
+        guard !phases.isEmpty else { return false }
+        return phases.allSatisfy { $0.isCompleted }
+    }
+
+    // MARK: - Delete Phase
+
+    func deletePhase(phaseId: UUID) async throws {
+        try await client
+            .from("work_order_phases")
+            .delete()
+            .eq("id", value: phaseId.uuidString)
+            .execute()
+    }
+}

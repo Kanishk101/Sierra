@@ -37,6 +37,12 @@ struct TripsAndMapContainerView: View {
             }
         }
         .animation(.none, value: mapSegment)
+        .refreshable {
+            await AppDataStore.shared.loadAll()
+            if mapSegment == 0 {
+                await mapViewModel.refreshFallbackCoordinates(for: AppDataStore.shared.vehicles)
+            }
+        }
         .sheet(isPresented: $showCreateTrip) {
             CreateTripView()
         }

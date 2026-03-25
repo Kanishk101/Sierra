@@ -136,6 +136,7 @@ struct VehicleInspectionService {
         driverSignatureUrl: String?,
         photoUrls: [String],
         odometerReading: Double?,
+        fuelLevelPct: Int?,
         fuelReceiptUrl: String?,
         isDefectRaised: Bool,
         raisedTaskId: UUID?
@@ -152,6 +153,7 @@ struct VehicleInspectionService {
             let driver_signature_url: String?
             let photo_urls: [String]    // Swift array — SDK handles serialisation
             let odometer_reading: Double?
+            let fuel_level_pct: Int?
             let fuel_receipt_url: String?
             let is_defect_raised: Bool
             let raised_task_id: String?
@@ -174,6 +176,7 @@ struct VehicleInspectionService {
             driver_signature_url: driverSignatureUrl,
             photo_urls: photoUrls,
             odometer_reading: odometerReading,
+            fuel_level_pct: fuelLevelPct,
             fuel_receipt_url: fuelReceiptUrl,
             is_defect_raised: isDefectRaised,
             raised_task_id: raisedTaskId?.uuidString,

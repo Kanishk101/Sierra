@@ -1,5 +1,6 @@
 import SwiftUI
 import MapKit
+import MapboxDirections
 
 /// Driver-side trip detail view with full acceptance + lifecycle actions.
 ///
@@ -41,6 +42,8 @@ struct TripDetailDriverView: View {
     // Error alert
     @State private var errorMessage: String?
     @State private var showError                = false
+    @State private var fetchedRoutePreviewCoordinates: [CLLocationCoordinate2D] = []
+    @State private var fetchedRoutePreviewTripId: UUID?
 
     // MARK: - Convenience
 
@@ -152,6 +155,11 @@ struct TripDetailDriverView: View {
                 }
             }
         }
+        .task(id: trip?.id) {
+            if let trip {
+                await fetchRoadRoutePreview(for: trip)
+            }
+        }
     }
 
     // MARK: - Route Map Card (FMS_SS heroMapSection style)
@@ -178,8 +186,26 @@ struct TripDetailDriverView: View {
                 span: MKCoordinateSpan(latitudeDelta: spanLat, longitudeDelta: spanLng)
             )
 
+            let previewRouteCoordinates = resolvedRoutePreviewCoordinates(for: trip)
+            let navProgress = TripNavigationCoordinator.sessionProgress(for: trip.id) ?? 0
+            let endRecorded = trip.hasEndedNavigationPhase || navProgress >= 0.999
+
             ZStack(alignment: .bottom) {
                 Map(initialPosition: .region(region)) {
+                    if previewRouteCoordinates.count >= 2 {
+                        MapPolyline(coordinates: previewRouteCoordinates)
+                            .stroke(Color.appOrange, lineWidth: 5)
+                    }
+
+                    ForEach((trip.routeStops ?? []).sorted { $0.order < $1.order }) { stop in
+                        Annotation(stop.name, coordinate: CLLocationCoordinate2D(latitude: stop.latitude, longitude: stop.longitude)) {
+                            ZStack {
+                                Circle().fill(Color.orange).frame(width: 18, height: 18)
+                                Circle().fill(Color.white).frame(width: 6, height: 6)
+                            }.shadow(radius: 2)
+                        }
+                    }
+
                     Annotation(trip.origin, coordinate: originCoord) {
                         ZStack {
                             Circle().fill(Color.green).frame(width: 28, height: 28)
@@ -202,9 +228,9 @@ struct TripDetailDriverView: View {
                 // "Live Tracking" chip top-left
                 VStack {
                     HStack {
-                        mapChip(text: trip.status == .active ? "Live Tracking" : "Route Preview",
+                        mapChip(text: trip.status == .active && !endRecorded ? "Live Tracking" : "Route Preview",
                                 icon: "circle.fill",
-                                iconColor: trip.status == .active ? .green : .orange)
+                                iconColor: trip.status == .active && !endRecorded ? .green : .orange)
                         Spacer()
                     }
                     .padding(.horizontal, 14)
@@ -214,7 +240,7 @@ struct TripDetailDriverView: View {
                 .frame(height: 240)
 
                 // Tap to navigate overlay for active trips
-                if trip.status == .active {
+                if trip.status == .active && !endRecorded {
                     Button { showNavigation = true } label: {
                         HStack(spacing: 8) {
                             Image(systemName: "location.fill").font(.system(size: 14, weight: .bold))
@@ -261,10 +287,12 @@ struct TripDetailDriverView: View {
             VStack(spacing: 0) {
                 // Top — Live Tracking / Status chip
                 HStack {
+                    let navProgress = TripNavigationCoordinator.sessionProgress(for: trip.id) ?? 0
+                    let endRecorded = trip.hasEndedNavigationPhase || navProgress >= 0.999
                     mapChip(
-                        text: trip.status == .active ? "Live Tracking" : "Scheduled Route",
+                        text: trip.status == .active && !endRecorded ? "Live Tracking" : "Route Preview",
                         icon: "circle.fill",
-                        iconColor: trip.status == .active ? .green : .orange
+                        iconColor: trip.status == .active && !endRecorded ? .green : .orange
                     )
                     Spacer()
                 }
@@ -425,11 +453,10 @@ struct TripDetailDriverView: View {
 
         steps += [
             ("checklist",         "Pre-Trip Inspection",  trip.preInspectionId != nil),
-            ("play.fill",         "Start Trip",           trip.status == .active || trip.status == .completed),
-            ("location.fill",     "Navigate",             trip.status == .completed),
+            ("location.fill",     "Navigate",             trip.status == .active || trip.isDriverWorkflowCompleted || trip.hasEndedNavigationPhase),
             ("shippingbox.fill",  "Complete Delivery",    trip.proofOfDeliveryId != nil),
             ("checklist.checked", "Post-Trip Inspection", trip.postInspectionId != nil),
-            ("flag.checkered",    "End Trip",             trip.status == .completed),
+            ("flag.checkered",    "End Trip",             trip.isDriverWorkflowCompleted || trip.hasEndedNavigationPhase),
         ]
 
         return VStack(alignment: .leading, spacing: 0) {
@@ -457,7 +484,7 @@ struct TripDetailDriverView: View {
                         .font(.system(size: 14, weight: .semibold, design: .rounded))
                         .foregroundColor(step.done ? .appTextPrimary : .appTextSecondary)
                     Spacer()
-                    if step.label == "Navigate" && trip.status == .active {
+                    if step.label == "Navigate" && trip.status == .active && !trip.hasEndedNavigationPhase {
                         Text("TAP BELOW")
                             .font(.system(size: 10, weight: .bold, design: .rounded))
                             .foregroundColor(.green)
@@ -580,6 +607,20 @@ struct TripDetailDriverView: View {
                         .foregroundColor(.appTextSecondary)
                     }
 
+                    ForEach(Array((trip.routeStops ?? []).sorted(by: { $0.order < $1.order }).enumerated()), id: \.element.id) { index, stop in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("STOP \(index + 1)")
+                                .font(.system(size: 10, weight: .bold, design: .rounded))
+                                .foregroundColor(.blue)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(Capsule().fill(Color.blue.opacity(0.10)))
+                            Text(stop.name.uppercased())
+                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                                .foregroundColor(.appTextPrimary)
+                        }
+                    }
+
                     // Destination node
                     VStack(alignment: .leading, spacing: 4) {
                         Text("DESTINATION")
@@ -605,19 +646,20 @@ struct TripDetailDriverView: View {
 
             // Distance + scheduled time stat chips
             HStack(spacing: 10) {
-                // Distance chip
-                HStack(spacing: 6) {
-                    Image(systemName: "arrow.up.right.circle.fill")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.blue)
-                    Text(trip.distanceKm.map { "\(Int($0)) km" } ?? "N/A")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundColor(.appTextPrimary)
+                if let distanceText = routeDistanceDisplay(for: trip) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.up.right.circle.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.blue)
+                        Text(distanceText)
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundColor(.appTextPrimary)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.blue.opacity(0.08)))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.blue.opacity(0.18), lineWidth: 1))
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
-                .background(RoundedRectangle(cornerRadius: 10).fill(Color.blue.opacity(0.08)))
-                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.blue.opacity(0.18), lineWidth: 1))
 
                 // Scheduled time chip
                 HStack(spacing: 6) {
@@ -634,6 +676,22 @@ struct TripDetailDriverView: View {
                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.appOrange.opacity(0.18), lineWidth: 1))
             }
             .padding(.top, 4)
+
+            if let geofenceSummary = geofenceSummaryText(for: trip) {
+                HStack(spacing: 6) {
+                    Image(systemName: "scope")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.teal)
+                    Text(geofenceSummary)
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundColor(.appTextPrimary)
+                        .lineLimit(2)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color.teal.opacity(0.09)))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.teal.opacity(0.2), lineWidth: 1))
+            }
 
             if !trip.deliveryInstructions.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
@@ -701,7 +759,7 @@ struct TripDetailDriverView: View {
 
     @ViewBuilder
     private func actionButtons(_ trip: Trip) -> some View {
-        let status = trip.status.normalized
+        let status: TripStatus = trip.isDriverWorkflowCompleted ? .completed : trip.status.normalized
         VStack(spacing: 12) {
             switch status {
 
@@ -735,54 +793,17 @@ struct TripDetailDriverView: View {
                         showPreInspection = true
                     }
                 } else {
-                    let withinStartWindow = trip.scheduledDate.timeIntervalSinceNow <= TripConstants.driverBlockWindowSeconds
-                        && trip.scheduledDate.timeIntervalSinceNow > -3600
-                    let startReached = trip.scheduledDate <= Date()
-                    if withinStartWindow || startReached {
-                        // Time slot has started — allow navigation.
-                        navigateButton()
-                    } else {
-                        // Pre-inspection done but trip has not started yet.
-                        VStack(spacing: 8) {
-                            HStack(spacing: 10) {
-                                Image(systemName: "lock.fill")
-                                    .foregroundStyle(.secondary)
-                                Text("Navigate")
-                                    .font(.system(size: 16, weight: .bold, design: .rounded))
-                                    .foregroundStyle(.secondary)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .background(Color(.tertiarySystemGroupedBackground),
-                                        in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .stroke(Color(.separator).opacity(0.5), lineWidth: 1)
-                            )
-
-                            Text("Navigation unlocks within 30 minutes of the scheduled start.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.center)
-                        }
-                    }
+                    // Pre-trip done: allow navigation immediately.
+                    navigateButton()
                 }
 
             // ── Active: Navigate (primary) then delivery / inspection gate ───
             case .active:
-                // Primary: Navigate is ALWAYS the main CTA while the trip is active
-                navigateButton()
+                let navProgress = TripNavigationCoordinator.sessionProgress(for: trip.id) ?? 0
+                let navigationLockedByProgress = navProgress >= 0.999
+                let endRecorded = trip.hasEndedNavigationPhase || navigationLockedByProgress
 
-                // Secondary gate — only one of these shows at a time, smaller weight
-                if trip.proofOfDeliveryId == nil {
-                    secondaryActionButton(
-                        "Complete Delivery",
-                        icon: "shippingbox.fill",
-                        color: SierraTheme.Colors.ember
-                    ) {
-                        showProofOfDelivery = true
-                    }
-                } else if trip.postInspectionId == nil {
+                if endRecorded && trip.postInspectionId == nil {
                     actionButton(
                         "Post-Trip Inspection (Required)",
                         icon: "checklist",
@@ -791,7 +812,33 @@ struct TripDetailDriverView: View {
                         showPostInspection = true
                     }
                 } else {
-                    endTripButton(trip)
+                    // Primary: Navigate while active and trip not ended yet.
+                    navigateButton()
+                }
+
+                // Secondary gate — only one of these shows at a time, smaller weight
+                if !endRecorded, trip.proofOfDeliveryId == nil {
+                    secondaryActionButton(
+                        "Complete Delivery",
+                        icon: "shippingbox.fill",
+                        color: SierraTheme.Colors.ember
+                    ) {
+                        showProofOfDelivery = true
+                    }
+                } else if !endRecorded, trip.postInspectionId == nil {
+                    actionButton(
+                        "Post-Trip Inspection (Required)",
+                        icon: "checklist",
+                        color: SierraTheme.Colors.info
+                    ) {
+                        showPostInspection = true
+                    }
+                } else if !endRecorded {
+                    secondaryActionButton(
+                        "End Trip from Navigation",
+                        icon: "xmark.circle.fill",
+                        color: .red
+                    ) { }
                 }
                 // NOTE: Log Fuel and Report Issue are accessed from within
                 // Pre-Trip Inspection and Post-Trip Inspection views respectively.
@@ -846,7 +893,7 @@ struct TripDetailDriverView: View {
             HStack(spacing: 8) {
                 Image(systemName: "location.fill")
                     .font(.system(size: 13, weight: .semibold))
-                Text("Start Navigation")
+                Text("Navigate")
                     .font(.system(size: 14, weight: .bold, design: .rounded))
             }
             .foregroundColor(.white)
@@ -854,9 +901,9 @@ struct TripDetailDriverView: View {
             .padding(.vertical, 14)
             .background(
                 Capsule()
-                    .fill(Color(red: 0.90, green: 0.22, blue: 0.18))
+                    .fill(Color(red: 0.20, green: 0.65, blue: 0.32))
             )
-            .shadow(color: Color.red.opacity(0.22), radius: 10, x: 0, y: 4)
+            .shadow(color: Color.green.opacity(0.22), radius: 10, x: 0, y: 4)
             .scaleEffect(navigatePulse ? 1.01 : 1.0)
         }
         .buttonStyle(.plain)
@@ -1024,6 +1071,19 @@ struct TripDetailDriverView: View {
     // MARK: - Trip Progress
 
     private func tripProgress(_ trip: Trip) -> Double {
+        if let navProgress = TripNavigationCoordinator.sessionProgress(for: trip.id) {
+            return max(navProgress, trip.isDriverWorkflowCompleted ? 1.0 : navProgress)
+        }
+
+        if trip.hasEndedNavigationPhase || trip.isDriverWorkflowCompleted {
+            return 1.0
+        }
+
+        if trip.status.normalized == .active {
+            // Keep this tied to route traversal only; avoid checklist-based pseudo progress.
+            return 0.0
+        }
+
         switch trip.status.normalized {
         case .scheduled:
             // Post-acceptance: accepted but awaiting time window
@@ -1032,10 +1092,7 @@ struct TripDetailDriverView: View {
             }
             return 0.0
         case .pendingAcceptance: return 0.10
-        case .active:
-            if trip.postInspectionId != nil { return 0.85 }
-            if trip.proofOfDeliveryId != nil { return 0.70 }
-            return 0.50
+        case .active:            return 0.0
         case .completed:         return 1.0
         case .cancelled:         return 0.0
         case .rejected:          return 0.0
@@ -1090,9 +1147,158 @@ struct TripDetailDriverView: View {
         .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
     }
 
+    private func routePreviewCoordinates(for trip: Trip) -> [CLLocationCoordinate2D] {
+        if let sessionCoords = TripNavigationCoordinator.sessionRouteCoordinates(for: trip.id),
+           sessionCoords.count >= 2 {
+            return sessionCoords
+        }
+
+        let stopAnchors = routeLegAnchors(for: trip)
+        if !(trip.routeStops ?? []).isEmpty, stopAnchors.count >= 3 {
+            // Prefer explicit stop anchors over stale stored polyline for stop-based trips.
+            return stopAnchors
+        }
+
+        if let encoded = trip.routePolyline?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !encoded.isEmpty {
+            let coordinateFromPair: ([Double]) -> CLLocationCoordinate2D? = { pair in
+                guard pair.count >= 2 else { return nil }
+                let a = pair[0]
+                let b = pair[1]
+                if abs(a) <= 90, abs(b) <= 180 {
+                    return CLLocationCoordinate2D(latitude: a, longitude: b)
+                }
+                if abs(a) <= 180, abs(b) <= 90 {
+                    return CLLocationCoordinate2D(latitude: b, longitude: a)
+                }
+                return nil
+            }
+
+            if let decoded6: [CLLocationCoordinate2D] = MapboxDirections.decodePolyline(encoded, precision: 1e6),
+               decoded6.count >= 2 {
+                return decoded6
+            }
+            if let decoded5: [CLLocationCoordinate2D] = MapboxDirections.decodePolyline(encoded, precision: 1e5),
+               decoded5.count >= 2 {
+                return decoded5
+            }
+            if let data = encoded.data(using: .utf8),
+               let object = try? JSONSerialization.jsonObject(with: data) {
+                if let dict = object as? [String: Any],
+                   let coords = dict["coordinates"] as? [[Double]] {
+                    let parsed = coords.compactMap(coordinateFromPair)
+                    if parsed.count >= 2 { return parsed }
+                } else if let coords = object as? [[Double]] {
+                    let parsed = coords.compactMap(coordinateFromPair)
+                    if parsed.count >= 2 { return parsed }
+                }
+            }
+        }
+
+        return stopAnchors
+    }
+
+    private func routeLegAnchors(for trip: Trip) -> [CLLocationCoordinate2D] {
+        var anchors: [CLLocationCoordinate2D] = []
+        if let oLat = trip.originLatitude, let oLng = trip.originLongitude {
+            anchors.append(CLLocationCoordinate2D(latitude: oLat, longitude: oLng))
+        }
+        for stop in (trip.routeStops ?? []).sorted(by: { $0.order < $1.order }) {
+            anchors.append(CLLocationCoordinate2D(latitude: stop.latitude, longitude: stop.longitude))
+        }
+        if let dLat = trip.destinationLatitude, let dLng = trip.destinationLongitude {
+            anchors.append(CLLocationCoordinate2D(latitude: dLat, longitude: dLng))
+        }
+        return anchors
+    }
+
+    private func resolvedRoutePreviewCoordinates(for trip: Trip) -> [CLLocationCoordinate2D] {
+        if fetchedRoutePreviewTripId == trip.id, fetchedRoutePreviewCoordinates.count >= 2 {
+            return fetchedRoutePreviewCoordinates
+        }
+        return routePreviewCoordinates(for: trip)
+    }
+
+    private func fetchRoadRoutePreview(for trip: Trip) async {
+        let anchors = routeLegAnchors(for: trip)
+        guard anchors.count >= 2 else {
+            fetchedRoutePreviewTripId = trip.id
+            fetchedRoutePreviewCoordinates = []
+            return
+        }
+
+        var stitched: [CLLocationCoordinate2D] = []
+        for leg in zip(anchors, anchors.dropFirst()) {
+            do {
+                let routes = try await MapService.fetchRoutes(
+                    originLat: leg.0.latitude,
+                    originLng: leg.0.longitude,
+                    destLat: leg.1.latitude,
+                    destLng: leg.1.longitude
+                )
+                guard let geometry = routes.first?.geometry else { continue }
+                let decoded6: [CLLocationCoordinate2D]? = MapboxDirections.decodePolyline(geometry, precision: 1e6)
+                let decoded5: [CLLocationCoordinate2D]? = MapboxDirections.decodePolyline(geometry, precision: 1e5)
+                let legCoords: [CLLocationCoordinate2D] = decoded6 ?? decoded5 ?? []
+                guard !legCoords.isEmpty else { continue }
+                if stitched.isEmpty {
+                    stitched.append(contentsOf: legCoords)
+                } else {
+                    stitched.append(contentsOf: legCoords.dropFirst())
+                }
+            } catch {
+                // Keep current fallback geometry; do not fail the screen.
+            }
+        }
+
+        guard stitched.count >= 2 else { return }
+        fetchedRoutePreviewTripId = trip.id
+        fetchedRoutePreviewCoordinates = stitched
+    }
+
+    private func routeDistanceDisplay(for trip: Trip) -> String? {
+        if let km = trip.distanceKm, km > 0 {
+            return "\(Int(km.rounded())) km"
+        }
+
+        let coords = routePreviewCoordinates(for: trip)
+        guard coords.count >= 2 else { return nil }
+        let metres = zip(coords, coords.dropFirst()).reduce(0.0) { partial, pair in
+            let a = CLLocation(latitude: pair.0.latitude, longitude: pair.0.longitude)
+            let b = CLLocation(latitude: pair.1.latitude, longitude: pair.1.longitude)
+            return partial + a.distance(from: b)
+        }
+        guard metres > 0 else { return nil }
+        return String(format: "%.1f km", metres / 1000)
+    }
+
+    private func geofenceSummaryText(for trip: Trip) -> String? {
+        let anchors = routePreviewCoordinates(for: trip)
+        guard !anchors.isEmpty else { return nil }
+
+        let nearby = store.geofences
+            .filter(\.isActive)
+            .filter { geofence in
+                anchors.contains { anchor in
+                    let a = CLLocation(latitude: anchor.latitude, longitude: anchor.longitude)
+                    let g = CLLocation(latitude: geofence.latitude, longitude: geofence.longitude)
+                    return a.distance(from: g) <= max(geofence.radiusMeters, 80)
+                }
+            }
+
+        guard !nearby.isEmpty else { return nil }
+        let names = nearby.prefix(2).map(\.name).joined(separator: ", ")
+        return nearby.count > 2
+            ? "Geofences: \(names) +\(nearby.count - 2) more"
+            : "Geofences: \(names)"
+    }
+
     // MARK: - Style Helpers
 
     private func statusLabel(_ status: TripStatus) -> String {
+        if trip?.isDriverWorkflowCompleted == true {
+            return "Completed"
+        }
         switch status.normalized {
         case .scheduled:         return trip?.acceptedAt != nil ? "Accepted — Awaiting Time Window" : "Scheduled"
         case .pendingAcceptance: return "Awaiting Your Acceptance"
@@ -1104,6 +1310,9 @@ struct TripDetailDriverView: View {
     }
 
     private func statusColor(_ status: TripStatus) -> Color {
+        if trip?.isDriverWorkflowCompleted == true {
+            return .gray
+        }
         switch status.normalized {
         case .scheduled:         return trip?.acceptedAt != nil ? .teal : SierraTheme.Colors.info
         case .pendingAcceptance: return .orange

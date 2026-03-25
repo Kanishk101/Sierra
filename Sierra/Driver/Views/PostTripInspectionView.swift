@@ -1,10 +1,9 @@
 import SwiftUI
 
-/// Post-trip inspection + trip completion.
-/// BUG-05 FIX: Uses a clean phase-based state machine instead of a dual-ViewModel pattern.
-/// Phase 1: .inspecting — embeds PreTripInspectionView
-/// Phase 2: .enteringOdometer — shows end-odometer + Complete Trip form
-/// Phase 3: .completed — shows success screen
+/// Post-trip inspection wrapper.
+/// Odometer capture is handled in OCR flow inside PreTripInspectionView (step 2),
+/// with manual entry as fallback in that same step.
+/// There is no extra "enter odometer again" page here.
 struct PostTripInspectionView: View {
 
     let tripId: UUID
@@ -14,14 +13,8 @@ struct PostTripInspectionView: View {
     @Environment(AppDataStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
-    // BUG-05 FIX: Single phase enum drives the entire UI
-    enum Phase { case inspecting, enteringOdometer, completed }
+    enum Phase { case inspecting, completed }
     @State private var phase: Phase = .inspecting
-    @State private var endOdometerText = ""
-    @State private var errorMessage: String?
-    @State private var showError = false
-
-    private var trip: Trip? { store.trips.first { $0.id == tripId } }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -33,12 +26,9 @@ struct PostTripInspectionView: View {
                     driverId: driverId,
                     inspectionType: .postTripInspection,
                     onComplete: {
-                        withAnimation { phase = .enteringOdometer }
+                        finalizeAfterInspection()
                     }
                 )
-
-            case .enteringOdometer:
-                odometerAndComplete
 
             case .completed:
                 completedView
@@ -53,60 +43,6 @@ struct PostTripInspectionView: View {
                 }
             }
         }
-        .alert("Error", isPresented: $showError) {
-            Button("OK") {}
-        } message: {
-            Text(errorMessage ?? "Something went wrong")
-        }
-    }
-
-    // MARK: - Odometer + Complete
-
-    private var odometerAndComplete: some View {
-        VStack(spacing: 20) {
-            Spacer()
-
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 48))
-                .foregroundStyle(SierraTheme.Colors.alpineMint)
-
-            Text("Post-Trip Inspection Complete")
-                .font(.headline)
-
-            Text("Enter the final odometer reading to complete the trip.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("End Odometer Reading (km)")
-                    .font(.subheadline.weight(.medium))
-                TextField("e.g. 45380", text: $endOdometerText)
-                    .keyboardType(.decimalPad)
-                    .textFieldStyle(.roundedBorder)
-            }
-            .padding(.horizontal, 16)
-
-            Spacer()
-
-            Button {
-                Task { await completeTrip() }
-            } label: {
-                HStack {
-                    Image(systemName: "flag.checkered")
-                    Text("Complete Trip")
-                        .font(.subheadline.weight(.semibold))
-                }
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .frame(height: 50)
-                .background(endOdometerValid ? SierraTheme.Colors.alpineMint : Color.gray,
-                            in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            }
-            .disabled(!endOdometerValid)
-            .padding(.horizontal, 16)
-            .padding(.bottom, 16)
-        }
     }
 
     // MARK: - Completed
@@ -119,10 +55,10 @@ struct PostTripInspectionView: View {
                 .font(.system(size: 64))
                 .foregroundStyle(SierraTheme.Colors.alpineMint)
 
-            Text("Trip Completed!")
+            Text("Inspection Submitted!")
                 .font(.title2.weight(.bold))
 
-            Text("Your trip has been recorded successfully.\nThank you for driving safely.")
+            Text("Post-trip inspection recorded successfully.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -144,32 +80,18 @@ struct PostTripInspectionView: View {
         }
     }
 
-    // MARK: - Logic
-
-    private var endOdometerValid: Bool {
-        guard let value = Double(endOdometerText), value > 0 else { return false }
-        return true
-    }
-
-    private func completeTrip() async {
-        guard let _ = trip else {
-            errorMessage = "Trip not found."
-            showError = true
-            return
+    private func finalizeAfterInspection() {
+        TripNavigationCoordinator.clearSession(for: tripId)
+        if let idx = store.trips.firstIndex(where: { $0.id == tripId }) {
+            // Mirror expected final state locally once post inspection is done.
+            if store.trips[idx].proofOfDeliveryId != nil, store.trips[idx].endMileage != nil {
+                store.trips[idx].status = .completed
+                if store.trips[idx].actualEndDate == nil {
+                    store.trips[idx].actualEndDate = Date()
+                }
+            }
         }
-
-        guard let endMileage = Double(endOdometerText) else {
-            errorMessage = "Please enter a valid odometer reading"
-            showError = true
-            return
-        }
-
-        do {
-            try await store.endTrip(tripId: tripId, endMileage: endMileage)
-            withAnimation { phase = .completed }
-        } catch {
-            errorMessage = error.localizedDescription
-            showError = true
-        }
+        withAnimation { phase = .completed }
+        Task { await store.loadDriverData(driverId: driverId) }
     }
 }
