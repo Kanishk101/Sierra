@@ -135,9 +135,16 @@ struct TripNavigationContainerView: View {
                         showProofOfDelivery = false
                         coordinator.stopLocationPublishing()
                         coordinator.isNavigating = false
+
                         Task {
+                            do {
+                                try await store.endTrip(tripId: coordinator.trip.id)
+                            } catch {
+                                print("❌ Failed to complete trip after POD: \(error)")
+                            }
                             await store.loadDriverData(driverId: driverId)
                         }
+
                         dismiss()
                     }
                 }

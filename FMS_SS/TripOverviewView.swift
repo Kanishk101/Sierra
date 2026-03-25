@@ -33,7 +33,7 @@ struct TripOverviewView: View {
                     HStack(spacing: 8) {
                         Image(systemName: "paperplane.fill")
                             .font(.system(size: 13, weight: .semibold))
-                        Text("Navigate")
+                        Text("Start Navigation")
                             .font(.system(size: 14, weight: .bold, design: .rounded))
                     }
                     .foregroundColor(.white)

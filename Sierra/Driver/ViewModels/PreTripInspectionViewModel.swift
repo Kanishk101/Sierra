@@ -112,6 +112,9 @@ final class PreTripInspectionViewModel {
     // MARK: - Bug 6: Signature (Page 3)
     var signatureImage: UIImage?
 
+    // MARK: - Post-trip maintenance request
+    var maintenanceDescription: String = ""
+
     // MARK: - Validation computed properties
 
     /// True when every checklist item has been explicitly reviewed OR is still .notChecked
@@ -145,11 +148,16 @@ final class PreTripInspectionViewModel {
 
     /// May advance to summary only when all failed items have at least one photo.
     /// M-06 FIX: Warning items that are flagged as needing photos are also gated.
-    var canAdvanceToSummary: Bool { failedItemsMissingPhoto.isEmpty }
+    /// For post-trip: photos are optional, always allow advancing.
+    var canAdvanceToSummary: Bool {
+        inspectionType == .postTripInspection || failedItemsMissingPhoto.isEmpty
+    }
 
     /// Final submit gate: no failed item missing a photo + signature present.
+    /// For post-trip: photos for failed items are optional (maintenance request is auto-created).
     var canSubmit: Bool {
-        failedItemsMissingPhoto.isEmpty
+        let photosOk = inspectionType == .postTripInspection || failedItemsMissingPhoto.isEmpty
+        return photosOk
             && signatureImage != nil
             && (inspectionType != .preTripInspection || odometerReading != nil)
     }
@@ -537,6 +545,9 @@ final class PreTripInspectionViewModel {
                 var updatedTrip = store.trips[idx]
                 if inspectionType == .preTripInspection {
                     updatedTrip.preInspectionId = inspection.id
+                    // After pre-trip inspection, move trip to Active status
+                    updatedTrip.status = .active
+                    updatedTrip.actualStartDate = Date()
                 } else {
                     updatedTrip.postInspectionId = inspection.id
                 }
@@ -546,6 +557,10 @@ final class PreTripInspectionViewModel {
                     inspectionId: inspection.id,
                     type: inspectionType
                 )
+                // For pre-trip: also update trip status to Active in DB
+                if inspectionType == .preTripInspection {
+                    try await TripService.updateTripStatus(id: tripId, status: .active)
+                }
                 // Only now commit to local store
                 store.trips[idx] = updatedTrip
 
@@ -553,13 +568,16 @@ final class PreTripInspectionViewModel {
 
             // 5. Auto-create maintenance task for defects
             if isDefectRaised {
+                let description = maintenanceDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    ? "Defects found: \(defectsText ?? "Unknown")"
+                    : maintenanceDescription
                 let task = MaintenanceTask(
                     id: UUID(),
                     vehicleId: vehicleId,
                     createdByAdminId: driverId,
                     assignedToId: nil,
                     title: "Inspection Defect — \(inspectionType.rawValue)",
-                    taskDescription: "Defects found: \(defectsText ?? "Unknown")",
+                    taskDescription: description,
                     priority: .high,
                     status: .pending,
                     taskType: .inspectionDefect,

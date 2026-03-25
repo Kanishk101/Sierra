@@ -212,14 +212,14 @@ struct DriverAlertsView: View {
         switch type {
         case .tripAssigned, .vehicleAssigned:  return .appOrange
         case .tripAccepted, .maintenanceApproved, .maintenanceComplete:
-            return Color(red: 0.20, green: 0.65, blue: 0.32)
+            return Color.green
         case .tripRejected, .maintenanceRejected, .tripCancelled:
-            return Color(red: 0.90, green: 0.22, blue: 0.18)
-        case .sosAlert, .emergency:            return Color(red: 0.90, green: 0.22, blue: 0.18)
+            return Color.red
+        case .sosAlert, .emergency:            return Color.red
         case .maintenanceOverdue, .defectAlert, .inspectionFailed:
-            return Color(red: 0.85, green: 0.55, blue: 0.10)
-        case .routeDeviation, .geofenceAlert:   return Color(red: 0.85, green: 0.55, blue: 0.10)
-        case .documentExpiry:                   return Color(red: 0.85, green: 0.55, blue: 0.10)
+            return .orange
+        case .routeDeviation, .geofenceAlert:   return .orange
+        case .documentExpiry:                   return .orange
         case .general:                          return .appOrange
         case .preInspectionReminder, .tripAcceptanceReminder:
             return .appOrange

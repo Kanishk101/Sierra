@@ -241,7 +241,10 @@ final class DriverProfileViewModel {
                         }
                     }
                 }
-                throw lastError!
+                guard let error = lastError else {
+                    throw NSError(domain: "UploadError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Upload failed after all retries"])
+                }
+                throw error
             }
 
             // Upload Aadhaar images (front + back) as a combined document entry

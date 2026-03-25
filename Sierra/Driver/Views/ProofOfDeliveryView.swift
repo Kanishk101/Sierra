@@ -286,15 +286,15 @@ struct ProofOfDeliveryView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(Color(red: 0.20, green: 0.65, blue: 0.32))
+                        .foregroundColor(Color.green)
                     Text("Photo captured")
                         .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundColor(Color(red: 0.20, green: 0.65, blue: 0.32))
+                        .foregroundColor(Color.green)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
                 .background(
-                    Capsule().fill(Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.12))
+                    Capsule().fill(Color.green.opacity(0.12))
                 )
             }
         }
@@ -391,15 +391,15 @@ struct ProofOfDeliveryView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(Color(red: 0.20, green: 0.65, blue: 0.32))
+                        .foregroundColor(Color.green)
                     Text("Signature captured")
                         .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundColor(Color(red: 0.20, green: 0.65, blue: 0.32))
+                        .foregroundColor(Color.green)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
                 .background(
-                    Capsule().fill(Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.12))
+                    Capsule().fill(Color.green.opacity(0.12))
                 )
             }
         }
@@ -501,7 +501,7 @@ struct ProofOfDeliveryView: View {
                                     RoundedRectangle(cornerRadius: 14)
                                         .stroke(
                                             otpVerified
-                                                ? Color(red: 0.20, green: 0.65, blue: 0.32)
+                                                ? Color.green
                                                 : Color.appDivider,
                                             lineWidth: 1.5
                                         )
@@ -533,11 +533,11 @@ struct ProofOfDeliveryView: View {
                             Text("OTP Verified")
                                 .font(.system(size: 14, weight: .bold, design: .rounded))
                         }
-                        .foregroundColor(Color(red: 0.20, green: 0.65, blue: 0.32))
+                        .foregroundColor(Color.green)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
                         .background(
-                            Capsule().fill(Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.12))
+                            Capsule().fill(Color.green.opacity(0.12))
                         )
                     }
 

@@ -9,6 +9,7 @@ let mapboxTokenSetupMessage = "Mapbox access token is missing. Add a valid MBXAc
 enum MapServiceError: LocalizedError {
     case tokenMissing
     case noRoutesFound
+    case invalidRoute(String)
     case networkError(Error)
 
     var errorDescription: String? {
@@ -17,6 +18,8 @@ enum MapServiceError: LocalizedError {
             return mapboxTokenSetupMessage
         case .noRoutesFound:
             return "No routes found between the selected locations."
+        case .invalidRoute(let reason):
+            return "Invalid route: \(reason)"
         case .networkError(let error):
             return "Network error: \(error.localizedDescription)"
         }
@@ -94,7 +97,9 @@ struct MapService {
             ? "\(originLng),\(originLat);\(destLng),\(destLat)"
             : "\(originLng),\(originLat);\(waypointPath);\(destLng),\(destLat)"
 
-        var components = URLComponents(string: "https://api.mapbox.com/directions/v5/mapbox/driving/\(routePath)")!
+        guard var components = URLComponents(string: "https://api.mapbox.com/directions/v5/mapbox/driving/\(routePath)") else {
+            throw MapServiceError.invalidRoute("Failed to create URL components for route: \(routePath)")
+        }
         components.queryItems = [
             URLQueryItem(name: "alternatives", value: "true"),
             URLQueryItem(name: "geometries",   value: "polyline6"),

@@ -205,15 +205,16 @@ struct Trip: Identifiable, Codable {
         destinationLongitude = try c.decodeIfPresent(Double.self, forKey: .destinationLongitude)
         routePolyline        = try c.decodeIfPresent(String.self, forKey: .routePolyline)
 
-        if let parsedStops = try? c.decodeIfPresent([RouteStop].self, forKey: .routeStops) {
+        // Safely decode routeStops with multiple fallback strategies
+        routeStops = nil
+        if let parsedStops: [RouteStop] = try? c.decodeIfPresent([RouteStop].self, forKey: .routeStops) {
             routeStops = parsedStops
-        } else if let raw = try? c.decode(String.self, forKey: .routeStops),
+        } else if let raw: String = try? c.decodeIfPresent(String.self, forKey: .routeStops),
                   let data = raw.data(using: .utf8),
-                  let parsed = try? JSONDecoder().decode([RouteStop].self, from: data) {
+                  let parsed: [RouteStop] = try? JSONDecoder().decode([RouteStop].self, from: data) {
             routeStops = parsed
-        } else {
-            routeStops = nil
         }
+        // If both decoding strategies fail, routeStops remains nil
 
         deliveryInstructions = try c.decodeIfPresent(String.self, forKey: .deliveryInstructions) ?? ""
         scheduledDate        = try c.decode(Date.self, forKey: .scheduledDate)
