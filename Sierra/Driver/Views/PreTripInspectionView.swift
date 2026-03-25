@@ -138,8 +138,37 @@ struct PreTripInspectionView: View {
         } message: {
             Text(viewModel.submitError ?? "")
         }
+        .alert("Vehicle Requires Maintenance", isPresented: $viewModel.tripBlockedByInspection) {
+            Button("OK") { dismiss() }
+        } message: {
+            Text("This vehicle requires maintenance before the trip can begin. Your fleet manager has been notified.")
+        }
+        .overlay(alignment: .top) {
+            if let bannerText = viewModel.maintenanceBannerText {
+                HStack(spacing: 8) {
+                    Image(systemName: "wrench.and.screwdriver.fill")
+                        .font(.caption.weight(.bold))
+                    Text(bannerText)
+                        .font(.caption.weight(.semibold))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 16).padding(.vertical, 10)
+                .background(.orange, in: Capsule())
+                .shadow(color: .orange.opacity(0.3), radius: 8, y: 4)
+                .padding(.top, 8)
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .onAppear {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                        withAnimation(.easeOut(duration: 0.4)) {
+                            viewModel.maintenanceBannerText = nil
+                        }
+                    }
+                }
+            }
+        }
+        .animation(.spring(response: 0.4), value: viewModel.maintenanceBannerText != nil)
         .onChange(of: viewModel.didSubmitSuccessfully) { _, success in
-            if success { onComplete() }
+            if success && !viewModel.tripBlockedByInspection { onComplete() }
         }
     }
 

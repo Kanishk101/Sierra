@@ -10,6 +10,7 @@ struct SparePartsRequestSheet: View {
     @State private var requiredParts: [DraftPart] = [DraftPart()]
     @State private var additionalParts: [DraftPart] = []
     @State private var isSubmitting = false
+    @State private var showSuccess = false
 
     private var currentUserId: UUID { AuthManager.shared.currentUser?.id ?? UUID() }
     private var workOrder: WorkOrder? { store.workOrder(forMaintenanceTask: task.id) }
@@ -33,6 +34,29 @@ struct SparePartsRequestSheet: View {
                 }
             }
             .safeAreaInset(edge: .bottom) { bottomBar }
+            .overlay {
+                if showSuccess {
+                    ZStack {
+                        Color.black.opacity(0.3).ignoresSafeArea()
+                        VStack(spacing: 14) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 56))
+                                .foregroundStyle(.green)
+                            Text("Parts Requested!")
+                                .font(.title3.weight(.bold))
+                                .foregroundStyle(Color.appTextPrimary)
+                            Text("Admin will review your request.")
+                                .font(.subheadline)
+                                .foregroundStyle(Color.appTextSecondary)
+                        }
+                        .padding(32)
+                        .background(Color.appCardBg, in: RoundedRectangle(cornerRadius: 20))
+                        .shadow(color: .black.opacity(0.15), radius: 20)
+                    }
+                    .transition(.opacity)
+                }
+            }
+            .animation(.easeInOut(duration: 0.25), value: showSuccess)
         }
     }
 
@@ -195,7 +219,6 @@ struct SparePartsRequestSheet: View {
 
     private func submitParts(_ parts: [DraftPart]) async {
         isSubmitting = true
-        defer { isSubmitting = false }
 
         for part in parts {
             let request = SparePartsRequest(
@@ -220,11 +243,18 @@ struct SparePartsRequestSheet: View {
         }
 
         // Mark work order parts status to requested
-        if var wo = workOrder, wo.partsSubStatus == .none {
-            wo.partsSubStatus = .requested
-            try? await store.updateWorkOrder(wo)
+        if let wo = workOrder, wo.partsSubStatus == .none {
+            try? await WorkOrderService.updatePartsSubStatus(workOrderId: wo.id, status: .requested)
+            if let idx = store.workOrders.firstIndex(where: { $0.id == wo.id }) {
+                store.workOrders[idx].partsSubStatus = .requested
+            }
         }
 
+        isSubmitting = false
+
+        // Show success confirmation
+        withAnimation { showSuccess = true }
+        try? await Task.sleep(for: .seconds(1.5))
         dismiss()
     }
 }

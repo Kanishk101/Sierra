@@ -184,6 +184,9 @@ struct NotificationCentreView: View {
         case .documentExpiry:          return "calendar.badge.exclamationmark"
         case .emergency:               return "exclamationmark.octagon.fill"
         case .maintenanceComplete:     return "wrench.and.screwdriver.fill"
+        case .partsApproved:           return "shippingbox.and.arrow.backward.fill"
+        case .partsRejected:           return "shippingbox.fill"
+        case .maintenanceRequest:      return "exclamationmark.triangle.fill"
         case .preInspectionReminder:   return "checklist"
         case .tripAcceptanceReminder:  return "clock.badge.exclamationmark"
         case .general:                 return "bell.fill"
@@ -201,8 +204,12 @@ struct NotificationCentreView: View {
             return .yellow
         case .tripAssigned, .tripAccepted, .vehicleAssigned:
             return .blue
-        case .maintenanceApproved, .maintenanceComplete:
+        case .maintenanceApproved, .maintenanceComplete, .partsApproved:
             return .green
+        case .partsRejected:
+            return .red
+        case .maintenanceRequest:
+            return .orange
         case .general:
             return .gray
         }

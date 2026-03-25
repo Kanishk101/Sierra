@@ -23,6 +23,9 @@ enum NotificationType: String, Codable, CaseIterable {
     case inspectionFailed        = "Inspection Failed"
     case emergency               = "Emergency"
     case maintenanceComplete     = "Maintenance Complete"
+    case partsApproved           = "Parts Approved"
+    case partsRejected           = "Parts Rejected"
+    case maintenanceRequest      = "Maintenance Request"
     case general                 = "General"
     // Scheduled notifications (queued by DB trigger, delivered at scheduled_for time)
     case preInspectionReminder   = "Pre-Inspection Reminder"

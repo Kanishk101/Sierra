@@ -83,6 +83,10 @@ final class PreTripInspectionViewModel {
     var submitError: String?
     var didSubmitSuccessfully = false
 
+    // Maintenance task auto-creation state
+    var maintenanceBannerText: String?
+    var tripBlockedByInspection = false
+
     // MARK: - Step 1: Checklist
 
     var checkItems: [InspectionCheckItem] = PreTripInspectionViewModel.defaultCheckItems()
@@ -517,7 +521,9 @@ final class PreTripInspectionViewModel {
             let confirmedOdometer = odometerReading
 
             let defectsText    = failedItems.isEmpty ? nil : failedItems.map(\.name).joined(separator: ", ")
+            let warningsText   = warningItems.isEmpty ? nil : warningItems.map(\.name).joined(separator: ", ")
             let isDefectRaised = overallResult == .failed
+            let hasIssues      = overallResult == .failed || overallResult == .passedWithWarnings
 
             // 3. INSERT inspection row
             let inspection = try await VehicleInspectionService.submitInspectionWithPhotos(
@@ -538,60 +544,78 @@ final class PreTripInspectionViewModel {
                 raisedTaskId: nil
             )
 
-            // 4. Update trip's inspection ID using targeted patch only.
-            // Avoids RLS/trigger failures like "Drivers cannot change the trip schedule"
-            // that occur when sending a full Trip update payload.
+            // 4. Resolve vehicle license plate for maintenance request title
+            let vehiclePlate = store.vehicle(for: vehicleId)?.licensePlate ?? vehicleId.uuidString.prefix(8).description
+
+            // 5. Auto-create maintenance task for warn OR fail
+            if hasIssues {
+                let issueItemNames = (failedItems + warningItems).map(\.name).joined(separator: ", ")
+                let typeLabel = inspectionType == .preTripInspection ? "Pre-trip" : "Post-trip"
+                let autoDescription = maintenanceDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    ? "\(typeLabel) inspection issues: \(issueItemNames)"
+                    : maintenanceDescription
+
+                let priority: TaskPriority
+                if inspectionType == .postTripInspection {
+                    priority = .medium  // post-trip defects are never trip-blocking
+                } else {
+                    priority = overallResult == .failed ? .urgent : .medium
+                }
+
+                try? await MaintenanceTaskService.createDriverRequest(
+                    vehicleId: vehicleId,
+                    driverId: driverId,
+                    title: "\(typeLabel) Defect \u{2013} \(vehiclePlate)",
+                    description: autoDescription,
+                    priority: priority,
+                    sourceInspectionId: inspection.id
+                )
+
+                // Notify all admins about the defect (non-blocking)
+                let defectTitle = "\(typeLabel) Defect \u{2013} \(vehiclePlate)"
+                let driverName = store.staffMember(for: driverId)?.displayName ?? "Driver"
+                Task {
+                    await NotificationService.sendToAdmins(
+                        type: .maintenanceRequest,
+                        title: "Defect Reported \u{2013} \(vehiclePlate)",
+                        body: "\(driverName) reported: \(defectTitle)",
+                        entityType: "vehicle_inspection",
+                        entityId: inspection.id
+                    )
+                }
+
+                maintenanceBannerText = "Maintenance request submitted for \(vehiclePlate)"
+            }
+
+            // 6. Update trip's inspection ID using targeted patch only.
             if let idx = store.trips.firstIndex(where: { $0.id == tripId }) {
                 var updatedTrip = store.trips[idx]
                 if inspectionType == .preTripInspection {
                     updatedTrip.preInspectionId = inspection.id
-                    // After pre-trip inspection, move trip to Active status
-                    updatedTrip.status = .active
-                    updatedTrip.actualStartDate = Date()
+                    if overallResult == .failed {
+                        // BLOCK trip start: vehicle requires maintenance
+                        tripBlockedByInspection = true
+                        // Don't set trip to active — leave it as scheduled
+                    } else {
+                        // Warn or pass: allow trip start
+                        updatedTrip.status = .active
+                        updatedTrip.actualStartDate = Date()
+                    }
                 } else {
                     updatedTrip.postInspectionId = inspection.id
                 }
-                // Write to DB first — if this throws, local state stays unchanged
+                // Write to DB first
                 try await TripService.setInspectionId(
                     tripId: tripId,
                     inspectionId: inspection.id,
                     type: inspectionType
                 )
-                // For pre-trip: also update trip status to Active in DB
-                if inspectionType == .preTripInspection {
+                // For pre-trip with pass/warn: also update trip status to Active in DB
+                if inspectionType == .preTripInspection && overallResult != .failed {
                     try await TripService.updateTripStatus(id: tripId, status: .active)
                 }
-                // Only now commit to local store
+                // Commit to local store
                 store.trips[idx] = updatedTrip
-
-            }
-
-            // 5. Auto-create maintenance task for defects
-            if isDefectRaised {
-                let description = maintenanceDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    ? "Defects found: \(defectsText ?? "Unknown")"
-                    : maintenanceDescription
-                let task = MaintenanceTask(
-                    id: UUID(),
-                    vehicleId: vehicleId,
-                    createdByAdminId: driverId,
-                    assignedToId: nil,
-                    title: "Inspection Defect — \(inspectionType.rawValue)",
-                    taskDescription: description,
-                    priority: .high,
-                    status: .pending,
-                    taskType: .inspectionDefect,
-                    sourceAlertId: nil,
-                    sourceInspectionId: inspection.id,
-                    dueDate: Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date(),
-                    completedAt: nil,
-                    approvedById: nil,
-                    approvedAt: nil,
-                    rejectionReason: nil,
-                    createdAt: Date(),
-                    updatedAt: Date()
-                )
-                try await MaintenanceTaskService.addMaintenanceTask(task)
             }
 
             store.vehicleInspections.append(inspection)

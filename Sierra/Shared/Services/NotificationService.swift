@@ -172,6 +172,43 @@ final class NotificationService {
             .execute()
     }
 
+    // MARK: - Broadcast to Admins / Fleet Managers
+    //
+    // Fetches all staff_members where role == fleetManager and sends
+    // a notification to each. Non-blocking — caller wraps in Task{}.
+
+    static func sendToAdmins(
+        type: NotificationType,
+        title: String,
+        body: String,
+        entityType: String?,
+        entityId: UUID?
+    ) async {
+        do {
+            struct StaffRow: Decodable { let id: UUID; let role: String }
+            let admins: [StaffRow] = try await supabase
+                .from("staff_members")
+                .select("id, role")
+                .eq("role", value: UserRole.fleetManager.rawValue)
+                .execute()
+                .value
+            for admin in admins {
+                try? await insertNotification(
+                    recipientId: admin.id,
+                    type: type,
+                    title: title,
+                    body: body,
+                    entityType: entityType,
+                    entityId: entityId
+                )
+            }
+        } catch {
+            #if DEBUG
+            print("[NotificationService] sendToAdmins error: \(error)")
+            #endif
+        }
+    }
+
     // MARK: - Realtime Subscribe
     //
     // Server-side filter: only INSERT events for this specific recipient are

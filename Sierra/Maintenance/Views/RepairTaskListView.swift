@@ -4,374 +4,452 @@ import SwiftUI
 
 struct RepairTaskListView: View {
     @Environment(AppDataStore.self) private var store
-    @State private var selectedFilter: MaintenanceTaskStatus? = nil
+    @State private var statusFilter: MaintenanceTaskStatus? = nil
+    @State private var searchText = ""
+    @State private var showProfile = false
+    @State private var vehicleSheetVehicle: Vehicle?
 
     private var currentUserId: UUID { AuthManager.shared.currentUser?.id ?? UUID() }
 
-    private var tasks: [MaintenanceTask] {
-        store.maintenanceTasks.filter { $0.assignedToId == currentUserId }
+    /// Repair tasks only (non-scheduled)
+    private var repairTasks: [MaintenanceTask] {
+        store.maintenanceTasks.filter { task in
+            task.assignedToId == currentUserId && task.taskType != .scheduled
+        }
     }
 
     private var filteredTasks: [MaintenanceTask] {
-        guard let f = selectedFilter else { return tasks }
-        return tasks.filter { $0.status == f }
+        repairTasks.filter { task in
+            if let f = statusFilter, task.status != f { return false }
+            let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if q.isEmpty { return true }
+            let vehicle = store.vehicle(for: task.vehicleId)
+            let idText = "MNT-\(task.id.uuidString.prefix(8).uppercased())".lowercased()
+            let blob = "\(task.title) \(task.taskDescription) \(vehicle?.licensePlate ?? "") \(vehicle?.name ?? "")".lowercased()
+            return idText.contains(q) || blob.contains(q)
+        }
     }
 
-    /// Count of tasks whose work order has parts ready or approved
-    private var partsReadyCount: Int {
-        tasks.filter { task in
-            guard let wo = store.workOrder(forMaintenanceTask: task.id) else { return false }
-            return wo.partsSubStatus == .ready || wo.partsSubStatus == .approved
-        }.count
-    }
-
-    private var isFilterActive: Bool { selectedFilter != nil }
+    private var isFilterActive: Bool { statusFilter != nil }
+    private var totalCount: Int { repairTasks.count }
+    private var activeCount: Int { repairTasks.filter { $0.status == .assigned || $0.status == .inProgress }.count }
+    private var completedCount: Int { repairTasks.filter { $0.status == .completed }.count }
 
     var body: some View {
-        ZStack {
-            Color.appSurface.ignoresSafeArea()
-            VStack(spacing: 0) {
-                // Filter row
-                filterRow
-                if filteredTasks.isEmpty {
-                    emptyState
-                } else {
-                    taskList
+        VStack(spacing: 10) {
+            searchBar
+            statsRow
+
+            ScrollView {
+                LazyVStack(spacing: 12) {
+                    ForEach(filteredTasks) { task in
+                        NavigationLink(value: task) {
+                            TaskCard(task: task, store: store)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 24)
             }
         }
+        .overlay {
+            if filteredTasks.isEmpty { emptyState }
+        }
+        .background(Color.appSurface.ignoresSafeArea())
+        .navigationTitle("Repairs")
+        .navigationBarTitleDisplayMode(.large)
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                countBadge
-            }
-            if partsReadyCount > 0 {
-                ToolbarItem(placement: .topBarTrailing) {
-                    notificationBell
-                }
-            }
+            ToolbarItem(placement: .topBarLeading) { profileButton }
+            ToolbarItem(placement: .topBarTrailing) { filterMenuButton }
         }
         .navigationDestination(for: MaintenanceTask.self) { task in
             MaintenanceTaskDetailView(task: task)
         }
+        .sheet(isPresented: $showProfile) {
+            MaintenanceProfileView()
+                .environment(store)
+        }
+        .sheet(item: $vehicleSheetVehicle) { vehicle in
+            VehicleQuickStatusSheet(vehicle: vehicle)
+                .environment(store)
+        }
     }
 
-    // MARK: - Filter Row (standalone button on the right)
+    private var searchBar: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(Color.appTextSecondary)
+            TextField("Search task ID, vehicle, title", text: $searchText)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled(true)
+                .font(.system(size: 14, weight: .medium, design: .rounded))
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .background(Color(.secondarySystemGroupedBackground), in: Capsule())
+        .padding(.horizontal, 16)
+        .padding(.top, 6)
+    }
 
-    private var filterRow: some View {
-        HStack {
-            Spacer()
-            Menu {
-                Button {
-                    selectedFilter = nil
-                } label: {
-                    Label("All Tasks", systemImage: selectedFilter == nil ? "checkmark" : "")
-                }
-                Divider()
-                ForEach(MaintenanceTaskStatus.allCases, id: \.self) { status in
-                    Button {
-                        selectedFilter = (selectedFilter == status) ? nil : status
-                    } label: {
-                        Label(status.rawValue, systemImage: selectedFilter == status ? "checkmark" : "")
-                    }
-                }
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "line.3.horizontal.decrease.circle\(isFilterActive ? ".fill" : "")")
-                        .font(.system(size: 15))
-                    Text(selectedFilter?.rawValue ?? "Filter")
-                        .font(.system(size: 13, weight: .medium))
-                }
-                .foregroundStyle(isFilterActive ? .white : Color.appOrange)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(
-                    isFilterActive ? Color.appOrange : Color.appOrange.opacity(0.1),
-                    in: Capsule()
-                )
-                .overlay(
-                    Capsule().strokeBorder(
-                        isFilterActive ? Color.clear : Color.appOrange.opacity(0.3),
-                        lineWidth: 0.8
-                    )
-                )
-            }
+    private var statsRow: some View {
+        HStack(spacing: 10) {
+            statPill(value: totalCount, label: "Total", color: Color.appOrange, icon: "list.bullet.rectangle.fill")
+            statPill(value: activeCount, label: "Active", color: .blue, icon: "clock.fill")
+            statPill(value: completedCount, label: "Done", color: .green, icon: "checkmark.seal.fill")
         }
         .padding(.horizontal, 16)
+    }
+
+    private func statPill(value: Int, label: String, color: Color, icon: String) -> some View {
+        VStack(spacing: 3) {
+            HStack(spacing: 4) {
+                Image(systemName: icon).font(.system(size: 10, weight: .semibold))
+                Text("\(value)").font(.system(size: 16, weight: .bold, design: .rounded))
+            }
+            .foregroundStyle(color)
+            Text(label)
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .foregroundStyle(Color.appTextSecondary)
+        }
+        .frame(maxWidth: .infinity)
         .padding(.vertical, 10)
+        .background(Color.appCardBg, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.appDivider.opacity(0.35), lineWidth: 1))
     }
 
-    // MARK: - Count Badge
+    // MARK: - Filter Menu
 
-    private var countBadge: some View {
-        HStack(spacing: 4) {
-            Image(systemName: "number").font(.caption2)
-            Text("\(filteredTasks.count)").font(.caption.weight(.bold))
-        }
-        .foregroundStyle(Color.appOrange)
-        .padding(.horizontal, 10).padding(.vertical, 5)
-        .background(Color.appOrange.opacity(0.1), in: Capsule())
-    }
-
-    // MARK: - Notification Bell
-
-    private var notificationBell: some View {
-        ZStack(alignment: .topTrailing) {
-            Image(systemName: "bell.fill")
-                .foregroundStyle(Color.appOrange)
-            Circle()
-                .fill(Color.red)
-                .frame(width: 14, height: 14)
-                .overlay(
-                    Text("\(partsReadyCount)")
-                        .font(.system(size: 8, weight: .bold))
-                        .foregroundStyle(.white)
-                )
-                .offset(x: 6, y: -6)
-        }
-    }
-
-    // MARK: - Task List
-
-    private var taskList: some View {
-        ScrollView {
-            LazyVStack(spacing: 12) {
-                ForEach(filteredTasks) { task in
-                    NavigationLink(value: task) {
-                        RepairTaskCard(task: task, store: store)
-                    }
-                    .buttonStyle(.plain)
+    private var filterMenuButton: some View {
+        Menu {
+            Button {
+                statusFilter = nil
+            } label: {
+                Label("All", systemImage: statusFilter == nil ? "checkmark" : "")
+            }
+            Divider()
+            ForEach(MaintenanceTaskStatus.allCases, id: \.self) { status in
+                Button {
+                    statusFilter = (statusFilter == status) ? nil : status
+                } label: {
+                    Label(status.rawValue, systemImage: statusFilter == status ? "checkmark" : "")
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 24)
+        } label: {
+            Image(systemName: "line.3.horizontal.decrease.circle\(isFilterActive ? ".fill" : "")")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(Color.appOrange)
+        }
+    }
+
+    private var profileButton: some View {
+        Button { showProfile = true } label: {
+            if let staffer = store.staff.first(where: { $0.id == AuthManager.shared.currentUser?.id }) {
+                let initials = initials(for: staffer.name ?? "MP")
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.appOrange, Color.appDeepOrange],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 32, height: 32)
+                    Text(initials)
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
+                }
+            } else {
+                Image(systemName: "person.circle.fill")
+                    .font(.system(size: 28))
+                    .foregroundStyle(Color.appOrange)
+            }
         }
     }
 
     // MARK: - Empty State
 
     private var emptyState: some View {
-        VStack(spacing: 16) {
-            Spacer()
+        VStack(spacing: 14) {
             Image(systemName: isFilterActive ? "line.3.horizontal.decrease.circle" : "wrench.and.screwdriver")
-                .font(.system(size: 52, weight: .light))
+                .font(.system(size: 48, weight: .light))
                 .foregroundStyle(Color.appOrange.opacity(0.3))
-            Text(isFilterActive ? "No Tasks Match Filter" : "No Repair Tasks")
+            Text(isFilterActive ? "No Matches" : "No Repair Tasks")
                 .font(.system(size: 20, weight: .bold, design: .rounded))
                 .foregroundStyle(Color.appTextPrimary)
-            Text(isFilterActive
-                 ? "Try clearing the filter to see all tasks."
-                 : "You have no assigned repair tasks right now.")
-                .font(.subheadline)
+            Text(isFilterActive ? "Try a different filter." : "No assigned repair tasks right now.")
+                .font(.system(size: 14, weight: .medium, design: .rounded))
                 .foregroundStyle(Color.appTextSecondary)
                 .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
             if isFilterActive {
-                Button {
-                    selectedFilter = nil
-                } label: {
+                Button { statusFilter = nil } label: {
                     Text("Clear Filter")
-                        .font(.subheadline.weight(.semibold))
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
                         .foregroundStyle(Color.appOrange)
                         .padding(.horizontal, 20).padding(.vertical, 10)
                         .background(Color.appOrange.opacity(0.1), in: Capsule())
                 }
             }
-            Spacer()
         }
-        .frame(maxWidth: .infinity)
+        .padding(40)
+    }
+
+    private func initials(for name: String) -> String {
+        let parts = name.split(separator: " ")
+        switch parts.count {
+        case 0:  return "?"
+        case 1:  return String(parts[0].prefix(2)).uppercased()
+        default: return "\(parts[0].prefix(1))\(parts[1].prefix(1))".uppercased()
+        }
     }
 }
 
-// MARK: - Repair Task Card (matches reference exactly)
+// MARK: - Task Type Filter
 
-struct RepairTaskCard: View {
-    let task: MaintenanceTask
-    let store: AppDataStore
+enum TaskTypeFilter: Int, CaseIterable {
+    case all = 0
+    case repair = 1
+    case service = 2
+}
 
-    private var vehicle: Vehicle? { store.vehicle(for: task.vehicleId) }
-    private var workOrder: WorkOrder? { store.workOrder(forMaintenanceTask: task.id) }
+// MARK: - Vehicle Quick Status Sheet
+
+struct VehicleQuickStatusSheet: View {
+    let vehicle: Vehicle
+    @Environment(AppDataStore.self) private var store
 
     var body: some View {
-        HStack(spacing: 0) {
-            // Priority accent bar
-            Rectangle()
-                .fill(priorityColor)
-                .frame(width: 4)
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 20) {
+                    vehicleHeader
+                    detailsCard
+                    documentsCard
+                    inspectionsCard
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+                .padding(.bottom, 32)
+            }
+            .background(Color.appSurface.ignoresSafeArea())
+            .navigationTitle("Vehicle")
+            .navigationBarTitleDisplayMode(.large)
+        }
+    }
 
-            VStack(alignment: .leading, spacing: 10) {
-                // Title row
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(task.title)
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(Color.appTextPrimary)
-                            .lineLimit(1)
-                        if let v = vehicle {
-                            HStack(spacing: 4) {
-                                Text(v.model).font(.caption)
-                                Text("•").font(.caption)
-                                Text(v.licensePlate).font(.caption)
-                            }
-                            .foregroundStyle(Color.appTextSecondary)
+    // MARK: - Header
+
+    private var vehicleHeader: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(statusColor(vehicle.status).opacity(0.12))
+                    .frame(width: 56, height: 56)
+                Image(systemName: "car.fill")
+                    .font(.system(size: 24))
+                    .foregroundStyle(statusColor(vehicle.status))
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(vehicle.name)
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.appTextPrimary)
+                Text("\(vehicle.licensePlate) · \(vehicle.manufacturer) \(vehicle.model)")
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(Color.appTextSecondary)
+            }
+            Spacer()
+            Text(vehicle.status.rawValue)
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(statusColor(vehicle.status), in: Capsule())
+        }
+    }
+
+    // MARK: - Details Card
+
+    private var detailsCard: some View {
+        VStack(spacing: 0) {
+            detailRow(label: "Odometer", value: "\(Int(vehicle.odometer)) km", icon: "gauge.with.dots.needle.bottom.50percent")
+            Divider().padding(.leading, 44)
+            detailRow(label: "VIN", value: vehicle.vin, icon: "barcode")
+            Divider().padding(.leading, 44)
+            detailRow(label: "Year", value: "\(vehicle.year)", icon: "calendar")
+            Divider().padding(.leading, 44)
+            detailRow(label: "Fuel", value: vehicle.fuelType.rawValue, icon: "fuelpump.fill")
+            if vehicle.totalTrips > 0 {
+                Divider().padding(.leading, 44)
+                detailRow(label: "Trips", value: "\(vehicle.totalTrips)", icon: "arrow.triangle.swap")
+            }
+            if vehicle.totalDistanceKm > 0 {
+                Divider().padding(.leading, 44)
+                detailRow(label: "Distance", value: "\(Int(vehicle.totalDistanceKm)) km", icon: "road.lanes")
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 22)
+                .fill(Color.appCardBg)
+                .shadow(color: .black.opacity(0.04), radius: 12, x: 0, y: 4)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 22)
+                .stroke(Color.appDivider, lineWidth: 1)
+        )
+    }
+
+    private func detailRow(label: String, value: String, icon: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 14))
+                .foregroundStyle(Color.appOrange)
+                .frame(width: 24)
+            Text(label)
+                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .foregroundStyle(Color.appTextSecondary)
+            Spacer()
+            Text(value)
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.appTextPrimary)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 14)
+    }
+
+    // MARK: - Documents Card
+
+    @ViewBuilder
+    private var documentsCard: some View {
+        let docs = store.vehicleDocuments.filter { $0.vehicleId == vehicle.id }
+        if !docs.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(docs.enumerated()), id: \.element.id) { idx, doc in
+                    HStack(spacing: 12) {
+                        Image(systemName: docIcon(doc))
+                            .font(.system(size: 14))
+                            .foregroundStyle(docColor(doc))
+                            .frame(width: 24)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(doc.documentType.rawValue)
+                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                .foregroundStyle(Color.appTextPrimary)
+                            Text("Expires \(doc.expiryDate.formatted(.dateTime.month(.abbreviated).day().year()))")
+                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                                .foregroundStyle(Color.appTextSecondary)
+                        }
+                        Spacer()
+                        if doc.isExpired {
+                            Text("EXPIRED")
+                                .font(.system(size: 9, weight: .bold, design: .rounded))
+                                .foregroundStyle(.red)
+                                .padding(.horizontal, 8).padding(.vertical, 3)
+                                .background(.red.opacity(0.1), in: Capsule())
                         }
                     }
-                    Spacer()
-                    priorityBadge
-                }
-
-                // Parts-ready banner
-                if let wo = workOrder, wo.partsSubStatus == .ready || wo.partsSubStatus == .approved {
-                    HStack(spacing: 6) {
-                        Image(systemName: "bell.fill").font(.caption2)
-                        Text("Parts are ready — tap to start work")
-                            .font(.caption.weight(.medium))
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 14)
+                    if idx < docs.count - 1 {
+                        Divider().padding(.leading, 52)
                     }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 10).padding(.vertical, 6)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color(red: 0.1, green: 0.7, blue: 0.4), in: RoundedRectangle(cornerRadius: 8))
-                } else if let wo = workOrder, wo.partsSubStatus == .partiallyReady {
-                    HStack(spacing: 6) {
-                        Image(systemName: "shippingbox.and.arrow.backward").font(.caption2)
-                        Text("Some parts ready — others on order")
-                            .font(.caption.weight(.medium))
-                    }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 10).padding(.vertical, 6)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.orange, in: RoundedRectangle(cornerRadius: 8))
-                }
-
-                // Status + date row
-                HStack(spacing: 8) {
-                    statusChip
-                    Spacer()
-                    HStack(spacing: 4) {
-                        Image(systemName: "calendar").font(.caption2)
-                        Text(task.dueDate.formatted(.dateTime.month(.abbreviated).day()))
-                            .font(.caption2)
-                    }
-                    .foregroundStyle(Color.appTextSecondary)
-                }
-
-                // Under-maintenance countdown
-                if task.status == .inProgress, let wo = workOrder, let eta = wo.estimatedCompletionAt {
-                    let remaining = eta.timeIntervalSince(Date())
-                    let isOverdue = remaining <= 0
-                    HStack(spacing: 5) {
-                        Image(systemName: isOverdue ? "exclamationmark.triangle.fill" : "clock.fill")
-                            .font(.caption2)
-                        Text(isOverdue ? "Overdue" : countdownText(remaining))
-                            .font(.caption.weight(.medium))
-                    }
-                    .foregroundStyle(isOverdue ? .red : .purple)
-                    .padding(.horizontal, 8).padding(.vertical, 4)
-                    .background((isOverdue ? Color.red : Color.purple).opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 14)
+            .background(
+                RoundedRectangle(cornerRadius: 22)
+                    .fill(Color.appCardBg)
+                    .shadow(color: .black.opacity(0.04), radius: 12, x: 0, y: 4)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 22)
+                    .stroke(Color.appDivider, lineWidth: 1)
+            )
         }
-        .background(Color.appCardBg)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .shadow(color: .black.opacity(0.06), radius: 6, x: 0, y: 2)
     }
 
-    // MARK: - Priority Badge
+    // MARK: - Inspections Card
 
-    private var priorityBadge: some View {
-        HStack(spacing: 4) {
-            Image(systemName: priorityIcon).font(.system(size: 9))
-            Text(task.priority.rawValue).font(.system(size: 10, weight: .bold))
+    @ViewBuilder
+    private var inspectionsCard: some View {
+        let inspections = Array(store.vehicleInspections.filter { $0.vehicleId == vehicle.id }.prefix(3))
+        if !inspections.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(inspections.enumerated()), id: \.element.id) { idx, insp in
+                    HStack(spacing: 12) {
+                        Image(systemName: inspIcon(insp.overallResult))
+                            .font(.system(size: 16))
+                            .foregroundStyle(inspColor(insp.overallResult))
+                            .frame(width: 24)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(insp.type.rawValue)
+                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                .foregroundStyle(Color.appTextPrimary)
+                            Text(insp.createdAt.formatted(.dateTime.month(.abbreviated).day().hour().minute()))
+                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                                .foregroundStyle(Color.appTextSecondary)
+                        }
+                        Spacer()
+                        Text(insp.overallResult.rawValue)
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .foregroundStyle(inspColor(insp.overallResult))
+                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .background(inspColor(insp.overallResult).opacity(0.1), in: Capsule())
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 14)
+                    if idx < inspections.count - 1 {
+                        Divider().padding(.leading, 52)
+                    }
+                }
+            }
+            .background(
+                RoundedRectangle(cornerRadius: 22)
+                    .fill(Color.appCardBg)
+                    .shadow(color: .black.opacity(0.04), radius: 12, x: 0, y: 4)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 22)
+                    .stroke(Color.appDivider, lineWidth: 1)
+            )
         }
-        .foregroundStyle(priorityColor)
-        .padding(.horizontal, 9).padding(.vertical, 4)
-        .background(priorityColor.opacity(0.1))
-        .clipShape(Capsule())
-        .overlay(Capsule().strokeBorder(priorityColor.opacity(0.3), lineWidth: 0.5))
-    }
-
-    // MARK: - Status Chip
-
-    private var statusChip: some View {
-        HStack(spacing: 5) {
-            Image(systemName: statusIcon).font(.system(size: 9))
-            Text(statusDisplayText).font(.system(size: 11, weight: .medium))
-        }
-        .foregroundStyle(statusColor)
     }
 
     // MARK: - Helpers
 
-    private var priorityColor: Color {
-        switch task.priority {
-        case .low:    return .green
-        case .medium: return .blue
-        case .high:   return .orange
-        case .urgent: return .red
+    private func statusColor(_ s: VehicleStatus) -> Color {
+        switch s {
+        case .active: return .green
+        case .idle: return .blue
+        case .busy: return .purple
+        case .inMaintenance: return .orange
+        case .outOfService: return .red
+        case .decommissioned: return .gray
         }
     }
 
-    private var priorityIcon: String {
-        switch task.priority {
-        case .low:    return "arrow.down"
-        case .medium: return "minus"
-        case .high:   return "arrow.up"
-        case .urgent: return "exclamationmark.2"
+    private func docIcon(_ doc: VehicleDocument) -> String {
+        if doc.isExpired { return "exclamationmark.triangle.fill" }
+        if doc.isExpiringSoon { return "clock.badge.exclamationmark" }
+        return "doc.fill"
+    }
+
+    private func docColor(_ doc: VehicleDocument) -> Color {
+        if doc.isExpired { return .red }
+        if doc.isExpiringSoon { return .orange }
+        return .green
+    }
+
+    private func inspIcon(_ result: InspectionResult) -> String {
+        switch result {
+        case .passed: return "checkmark.circle.fill"
+        case .failed: return "xmark.circle.fill"
+        default: return "exclamationmark.triangle.fill"
         }
     }
 
-    /// Composite display status considering both task status and parts sub-status
-    private var statusDisplayText: String {
-        if task.status == .assigned, let wo = workOrder {
-            switch wo.partsSubStatus {
-            case .requested:      return "Parts Requested"
-            case .partiallyReady: return "Parts Partially Ready"
-            case .approved, .ready: return "Parts Ready"
-            case .orderPlaced:    return "Parts On Order"
-            default: break
-            }
+    private func inspColor(_ result: InspectionResult) -> Color {
+        switch result {
+        case .passed: return .green
+        case .failed: return .red
+        default: return .orange
         }
-        return task.status.rawValue
-    }
-
-    private var statusColor: Color {
-        switch task.status {
-        case .pending:    return .gray
-        case .assigned:
-            if let wo = workOrder {
-                switch wo.partsSubStatus {
-                case .requested:      return .orange
-                case .partiallyReady: return .orange
-                case .approved, .ready: return Color(red: 0.1, green: 0.7, blue: 0.4)
-                case .orderPlaced:    return .orange
-                default: break
-                }
-            }
-            return .blue
-        case .inProgress: return .purple
-        case .completed:  return .green
-        case .cancelled:  return .red
-        }
-    }
-
-    private var statusIcon: String {
-        switch task.status {
-        case .pending:    return "clock"
-        case .assigned:
-            if let wo = workOrder, wo.partsSubStatus != .none {
-                return wo.partsSubStatus.icon
-            }
-            return "person.badge.clock"
-        case .inProgress: return "wrench.and.screwdriver"
-        case .completed:  return "checkmark.seal.fill"
-        case .cancelled:  return "xmark.circle"
-        }
-    }
-
-    private func countdownText(_ remaining: TimeInterval) -> String {
-        let h = Int(remaining) / 3600
-        let m = (Int(remaining) % 3600) / 60
-        return h > 0 ? "Due in \(h)h \(m)m" : "Due in \(m)m"
     }
 }

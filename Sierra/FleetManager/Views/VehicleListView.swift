@@ -8,6 +8,7 @@ struct VehicleListView: View {
     @State private var deleteTarget: Vehicle?
     @State private var showFilterSheet = false
     @State private var navigationTarget: UUID?
+    @State private var segmentMode = 0  // 0 = My Vehicles, 1 = Maintenance
 
     private var filterBinding: Binding<String?> {
         Binding(get: { selectedFilter?.rawValue }, set: { newVal in selectedFilter = newVal.flatMap { VehicleStatus(rawValue: $0) } })
@@ -27,17 +28,32 @@ struct VehicleListView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                headerRow
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
-                    .padding(.bottom, 4)
+                // Segment picker
+                Picker("Mode", selection: $segmentMode) {
+                    Text("My Vehicles").tag(0)
+                    Text("Maintenance").tag(1)
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
 
-                Group {
-                    if filteredVehicles.isEmpty {
-                        SierraEmptyState(icon: "car.fill", title: "No vehicles found", message: selectedFilter == nil ? "Add your first vehicle to get started." : "No vehicles match this filter.")
-                    } else {
-                        vehicleList
+                if segmentMode == 0 {
+                    // ── My Vehicles ──
+                    headerRow
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
+                        .padding(.bottom, 4)
+
+                    Group {
+                        if filteredVehicles.isEmpty {
+                            SierraEmptyState(icon: "car.fill", title: "No vehicles found", message: selectedFilter == nil ? "Add your first vehicle to get started." : "No vehicles match this filter.")
+                        } else {
+                            vehicleList
+                        }
                     }
+                } else {
+                    // ── Maintenance Hub ──
+                    MaintenanceHubView()
                 }
             }
             .background(Color(.systemGroupedBackground).ignoresSafeArea())

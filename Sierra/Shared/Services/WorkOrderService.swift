@@ -188,4 +188,24 @@ struct WorkOrderService {
             .eq("id", value: workOrderId.uuidString)
             .execute()
     }
+
+    /// Targeted update for estimated completion date only.
+    static func updateEstimatedCompletion(workOrderId: UUID, date: Date) async throws {
+        struct P: Encodable { let estimated_completion_at: String }
+        try await supabase
+            .from("work_orders")
+            .update(P(estimated_completion_at: iso.string(from: date)))
+            .eq("id", value: workOrderId.uuidString)
+            .execute()
+    }
+
+    /// Targeted update for parts sub-status only.
+    static func updatePartsSubStatus(workOrderId: UUID, status: PartsSubStatus) async throws {
+        struct P: Encodable { let parts_sub_status: String }
+        try await supabase
+            .from("work_orders")
+            .update(P(parts_sub_status: status.rawValue))
+            .eq("id", value: workOrderId.uuidString)
+            .execute()
+    }
 }

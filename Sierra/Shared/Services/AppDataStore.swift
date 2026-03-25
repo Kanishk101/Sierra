@@ -639,6 +639,18 @@ final class AppDataStore {
             sparePartsRequests[idx].status = .approved
             sparePartsRequests[idx].reviewedBy = adminId
             sparePartsRequests[idx].reviewedAt = Date()
+            // Notify technician (non-blocking)
+            let req = sparePartsRequests[idx]
+            Task {
+                try? await NotificationService.insertNotification(
+                    recipientId: req.requestedById,
+                    type: .partsApproved,
+                    title: "Parts Approved",
+                    body: "\(req.partName) x\(req.quantity) \u{2013} approved",
+                    entityType: "spare_parts_request",
+                    entityId: req.id
+                )
+            }
         }
     }
     func rejectSparePartsRequest(id: UUID, reviewedBy adminId: UUID, reason: String) async throws {
@@ -648,6 +660,18 @@ final class AppDataStore {
             sparePartsRequests[idx].reviewedBy = adminId
             sparePartsRequests[idx].reviewedAt = Date()
             sparePartsRequests[idx].rejectionReason = reason
+            // Notify technician (non-blocking)
+            let req = sparePartsRequests[idx]
+            Task {
+                try? await NotificationService.insertNotification(
+                    recipientId: req.requestedById,
+                    type: .partsRejected,
+                    title: "Parts Request Rejected",
+                    body: "\(req.partName) x\(req.quantity) \u{2013} \(reason)",
+                    entityType: "spare_parts_request",
+                    entityId: req.id
+                )
+            }
         }
     }
 
