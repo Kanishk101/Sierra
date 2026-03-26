@@ -13,8 +13,15 @@ struct InventoryView: View {
     @State private var selectedPart: PartInventorySnapshot?
     @State private var identifierCursorByPartKey: [String: Int] = [:]
     @State private var partDetailMode: InventoryPartDetailSheet.ActionMode = .request
+    @State private var categoryFilter: InventoryCategoryFilter = .all
 
     private var currentUserId: UUID { AuthManager.shared.currentUser?.id ?? UUID() }
+
+    enum InventoryCategoryFilter: String, CaseIterable {
+        case all = "All"
+        case lowStock = "Low Stock"
+        case onOrder = "On Order"
+    }
 
     struct PartInventorySnapshot: Identifiable {
         var id: String { key }
@@ -132,11 +139,25 @@ struct InventoryView: View {
         }
     }
 
+    private var categorySnapshots: [PartInventorySnapshot] {
+        snapshots.filter { part in
+            let inStock = max(0, part.availableSnapshot - part.allocatedQty - part.usedQty)
+            switch categoryFilter {
+            case .all:
+                return true
+            case .lowStock:
+                return inStock <= 2
+            case .onOrder:
+                return part.onOrderQty > 0 || part.pendingDeliveryCount > 0
+            }
+        }
+    }
+
     private var filteredSnapshots: [PartInventorySnapshot] {
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !q.isEmpty else { return snapshots }
+        guard !q.isEmpty else { return categorySnapshots }
 
-        return snapshots.filter { part in
+        return categorySnapshots.filter { part in
             let vehiclesBlob = compatibleVehicleSearchBlob(for: part)
             let blob = [
                 part.name.lowercased(),
@@ -148,30 +169,45 @@ struct InventoryView: View {
         }
     }
 
-    private var totalPartsCount: Int { snapshots.count }
+    private var totalPartsCount: Int { categorySnapshots.count }
     private var lowStockCount: Int {
-        snapshots.filter { max(0, $0.availableSnapshot - $0.allocatedQty - $0.usedQty) <= 2 }.count
+        categorySnapshots.filter { max(0, $0.availableSnapshot - $0.allocatedQty - $0.usedQty) <= 2 }.count
     }
-    private var onOrderCount: Int { snapshots.filter { $0.onOrderQty > 0 || $0.pendingDeliveryCount > 0 }.count }
+    private var onOrderCount: Int { categorySnapshots.filter { $0.onOrderQty > 0 || $0.pendingDeliveryCount > 0 }.count }
 
     var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 14) {
-                searchBar
-                summaryRow
+        VStack(spacing: 0) {
+            searchBar
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
 
-                if filteredSnapshots.isEmpty {
-                    emptyState
-                        .padding(.top, 20)
-                } else {
-                    ForEach(filteredSnapshots) { part in
-                        inventoryCard(part)
+            categoryChips
+                .padding(.horizontal, 20)
+                .padding(.top, 10)
+                .padding(.bottom, 10)
+
+            summaryRow
+                .padding(.horizontal, 20)
+                .padding(.bottom, 8)
+
+            ScrollView {
+                LazyVStack(spacing: 14) {
+                    if filteredSnapshots.isEmpty {
+                        emptyState
+                            .padding(.top, 20)
+                    } else {
+                        ForEach(filteredSnapshots) { part in
+                            inventoryCard(part)
+                        }
                     }
                 }
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+                .padding(.bottom, 32)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 8)
-            .padding(.bottom, 32)
+            .refreshable {
+                await store.loadMaintenanceData(staffId: currentUserId)
+            }
         }
         .background(Color.appSurface.ignoresSafeArea())
         .navigationTitle("Inventory")
@@ -203,9 +239,6 @@ struct InventoryView: View {
         .task {
             await store.loadMaintenanceData(staffId: currentUserId)
         }
-        .refreshable {
-            await store.loadMaintenanceData(staffId: currentUserId)
-        }
     }
 
     private var searchBar: some View {
@@ -229,6 +262,36 @@ struct InventoryView: View {
             summaryBox(value: lowStockCount, label: "Low Stock", icon: "exclamationmark.triangle.fill", tint: .red)
             summaryBox(value: onOrderCount, label: "On Order", icon: "clock.badge.fill", tint: .blue)
         }
+    }
+
+    private var categoryChips: some View {
+        HStack(spacing: 8) {
+            ForEach(InventoryCategoryFilter.allCases, id: \.self) { filter in
+                Button {
+                    categoryFilter = filter
+                } label: {
+                    Text(filter.rawValue)
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundStyle(categoryFilter == filter ? Color.appOrange : Color.appTextPrimary)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 9)
+                        .background(
+                            Capsule().fill(
+                                categoryFilter == filter ? Color.appOrange.opacity(0.10) : Color.appCardBg
+                            )
+                        )
+                        .overlay(
+                            Capsule().stroke(
+                                categoryFilter == filter ? Color.appOrange.opacity(0.3) : Color.appDivider.opacity(0.4),
+                                lineWidth: 1
+                            )
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func summaryBox(value: Int, label: String, icon: String, tint: Color) -> some View {

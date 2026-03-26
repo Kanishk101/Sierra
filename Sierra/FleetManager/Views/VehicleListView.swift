@@ -61,7 +61,6 @@ struct VehicleListView: View {
             .navigationDestination(for: UUID.self) { VehicleDetailView(vehicleId: $0) }
             .navigationDestination(item: $navigationTarget) { VehicleDetailView(vehicleId: $0) }
             .task { if store.vehicles.isEmpty { await store.loadAll() } }
-            .refreshable { await store.loadAll() }
             .sheet(isPresented: $showFilterSheet) {
                 FilterSheetView(title: "Filter Vehicles", options: vehicleFilterOptions, selectedId: filterBinding)
             }
@@ -121,6 +120,7 @@ struct VehicleListView: View {
             .padding(.top, 8)
             .padding(.bottom, 32)
         }
+        .refreshable { await store.loadAll() }
     }
 
     private func vehicleCard(_ vehicle: Vehicle) -> some View {

@@ -434,12 +434,12 @@ struct TripService {
             exclude_trip_id: excludingTripId?.uuidString.lowercased()
         )
 
-        let options = try await SupabaseManager.functionOptions(body: body)
-
         do {
-            let result: OverlapResult = try await supabase.functions.invoke(
-                "check-resource-overlap",
-                options: options
+            let result: OverlapResult = try await SupabaseManager.invokeWithAuthRetry(
+                function: "check-resource-overlap",
+                body: body,
+                attempts: 2,
+                delayMs: 500
             )
             return (result.driverConflict, result.vehicleConflict)
         } catch {

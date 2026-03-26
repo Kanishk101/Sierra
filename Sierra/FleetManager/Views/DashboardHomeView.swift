@@ -55,10 +55,15 @@ struct DashboardHomeView: View {
     @State private var showNotifications = false
     @State private var showReportsSheet   = false
     @State private var showAlertsSheet    = false
-    @State private var showStaffTab          = false
-    @State private var showAlertsFromKPI     = false
-    @State private var showMaintenanceFromKPI = false
-    @State private var showDriversFromKPI    = false
+    @State private var quickModal: DashboardQuickModal?
+
+    private enum DashboardQuickModal: String, Identifiable {
+        case staff
+        case trips
+        case vehicles
+        case alerts
+        var id: String { rawValue }
+    }
 
     private var vm: DashboardViewModel {
         viewModel ?? DashboardViewModel(store: store)
@@ -101,14 +106,17 @@ struct DashboardHomeView: View {
             .sheet(isPresented: $showNotifications) {
                 NotificationCentreView()
             }
-            .sheet(isPresented: $showStaffTab) {
-                NavigationStack { StaffTabView().environment(AppDataStore.shared) }
-            }
-            .sheet(isPresented: $showAlertsFromKPI) {
-                NavigationStack { AlertsInboxView().environment(AppDataStore.shared) }
-            }
-            .sheet(isPresented: $showMaintenanceFromKPI) {
-                NavigationStack { MaintenanceRequestsView().environment(AppDataStore.shared) }
+            .sheet(item: $quickModal) { modal in
+                switch modal {
+                case .staff:
+                    NavigationStack { StaffTabView().environment(AppDataStore.shared) }
+                case .trips:
+                    NavigationStack { TripsListView().environment(AppDataStore.shared) }
+                case .vehicles:
+                    NavigationStack { VehicleListView().environment(AppDataStore.shared) }
+                case .alerts:
+                    NavigationStack { AlertsInboxView().environment(AppDataStore.shared) }
+                }
             }
             .onAppear {
                 if viewModel == nil { viewModel = DashboardViewModel(store: store) }
@@ -179,12 +187,32 @@ struct DashboardHomeView: View {
     // MARK: - KPI Grid
     private var kpiGrid: some View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 14) {
-            kpiCard(icon: "car.fill", color: .blue, label: "Vehicles", value: vm.vehicleCount) { showStaffTab = false }
-            kpiCard(icon: "arrow.triangle.swap", color: .green, label: "Active Trips", value: vm.activeTripsCount) {}
-            kpiCard(icon: "person.2.fill", color: .orange, label: "Pending Staff", value: vm.pendingApplicationsCount, badge: vm.pendingApplicationsCount) { showStaffTab = true }
-            kpiCard(icon: "exclamationmark.triangle.fill", color: .red, label: "Active Alerts", value: vm.activeAlertsCount, badge: vm.activeAlertsCount) { showAlertsFromKPI = true }
-            kpiCard(icon: "wrench.fill", color: .purple, label: "In Maintenance", value: vm.inMaintenanceCount) { showMaintenanceFromKPI = true }
-            kpiCard(icon: "person.fill.checkmark", color: .teal, label: "Available Drivers", value: vm.availableDriversCount) {}
+            kpiCard(
+                icon: "person.2.fill",
+                color: .orange,
+                label: "Staff",
+                value: store.staff.count,
+                badge: vm.pendingApplicationsCount
+            ) { quickModal = .staff }
+            kpiCard(
+                icon: "arrow.triangle.swap",
+                color: .green,
+                label: "Trips",
+                value: store.trips.count
+            ) { quickModal = .trips }
+            kpiCard(
+                icon: "car.fill",
+                color: .blue,
+                label: "Vehicles",
+                value: vm.vehicleCount
+            ) { quickModal = .vehicles }
+            kpiCard(
+                icon: "exclamationmark.triangle.fill",
+                color: .red,
+                label: "Alerts",
+                value: vm.activeAlertsCount,
+                badge: vm.activeAlertsCount
+            ) { quickModal = .alerts }
         }
     }
 

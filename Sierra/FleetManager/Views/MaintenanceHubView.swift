@@ -12,16 +12,17 @@ struct MaintenanceHubView: View {
         case all = "All"; case repair = "Repair"; case service = "Service"
     }
     enum StatusFilter: String, CaseIterable {
+        case all = "All"
         case pending = "Pending"; case active = "Active"; case completed = "Completed"
     }
 
     @State private var requestType: RequestTypeFilter = .all
-    @State private var statusFilter: StatusFilter = .active
-    @State private var searchText = ""
+    @State private var statusFilter: StatusFilter = .all
     @State private var selectedTask: MaintenanceTask?
     @State private var vehicleSheetVehicle: Vehicle?
     @State private var showInventoryAdmin = false
     @State private var rejectPartTarget: SparePartsRequest?
+    @State private var approvingTaskIds: Set<UUID> = []
 
     private var adminId: UUID { AuthManager.shared.currentUser?.id ?? UUID() }
 
@@ -34,7 +35,7 @@ struct MaintenanceHubView: View {
     }
 
     private var filteredTasks: [MaintenanceTask] {
-        allTasks.filter { matchesRequestType($0) && matchesStatus($0) && (searchText.isEmpty || matchesSearch($0)) }
+        allTasks.filter { matchesRequestType($0) && matchesStatus($0) }
     }
 
     private var repairTasks: [MaintenanceTask]  { filteredTasks.filter { $0.taskType != .scheduled } }
@@ -44,16 +45,22 @@ struct MaintenanceHubView: View {
         store.sparePartsRequests.filter { $0.status == .pending }.sorted { $0.createdAt > $1.createdAt }
     }
 
-    private var totalCount: Int     { store.maintenanceTasks.count }
-    private var urgentCount: Int    { store.maintenanceTasks.filter { $0.priority == .urgent && ($0.status == .pending || $0.status == .assigned || $0.status == .inProgress) }.count }
-    private var completedCount: Int { store.maintenanceTasks.filter { $0.status == .completed }.count }
+    private var statsSourceTasks: [MaintenanceTask] {
+        allTasks.filter { matchesRequestType($0) }
+    }
+    private var totalCount: Int     { statsSourceTasks.count }
+    private var urgentCount: Int    { statsSourceTasks.filter { $0.priority == .urgent && ($0.status == .pending || $0.status == .assigned || $0.status == .inProgress) }.count }
+    private var completedCount: Int { statsSourceTasks.filter { $0.status == .completed }.count }
 
     var body: some View {
         VStack(spacing: 0) {
-            summaryRow
-                .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
+            filterChips
+                .padding(.top, 12)
+                .padding(.bottom, 10)
+                .padding(.horizontal, 16)
 
-            filterChips.padding(.bottom, 6)
+            summaryRow
+                .padding(.horizontal, 16).padding(.bottom, 8)
 
             if filteredTasks.isEmpty && pendingPartRequests.isEmpty {
                 emptyState
@@ -65,12 +72,12 @@ struct MaintenanceHubView: View {
                     }
                     .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 28)
                 }
+                .refreshable { await store.loadAll() }
             }
         }
         .background(Color.appSurface.ignoresSafeArea())
         .navigationTitle("Maintenance")
         .navigationBarTitleDisplayMode(.large)
-        .searchable(text: $searchText, prompt: "Search task, vehicle…")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showInventoryAdmin = true } label: {
@@ -131,18 +138,15 @@ struct MaintenanceHubView: View {
     // MARK: - Filter Chips
 
     private var filterChips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
+        HStack {
             HStack(spacing: 8) {
-                ForEach(StatusFilter.allCases, id: \.self) { f in
-                    chipButton(title: f.rawValue, isSelected: statusFilter == f, style: .orange) { statusFilter = f }
-                }
-                Divider().frame(height: 20)
                 ForEach(RequestTypeFilter.allCases, id: \.self) { f in
                     chipButton(title: f.rawValue, isSelected: requestType == f, style: .ghost) { requestType = f }
                 }
             }
-            .padding(.horizontal, 16)
+            Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private enum ChipStyle { case orange, ghost }
@@ -176,9 +180,9 @@ struct MaintenanceHubView: View {
             Picker("Status", selection: $statusFilter) {
                 ForEach(StatusFilter.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }
-            if requestType != .all || statusFilter != .active {
+            if requestType != .all || statusFilter != .all {
                 Divider()
-                Button("Reset Filters") { requestType = .all; statusFilter = .active }
+                Button("Reset Filters") { requestType = .all; statusFilter = .all }
             }
         } label: {
             Image(systemName: "line.3.horizontal.decrease.circle")
@@ -219,7 +223,9 @@ struct MaintenanceHubView: View {
                     workOrder: store.workOrder(forMaintenanceTask: task.id),
                     phaseSummary: phaseSummary(for: task),
                     onOpenDetail: { selectedTask = task },
-                    onOpenVehicle: { if let v = store.vehicle(for: task.vehicleId) { vehicleSheetVehicle = v } }
+                    onOpenVehicle: { if let v = store.vehicle(for: task.vehicleId) { vehicleSheetVehicle = v } },
+                    onApprove: { Task { await approveTaskFromList(task) } },
+                    isApproving: approvingTaskIds.contains(task.id)
                 )
             }
         }
@@ -281,15 +287,11 @@ struct MaintenanceHubView: View {
     }
     private func matchesStatus(_ t: MaintenanceTask) -> Bool {
         switch statusFilter {
+        case .all: true
         case .pending: t.status == .pending
         case .active: t.status == .assigned || t.status == .inProgress
         case .completed: t.status == .completed || t.status == .cancelled
         }
-    }
-    private func matchesSearch(_ t: MaintenanceTask) -> Bool {
-        let q = searchText.lowercased()
-        let v = store.vehicle(for: t.vehicleId)
-        return "MNT-\(t.id.uuidString.prefix(8)) \(t.title) \(v?.licensePlate ?? "") \(v?.name ?? "")".lowercased().contains(q)
     }
     private func phaseSummary(for task: MaintenanceTask) -> String {
         guard let wo = store.workOrder(forMaintenanceTask: task.id) else {
@@ -298,6 +300,43 @@ struct MaintenanceHubView: View {
         let phases = store.phases(forWorkOrder: wo.id)
         guard !phases.isEmpty else { return wo.status.rawValue }
         return "\(phases.filter(\.isCompleted).count)/\(phases.count) phases"
+    }
+
+    private func approveTaskFromList(_ task: MaintenanceTask) async {
+        guard task.status == .pending else { return }
+        guard !approvingTaskIds.contains(task.id) else { return }
+        approvingTaskIds.insert(task.id)
+        defer { approvingTaskIds.remove(task.id) }
+
+        // Prefer an already attached assignee; else pick first available maintenance staff.
+        let assigneeId: UUID? = task.assignedToId
+            ?? store.staff
+                .first(where: { $0.role == .maintenancePersonnel && $0.status == .active && $0.availability == .available })?
+                .id
+
+        guard let assigneeId else {
+            selectedTask = task
+            return
+        }
+
+        do {
+            try await MaintenanceTaskService.approveTask(
+                taskId: task.id,
+                approvedById: adminId,
+                assignedToId: assigneeId
+            )
+            try? await NotificationService.insertNotification(
+                recipientId: assigneeId,
+                type: .general,
+                title: "New Maintenance Task",
+                body: "You were assigned: \(task.title)",
+                entityType: "maintenance_task",
+                entityId: task.id
+            )
+            await store.loadAll()
+        } catch {
+            selectedTask = task
+        }
     }
 }
 
@@ -310,6 +349,8 @@ private struct AdminMaintenanceTaskCard: View {
     let phaseSummary: String
     var onOpenDetail: () -> Void
     var onOpenVehicle: () -> Void
+    var onApprove: () -> Void
+    var isApproving: Bool
 
     private var taskIdText: String { "MNT-\(task.id.uuidString.prefix(8).uppercased())" }
     private var isPending: Bool { task.status == .pending }
@@ -317,7 +358,7 @@ private struct AdminMaintenanceTaskCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
 
-            // Row 1: ID · type chip · status
+            // Row 1: id + status
             HStack(alignment: .center, spacing: 6) {
                 HStack(spacing: 4) {
                     Image(systemName: "number").font(.system(size: 10, weight: .bold))
@@ -325,30 +366,17 @@ private struct AdminMaintenanceTaskCard: View {
                 }
                 .foregroundStyle(Color.appOrange)
 
-                HStack(spacing: 3) {
-                    Image(systemName: task.taskType == .scheduled ? "calendar" : "wrench.and.screwdriver")
-                        .font(.system(size: 9, weight: .semibold))
-                    Text(task.taskType == .scheduled ? "Service" : "Repair")
-                        .font(.system(size: 10, weight: .semibold, design: .rounded))
-                }
-                .foregroundStyle(Color.appTextSecondary)
-                .padding(.horizontal, 8).padding(.vertical, 4)
-                .background(Color.appDivider.opacity(0.3), in: Capsule())
-
                 Spacer()
+
                 statusBadge
             }
 
-            // Row 2: Title + priority
-            HStack(alignment: .top) {
-                Text(task.title)
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.appTextPrimary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 8)
-                priorityBadge
-            }
+            // Row 2: Title
+            Text(task.title)
+                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.appTextPrimary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
 
             // Row 3: Vehicle pill
             if let v = vehicle {
@@ -366,14 +394,8 @@ private struct AdminMaintenanceTaskCard: View {
                 .buttonStyle(.plain)
             }
 
-            // Row 4: Phase summary + date
+            // Row 4: date + phase summary
             HStack(spacing: 10) {
-                HStack(spacing: 5) {
-                    Image(systemName: "list.number").font(.system(size: 11))
-                    Text(phaseSummary).font(.system(size: 12, weight: .medium, design: .rounded))
-                }
-                .foregroundStyle(Color.appTextSecondary)
-                Spacer()
                 if let eta = workOrder?.estimatedCompletionAt {
                     HStack(spacing: 4) {
                         Image(systemName: "clock").font(.system(size: 11))
@@ -389,6 +411,12 @@ private struct AdminMaintenanceTaskCard: View {
                     }
                     .foregroundStyle(Color.appTextSecondary)
                 }
+                Spacer()
+                HStack(spacing: 5) {
+                    Image(systemName: "list.number").font(.system(size: 11))
+                    Text(phaseSummary).font(.system(size: 12, weight: .medium, design: .rounded))
+                }
+                .foregroundStyle(Color.appTextSecondary)
             }
 
             Rectangle().fill(Color.appDivider.opacity(0.6)).frame(height: 1)
@@ -409,9 +437,13 @@ private struct AdminMaintenanceTaskCard: View {
                 .buttonStyle(.plain)
 
                 if isPending {
-                    Button(action: onOpenDetail) {
+                    Button(action: onApprove) {
                         HStack(spacing: 6) {
-                            Image(systemName: "checkmark.seal.fill").font(.system(size: 13, weight: .semibold))
+                            if isApproving {
+                                ProgressView().tint(.white).scaleEffect(0.8)
+                            } else {
+                                Image(systemName: "checkmark.seal.fill").font(.system(size: 13, weight: .semibold))
+                            }
                             Text("Approve").font(.system(size: 14, weight: .bold, design: .rounded))
                         }
                         .foregroundStyle(.white)
@@ -420,16 +452,19 @@ private struct AdminMaintenanceTaskCard: View {
                         .background(Capsule().fill(Color.appTextPrimary))
                     }
                     .buttonStyle(.plain)
+                    .disabled(isApproving)
                 } else {
-                    HStack(spacing: 5) {
-                        Circle().fill(statusTint).frame(width: 6, height: 6)
-                        Text(task.status.rawValue).font(.system(size: 13, weight: .bold, design: .rounded))
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("Approved")
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
                     }
-                    .foregroundStyle(statusTint)
+                    .foregroundStyle(.green)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
-                    .background(Capsule().fill(statusTint.opacity(0.09)))
-                    .overlay(Capsule().stroke(statusTint.opacity(0.2), lineWidth: 1))
+                    .background(Capsule().fill(Color.green.opacity(0.12)))
+                    .overlay(Capsule().stroke(Color.green.opacity(0.28), lineWidth: 1.2))
                 }
             }
         }
@@ -452,28 +487,11 @@ private struct AdminMaintenanceTaskCard: View {
         .background(statusTint.opacity(0.12), in: Capsule())
     }
 
-    private var priorityBadge: some View {
-        let c = priorityColor(task.priority)
-        return HStack(spacing: 3) {
-            Image(systemName: priorityIcon(task.priority)).font(.system(size: 9))
-            Text(task.priority.rawValue).font(.system(size: 10, weight: .bold, design: .rounded))
-        }
-        .foregroundStyle(c)
-        .padding(.horizontal, 9).padding(.vertical, 5)
-        .background(c.opacity(0.1), in: Capsule())
-    }
-
     private var statusTint: Color {
         switch task.status {
         case .pending: Color.appOrange; case .assigned: .blue
         case .inProgress: .purple; case .completed: .green; case .cancelled: .gray
         }
-    }
-    private func priorityColor(_ p: TaskPriority) -> Color {
-        switch p { case .low: .green; case .medium: .blue; case .high: .orange; case .urgent: .red }
-    }
-    private func priorityIcon(_ p: TaskPriority) -> String {
-        switch p { case .low: "arrow.down"; case .medium: "minus"; case .high: "arrow.up"; case .urgent: "exclamationmark.2" }
     }
 }
 
@@ -505,7 +523,7 @@ private struct AdminSparePartApprovalCard: View {
 
             if let t = task {
                 Button(action: onOpenTask) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 6) {
                         Image(systemName: "wrench.and.screwdriver").font(.system(size: 11))
                         Text(t.title).lineLimit(1)
                         Spacer()

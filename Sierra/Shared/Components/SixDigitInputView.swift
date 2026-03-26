@@ -43,11 +43,6 @@ struct SixDigitInputView: View {
                             .onTapGesture {
                                 focusAt(index)
                             }
-                            .onTapGesture(count: 2) {
-                                if let paste = pasteableOTPCode {
-                                    applyPastedCode(paste)
-                                }
-                            }
                             .accessibilityLabel("Digit \(index + 1)")
                             .accessibilityValue(character(at: index).isEmpty ? "Empty" : character(at: index))
                     }
@@ -59,25 +54,6 @@ struct SixDigitInputView: View {
                     if focusedIndex == nil {
                         focusedIndex = max(0, min(code.count, 5))
                     }
-                }
-
-                if let paste = pasteableOTPCode {
-                    Button {
-                        applyPastedCode(paste)
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "doc.on.clipboard")
-                                .font(.system(size: 12, weight: .semibold))
-                            Text("Paste Code")
-                                .font(.system(size: 13, weight: .bold, design: .rounded))
-                        }
-                        .foregroundStyle(Color.appOrange)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
-                        .background(Capsule().fill(Color.appOrange.opacity(0.10)))
-                        .overlay(Capsule().stroke(Color.appOrange.opacity(0.24), lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
                 }
             }
         }
@@ -133,24 +109,8 @@ struct SixDigitInputView: View {
     }
 
     private func focusAt(_ index: Int) {
-        // Move cursor to tapped box without mutating the existing code.
-        focusedIndex = index
-    }
-
-    private var pasteableOTPCode: String? {
-        let raw = UIPasteboard.general.string ?? ""
-        let digitsOnly = String(raw.filter { $0.isNumber }.prefix(6))
-        return digitsOnly.isEmpty ? nil : digitsOnly
-    }
-
-    private func applyPastedCode(_ value: String) {
-        let sanitized = String(value.filter { $0.isNumber }.prefix(6))
-        guard !sanitized.isEmpty else { return }
-        code = sanitized
-        syncDigitsFromCode(sanitized)
-        if sanitized.count < 6 {
-            focusedIndex = sanitized.count
-        }
+        // Keep cursor movement stable and avoid mutating text just by tapping.
+        focusedIndex = max(0, min(index, code.count))
     }
 
     private func syncCodeFromDigits() {
@@ -240,6 +200,16 @@ private struct OTPHiddenTextField: UIViewRepresentable {
                 return false
             }
 
+            // Native paste / OTP autofill can provide multiple digits at once.
+            // Replace whole code with sanitized payload to avoid odd insert behavior.
+            let pastedDigits = string.filter(\.isNumber)
+            if pastedDigits.count > 1 {
+                let sanitized = String(pastedDigits.prefix(6))
+                parent.text = sanitized
+                parent.cursorIndex = min(sanitized.count, 5)
+                return false
+            }
+
             // Number pad backspace on a hidden field can sometimes report a 0-length delete.
             // Handle it explicitly to keep UX stable when deleting inside OTP boxes.
             if string.isEmpty && range.length == 0 && range.location > 0 {
@@ -252,6 +222,20 @@ private struct OTPHiddenTextField: UIViewRepresentable {
                 let digitsOnly = String(updated.filter { $0.isNumber }.prefix(6))
                 parent.text = digitsOnly
                 parent.cursorIndex = deleteLocation
+                return false
+            }
+
+            // Overwrite mode: typing into a filled position should replace that digit,
+            // not shift the remaining code to the right.
+            if pastedDigits.count == 1, range.length == 0, range.location < current.count {
+                guard let start = current.index(current.startIndex, offsetBy: range.location, limitedBy: current.endIndex),
+                      let end = current.index(start, offsetBy: 1, limitedBy: current.endIndex) else {
+                    return false
+                }
+                let updated = current.replacingCharacters(in: start..<end, with: String(pastedDigits))
+                let digitsOnly = String(updated.filter(\.isNumber).prefix(6))
+                parent.text = digitsOnly
+                parent.cursorIndex = min(range.location + 1, digitsOnly.count)
                 return false
             }
 
