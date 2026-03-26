@@ -96,11 +96,10 @@ final class DriverMaintenanceRequestViewModel {
 
             let finalDescription = composedDescription(photoURLs: uploadedURLs)
             let fleetManagerId = await resolveFleetManagerId()
-            let requestOwnerId = fleetManagerId ?? driverId
 
             try await MaintenanceTaskService.createDriverRequest(
                 vehicleId: vehicleId,
-                createdById: requestOwnerId,
+                createdById: driverId,
                 title: title,
                 description: finalDescription,
                 priority: priority,

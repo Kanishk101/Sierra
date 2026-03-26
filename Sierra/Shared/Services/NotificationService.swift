@@ -61,12 +61,9 @@ final class NotificationService {
         lastDeliveryRunAt = Date()
 
         do {
-            let options = try await SupabaseManager.functionOptionsNoBody()
             struct DeliveryResult: Decodable { let delivered: Int; let pushSent: Int? }
-            let result: DeliveryResult = try await supabase.functions.invoke(
-                "deliver-scheduled-notifications",
-                options: options
-            )
+            let result: DeliveryResult = try await SupabaseManager
+                .invokeEdgeWithSessionRecovery("deliver-scheduled-notifications")
             #if DEBUG
             print("[NotificationService] Delivery run: delivered=\(result.delivered) pushSent=\(result.pushSent ?? 0)")
             #endif

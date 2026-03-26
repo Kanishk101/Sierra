@@ -23,11 +23,7 @@ struct TripNavigationContainerView: View {
 
     var body: some View {
         ZStack {
-            if MapService.hasValidToken {
-                TripNavigationView(coordinator: coordinator, simulate: false)
-            } else {
-                TripNavigationFallbackMapView(coordinator: coordinator)
-            }
+            TripNavigationView(coordinator: coordinator, simulate: false)
 
             NavigationHUDOverlay(coordinator: coordinator) {
                 // End trip flow: after confirmation in HUD, open same delivery proof sheet
@@ -55,7 +51,21 @@ struct TripNavigationContainerView: View {
                     }
                     .padding(.leading, 16)
                     .padding(.top, 60)
+
                     Spacer()
+
+                    Button {
+                        coordinator.toggleCameraMode()
+                    } label: {
+                        Image(systemName: coordinator.isOverviewMode ? "location.north.line.fill" : "map.fill")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 36, height: 36)
+                            .background(.ultraThinMaterial, in: Circle())
+                            .shadow(color: .black.opacity(0.2), radius: 6, y: 2)
+                    }
+                    .padding(.trailing, 16)
+                    .padding(.top, 60)
                 }
                 Spacer()
             }
@@ -133,9 +143,6 @@ struct TripNavigationContainerView: View {
             Button("Exit", role: .destructive) { dismissView() }
             Button("Keep Navigating", role: .cancel) {}
         } message: { Text("Your trip is still active. You can return to navigation from the trip card.") }
-        .sheet(isPresented: $showRouteSelection) {
-            RouteSelectionSheet(coordinator: coordinator) { startTracking() }
-        }
         .sheet(isPresented: $showProofOfDelivery) {
             if let driverId {
                 NavigationStack {
@@ -204,8 +211,6 @@ struct TripNavigationContainerView: View {
             && !canStartLiveNavigation
     }
 
-    @State private var showRouteSelection = false
-
     private func buildAndShowRoutes() async {
         guard canNavigateTrip, !coordinator.trip.hasEndedNavigationPhase else {
             dismissView()
@@ -223,11 +228,7 @@ struct TripNavigationContainerView: View {
         isBuildingRoutes = false
 
         if coordinator.hasRenderableRoute {
-            if coordinator.alternativeRoute != nil, !coordinator.hasConfirmedRouteSelection {
-                showRouteSelection = true
-            } else {
-                startTracking()
-            }
+            startTracking()
         } else {
             buildErrorMessage = coordinator.routeEngineError ?? "Could not calculate route. Check your network and try again."
             routeBuildFailed = true

@@ -245,31 +245,33 @@ struct MaintenanceTaskService {
     ) async throws {
         struct DriverRequestPayload: Encodable {
             let vehicle_id: String
-            let created_by_admin_id: String
             let title: String
             let task_description: String
             let priority: String
-            let status: String
-            let task_type: String
             let source_inspection_id: String?
             let due_date: String
         }
 
+        struct DriverRequestResponse: Decodable {
+            let id: String
+        }
+
         let payload = DriverRequestPayload(
             vehicle_id: vehicleId.uuidString.lowercased(),
-            created_by_admin_id: createdById.uuidString.lowercased(),
             title: title,
             task_description: description,
             priority: priority.rawValue,
-            status: MaintenanceTaskStatus.pending.rawValue,
-            task_type: MaintenanceTaskType.inspectionDefect.rawValue,
             source_inspection_id: sourceInspectionId?.uuidString,
             due_date: iso.string(from: Calendar.current.date(byAdding: .day, value: 3, to: Date()) ?? Date())
         )
 
-        try await supabase
-            .from("maintenance_tasks")
-            .insert(payload)
-            .execute()
+        // Driver/technician users cannot INSERT maintenance_tasks directly due to RLS.
+        // Route creation through edge function with explicit caller JWT validation.
+        // Keep `createdById` in signature for backward call-site compatibility.
+        _ = createdById
+        let _: DriverRequestResponse = try await SupabaseManager.invokeEdgeWithSessionRecovery(
+            "create-driver-maintenance-request",
+            body: payload
+        )
     }
 }

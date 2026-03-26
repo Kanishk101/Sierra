@@ -18,12 +18,9 @@ struct NotificationDeliveryService {
         guard let _ = AuthManager.shared.currentUser else { return }
 
         do {
-            let options = try await SupabaseManager.functionOptionsNoBody()
             struct DeliveryResponse: Decodable { let delivered: Int }
-            let result: DeliveryResponse = try await supabase.functions.invoke(
-                "deliver-due-notifications",
-                options: options
-            )
+            let result: DeliveryResponse = try await SupabaseManager
+                .invokeEdgeWithSessionRecovery("deliver-due-notifications")
             if result.delivered > 0 {
                 print("[NotificationDeliveryService] Delivered \(result.delivered) scheduled notification(s)")
             }

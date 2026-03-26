@@ -407,7 +407,7 @@ struct PreTripInspectionView: View {
         do {
             try await MaintenanceTaskService.createDriverRequest(
                 vehicleId: vehicleId,
-                createdById: fleetManagerId ?? driverId,
+                createdById: driverId,
                 title: "Pre-Trip Defect \u{2013} \(vehiclePlate)",
                 description: description,
                 priority: .urgent,

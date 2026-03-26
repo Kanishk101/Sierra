@@ -83,9 +83,15 @@ serve(async (req: Request) => {
   }
 
   try {
-    // Accept both service-role key (from DB trigger) and Bearer JWT (from client)
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
+    // Accept both service-role key (from DB trigger) and valid user JWT.
+    const authHeader = req.headers.get("Authorization") ?? "";
+    if (!authHeader.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401, headers: { "Content-Type": "application/json", ...corsHeaders },
+      });
+    }
+    const token = authHeader.slice(7).trim();
+    if (!token) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401, headers: { "Content-Type": "application/json", ...corsHeaders },
       });
@@ -94,6 +100,16 @@ serve(async (req: Request) => {
     const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
+
+    const isServiceRole = token === SUPABASE_SERVICE_ROLE_KEY;
+    if (!isServiceRole) {
+      const { data: { user }, error: authErr } = await adminClient.auth.getUser(token);
+      if (authErr || !user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401, headers: { "Content-Type": "application/json", ...corsHeaders },
+        });
+      }
+    }
 
     const body: PushPayload = await req.json();
     const { recipientId, title, body: bodyText, data } = body;

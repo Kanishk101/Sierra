@@ -623,9 +623,6 @@ final class PreTripInspectionViewModel {
 
             // 4. Resolve vehicle license plate for maintenance request title
             let vehiclePlate = store.vehicle(for: vehicleId)?.licensePlate ?? vehicleId.uuidString.prefix(8).description
-            let tripAdminId = store.trips
-                .first(where: { $0.id == tripId })
-                .flatMap { UUID(uuidString: $0.createdByAdminId) }
 
             // 5. Auto-create maintenance task only for PRE-TRIP FAIL.
             // Pre-trip warnings should notify only (no maintenance task).
@@ -642,7 +639,7 @@ final class PreTripInspectionViewModel {
 
                 try? await MaintenanceTaskService.createDriverRequest(
                     vehicleId: vehicleId,
-                    createdById: tripAdminId ?? driverId,
+                    createdById: driverId,
                     title: "\(typeLabel) Defect \u{2013} \(vehiclePlate)",
                     description: autoDescription,
                     priority: priority,

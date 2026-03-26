@@ -44,6 +44,7 @@ final class AuthManager {
     var pendingOTPEmail: String?
     private var pendingResetToken: String = ""
     private var resetOTP: String = ""
+    private var pendingResetCode: String = ""
     private var resetOTPGeneratedAt: Date?
     private let autoLockSeconds: TimeInterval = 300
     private var otpLastSentAt: Date?
@@ -301,6 +302,7 @@ final class AuthManager {
         setFullAuthState(false, for: nil)
         pendingOTPEmail = nil
         pendingResetToken = ""
+        pendingResetCode = ""
         otpLastSentAt = nil
         resetOTPLastSentAt = nil
         currentOTP = ""
@@ -455,7 +457,19 @@ final class AuthManager {
         return match
     }
 
-    func verifyResetOTP(_ code: String) -> Bool { code == resetOTP }
+    func verifyResetOTP(_ code: String) -> Bool {
+        guard let generatedAt = resetOTPGeneratedAt,
+              Date().timeIntervalSince(generatedAt) < otpValidSeconds else {
+            pendingResetCode = ""
+            return false
+        }
+        let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.range(of: #"^\d{6}$"#, options: .regularExpression) != nil else {
+            return false
+        }
+        pendingResetCode = trimmed
+        return true
+    }
 
     // MARK: - Password Management
 
@@ -534,64 +548,52 @@ final class AuthManager {
         }
 
         let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        
-        // 2. Robust lookup with retries
-        var userRowId: String? = nil
-        var attempts = 0
-        while attempts < 3 && userRowId == nil {
-            attempts += 1
-            do {
-                struct EmailRow: Decodable { let id: String }
-                let rows: [EmailRow] = try await supabase.from("staff_members")
-                    .select("id")
-                    .eq("email", value: trimmed)
-                    .limit(1)
-                    .execute()
-                    .value
-                userRowId = rows.first?.id
-                if userRowId != nil { break }
-            } catch {
-                if attempts == 3 { break }
-                try? await Task.sleep(for: .milliseconds(400 * attempts))
-            }
+        struct ResetRequestPayload: Encodable { let email: String }
+        struct ResetRequestResponse: Decodable {
+            let found: Bool
+            let token: String?
+            let otp: String?
+            let error: String?
         }
-
-        guard let userId = userRowId else {
-            #if DEBUG
-            print("🔑 [AuthManager] No account found for \(trimmed) after \(attempts) attempts")
-            #endif
-            return false
-        }
-
-        // 3. Populate state for the reset flow
-        pendingOTPEmail = trimmed
-        pendingResetToken = "" // Safe to clear now that we are starting a fresh request
 
         do {
-            let otp = String(format: "%06d", Int.random(in: 100000...999999))
-            resetOTP = otp
+            let response: ResetRequestResponse = try await supabase.functions.invoke(
+                "request-password-reset",
+                options: FunctionInvokeOptions(body: ResetRequestPayload(email: trimmed))
+            )
+
+            guard response.error == nil else {
+                #if DEBUG
+                print("🔑 [AuthManager] request-password-reset error: \(response.error ?? "")")
+                #endif
+                return false
+            }
+            guard response.found, let token = response.token, !token.isEmpty else {
+                return false
+            }
+
+            pendingOTPEmail = trimmed
+            pendingResetToken = token
+            pendingResetCode = ""
             resetOTPGeneratedAt = Date()
             resetOTPLastSentAt = Date()
-            EmailService.sendResetOTP(to: trimmed, otp: otp)
 
-            let resetToken = UUID().uuidString
-            pendingResetToken = resetToken
-
-            let expiresAt = ISO8601DateFormatter().string(from: Date().addingTimeInterval(600))
-            struct TokenInsert: Encodable {
-                let email: String; let token: String; let user_id: String
-                let expires_at: String; let used: Bool
+            #if DEBUG
+            resetOTP = response.otp ?? ""
+            if let otp = response.otp {
+                print("🔑 [AuthManager] Reset OTP = \(otp) → \(trimmed)")
             }
-            try await supabase.from("password_reset_tokens")
-                .insert(TokenInsert(email: trimmed, token: resetToken, user_id: userId,
-                                    expires_at: expiresAt, used: false))
-                .execute()
+            #else
+            resetOTP = ""
+            #endif
+
             return true
         } catch {
             #if DEBUG
-            print("🔑 [AuthManager] Token insertion failed: \(error)")
+            print("🔑 [AuthManager] request-password-reset invocation failed: \(error)")
             #endif
             pendingResetToken = ""
+            pendingResetCode = ""
             return false
         }
     }
@@ -604,12 +606,23 @@ final class AuthManager {
               Date().timeIntervalSince(generatedAt) < otpValidSeconds else {
             throw AuthError.otpExpired
         }
-        guard code == resetOTP else { throw AuthError.otpInvalid }
+        let normalizedCode = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalizedCode.range(of: #"^\d{6}$"#, options: .regularExpression) != nil else {
+            throw AuthError.otpInvalid
+        }
+        if !pendingResetCode.isEmpty && pendingResetCode != normalizedCode {
+            throw AuthError.otpInvalid
+        }
         guard let email = pendingOTPEmail, !pendingResetToken.isEmpty else {
             throw AuthError.sessionExpired
         }
 
-        struct ResetPayload: Encodable { let email: String; let reset_token: String; let new_password: String }
+        struct ResetPayload: Encodable {
+            let email: String
+            let reset_token: String
+            let otp_code: String
+            let new_password: String
+        }
         struct ResetResponse: Decodable { let error: String?; let success: Bool? }
         
         do {
@@ -618,6 +631,7 @@ final class AuthManager {
                 options: FunctionInvokeOptions(body: ResetPayload(
                     email: email,
                     reset_token: pendingResetToken,
+                    otp_code: normalizedCode,
                     new_password: newPassword
                 ))
             )
@@ -641,6 +655,7 @@ final class AuthManager {
         resetOTP = ""
         resetOTPGeneratedAt = nil
         pendingResetToken = ""
+        pendingResetCode = ""
         pendingOTPEmail = nil
     }
 

@@ -123,13 +123,6 @@ final class AppDataStore {
         }
         isLoading = false
 
-        // Background housekeeping
-        Task.detached(priority: .background) {
-            struct PurgeParams: Encodable { let days_to_keep: Int }
-            _ = try? await supabase.rpc("purge_old_location_history", params: PurgeParams(days_to_keep: 30)).execute()
-            _ = try? await supabase.rpc("purge_expired_password_reset_tokens").execute()
-        }
-
         subscribeToEmergencyAlerts()
         subscribeToStaffMemberUpdates()
         subscribeToVehicleUpdates()
@@ -686,10 +679,10 @@ final class AppDataStore {
 
                 do {
                     struct VSResponse: Decodable { let success: Bool? }
-                    let opts = try await SupabaseManager.functionOptions(
+                    let _: VSResponse = try await SupabaseManager.invokeEdgeWithSessionRecovery(
+                        "update-vehicle-status",
                         body: VehicleStatusPayload(vehicleId: vehicleId.uuidString, status: "Idle")
                     )
-                    let _: VSResponse = try await supabase.functions.invoke("update-vehicle-status", options: opts)
                     if let vIdx = vehicles.firstIndex(where: { $0.id == vehicleId }) { vehicles[vIdx].status = .idle }
                 } catch {
                     print("[AppDataStore.completeMaintenanceTask] Non-fatal: vehicle status update failed: \(error)")

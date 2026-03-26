@@ -71,7 +71,7 @@ serve(async (req: Request) => {
       });
     }
 
-    const allowedStatuses = ["Idle", "Busy", "Maintenance", "Out of Service"];
+    const allowedStatuses = ["Idle", "Busy", "Active", "In Maintenance", "Out of Service"];
     if (!allowedStatuses.includes(status)) {
       return new Response(JSON.stringify({ error: `Invalid status. Allowed: ${allowedStatuses.join(", ")}` }), {
         status: 400,
@@ -99,9 +99,9 @@ serve(async (req: Request) => {
       const { data: assignedTasks, error: taskErr } = await adminClient
         .from("maintenance_tasks")
         .select("id")
-        .eq("vehicle_id", vehicleId.trim())
-        .eq("assigned_to", callerUser.id)
-        .in("status", ["assigned", "in_progress"])
+        .eq("vehicle_id", vehicleId.trim().toLowerCase())
+        .eq("assigned_to_id", callerUser.id)
+        .in("status", ["Assigned", "In Progress"])
         .limit(1);
 
       if (taskErr || !assignedTasks || assignedTasks.length === 0) {
@@ -116,7 +116,7 @@ serve(async (req: Request) => {
     const { error: updateErr } = await adminClient
       .from("vehicles")
       .update({ status: status, updated_at: new Date().toISOString() })
-      .eq("id", vehicleId.trim());
+      .eq("id", vehicleId.trim().toLowerCase());
 
     if (updateErr) {
       console.error("[update-vehicle-status] Update failed:", updateErr);

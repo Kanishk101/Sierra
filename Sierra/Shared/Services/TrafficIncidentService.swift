@@ -160,10 +160,11 @@ final class TrafficIncidentService {
     }
 
     /// Whether there's a severe/critical incident within auto-reroute proximity.
-    func hasSevereIncidentNearby(thresholdMetres: Double = TripConstants.autoRerouteProximityMetres) -> Bool {
-        activeIncidents.contains { incident in
+    func hasSevereIncidentNearby(thresholdMetres: Double? = nil) -> Bool {
+        let threshold = thresholdMetres ?? TripConstants.autoRerouteProximityMetres
+        return activeIncidents.contains { incident in
             incident.severity >= .major &&
-            (incident.distanceAheadMetres ?? .greatestFiniteMagnitude) < thresholdMetres
+            (incident.distanceAheadMetres ?? .greatestFiniteMagnitude) < threshold
         }
     }
 

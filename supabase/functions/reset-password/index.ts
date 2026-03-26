@@ -1,7 +1,7 @@
 // reset-password edge function
 // verify_jwt: false — caller has no session during password reset.
 //
-// Accepts: { email: string, reset_token: string, new_password: string }
+// Accepts: { email: string, reset_token: string, otp_code: string, new_password: string }
 // Validates a short-lived UUID token from the password_reset_tokens table,
 // then calls auth.admin.updateUserById() to set the new Supabase Auth password.
 // Marks the token as used (single-use enforcement).
@@ -25,11 +25,17 @@ serve(async (req: Request) => {
   }
 
   try {
-    const { email, reset_token, new_password } = await req.json();
+    const { email, reset_token, otp_code, new_password } = await req.json();
 
-    if (!email || !reset_token || !new_password) {
+    if (!email || !reset_token || !otp_code || !new_password) {
       return new Response(JSON.stringify({ error: "Missing fields" }), {
         status: 400,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      });
+    }
+    if (!/^\d{6}$/.test(String(otp_code))) {
+      return new Response(JSON.stringify({ error: "Invalid verification code" }), {
+        status: 401,
         headers: { "Content-Type": "application/json", ...corsHeaders },
       });
     }
@@ -58,9 +64,10 @@ serve(async (req: Request) => {
     }
 
     // Validate the reset token against the database
+    const otpHash = await sha256Hex(String(otp_code));
     const { data: tokens, error: tokenErr } = await admin
       .from("password_reset_tokens")
-      .select("user_id, expires_at, used")
+      .select("user_id, expires_at, used, otp_code_hash")
       .eq("email", email)
       .eq("token", reset_token)
       .limit(1);
@@ -83,6 +90,12 @@ serve(async (req: Request) => {
 
     if (new Date(tokenRow.expires_at) < new Date()) {
       return new Response(JSON.stringify({ error: "Token expired" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      });
+    }
+    if (!tokenRow.otp_code_hash || tokenRow.otp_code_hash !== otpHash) {
+      return new Response(JSON.stringify({ error: "Invalid verification code" }), {
         status: 401,
         headers: { "Content-Type": "application/json", ...corsHeaders },
       });
@@ -148,4 +161,12 @@ function getClientIp(req: Request): string {
   const first = forwarded.split(",")[0]?.trim();
   if (first && first.length > 0) return first;
   return "unknown";
+}
+
+async function sha256Hex(input: string): Promise<string> {
+  const bytes = new TextEncoder().encode(input);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }

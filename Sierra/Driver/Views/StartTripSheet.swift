@@ -1,6 +1,4 @@
 import SwiftUI
-import CoreLocation
-import MapboxDirections
 
 /// Bottom sheet for entering odometer + selecting route before starting navigation.
 struct StartTripSheet: View {
@@ -12,15 +10,9 @@ struct StartTripSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var odometerText = ""
-    @State private var avoidTolls = false
-    @State private var avoidHighways = false
     @State private var isStarting = false
     @State private var errorMessage: String?
     @State private var showError = false
-
-    @State private var routeOptions: [RouteOption] = []
-    @State private var selectedRouteIndex = 0
-    @State private var isFetchingRoutes = false
 
     private var trip: Trip? { store.trips.first { $0.id == tripId } }
 
@@ -38,48 +30,10 @@ struct StartTripSheet: View {
 
                 Divider()
 
-                // Avoidance toggles
-                VStack(spacing: 0) {
-                    Toggle(isOn: $avoidTolls) {
-                        Label("Avoid Tolls", systemImage: "banknote")
-                            .font(.subheadline)
-                    }
-                    .padding(.vertical, 8)
-
-                    Divider()
-
-                    Toggle(isOn: $avoidHighways) {
-                        Label("Avoid Highways", systemImage: "road.lanes")
-                            .font(.subheadline)
-                    }
-                    .padding(.vertical, 8)
-                }
-
-                Divider()
-
-                if isFetchingRoutes {
-                    HStack {
-                        ProgressView()
-                        Text("Fetching routes...")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.vertical, 12)
-                }
-
-                if !routeOptions.isEmpty {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("ROUTE OPTIONS")
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(.secondary)
-                            .kerning(1)
-
-                        ForEach(routeOptions.indices, id: \.self) { idx in
-                            routeCard(routeOptions[idx], isSelected: idx == selectedRouteIndex)
-                                .onTapGesture { selectedRouteIndex = idx }
-                        }
-                    }
-                }
+                Text("Route is preset by Fleet Manager and locked for this trip.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                 Spacer(minLength: 20)
 
@@ -119,46 +73,6 @@ struct StartTripSheet: View {
         }
     }
 
-    // MARK: - Route Card
-
-    private func routeCard(_ route: RouteOption, isSelected: Bool) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: route.isGreen ? "leaf.fill" : "bolt.fill")
-                .foregroundStyle(route.isGreen ? .green : SierraTheme.Colors.ember)
-                .frame(width: 32)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(route.label)
-                    .font(.subheadline.weight(.medium))
-                HStack(spacing: 12) {
-                    Text(String(format: "%.1f km", route.distanceKm))
-                        .font(.caption).foregroundStyle(.secondary)
-                    Text(String(format: "%.0f min", route.durationMinutes))
-                        .font(.caption).foregroundStyle(.secondary)
-                    if route.isGreen {
-                        Text("Least fuel")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.green)
-                    }
-                }
-            }
-            Spacer()
-            if isSelected {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(SierraTheme.Colors.ember)
-            }
-        }
-        .padding(12)
-        .background(isSelected
-                    ? SierraTheme.Colors.ember.opacity(0.08)
-                    : Color(.secondarySystemBackground),
-                    in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(isSelected ? SierraTheme.Colors.ember : Color.clear, lineWidth: 1.5)
-        )
-    }
-
     // MARK: - Logic
 
     private var canStart: Bool {
@@ -174,14 +88,10 @@ struct StartTripSheet: View {
         }
 
         isStarting = true
-
-        if routeOptions.isEmpty {
-            await fetchRouteOptions()
-        }
-
-        // BUG-09 FIX: Block trip start if no routes were obtained
-        guard !routeOptions.isEmpty else {
-            errorMessage = "Unable to fetch route. Please check network connection and try again."
+        guard let trip,
+              let lockedRoutePolyline = trip.routePolyline?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !lockedRoutePolyline.isEmpty else {
+            errorMessage = "Route is missing on this trip. Ask fleet manager to set route and retry."
             showError = true
             isStarting = false
             return
@@ -190,19 +100,17 @@ struct StartTripSheet: View {
         do {
             try await store.startActiveTrip(tripId: tripId, startMileage: mileage)
 
-            if let trip = trip,
-               let originLat = trip.originLatitude,
+            if let originLat = trip.originLatitude,
                let originLng = trip.originLongitude,
                let destLat = trip.destinationLatitude,
                let destLng = trip.destinationLongitude {
-                // BUG-09 FIX: Use `try` instead of `try?` so errors are surfaced
                 try await TripService.updateTripCoordinates(
                     tripId: tripId,
                     originLat: originLat,
                     originLng: originLng,
                     destLat: destLat,
                     destLng: destLng,
-                    routePolyline: routeOptions[selectedRouteIndex].geometry
+                    routePolyline: lockedRoutePolyline
                 )
 
                 if let idx = store.trips.firstIndex(where: { $0.id == tripId }) {
@@ -210,7 +118,7 @@ struct StartTripSheet: View {
                     store.trips[idx].originLongitude = originLng
                     store.trips[idx].destinationLatitude = destLat
                     store.trips[idx].destinationLongitude = destLng
-                    store.trips[idx].routePolyline = routeOptions[selectedRouteIndex].geometry
+                    store.trips[idx].routePolyline = lockedRoutePolyline
                 }
             }
 
@@ -221,96 +129,5 @@ struct StartTripSheet: View {
         }
 
         isStarting = false
-    }
-
-    private func fetchRouteOptions() async {
-        guard let trip = trip,
-              let originLat = trip.originLatitude,
-              let originLng = trip.originLongitude,
-              let destLat = trip.destinationLatitude,
-              let destLng = trip.destinationLongitude else { return }
-
-        isFetchingRoutes = true
-        defer { isFetchingRoutes = false }
-
-        do {
-            let mapRoutes = try await MapService.fetchRoutes(
-                originLat: originLat, originLng: originLng,
-                destLat: destLat, destLng: destLng,
-                avoidTolls: avoidTolls,
-                avoidHighways: avoidHighways
-            )
-
-            routeOptions = mapRoutes.map { RouteOption(from: $0) }
-            selectedRouteIndex = 0
-        } catch let error as MapServiceError {
-            if applyStoredRouteFallback(from: trip) == false {
-                errorMessage = error.errorDescription
-                showError = true
-            }
-        } catch {
-            if applyStoredRouteFallback(from: trip) == false {
-                errorMessage = error.localizedDescription
-                showError = true
-            }
-        }
-    }
-
-    private func applyStoredRouteFallback(from trip: Trip) -> Bool {
-        guard let encoded = trip.routePolyline?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !encoded.isEmpty else {
-            return false
-        }
-
-        let decoded: [CLLocationCoordinate2D]? = MapboxDirections.decodePolyline(encoded, precision: 1e6)
-            ?? MapboxDirections.decodePolyline(encoded, precision: 1e5)
-        guard let decoded, decoded.count >= 2 else { return false }
-
-        let distanceMetres = zip(decoded, decoded.dropFirst()).reduce(0.0) { partial, pair in
-            let start = CLLocation(latitude: pair.0.latitude, longitude: pair.0.longitude)
-            let end = CLLocation(latitude: pair.1.latitude, longitude: pair.1.longitude)
-            return partial + start.distance(from: end)
-        }
-
-        routeOptions = [
-            RouteOption(
-                label: "Saved Trip Path",
-                distanceKm: distanceMetres / 1000,
-                durationMinutes: max((distanceMetres / 1000) * 2, 1),
-                geometry: encoded,
-                isGreen: false
-            )
-        ]
-        selectedRouteIndex = 0
-        return true
-    }
-}
-
-// MARK: - RouteOption
-
-struct RouteOption {
-    let label: String
-    let distanceKm: Double
-    let durationMinutes: Double
-    let geometry: String
-    let isGreen: Bool
-    let steps: [RouteStep]
-
-    init(label: String, distanceKm: Double, durationMinutes: Double, geometry: String, isGreen: Bool, steps: [RouteStep] = []) {
-        self.label = label
-        self.distanceKm = distanceKm
-        self.durationMinutes = durationMinutes
-        self.geometry = geometry
-        self.isGreen = isGreen
-        self.steps = steps
-    }
-
-    init(from mapRoute: MapRoute) {
-        self.label = mapRoute.label
-        self.distanceKm = mapRoute.distanceKm
-        self.durationMinutes = mapRoute.durationMinutes
-        self.geometry = mapRoute.geometry
-        self.isGreen = mapRoute.isGreen
-        self.steps = mapRoute.steps
     }
 }

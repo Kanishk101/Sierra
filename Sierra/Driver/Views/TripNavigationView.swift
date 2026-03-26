@@ -53,10 +53,10 @@ struct TripNavigationView: UIViewRepresentable {
         context.coordinator.scheduleRender(
             mapView: mapView,
             trip: coordinator.trip,
-            routeCoordinates: coordinator.remainingRouteCoordinates,
+            routeCoordinates: coordinator.routeDisplayCoordinates,
             breadcrumbCoordinates: coordinator.breadcrumbCoordinates,
             congestionLevels: nil,
-            travelerCoordinate: coordinator.currentRouteCoordinate ?? coordinator.currentLocation?.coordinate,
+            travelerCoordinate: coordinator.currentLocation?.coordinate ?? coordinator.currentRouteCoordinate,
             headingTargetCoordinate: coordinator.nextRouteCoordinate,
             geofences: coordinator.activeGeofences
         )
@@ -64,6 +64,32 @@ struct TripNavigationView: UIViewRepresentable {
     }
 
     func updateUIView(_ mapView: MapView, context: Context) {
+        if coordinator.requestOverview {
+            coordinator.requestOverview = false
+
+            mapView.viewport.idle()
+            context.coordinator.isFollowingPuck = false
+
+            let coordinates = coordinator.displayedRouteCoordinates.count >= 2
+                ? coordinator.displayedRouteCoordinates
+                : coordinator.routeDisplayCoordinates
+            guard coordinates.count >= 2 else { return }
+
+            let camera: CameraOptions
+            do {
+                camera = try mapView.mapboxMap.camera(
+                    for: coordinates,
+                    camera: CameraOptions(),
+                    coordinatesPadding: UIEdgeInsets(top: 120, left: 44, bottom: 260, right: 44),
+                    maxZoom: nil,
+                    offset: nil
+                )
+            } catch {
+                camera = CameraOptions(center: coordinates.first, zoom: 13)
+            }
+            mapView.camera.ease(to: camera, duration: 0.9)
+        }
+
         // Handle explicit recenter request from HUD
         if coordinator.requestRecenter {
             coordinator.requestRecenter = false
@@ -89,10 +115,10 @@ struct TripNavigationView: UIViewRepresentable {
         context.coordinator.scheduleRender(
             mapView: mapView,
             trip: coordinator.trip,
-            routeCoordinates: coordinator.remainingRouteCoordinates,
+            routeCoordinates: coordinator.routeDisplayCoordinates,
             breadcrumbCoordinates: coordinator.breadcrumbCoordinates,
             congestionLevels: congestion,
-            travelerCoordinate: coordinator.currentRouteCoordinate ?? coordinator.currentLocation?.coordinate,
+            travelerCoordinate: coordinator.currentLocation?.coordinate ?? coordinator.currentRouteCoordinate,
             headingTargetCoordinate: coordinator.nextRouteCoordinate,
             geofences: coordinator.activeGeofences
         )
@@ -455,10 +481,10 @@ struct TripNavigationView: UIViewRepresentable {
         ) {
             guard let coordinate else { return }
 
-            // Skip if puck hasn't moved noticeably (~1m ≈ 0.00001°)
+            // Skip if puck hasn't moved noticeably (roughly sub-meter jitter).
             let dLat = abs(coordinate.latitude - lastTravelerLat)
             let dLon = abs(coordinate.longitude - lastTravelerLon)
-            guard dLat > 0.00001 || dLon > 0.00001 else { return }
+            guard dLat > 0.000005 || dLon > 0.000005 else { return }
             lastTravelerLat = coordinate.latitude
             lastTravelerLon = coordinate.longitude
 

@@ -7,19 +7,19 @@ struct MaintenanceApplicationSubmittedView: View {
     @State private var isApproved = false
     @State private var isRejected = false
     @State private var rejectionReason: String?
-
-    private let store = AppDataStore.shared
+    @State private var pollingTask: Task<Void, Never>?
 
     var body: some View {
-        ZStack {
-            Color(.systemGroupedBackground)
-                .ignoresSafeArea()
-
+        Group {
             if isApproved {
-                approvedOverlay
-                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                MaintenanceTabView()
             } else {
-                mainContent
+                ZStack {
+                    Color(.systemGroupedBackground)
+                        .ignoresSafeArea()
+
+                    mainContent
+                }
             }
         }
         .interactiveDismissDisabled()
@@ -31,7 +31,10 @@ struct MaintenanceApplicationSubmittedView: View {
             withAnimation(.spring(duration: 0.6, bounce: 0.2).delay(0.8)) {
                 contentAppeared = true
             }
+            startPolling()
+            Task { await pollStatus() }
         }
+        .onDisappear { stopPolling() }
         .animation(.spring(duration: 0.5), value: isApproved)
         .animation(.spring(duration: 0.4), value: isRejected)
     }
@@ -219,72 +222,40 @@ struct MaintenanceApplicationSubmittedView: View {
         .padding(.bottom, 20)
     }
 
-    // MARK: - Approved
+    // MARK: - Polling
 
-    private var approvedOverlay: some View {
-        VStack(spacing: 24) {
-            Spacer()
-
-            ZStack {
-                Circle()
-                    .fill(.green.opacity(0.15))
-                    .frame(width: 120, height: 120)
-                Image(systemName: "checkmark.seal.fill")
-                    .font(.system(size: 60))
-                    .foregroundStyle(.green)
-                    .symbolRenderingMode(.hierarchical)
+    private func startPolling() {
+        pollingTask = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(15))
+                guard !Task.isCancelled else { return }
+                await pollStatus()
             }
-
-            VStack(spacing: 10) {
-                Text("You\u{2019}re Approved!")
-                    .font(.title.weight(.bold))
-                    .foregroundStyle(.primary)
-                Text("Welcome to Sierra. You can now access maintenance features.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 40)
-            }
-
-            Spacer()
-
-            Button {
-                if var user = AuthManager.shared.currentUser {
-                    user.isApproved = true
-                    AuthManager.shared.currentUser = user
-                    _ = KeychainService.save(user, forKey: "com.sierra.currentUser")
-                    AuthManager.shared.isAuthenticated = true
-                }
-            } label: {
-                Text("Get Started")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 54)
-                    .background(.green, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 32)
         }
     }
 
-    // MARK: - Poll
+    private func stopPolling() {
+        pollingTask?.cancel()
+        pollingTask = nil
+    }
 
     @MainActor
     private func pollStatus() async {
         isRefreshing = true
-        await store.loadAll()
+        do {
+            try await AuthManager.shared.refreshCurrentUser()
+        } catch {
+            isRefreshing = false
+            return
+        }
 
-        if let userId = AuthManager.shared.currentUser?.id,
-           let app = store.application(for: userId) {
-            switch app.status {
-            case .approved:
+        if let user = AuthManager.shared.currentUser {
+            if user.isApproved && user.isProfileComplete {
                 isApproved = true
-            case .rejected:
+            } else if !user.isApproved,
+                      let reason = user.rejectionReason, !reason.isEmpty {
                 isRejected = true
-                rejectionReason = app.rejectionReason ?? "No reason provided."
-            case .pending:
-                break
+                rejectionReason = reason
             }
         }
 

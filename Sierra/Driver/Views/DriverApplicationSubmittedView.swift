@@ -5,16 +5,23 @@ struct DriverApplicationSubmittedView: View {
     @State private var checkmarkProgress: CGFloat = 0
     @State private var contentAppeared = false
     @State private var isRefreshing = false
+    @State private var isApproved = false
     @State private var isRejected = false
     @State private var rejectionReason: String?
     @State private var pollingTask: Task<Void, Never>?
 
     var body: some View {
-        ZStack {
-            Color(.systemGroupedBackground)
-                .ignoresSafeArea()
+        Group {
+            if isApproved {
+                DriverTabView()
+            } else {
+                ZStack {
+                    Color(.systemGroupedBackground)
+                        .ignoresSafeArea()
 
-            mainContent
+                    mainContent
+                }
+            }
         }
         .interactiveDismissDisabled()
         .navigationBarBackButtonHidden(true)
@@ -26,6 +33,7 @@ struct DriverApplicationSubmittedView: View {
                 contentAppeared = true
             }
             startPolling()
+            Task { await pollStatus() }
         }
         .onDisappear {
             stopPolling()
@@ -52,17 +60,23 @@ struct DriverApplicationSubmittedView: View {
 
     @MainActor
     private func pollStatus() async {
+        isRefreshing = true
         do {
             try await AuthManager.shared.refreshCurrentUser()
         } catch {
+            isRefreshing = false
             return
         }
-        if let user = AuthManager.shared.currentUser,
-           !user.isApproved,
-           let reason = user.rejectionReason, !reason.isEmpty {
-            isRejected = true
-            rejectionReason = reason
+        if let user = AuthManager.shared.currentUser {
+            if user.isApproved && user.isProfileComplete {
+                isApproved = true
+            } else if !user.isApproved,
+                      let reason = user.rejectionReason, !reason.isEmpty {
+                isRejected = true
+                rejectionReason = reason
+            }
         }
+        isRefreshing = false
     }
 
     // MARK: - Main Content

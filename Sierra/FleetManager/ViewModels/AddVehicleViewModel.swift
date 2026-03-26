@@ -334,6 +334,18 @@ final class AddVehicleViewModel {
         defer { isSubmitting = false }
 
         do {
+            do {
+                _ = try await SupabaseManager.ensureValidSession()
+            } catch {
+                if SupabaseManager.isSessionRecoveryError(error) {
+                    errorMessage = "Your session expired. Please sign in again and retry."
+                } else {
+                    errorMessage = "Network unavailable. Please reconnect and retry."
+                }
+                showError = true
+                return
+            }
+
             if isEditing, var v = editingVehicle {
                 v.name         = name.trimmingCharacters(in: .whitespaces)
                 v.manufacturer = manufacturer.trimmingCharacters(in: .whitespaces)

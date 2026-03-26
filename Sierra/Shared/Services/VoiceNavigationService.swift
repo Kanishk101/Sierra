@@ -12,6 +12,7 @@ final class VoiceNavigationService {
     private var isMuted = false
     private var lastAnnouncement: String = ""
     private var lastAnnouncementAt: Date = .distantPast
+    private var cachedPreferredVoice: AVSpeechSynthesisVoice?
 
     private init() {}
 
@@ -40,10 +41,11 @@ final class VoiceNavigationService {
 
         synthesizer.stopSpeaking(at: .immediate)
         let utterance = AVSpeechUtterance(string: normalized)
-        utterance.voice = AVSpeechSynthesisVoice(language: "en-IN")
-        utterance.rate  = 0.48
-        utterance.pitchMultiplier = 1.05
-        utterance.preUtteranceDelay = 0.15
+        utterance.voice = preferredVoice()
+        utterance.rate  = 0.52
+        utterance.pitchMultiplier = 1.08
+        utterance.preUtteranceDelay = 0.08
+        utterance.postUtteranceDelay = 0.04
         synthesizer.speak(utterance)
     }
 
@@ -63,5 +65,37 @@ final class VoiceNavigationService {
     /// Stop any active speech immediately.
     func stop() {
         synthesizer.stopSpeaking(at: .immediate)
+    }
+
+    private func preferredVoice() -> AVSpeechSynthesisVoice? {
+        if let cachedPreferredVoice { return cachedPreferredVoice }
+
+        let voices = AVSpeechSynthesisVoice.speechVoices()
+
+        let preferred = voices
+            .filter { $0.language.lowercased().hasPrefix("en-us") }
+            .max { voiceScore($0) < voiceScore($1) }
+            ?? voices
+            .filter { $0.language.lowercased().hasPrefix("en-") }
+            .max { voiceScore($0) < voiceScore($1) }
+            ?? AVSpeechSynthesisVoice(language: "en-US")
+
+        cachedPreferredVoice = preferred
+        return preferred
+    }
+
+    private func voiceScore(_ voice: AVSpeechSynthesisVoice) -> Int {
+        let qualityScore: Int
+        switch voice.quality {
+        case .premium:
+            qualityScore = 3
+        case .enhanced:
+            qualityScore = 2
+        default:
+            qualityScore = 1
+        }
+
+        let usBoost = voice.language.lowercased().hasPrefix("en-us") ? 20 : 0
+        return usBoost + qualityScore
     }
 }

@@ -1,6 +1,7 @@
 import Foundation
 import CoreLocation
 import MapboxDirections
+import MapboxNavigationCore
 import Turf
 
 // MARK: - RouteEngine
@@ -30,6 +31,8 @@ final class RouteEngine {
     // MARK: - Internal State
     private(set) var decodedRouteCoordinates: [CLLocationCoordinate2D] = []
     private(set) var totalRouteDistanceMetres: Double = 0
+    private(set) var latestRouteResponse: RouteResponse?
+    private(set) var selectedRouteIndex: Int?
     private var intermediateWaypoints: [(lat: Double, lng: Double, name: String)] = []
     private var rerouteFromCurrentLocation: Bool = false
     private var isBuilding: Bool = false  // CODE-33 FIX: prevent concurrent builds
@@ -103,10 +106,6 @@ final class RouteEngine {
         if !avoidClasses.isEmpty { options.roadClassesToAvoid = avoidClasses }
 
         guard MapService.hasValidToken else {
-            if await applyMapServiceFallbackRoute(origin: originCoord, destination: destCoord) {
-                lastBuildError = nil
-                return
-            }
             if applyStoredPolylineFallback(from: trip) {
                 lastBuildError = "Mapbox token missing. Showing the saved trip path only."
             } else {
@@ -134,6 +133,8 @@ final class RouteEngine {
 
             if let fastestIndex = routes.indices.min(by: { routes[$0].expectedTravelTime < routes[$1].expectedTravelTime }) {
                 let fastest = routes[fastestIndex]
+                latestRouteResponse = response
+                selectedRouteIndex = fastestIndex
                 currentRoute = fastest
                 isUsingStoredRouteFallback = false
                 distanceRemainingMetres = fastest.distance
@@ -171,6 +172,7 @@ final class RouteEngine {
     func swapAlternativeRoute() {
         guard let alt = alternativeRoute else { return }
         let prev = currentRoute; currentRoute = alt; alternativeRoute = prev
+        selectedRouteIndex = nil
         if let shape = currentRoute?.shape {
             decodedRouteCoordinates = shape.coordinates
             totalRouteDistanceMetres = currentRoute?.distance ?? routeLength(for: shape.coordinates)
@@ -197,11 +199,26 @@ final class RouteEngine {
         clearDerivedRouteState()
     }
 
+    func applyNavigationRoutes(_ navigationRoutes: NavigationRoutes) {
+        let mainRoute = navigationRoutes.mainRoute.route
+        currentRoute = mainRoute
+        alternativeRoute = navigationRoutes.alternativeRoutes.first?.route
+        decodedRouteCoordinates = mainRoute.shape?.coordinates ?? []
+        totalRouteDistanceMetres = mainRoute.distance
+        distanceRemainingMetres = mainRoute.distance
+        estimatedArrivalTime = Date().addingTimeInterval(mainRoute.expectedTravelTime)
+        currentStepInstruction = mainRoute.legs.first?.steps.first?.instructions ?? "Follow the highlighted route"
+        isUsingStoredRouteFallback = false
+        hasDeviated = false
+    }
+
     private func clearDerivedRouteState() {
         currentRoute = nil
         alternativeRoute = nil
         decodedRouteCoordinates = []
         totalRouteDistanceMetres = 0
+        latestRouteResponse = nil
+        selectedRouteIndex = nil
         currentStepInstruction = ""
         distanceRemainingMetres = 0
         estimatedArrivalTime = nil
@@ -225,6 +242,8 @@ final class RouteEngine {
         currentStepInstruction = "Follow the highlighted trip route"
         currentRoute = nil
         alternativeRoute = nil
+        latestRouteResponse = nil
+        selectedRouteIndex = nil
         hasDeviated = false
         isUsingStoredRouteFallback = true
         return true
@@ -270,6 +289,8 @@ final class RouteEngine {
             currentStepInstruction = fastest.steps.first?.instruction ?? "Follow the highlighted route"
             currentRoute = nil
             alternativeRoute = nil
+            latestRouteResponse = nil
+            selectedRouteIndex = nil
             hasDeviated = false
             isUsingStoredRouteFallback = false
             return true

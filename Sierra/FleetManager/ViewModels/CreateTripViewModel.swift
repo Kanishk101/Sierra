@@ -168,6 +168,19 @@ final class CreateTripViewModel {
         }
 
         do {
+            do {
+                _ = try await SupabaseManager.ensureValidSession()
+            } catch {
+                if SupabaseManager.isSessionRecoveryError(error) {
+                    errorMessage = "Your session expired. Please sign in again and retry."
+                } else {
+                    errorMessage = "Network unavailable. Please reconnect and retry."
+                }
+                showError = true
+                isCreating = false
+                return
+            }
+
             // Validate driver
             guard let latestDriver = try await StaffMemberService.fetchStaffMember(id: driverId) else {
                 errorMessage = "Selected driver no longer exists."; showError = true; isCreating = false; return

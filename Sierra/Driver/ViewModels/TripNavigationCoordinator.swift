@@ -1,7 +1,9 @@
-        import Foundation
+import Foundation
 import CoreLocation
+import Combine
 import MapboxDirections
 import MapboxMaps
+import MapboxNavigationCore
 
 // MARK: - TripNavigationCoordinator
 // Orchestrator — delegates to RouteEngine, DeviationDetector, GeofenceMonitor.
@@ -61,6 +63,17 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         persistedProgressByTrip = updated
     }
 
+    private static let navigationProvider: MapboxNavigationProvider? = {
+        guard let token = MapService.accessToken else { return nil }
+        let locale = Locale(identifier: "en_US")
+        let coreConfig = CoreConfig(
+            credentials: .init(accessToken: token),
+            locationSource: .live,
+            locale: locale
+        )
+        return MapboxNavigationProvider(coreConfig: coreConfig)
+    }()
+
     // MARK: - Sub-components
     private let routeEngine        = RouteEngine()
     private let deviationDetector  = DeviationDetector()
@@ -77,6 +90,21 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         guard !coords.isEmpty else { return [] }
         let idx = min(max(routeCursorIndex, 0), max(0, coords.count - 1))
         return Array(coords.dropFirst(idx))
+    }
+    var routeDisplayCoordinates: [CLLocationCoordinate2D] {
+        let remaining = remainingRouteCoordinates
+        guard let live = currentLocation?.coordinate else { return remaining }
+        guard let first = remaining.first else { return [live] }
+
+        let livePoint = CLLocation(latitude: live.latitude, longitude: live.longitude)
+        let firstPoint = CLLocation(latitude: first.latitude, longitude: first.longitude)
+        let gap = livePoint.distance(from: firstPoint)
+
+        // Keep the line visually attached to the puck when clipping starts ahead.
+        if gap > 3, gap < 2000 {
+            return [live] + remaining
+        }
+        return remaining
     }
     var hasRenderableRoute: Bool                { routeEngine.decodedRouteCoordinates.count >= 2 }
     var isUsingStoredRouteFallback: Bool        { routeEngine.isUsingStoredRouteFallback }
@@ -218,6 +246,8 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     var currentStepManeuver: String = ""
     var nextStepInstruction: String = ""
     var requestRecenter: Bool = false
+    var requestOverview: Bool = false
+    var isOverviewMode: Bool = false
 
     /// Returns a value in [0.0, 1.0] representing how far along the route the driver is.
     /// 0.0 = at origin, 1.0 = arrived at destination.
@@ -247,6 +277,12 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     private var lastRerouteRequestedAt: Date = .distantPast  // Fix 9: reroute cooldown
     private var lastTrafficUpdateAt: Date = .distantPast     // throttle traffic service
     private var didAnnounceInitialInstruction = false
+    private var mapboxNavigationCancellables: Set<AnyCancellable> = []
+    private var mapboxSessionRouteId: RouteId?
+    private var isUsingMapboxNavigationCore = false
+    private var lastSpokenInstructionText: String = ""
+    private var lastBreadcrumbAppendAt: Date = .distantPast
+    private let maxBreadcrumbPoints = 6000
 
     // MARK: - Init / deinit
     init(trip: Trip) {
@@ -260,6 +296,8 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
             locationPublishTimer = nil
             locationManager?.stopUpdatingLocation()
             locationManager = nil
+            mapboxNavigationCancellables.removeAll()
+            Self.navigationProvider?.mapboxNavigation.tripSession().setToIdle()
             trafficService.stopPolling()
         }
     }
@@ -286,6 +324,236 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     func addStop(latitude: Double, longitude: Double, name: String) async {
         await routeEngine.addStop(latitude: latitude, longitude: longitude, name: name,
                                    trip: trip, currentLocation: currentLocation)
+    }
+
+    func toggleCameraMode() {
+        if isOverviewMode {
+            switchToFollowMode()
+        } else {
+            switchToOverviewMode()
+        }
+    }
+
+    func switchToOverviewMode() {
+        requestOverview = true
+        isOverviewMode = true
+    }
+
+    func switchToFollowMode() {
+        requestRecenter = true
+        isOverviewMode = false
+    }
+
+    // MARK: - Mapbox Navigation Core
+    private func startMapboxActiveGuidanceIfPossible() async {
+        guard let provider = Self.navigationProvider,
+              let routeOptions = buildNavigationRouteOptions() else {
+            isUsingMapboxNavigationCore = false
+            return
+        }
+
+        do {
+            let navigationRoutes = try await provider.mapboxNavigation
+                .routingProvider()
+                .calculateRoutes(options: routeOptions)
+                .value
+
+            bindMapboxNavigationStreams(provider: provider)
+            routeEngine.applyNavigationRoutes(navigationRoutes)
+            refreshStateAfterRouteBuild()
+            provider.mapboxNavigation.tripSession().startActiveGuidance(with: navigationRoutes, startLegIndex: 0)
+
+            mapboxSessionRouteId = navigationRoutes.mainRoute.routeId
+            isUsingMapboxNavigationCore = true
+        } catch {
+            isUsingMapboxNavigationCore = false
+            announceInitialInstructionIfNeeded()
+            #if DEBUG
+            print("[NavCoordinator] Mapbox active guidance unavailable: \(error)")
+            #endif
+        }
+    }
+
+    private func buildNavigationRouteOptions() -> RouteOptions? {
+        let originCoord: CLLocationCoordinate2D
+        if let location = currentLocation {
+            originCoord = location.coordinate
+        } else if let lat = trip.originLatitude, let lng = trip.originLongitude {
+            originCoord = CLLocationCoordinate2D(latitude: lat, longitude: lng)
+        } else {
+            return nil
+        }
+
+        guard let destLat = trip.destinationLatitude,
+              let destLng = trip.destinationLongitude else {
+            return nil
+        }
+        let destinationCoord = CLLocationCoordinate2D(latitude: destLat, longitude: destLng)
+
+        var waypoints: [Waypoint] = [Waypoint(coordinate: originCoord)]
+        for stop in (trip.routeStops ?? []).sorted(by: { $0.order < $1.order }) {
+            let stopCoord = CLLocationCoordinate2D(latitude: stop.latitude, longitude: stop.longitude)
+            waypoints.append(Waypoint(coordinate: stopCoord, name: stop.name))
+        }
+        waypoints.append(Waypoint(coordinate: destinationCoord))
+
+        let options = RouteOptions(waypoints: waypoints)
+        options.includesAlternativeRoutes = true
+        options.routeShapeResolution = .full
+        options.shapeFormat = .polyline6
+        options.profileIdentifier = .automobileAvoidingTraffic
+        options.attributeOptions = [.congestionLevel, .expectedTravelTime, .speed, .maximumSpeedLimit]
+        if trip.scheduledDate > Date() {
+            options.departAt = trip.scheduledDate
+        }
+
+        var avoidClasses: RoadClasses = []
+        if avoidTolls { avoidClasses.insert(.toll) }
+        if avoidHighways { avoidClasses.insert(.motorway) }
+        if !avoidClasses.isEmpty {
+            options.roadClassesToAvoid = avoidClasses
+        }
+
+        return options
+    }
+
+    private func stopMapboxActiveGuidance() {
+        guard let provider = Self.navigationProvider else { return }
+        provider.mapboxNavigation.tripSession().setToIdle()
+        mapboxNavigationCancellables.removeAll()
+        mapboxSessionRouteId = nil
+        isUsingMapboxNavigationCore = false
+        lastSpokenInstructionText = ""
+    }
+
+    private func bindMapboxNavigationStreams(provider: MapboxNavigationProvider) {
+        mapboxNavigationCancellables.removeAll()
+
+        let navigation = provider.mapboxNavigation.navigation()
+        let tripSession = provider.mapboxNavigation.tripSession()
+
+        navigation.locationMatching
+            .sink { [weak self] state in
+                Task { @MainActor in
+                    self?.handleMapMatchingUpdate(state)
+                }
+            }
+            .store(in: &mapboxNavigationCancellables)
+
+        navigation.routeProgress
+            .compactMap { $0?.routeProgress }
+            .sink { [weak self] routeProgress in
+                Task { @MainActor in
+                    self?.handleMapboxRouteProgress(routeProgress)
+                }
+            }
+            .store(in: &mapboxNavigationCancellables)
+
+        tripSession.navigationRoutes
+            .compactMap { $0 }
+            .sink { [weak self] navigationRoutes in
+                Task { @MainActor in
+                    self?.applyLatestNavigationRoutesIfNeeded(navigationRoutes)
+                }
+            }
+            .store(in: &mapboxNavigationCancellables)
+
+        navigation.voiceInstructions
+            .sink { [weak self] spokenState in
+                Task { @MainActor in
+                    self?.handleVoiceInstructionUpdate(spokenState)
+                }
+            }
+            .store(in: &mapboxNavigationCancellables)
+    }
+
+    private func handleMapMatchingUpdate(_ state: MapMatchingState) {
+        let enhancedLocation = state.enhancedLocation
+        currentLocation = enhancedLocation
+        appendBreadcrumbCoordinateIfNeeded(enhancedLocation.coordinate)
+        advanceRouteCursorUsingLocation(enhancedLocation)
+        currentSpeedKmh = max(0, state.currentSpeed.converted(to: .kilometersPerHour).value)
+        if let speedLimit = state.speedLimit.value {
+            currentSpeedLimit = Int(speedLimit.converted(to: .kilometersPerHour).value.rounded())
+        }
+
+        let now = Date()
+        if now.timeIntervalSince(lastTrafficUpdateAt) >= 15 {
+            lastTrafficUpdateAt = now
+            trafficService.updateLocation(enhancedLocation)
+        }
+
+        // Keep deviation alerts for admin visibility, but rerouting remains SDK-controlled.
+        checkDeviation(from: enhancedLocation)
+    }
+
+    private func handleMapboxRouteProgress(_ progress: RouteProgress) {
+        let routeChanged = mapboxSessionRouteId != progress.routeId
+        if routeChanged {
+            mapboxSessionRouteId = progress.routeId
+            routeEngine.applyNavigationRoutes(progress.navigationRoutes)
+            refreshStateAfterRouteBuild()
+        }
+
+        let routeCoords = routeEngine.decodedRouteCoordinates
+        if !routeCoords.isEmpty {
+            let targetIndex = min(max(progress.shapeIndex, 0), routeCoords.count - 1)
+            if routeChanged {
+                routeCursorIndex = targetIndex
+            } else if targetIndex >= routeCursorIndex {
+                // Smooth clipping progression to avoid abrupt jumps while walking.
+                routeCursorIndex = min(targetIndex, routeCursorIndex + maxCursorAdvancePerTick)
+            } else if routeCursorIndex - targetIndex > 30 {
+                routeCursorIndex = targetIndex
+            }
+        } else {
+            routeCursorIndex = 0
+        }
+
+        distanceRemainingMetres = max(0, progress.distanceRemaining)
+        estimatedArrivalTime = Date().addingTimeInterval(max(0, progress.durationRemaining))
+
+        let legProgress = progress.currentLegProgress
+        currentStepIndex = legProgress.stepIndex
+        currentStepManeuver = legProgress.currentStep.maneuverType.rawValue
+        routeEngine.currentStepInstruction = legProgress.currentStep.instructions
+        nextStepInstruction = legProgress.upcomingStep?.instructions ?? ""
+
+        maxRouteProgressFraction = max(maxRouteProgressFraction, progress.fractionTraveled)
+        Self.savePersistedProgress(maxRouteProgressFraction, for: trip.id)
+
+        if let location = currentLocation, !routeCoords.isEmpty {
+            advanceRouteCursorUsingLocation(location)
+            updateStopArrivalState(using: location, routeCoordinates: routeCoords)
+        }
+
+        let hasReachedFinalWaypoint = progress.legIndex >= progress.route.legs.count - 1
+            && legProgress.userHasArrivedAtWaypoint
+        if hasReachedFinalWaypoint || progress.distanceRemaining < 50 {
+            if !hasArrived {
+                hasArrived = true
+                routeCursorIndex = max(0, routeCoords.count - 1)
+                maxRouteProgressFraction = 1.0
+                Self.savePersistedProgress(1.0, for: trip.id)
+                NotificationCenter.default.post(name: .tripArrivedAtDestination, object: nil)
+            }
+        }
+    }
+
+    private func applyLatestNavigationRoutesIfNeeded(_ navigationRoutes: NavigationRoutes) {
+        guard mapboxSessionRouteId != navigationRoutes.mainRoute.routeId else { return }
+        mapboxSessionRouteId = navigationRoutes.mainRoute.routeId
+        routeEngine.applyNavigationRoutes(navigationRoutes)
+        refreshStateAfterRouteBuild()
+    }
+
+    private func handleVoiceInstructionUpdate(_ state: SpokenInstructionState) {
+        let instruction = state.spokenInstruction.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !instruction.isEmpty else { return }
+        guard instruction != lastSpokenInstructionText else { return }
+        lastSpokenInstructionText = instruction
+        routeEngine.currentStepInstruction = instruction
+        VoiceNavigationService.shared.announce(instruction)
     }
 
     // MARK: - Location Manager
@@ -330,18 +598,33 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         locationManager = manager
         isNavigating = true
         hasConfirmedRouteSelection = true
-        announceInitialInstructionIfNeeded()
+        let shouldDeferInitialVoice = Self.navigationProvider != nil && routeEngine.latestRouteResponse != nil
+        if !shouldDeferInitialVoice {
+            announceInitialInstructionIfNeeded()
+        }
 
         // GAP-1: Start traffic incident polling
         trafficService.startPolling(routeCoordinates: routeEngine.decodedRouteCoordinates)
         geofenceMonitor.register(AppDataStore.shared.geofences,
                                   locationManager: manager,
                                   currentLocation: currentLocation)
+        Task { await startMapboxActiveGuidanceIfPossible() }
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.last else { return }
-        Task { @MainActor in self.updateLocation(location) }
+        Task { @MainActor in
+            if self.isUsingMapboxNavigationCore {
+                // Preserve high-frequency breadcrumb updates while SDK drives guidance.
+                self.appendBreadcrumbCoordinateIfNeeded(location.coordinate)
+                self.advanceRouteCursorUsingLocation(location)
+                if self.currentLocation == nil {
+                    self.currentLocation = location
+                }
+            } else {
+                self.updateLocation(location)
+            }
+        }
     }
 
     private func announceInitialInstructionIfNeeded() {
@@ -417,6 +700,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         if let manager = locationManager { geofenceMonitor.stopMonitoring(locationManager: manager) }
         locationManager?.stopUpdatingLocation()
         locationManager = nil
+        stopMapboxActiveGuidance()
     }
 
     // MARK: - Location Update
@@ -429,11 +713,14 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
             lastTrafficUpdateAt = now
             trafficService.updateLocation(location)
         }
-        updateNavigationProgress(location: location)
+        if !isUsingMapboxNavigationCore {
+            updateNavigationProgress(location: location)
+        }
         checkDeviation(from: location)
 
         // GAP-1: Auto-reroute on severe incident nearby
-        if trafficService.hasSevereIncidentNearby(),
+        if !isUsingMapboxNavigationCore,
+           trafficService.hasSevereIncidentNearby(),
            Date().timeIntervalSince(lastRerouteRequestedAt) > TripConstants.rerouteCooldownSeconds {
             lastRerouteRequestedAt = Date()
             Task { await rebuildRoutes() }
@@ -447,17 +734,24 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         let routeCoords = routeEngine.decodedRouteCoordinates
         guard routeCoords.count >= 2 else { return }
 
-        // Stop-safe progression: search forward window and never move cursor backwards.
+        // Hybrid snap: local window for performance + global recovery when desynced.
         let lastSegmentIndex = routeCoords.count - 2
-        let forwardStart = min(max(routeCursorIndex - 8, 0), lastSegmentIndex)
-        let forwardEnd = min(routeCursorIndex + 40, lastSegmentIndex)
+        let currentIndex = min(max(routeCursorIndex, 0), lastSegmentIndex)
+        let forwardStart = min(max(currentIndex - 20, 0), lastSegmentIndex)
+        let forwardEnd = min(currentIndex + 80, lastSegmentIndex)
         let candidateRange = forwardStart...forwardEnd
 
         let driverLat = location.coordinate.latitude
         let driverLon = location.coordinate.longitude
 
+        let currentDist = fastSegmentDistance(
+            pLat: driverLat, pLon: driverLon,
+            aLat: routeCoords[currentIndex].latitude, aLon: routeCoords[currentIndex].longitude,
+            bLat: routeCoords[currentIndex + 1].latitude, bLon: routeCoords[currentIndex + 1].longitude
+        )
+
         var minDist = Double.greatestFiniteMagnitude
-        var closestSegIndex = routeCursorIndex
+        var closestSegIndex = currentIndex
         for i in candidateRange {
             let dist = fastSegmentDistance(
                 pLat: driverLat, pLon: driverLon,
@@ -469,7 +763,30 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
                 closestSegIndex = i
             }
         }
-        routeCursorIndex = max(routeCursorIndex, closestSegIndex)
+
+        if minDist > 120 {
+            // Recovery scan: catches drift where local window misses the true segment.
+            for i in 0...lastSegmentIndex {
+                let dist = fastSegmentDistance(
+                    pLat: driverLat, pLon: driverLon,
+                    aLat: routeCoords[i].latitude, aLon: routeCoords[i].longitude,
+                    bLat: routeCoords[i + 1].latitude, bLon: routeCoords[i + 1].longitude
+                )
+                if dist < minDist {
+                    minDist = dist
+                    closestSegIndex = i
+                }
+            }
+        }
+
+        if closestSegIndex >= currentIndex {
+            routeCursorIndex = closestSegIndex
+        } else {
+            let backwardJump = currentIndex - closestSegIndex
+            if backwardJump >= 6, minDist + 20 < currentDist {
+                routeCursorIndex = closestSegIndex
+            }
+        }
 
         let remaining = cumulativeRemainingDistance(from: routeCursorIndex, driverLocation: location, routeCoords: routeCoords)
         routeEngine.distanceRemainingMetres = max(0, remaining)
@@ -571,6 +888,8 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
                 deviationMetres: deviationMetres
             )
         }
+        guard !isUsingMapboxNavigationCore else { return }
+
         // Fix 9: Cooldown — don't reroute more than once every 30 seconds
         guard Date().timeIntervalSince(lastRerouteRequestedAt) > TripConstants.rerouteCooldownSeconds else {
             return
@@ -612,18 +931,94 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     private func appendBreadcrumbCoordinateIfNeeded(_ coordinate: CLLocationCoordinate2D, force: Bool = false) {
         guard let last = breadcrumbCoordinates.last else {
             breadcrumbCoordinates = [coordinate]
+            lastBreadcrumbAppendAt = Date()
             return
         }
 
         if force {
             breadcrumbCoordinates.append(coordinate)
+            trimBreadcrumbsIfNeeded()
+            lastBreadcrumbAppendAt = Date()
             return
         }
 
         let previous = CLLocation(latitude: last.latitude, longitude: last.longitude)
         let current = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
-        guard current.distance(from: previous) >= 2 else { return }
+        let distance = current.distance(from: previous)
+        let now = Date()
+        let elapsed = now.timeIntervalSince(lastBreadcrumbAppendAt)
+        // Keep breadcrumbs responsive at low speeds (walking/testing).
+        if distance < 1, elapsed < 2.0 { return }
+        // Reject obvious GPS spikes that draw unrealistic breadcrumb jumps.
+        if distance > 80, currentSpeedKmh < 15 { return }
         breadcrumbCoordinates.append(coordinate)
+        trimBreadcrumbsIfNeeded()
+        lastBreadcrumbAppendAt = now
+    }
+
+    private func advanceRouteCursorUsingLocation(_ location: CLLocation) {
+        let routeCoords = routeEngine.decodedRouteCoordinates
+        guard routeCoords.count >= 2 else { return }
+
+        let lastSegmentIndex = routeCoords.count - 2
+        let currentIndex = min(max(routeCursorIndex, 0), lastSegmentIndex)
+        let forwardStart = min(max(currentIndex - 12, 0), lastSegmentIndex)
+        let forwardEnd = min(currentIndex + 60, lastSegmentIndex)
+
+        let lat = location.coordinate.latitude
+        let lon = location.coordinate.longitude
+
+        var bestIndex = currentIndex
+        var bestDistance = Double.greatestFiniteMagnitude
+
+        for i in forwardStart...forwardEnd {
+            let dist = fastSegmentDistance(
+                pLat: lat, pLon: lon,
+                aLat: routeCoords[i].latitude, aLon: routeCoords[i].longitude,
+                bLat: routeCoords[i + 1].latitude, bLon: routeCoords[i + 1].longitude
+            )
+            if dist < bestDistance {
+                bestDistance = dist
+                bestIndex = i
+            }
+        }
+
+        // Recovery when local window misses the actual segment.
+        if bestDistance > 110 {
+            for i in 0...lastSegmentIndex {
+                let dist = fastSegmentDistance(
+                    pLat: lat, pLon: lon,
+                    aLat: routeCoords[i].latitude, aLon: routeCoords[i].longitude,
+                    bLat: routeCoords[i + 1].latitude, bLon: routeCoords[i + 1].longitude
+                )
+                if dist < bestDistance {
+                    bestDistance = dist
+                    bestIndex = i
+                }
+            }
+        }
+
+        if bestIndex >= routeCursorIndex {
+            routeCursorIndex = min(bestIndex, routeCursorIndex + maxCursorAdvancePerTick)
+        } else if routeCursorIndex - bestIndex > 20 {
+            routeCursorIndex = bestIndex
+        }
+    }
+
+    private var maxCursorAdvancePerTick: Int {
+        switch currentSpeedKmh {
+        case ..<12:
+            return 20
+        case ..<45:
+            return 60
+        default:
+            return 140
+        }
+    }
+
+    private func trimBreadcrumbsIfNeeded() {
+        guard breadcrumbCoordinates.count > maxBreadcrumbPoints else { return }
+        breadcrumbCoordinates.removeFirst(breadcrumbCoordinates.count - maxBreadcrumbPoints)
     }
 
     private func recomputeStopRouteAnchors() {
