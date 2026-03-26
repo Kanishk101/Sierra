@@ -974,6 +974,7 @@ struct RoutePreviewMap: UIViewRepresentable {
     let destLng:   Double?
     let originName: String
     let destName:   String
+    let routeStops: [RouteStop]
 
     func makeUIView(context: Context) -> MKMapView {
         let map = MKMapView()
@@ -1020,21 +1021,44 @@ struct RoutePreviewMap: UIViewRepresentable {
 
         let originPin = MKPointAnnotation(); originPin.coordinate = o
         let destPin   = MKPointAnnotation(); destPin.coordinate   = d
-        map.addAnnotations([originPin, destPin])
+        var annotations: [MKPointAnnotation] = [originPin]
+        for stop in routeStops.sorted(by: { $0.order < $1.order }) {
+            let stopPin = MKPointAnnotation()
+            stopPin.coordinate = CLLocationCoordinate2D(latitude: stop.latitude, longitude: stop.longitude)
+            stopPin.title = stop.name
+            annotations.append(stopPin)
+        }
+        annotations.append(destPin)
+        map.addAnnotations(annotations)
 
-        let request = MKDirections.Request()
-        request.source      = mapItem(for: o)
-        request.destination = mapItem(for: d)
-        request.transportType = .automobile
-        request.requestsAlternateRoutes = false
+        let anchors: [CLLocationCoordinate2D] =
+            [o]
+            + routeStops.sorted(by: { $0.order < $1.order })
+                .map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+            + [d]
 
         do {
-            let result = try await MKDirections(request: request).calculate()
-            guard let route = result.routes.first else { return }
-            map.addOverlay(route.polyline, level: .aboveRoads)
-            map.setVisibleMapRect(route.polyline.boundingMapRect,
-                                   edgePadding: UIEdgeInsets(top: 28, left: 20, bottom: 28, right: 20),
-                                   animated: false)
+            var routes: [MKRoute] = []
+            for index in 0..<(anchors.count - 1) {
+                let start = anchors[index]
+                let end = anchors[index + 1]
+                if let leg = try await calculateRoute(from: start, to: end) {
+                    routes.append(leg)
+                }
+            }
+
+            guard !routes.isEmpty else { return }
+
+            var visibleRect = MKMapRect.null
+            for route in routes {
+                map.addOverlay(route.polyline, level: .aboveRoads)
+                visibleRect = visibleRect.union(route.polyline.boundingMapRect)
+            }
+            map.setVisibleMapRect(
+                visibleRect,
+                edgePadding: UIEdgeInsets(top: 28, left: 20, bottom: 28, right: 20),
+                animated: false
+            )
         } catch {
             let region = MKCoordinateRegion(
                 center: CLLocationCoordinate2D(
@@ -1045,6 +1069,16 @@ struct RoutePreviewMap: UIViewRepresentable {
             )
             map.setRegion(region, animated: false)
         }
+    }
+
+    private func calculateRoute(from: CLLocationCoordinate2D, to: CLLocationCoordinate2D) async throws -> MKRoute? {
+        let request = MKDirections.Request()
+        request.source = mapItem(for: from)
+        request.destination = mapItem(for: to)
+        request.transportType = .automobile
+        request.requestsAlternateRoutes = false
+        let result = try await MKDirections(request: request).calculate()
+        return result.routes.first
     }
 
     private func geocode(_ name: String) async -> CLLocationCoordinate2D? {
@@ -1088,6 +1122,9 @@ struct TripDetailCard: View {
 
     private var formattedDate: String { trip.scheduledDate.formatted(.dateTime.day().month(.abbreviated).year()) }
     private var formattedTime: String { trip.scheduledDate.formatted(.dateTime.hour().minute()) }
+    private var sortedStops: [RouteStop] {
+        (trip.routeStops ?? []).sorted(by: { $0.order < $1.order })
+    }
 
     private var distanceDisplay: String {
         if let km = trip.distanceKm { return "\(Int(km))km" }
@@ -1113,14 +1150,14 @@ struct TripDetailCard: View {
                 Image(systemName: "bus.fill").font(.system(size: 14, weight: .semibold)).foregroundColor(.appTextSecondary)
                 Text(trip.taskId).font(.system(size: 13, weight: .bold, design: .monospaced)).foregroundColor(.appOrange)
                 Spacer()
-                if trip.isDriverWorkflowCompleted { CompletedBadge() }
-                else { PriorityBadge(priority: trip.priority) }
+                PriorityBadge(priority: trip.priority)
             }
 
             RoutePreviewMap(
                 originLat: trip.originLatitude, originLng: trip.originLongitude,
                 destLat: trip.destinationLatitude, destLng: trip.destinationLongitude,
-                originName: trip.origin, destName: trip.destination
+                originName: trip.origin, destName: trip.destination,
+                routeStops: sortedStops
             )
             .frame(height: 150)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -1155,6 +1192,19 @@ struct TripDetailCard: View {
                 Text(trip.destination.uppercased())
                     .font(.system(size: 15, weight: .bold, design: .rounded)).foregroundColor(.appTextPrimary)
                     .lineLimit(1).minimumScaleFactor(0.8)
+            }
+
+            if !sortedStops.isEmpty {
+                HStack(alignment: .top, spacing: 8) {
+                    Text("Stops:")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundColor(.appTextSecondary)
+                    Text(sortedStops.map(\.name).joined(separator: " • "))
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundColor(.appTextPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
             }
 
             if let v = vehicle {

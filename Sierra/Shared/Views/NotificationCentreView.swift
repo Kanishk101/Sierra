@@ -107,7 +107,7 @@ struct NotificationCentreView: View {
                 .frame(width: 32)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(notif.title)
+                Text(notificationTitle(notif))
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
                 Text(notif.body)
@@ -145,7 +145,7 @@ struct NotificationCentreView: View {
                 .frame(width: 32)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(notif.title)
+                Text(notificationTitle(notif))
                     .font(.subheadline.weight(notif.isRead ? .regular : .semibold))
                     .lineLimit(1)
                 Text(notif.body)
@@ -244,5 +244,18 @@ struct NotificationCentreView: View {
         } catch {
             print("[NotifCentre] markAllRead error: \(error)")
         }
+    }
+
+    private func notificationTitle(_ notif: SierraNotification) -> String {
+        guard notif.type == .defectAlert else { return notif.title }
+
+        let entity = notif.entityType?.lowercased() ?? ""
+        if entity == "post_trip_warning" { return "Post-Trip Inspection Warning" }
+        if entity == "pre_trip_warning"  { return "Pre-Trip Inspection Warning" }
+
+        let combined = "\(notif.title) \(notif.body)".lowercased()
+        if combined.contains("post-trip") { return "Post-Trip Inspection Warning" }
+        if combined.contains("pre-trip")  { return "Pre-Trip Inspection Warning" }
+        return notif.title
     }
 }

@@ -20,7 +20,7 @@ struct LocalNotificationService {
         title: String,
         body: String,
         identifier: String = UUID().uuidString,
-        delaySeconds: TimeInterval = 0.5
+        delaySeconds: TimeInterval = 0.1
     ) {
         let content = UNMutableNotificationContent()
         content.title = title
@@ -30,7 +30,7 @@ struct LocalNotificationService {
         // A tiny delay lets the current UI settle before the banner drops in,
         // which avoids the banner appearing while a sheet/alert is still animating.
         let trigger = UNTimeIntervalNotificationTrigger(
-            timeInterval: max(delaySeconds, 0.5),
+            timeInterval: max(delaySeconds, 0.1),
             repeats: false
         )
 

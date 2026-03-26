@@ -685,12 +685,10 @@ final class AppDataStore {
 
                 do {
                     struct VSResponse: Decodable { let success: Bool? }
-                    let _: VSResponse = try await SupabaseManager.invokeWithAuthRetry(
-                        function: "update-vehicle-status",
-                        body: VehicleStatusPayload(vehicleId: vehicleId.uuidString, status: "Idle"),
-                        attempts: 2,
-                        delayMs: 500
+                    let opts = try await SupabaseManager.functionOptions(
+                        body: VehicleStatusPayload(vehicleId: vehicleId.uuidString, status: "Idle")
                     )
+                    let _: VSResponse = try await supabase.functions.invoke("update-vehicle-status", options: opts)
                     if let vIdx = vehicles.firstIndex(where: { $0.id == vehicleId }) { vehicles[vIdx].status = .idle }
                 } catch {
                     print("[AppDataStore.completeMaintenanceTask] Non-fatal: vehicle status update failed: \(error)")

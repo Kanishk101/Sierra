@@ -120,35 +120,4 @@ extension SupabaseManager {
         )
     }
 
-    // MARK: - Edge invoke with auth-warmup retry
-    //
-    // Some edge calls can fail once with 401 right after login, then succeed on
-    // immediate retry once auth/session propagation settles. This wrapper retries
-    // Unauthorized/non-2xx auth failures a small number of times.
-
-    static func invokeWithAuthRetry<Response: Decodable, Body: Encodable>(
-        function name: String,
-        body: Body,
-        attempts: Int = 2,
-        delayMs: UInt64 = 450
-    ) async throws -> Response {
-        var lastError: Error?
-        for attempt in 1...max(1, attempts) {
-            do {
-                let options = try await functionOptions(body: body)
-                let result: Response = try await supabase.functions.invoke(name, options: options)
-                return result
-            } catch {
-                lastError = error
-                let message = String(describing: error).lowercased()
-                let isAuthError = message.contains("401")
-                    || message.contains("unauthorized")
-                    || message.contains("non-2xx")
-
-                guard isAuthError, attempt < max(1, attempts) else { break }
-                try? await Task.sleep(nanoseconds: delayMs * 1_000_000)
-            }
-        }
-        throw lastError ?? URLError(.badServerResponse)
-    }
 }

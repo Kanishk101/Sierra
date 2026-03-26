@@ -84,7 +84,6 @@ struct SierraApp: App {
                         .zIndex(999)
                 }
             }
-            .dismissKeyboardOnTap()
             .environment(AppDataStore.shared)
             .environment(AuthManager.shared)
             .animation(.easeInOut(duration: 0.25), value: lifecycle.showBiometricLock)

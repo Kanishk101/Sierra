@@ -35,6 +35,16 @@ struct MaintenanceApprovalDetailView: View {
 
     private var workOrder: WorkOrder? { store.workOrder(forMaintenanceTask: task.id) ?? fetchedWorkOrder }
     private var vehicle: Vehicle? { store.vehicle(for: task.vehicleId) }
+    private var linkedInspection: VehicleInspection? {
+        guard let id = task.sourceInspectionId else { return nil }
+        return store.vehicleInspections.first(where: { $0.id == id })
+    }
+    private var evidencePhotoUrls: [String] {
+        if let urls = linkedInspection?.photoUrls, !urls.isEmpty {
+            return urls
+        }
+        return extractURLs(from: task.taskDescription)
+    }
     private var phases: [WorkOrderPhase] { guard let wo = workOrder else { return [] }; return store.phases(forWorkOrder: wo.id) }
     private var spareParts: [SparePartsRequest] { store.sparePartsRequests(forTask: task.id).sorted { $0.createdAt > $1.createdAt } }
     private var donePhases: Int { phases.filter(\.isCompleted).count }
@@ -171,6 +181,62 @@ struct MaintenanceApprovalDetailView: View {
     }
 
     // MARK: - Vehicle Card
+
+    private var issueEvidenceCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Reported Issue")
+                .font(.system(size: 15, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.appTextPrimary)
+
+            Text(task.taskDescription.isEmpty ? "No issue description provided." : task.taskDescription)
+                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .foregroundStyle(task.taskDescription.isEmpty ? Color.appTextSecondary : Color.appTextPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if !evidencePhotoUrls.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(evidencePhotoUrls, id: \.self) { raw in
+                            if let url = URL(string: raw) {
+                                AsyncImage(url: url) { phase in
+                                    switch phase {
+                                    case .success(let image):
+                                        image
+                                            .resizable()
+                                            .scaledToFill()
+                                            .frame(width: 90, height: 90)
+                                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                                    default:
+                                        RoundedRectangle(cornerRadius: 10)
+                                            .fill(Color.appSurface)
+                                            .frame(width: 90, height: 90)
+                                            .overlay(
+                                                Image(systemName: "photo")
+                                                    .foregroundStyle(Color.appTextSecondary)
+                                            )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .background(Color.appCardBg, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.appDivider.opacity(0.35), lineWidth: 1))
+    }
+
+    private func extractURLs(from text: String) -> [String] {
+        let pattern = #"https?://[^\s]+"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        let range = NSRange(text.startIndex..., in: text)
+        let matches = regex.matches(in: text, range: range)
+        return matches.compactMap { match in
+            guard let r = Range(match.range, in: text) else { return nil }
+            return String(text[r])
+        }
+    }
 
     @ViewBuilder
     private var vehicleCard: some View {

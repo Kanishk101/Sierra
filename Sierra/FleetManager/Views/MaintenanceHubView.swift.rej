@@ -1,0 +1,22 @@
+diff a/Sierra/FleetManager/Views/MaintenanceHubView.swift b/Sierra/FleetManager/Views/MaintenanceHubView.swift	(rejected hunks)
+@@ -16,7 +16,7 @@ struct MaintenanceHubView: View {
+     }
+ 
+     @State private var requestType: RequestTypeFilter = .all
+-    @State private var statusFilter: StatusFilter = .active
++    @State private var statusFilter: StatusFilter = .pending
+     @State private var searchText = ""
+     @State private var selectedTask: MaintenanceTask?
+     @State private var vehicleSheetVehicle: Vehicle?
+@@ -176,9 +176,9 @@ struct MaintenanceHubView: View {
+             Picker("Status", selection: $statusFilter) {
+                 ForEach(StatusFilter.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+             }
+-            if requestType != .all || statusFilter != .active {
++            if requestType != .all || statusFilter != .pending {
+                 Divider()
+-                Button("Reset Filters") { requestType = .all; statusFilter = .active }
++                Button("Reset Filters") { requestType = .all; statusFilter = .pending }
+             }
+         } label: {
+             Image(systemName: "line.3.horizontal.decrease.circle")

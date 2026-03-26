@@ -20,11 +20,7 @@ struct DriverTripCard: View {
                     .font(.system(size: 13, weight: .bold, design: .monospaced))
                     .foregroundColor(.appOrange)
                 Spacer()
-                if trip.isDriverWorkflowCompleted {
-                    CompletedBadge()
-                } else {
-                    PriorityBadge(priority: trip.priority)
-                }
+                PriorityBadge(priority: trip.priority)
             }
 
             HStack(spacing: 10) {
@@ -96,12 +92,24 @@ struct DriverTripCard: View {
         let postTripDone = isCompleted && trip.postInspectionId != nil
         let hasPreInspection = trip.preInspectionId != nil
         let isAcceptedScheduled = status == .scheduled && trip.acceptedAt != nil
+        let isAcceptedAwaitingInspection = (isAcceptedScheduled || isJustAccepted) && !hasPreInspection
+        let isPendingAcceptanceLike =
+            !isAcceptedAwaitingInspection &&
+            (status == .pendingAcceptance ||
+             (status == .scheduled && trip.acceptedAt == nil && !hasPreInspection))
         let navProgress = TripNavigationCoordinator.sessionProgress(for: trip.id) ?? 0
         let navigationLockedByProgress = navProgress >= 0.999
-        let isReadyToStart = isAcceptedScheduled && hasPreInspection
-        let isAwaitingInspection = isAcceptedScheduled && !hasPreInspection
+        let isReadyToStart = isAcceptedScheduled && hasPreInspection && trip.scheduledDate <= Date()
 
-        if isAwaitingInspection {
+        if isPendingAcceptanceLike {
+            DriverTripCardActionButton(
+                title: "Accept Trip",
+                icon: "hand.thumbsup.fill",
+                style: .solidDark,
+                action: onAccept,
+                isDisabled: isAccepting
+            )
+        } else if isAcceptedAwaitingInspection {
             HStack(spacing: 12) {
                 DriverTripCardActionButton(
                     title: "View Details",
@@ -140,7 +148,7 @@ struct DriverTripCard: View {
             }
         } else {
             HStack(spacing: 12) {
-                if status == .pendingAcceptance || (isAcceptedScheduled && !hasPreInspection) {
+                if isAcceptedScheduled && !hasPreInspection {
                     DriverTripCardActionButton(
                         title: "View Details",
                         icon: "doc.text.magnifyingglass",
@@ -163,14 +171,6 @@ struct DriverTripCard: View {
                         title: "Cancelled",
                         icon: "xmark.circle.fill",
                         style: .cancelled
-                    )
-                } else if status == .pendingAcceptance {
-                    DriverTripCardActionButton(
-                        title: "Accept Trip",
-                        icon: "hand.thumbsup.fill",
-                        style: .solidDark,
-                        action: onAccept,
-                        isDisabled: isAccepting
                     )
                 } else if isAcceptedScheduled && !hasPreInspection {
                     DriverTripCardActionButton(

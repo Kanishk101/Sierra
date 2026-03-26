@@ -78,6 +78,8 @@ final class BannerCoordinator {
     private var dismissTask: Task<Void, Never>? = nil
 
     func show(_ banner: Banner) {
+        if let current, current.title == banner.title, current.body == banner.body { return }
+        if queue.contains(where: { $0.title == banner.title && $0.body == banner.body }) { return }
         queue.append(banner)
         if current == nil { showNext() }
     }
@@ -86,7 +88,7 @@ final class BannerCoordinator {
         current = queue.removeFirst()
         dismissTask?.cancel()
         dismissTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(4))
+            try? await Task.sleep(for: .seconds(2.2))
             guard !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: 0.3)) { self?.current = nil }
             self?.showNext()

@@ -10,6 +10,11 @@ struct DriverTabView: View {
     @Environment(AppDataStore.self) private var store
     @State private var bannerCoordinator = BannerCoordinator()
     @State private var selectedTab: DriverTab = .home
+    @State private var homeResetToken = UUID()
+    @State private var tripsResetToken = UUID()
+    @State private var alertsResetToken = UUID()
+    @State private var handledBannerNotificationIds: Set<UUID> = []
+    @State private var didPrimeBannerFeed = false
 
     init() { configureTabBarAppearance() }
 
@@ -22,6 +27,7 @@ struct DriverTabView: View {
                             TripDetailDriverView(tripId: id)
                         }
                 }
+                .id(homeResetToken)
             }
 
             Tab("Trips", systemImage: "map.fill", value: .trips) {
@@ -31,12 +37,14 @@ struct DriverTabView: View {
                             TripDetailDriverView(tripId: id)
                         }
                 }
+                .id(tripsResetToken)
             }
 
             Tab("Alerts", systemImage: "bell.fill", value: .alerts) {
                 NavigationStack {
                     DriverAlertsView()
                 }
+                .id(alertsResetToken)
             }
         }
         .tint(.orange)
@@ -55,12 +63,42 @@ struct DriverTabView: View {
                 )
             }
         }
-        .onChange(of: store.notifications.count) { _, _ in
-            if let latest = store.notifications.first, !latest.isRead {
+        .onAppear {
+            if !didPrimeBannerFeed, !store.notifications.isEmpty {
+                handledBannerNotificationIds.formUnion(store.notifications.map(\.id))
+                didPrimeBannerFeed = true
+            }
+        }
+        .onChange(of: store.notifications) { oldValue, newValue in
+            // First hydration pass should not replay historic unread notifications.
+            if !didPrimeBannerFeed {
+                handledBannerNotificationIds.formUnion(newValue.map(\.id))
+                didPrimeBannerFeed = true
+                return
+            }
+
+            let oldIds = Set(oldValue.map(\.id))
+            let incoming = newValue
+                .filter { !oldIds.contains($0.id) }
+                .sorted { $0.sentAt < $1.sentAt }
+
+            for notification in incoming {
+                guard notification.isVisible, !notification.isRead else { continue }
                 // Driver acceptance already shows an in-flow centered success overlay.
-                // Suppress duplicate top banners for that same event.
-                if latest.type == .tripAccepted { return }
-                bannerCoordinator.show(.init(title: latest.title, body: latest.body))
+                if notification.type == .tripAccepted { continue }
+                guard handledBannerNotificationIds.insert(notification.id).inserted else { continue }
+                bannerCoordinator.show(.init(title: notification.title, body: notification.body))
+            }
+        }
+        .onChange(of: selectedTab) { oldTab, newTab in
+            guard oldTab != newTab else { return }
+            switch oldTab {
+            case .home:
+                homeResetToken = UUID()
+            case .trips:
+                tripsResetToken = UUID()
+            case .alerts:
+                alertsResetToken = UUID()
             }
         }
         .task {

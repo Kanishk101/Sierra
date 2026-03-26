@@ -435,12 +435,9 @@ struct TripService {
         )
 
         do {
-            let result: OverlapResult = try await SupabaseManager.invokeWithAuthRetry(
-                function: "check-resource-overlap",
-                body: body,
-                attempts: 2,
-                delayMs: 500
-            )
+            let options = try await SupabaseManager.functionOptions(body: body)
+            let result: OverlapResult = try await supabase.functions
+                .invoke("check-resource-overlap", options: options)
             return (result.driverConflict, result.vehicleConflict)
         } catch {
             print("[TripService] checkOverlap failed: \(error.localizedDescription)")

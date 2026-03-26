@@ -100,14 +100,9 @@ final class CreateStaffViewModel {
                 role: role.rawValue
             )
 
-            // First-attempt auth propagation race can produce a transient 401.
-            // Retry once with a short delay before surfacing failure.
-            let created: CreateStaffAccountResponse = try await SupabaseManager.invokeWithAuthRetry(
-                function: "create-staff-account",
-                body: payload,
-                attempts: 2,
-                delayMs: 500
-            )
+            let options = try await SupabaseManager.functionOptions(body: payload)
+            let created: CreateStaffAccountResponse = try await supabase.functions
+                .invoke("create-staff-account", options: options)
 
             guard UUID(uuidString: created.id) != nil else {
                 throw URLError(.badServerResponse)

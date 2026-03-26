@@ -256,8 +256,8 @@ struct MaintenanceTaskService {
         }
 
         let payload = DriverRequestPayload(
-            vehicle_id: vehicleId.uuidString,
-            created_by_admin_id: driverId.uuidString,
+            vehicle_id: vehicleId.uuidString.lowercased(),
+            created_by_admin_id: driverId.uuidString.lowercased(),
             title: title,
             task_description: description,
             priority: priority.rawValue,

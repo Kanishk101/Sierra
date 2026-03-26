@@ -261,6 +261,102 @@ final class NotificationService {
         }
     }
 
+    // MARK: - Trip Started / Ended (deduplicated per admin + trip)
+
+    static func notifyAdminsTripStartedIfNeeded(trip: Trip, driverName: String) async {
+        do {
+            struct StaffRow: Decodable { let id: UUID }
+            struct ExistingRow: Decodable { let id: UUID }
+
+            let admins: [StaffRow] = try await supabase
+                .from("staff_members")
+                .select("id")
+                .eq("role", value: UserRole.fleetManager.rawValue)
+                .execute()
+                .value
+
+            guard !admins.isEmpty else { return }
+
+            let title = "Trip Started: \(trip.taskId)"
+            let body = "\(driverName) started navigation for \(trip.origin) → \(trip.destination)."
+
+            for admin in admins {
+                let existing: [ExistingRow] = try await supabase
+                    .from("notifications")
+                    .select("id")
+                    .eq("recipient_id", value: admin.id.uuidString)
+                    .eq("type", value: NotificationType.general.rawValue)
+                    .eq("entity_type", value: "trip_started")
+                    .eq("entity_id", value: trip.id.uuidString)
+                    .limit(1)
+                    .execute()
+                    .value
+
+                guard existing.isEmpty else { continue }
+
+                try? await insertNotification(
+                    recipientId: admin.id,
+                    type: .general,
+                    title: title,
+                    body: body,
+                    entityType: "trip_started",
+                    entityId: trip.id
+                )
+            }
+        } catch {
+            #if DEBUG
+            print("[NotificationService] notifyAdminsTripStartedIfNeeded error: \(error)")
+            #endif
+        }
+    }
+
+    static func notifyAdminsTripEndedIfNeeded(trip: Trip, driverName: String) async {
+        do {
+            struct StaffRow: Decodable { let id: UUID }
+            struct ExistingRow: Decodable { let id: UUID }
+
+            let admins: [StaffRow] = try await supabase
+                .from("staff_members")
+                .select("id")
+                .eq("role", value: UserRole.fleetManager.rawValue)
+                .execute()
+                .value
+
+            guard !admins.isEmpty else { return }
+
+            let title = "Trip Ended: \(trip.taskId)"
+            let body = "\(driverName) completed \(trip.origin) → \(trip.destination)."
+
+            for admin in admins {
+                let existing: [ExistingRow] = try await supabase
+                    .from("notifications")
+                    .select("id")
+                    .eq("recipient_id", value: admin.id.uuidString)
+                    .eq("type", value: NotificationType.general.rawValue)
+                    .eq("entity_type", value: "trip_ended")
+                    .eq("entity_id", value: trip.id.uuidString)
+                    .limit(1)
+                    .execute()
+                    .value
+
+                guard existing.isEmpty else { continue }
+
+                try? await insertNotification(
+                    recipientId: admin.id,
+                    type: .general,
+                    title: title,
+                    body: body,
+                    entityType: "trip_ended",
+                    entityId: trip.id
+                )
+            }
+        } catch {
+            #if DEBUG
+            print("[NotificationService] notifyAdminsTripEndedIfNeeded error: \(error)")
+            #endif
+        }
+    }
+
     // MARK: - Trip Assigned (driver) fallback
     //
     // Guarantees driver receives assignment notification even if backend trigger

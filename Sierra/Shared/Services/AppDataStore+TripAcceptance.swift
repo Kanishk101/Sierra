@@ -79,16 +79,12 @@ extension AppDataStore {
         let driverName  = staff.first { $0.id == driverId }?.displayName ?? "Driver"
         let taskId      = trip?.taskId ?? tripId.uuidString
         let destination = trip?.destination ?? "destination"
-
-        for admin in staff.filter({ $0.role == .fleetManager }) {
-            try? await NotificationService.insertNotification(
-                recipientId: admin.id,
-                type: .general,
-                title: "Trip Accepted: \(taskId)",
-                body: "\(driverName) accepted the trip to \(destination).",
-                entityType: "trip",
-                entityId: tripId
-            )
-        }
+        await NotificationService.sendToAdmins(
+            type: .tripAccepted,
+            title: "Trip Accepted: \(taskId)",
+            body: "\(driverName) accepted the trip to \(destination).",
+            entityType: "trip",
+            entityId: tripId
+        )
     }
 }

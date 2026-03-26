@@ -125,7 +125,7 @@ struct DriverAlertsView: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
-                    Text(notification.title)
+                    Text(alertTitle(for: notification))
                         .font(.system(size: 15, weight: .bold, design: .rounded))
                         .foregroundColor(.appTextPrimary)
                         .lineLimit(1)
@@ -285,6 +285,19 @@ struct DriverAlertsView: View {
         case .preInspectionReminder, .tripAcceptanceReminder:
             return .appOrange
         }
+    }
+
+    private func alertTitle(for notification: SierraNotification) -> String {
+        guard notification.type == .defectAlert else { return notification.title }
+
+        let entity = notification.entityType?.lowercased() ?? ""
+        if entity == "post_trip_warning" { return "Post-Trip Inspection Warning" }
+        if entity == "pre_trip_warning" { return "Pre-Trip Inspection Warning" }
+
+        let combined = "\(notification.title) \(notification.body)".lowercased()
+        if combined.contains("post-trip") { return "Post-Trip Inspection Warning" }
+        if combined.contains("pre-trip") { return "Pre-Trip Inspection Warning" }
+        return notification.title
     }
 }
 

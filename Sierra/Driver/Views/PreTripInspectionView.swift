@@ -203,6 +203,9 @@ struct PreTripInspectionView: View {
     @State private var showWarnAlert = false
     @State private var showFailAlert = false
     @State private var isSendingNotification = false
+    @State private var showMaintenanceRequestSheet = false
+    @State private var maintenanceDraftTitle = ""
+    @State private var maintenanceDraftDescription = ""
 
     private var checklistStep: some View {
         VStack(spacing: 0) {
@@ -254,11 +257,17 @@ struct PreTripInspectionView: View {
             let hasFails    = !viewModel.failedItems.isEmpty
             let isPostTrip  = inspectionType == .postTripInspection
             let maintenanceContinueLabel = "Log Maintenance and Continue"
-            let warnContinueLabel = isPostTrip ? maintenanceContinueLabel : "Notify Admin & Continue"
+            let warnContinueLabel = isPostTrip ? "Notify Fleet Manager & Continue" : "Notify Admin & Continue"
             Button {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 if hasFails {
-                    showFailAlert = true
+                    if isPostTrip {
+                        maintenanceDraftTitle = "Post-Trip Defect"
+                        maintenanceDraftDescription = ""
+                        showMaintenanceRequestSheet = true
+                    } else {
+                        showFailAlert = true
+                    }
                 } else if hasWarnings {
                     showWarnAlert = true
                 } else {
@@ -323,29 +332,42 @@ struct PreTripInspectionView: View {
                 let names = viewModel.warningItems.map(\.name).joined(separator: ", ")
                 Text("Some items have warnings: \(names).\n\nYour fleet manager will be notified. You may continue the inspection.")
             }
+            .sheet(isPresented: $showMaintenanceRequestSheet) {
+                DriverMaintenanceRequestView(
+                    vehicleId: vehicleId,
+                    driverId: driverId,
+                    tripId: tripId,
+                    sourceInspectionId: nil,
+                    initialTitle: maintenanceDraftTitle,
+                    initialDescription: maintenanceDraftDescription,
+                    lockCoreFields: true,
+                    fixedTripDisplayId: store.trips.first(where: { $0.id == tripId })?.taskId ?? tripId.uuidString.prefix(8).uppercased(),
+                    fixedIssueSummary: viewModel.failedItems.map(\.name).joined(separator: ", "),
+                    showsSeverityPicker: false,
+                    onSubmitted: {
+                        withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+                            viewModel.currentStep = 2
+                        }
+                    }
+                )
+            }
         }
     }
 
     private func sendWarnNotification() async {
         let names = viewModel.warningItems.map(\.name).joined(separator: ", ")
-        let body = "⚠️ Inspection warning(s) before trip \(tripId.uuidString.prefix(8).uppercased()). Items: \(names)."
-        let title = "⚠️ Pre-Trip Inspection Warning"
-        // Notify all fleet managers / admins visible in AppDataStore
-        let allUsers: [StaffMember] = store.staff
-        let admins = allUsers.filter { $0.role == .fleetManager }
-        for admin in admins {
-            try? await NotificationService.insertNotification(
-                recipientId: admin.id,
-                type: .defectAlert,
-                title: title,
-                body: body,
-                entityType: "trip",
-                entityId: tripId
-            )
-        }
-        if admins.isEmpty {
-            print("[PreInspection] No fleet manager found to notify for warn items")
-        }
+        let isPostTrip = inspectionType == .postTripInspection
+        let phase = isPostTrip ? "post-trip" : "pre-trip"
+        let title = isPostTrip ? "Post-Trip Inspection Warning" : "Pre-Trip Inspection Warning"
+        let body = "Warning(s) during \(phase) inspection for trip \(tripId.uuidString.prefix(8).uppercased()): \(names)."
+
+        await NotificationService.sendToAdmins(
+            type: .defectAlert,
+            title: title,
+            body: body,
+            entityType: isPostTrip ? "post_trip_warning" : "pre_trip_warning",
+            entityId: tripId
+        )
     }
 
     private func checkItemRow(item: Binding<InspectionCheckItem>) -> some View {
@@ -513,6 +535,20 @@ struct PreTripInspectionView: View {
                             }
                         }
                     }
+
+                    if let mediaError = viewModel.mediaReadingsMissingMessage {
+                        HStack(spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.orange)
+                            Text(mediaError)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.orange)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 10))
+                    }
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 16)
@@ -521,6 +557,10 @@ struct PreTripInspectionView: View {
 
             Button {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                guard viewModel.canAdvanceToSummary else {
+                    viewModel.submitError = viewModel.mediaReadingsMissingMessage ?? "Please complete required details before continuing."
+                    return
+                }
                 withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { viewModel.currentStep = 3 }
             } label: {
                 HStack(spacing: 8) {
@@ -532,10 +572,13 @@ struct PreTripInspectionView: View {
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 17)
-                .background(Capsule().fill(Color.appOrange))
+                .background(
+                    Capsule().fill(viewModel.canAdvanceToSummary ? Color.appOrange : Color.appOrange.opacity(0.45))
+                )
                 .shadow(color: Color.appOrange.opacity(0.3), radius: 12, x: 0, y: 6)
             }
             .buttonStyle(.plain)
+            .disabled(!viewModel.canAdvanceToSummary)
             .padding(16)
         }
     }
@@ -1088,7 +1131,7 @@ struct PreTripInspectionView: View {
             HStack(spacing: 8) {
                 TextField("e.g. 45230", text: Binding(
                     get: { viewModel.odometerText },
-                    set: { viewModel.odometerText = $0 }
+                    set: { viewModel.odometerText = viewModel.sanitizeOdometerInput($0) }
                 ))
                 .keyboardType(.decimalPad)
                 .textFieldStyle(.roundedBorder)
@@ -1102,6 +1145,11 @@ struct PreTripInspectionView: View {
                             .font(.title3)
                     }
                 }
+            }
+            if let error = viewModel.odometerValidationError {
+                Text(error)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(Color.red)
             }
         }
     }

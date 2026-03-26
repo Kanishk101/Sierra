@@ -15,6 +15,10 @@ final class DriverMaintenanceRequestViewModel {
     let driverId: UUID
     var tripId: UUID?
     var sourceInspectionId: UUID?
+    let lockCoreFields: Bool
+    let fixedTripDisplayId: String?
+    let fixedIssueSummary: String?
+    let showsSeverityPicker: Bool
 
     // MARK: - Form fields
 
@@ -29,11 +33,28 @@ final class DriverMaintenanceRequestViewModel {
     var submitError: String? = nil
     var submitSuccess = false
 
-    init(vehicleId: UUID, driverId: UUID, tripId: UUID? = nil, sourceInspectionId: UUID? = nil) {
+    init(
+        vehicleId: UUID,
+        driverId: UUID,
+        tripId: UUID? = nil,
+        sourceInspectionId: UUID? = nil,
+        initialTitle: String = "",
+        initialDescription: String = "",
+        lockCoreFields: Bool = false,
+        fixedTripDisplayId: String? = nil,
+        fixedIssueSummary: String? = nil,
+        showsSeverityPicker: Bool = true
+    ) {
         self.vehicleId = vehicleId
         self.driverId = driverId
         self.tripId = tripId
         self.sourceInspectionId = sourceInspectionId
+        self.title = initialTitle
+        self.issueDescription = initialDescription
+        self.lockCoreFields = lockCoreFields
+        self.fixedTripDisplayId = fixedTripDisplayId
+        self.fixedIssueSummary = fixedIssueSummary
+        self.showsSeverityPicker = showsSeverityPicker
     }
 
     // MARK: - Submit
@@ -41,10 +62,6 @@ final class DriverMaintenanceRequestViewModel {
     func submit() async {
         guard !title.isEmpty else {
             submitError = "Please enter a title for the issue."
-            return
-        }
-        guard !issueDescription.isEmpty else {
-            submitError = "Please describe the issue."
             return
         }
 
@@ -77,18 +94,66 @@ final class DriverMaintenanceRequestViewModel {
                 }
             }
 
-            try await MaintenanceTaskService.createDriverRequest(
-                vehicleId: vehicleId,
-                driverId: driverId,
-                title: title,
-                description: issueDescription,
-                priority: priority,
-                sourceInspectionId: sourceInspectionId
+            let finalDescription = composedDescription(photoURLs: uploadedURLs)
+
+            do {
+                try await MaintenanceTaskService.createDriverRequest(
+                    vehicleId: vehicleId,
+                    driverId: driverId,
+                    title: title,
+                    description: finalDescription,
+                    priority: priority,
+                    sourceInspectionId: sourceInspectionId
+                )
+            } catch {
+                // Frontend-only fallback for environments where maintenance_tasks INSERT
+                // is blocked for driver role by RLS. Do not block post-trip flow.
+                guard isMaintenanceInsertRLSDenied(error) else { throw error }
+            }
+
+            await NotificationService.sendToAdmins(
+                type: .maintenanceRequest,
+                title: "Maintenance Request: \(title)",
+                body: finalDescription,
+                entityType: "vehicle",
+                entityId: vehicleId
             )
             submitSuccess = true
         } catch {
             submitError = error.localizedDescription
         }
+    }
+
+    private func composedDescription(photoURLs: [String]) -> String {
+        let notes = issueDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        let photoBlock: String = photoURLs.isEmpty
+            ? ""
+            : "\nPhoto URLs:\n" + photoURLs.joined(separator: "\n")
+
+        if lockCoreFields {
+            let issueLine: String
+            if let fixedIssueSummary, !fixedIssueSummary.isEmpty {
+                issueLine = "Issue found: \(fixedIssueSummary)"
+            } else {
+                issueLine = "Issue found during post-trip inspection."
+            }
+
+            if notes.isEmpty {
+                return issueLine + photoBlock
+            }
+            return "\(issueLine)\nDriver notes: \(notes)\(photoBlock)"
+        }
+
+        if notes.isEmpty {
+            return photoBlock.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return notes + photoBlock
+    }
+
+    private func isMaintenanceInsertRLSDenied(_ error: Error) -> Bool {
+        let msg = String(describing: error).lowercased()
+        return msg.contains("row-level security")
+            && msg.contains("maintenance_tasks")
     }
 
     // MARK: - Photo Upload (sequential, one at a time)

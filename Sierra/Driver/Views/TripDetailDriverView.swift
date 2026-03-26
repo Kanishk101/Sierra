@@ -559,36 +559,24 @@ struct TripDetailDriverView: View {
                     .minimumScaleFactor(0.75)
             }
 
-            // Route plan nodes
-            HStack(alignment: .top, spacing: 12) {
-                VStack(spacing: 6) {
-                    Circle()
-                        .fill(Color.green.opacity(0.14))
-                        .frame(width: 44, height: 44)
-                        .overlay(
-                            Image(systemName: "dot.radiowaves.left.and.right")
-                                .font(.system(size: 18, weight: .bold))
-                                .foregroundColor(.green)
-                        )
-
-                    Rectangle()
-                        .fill(
-                            LinearGradient(colors: [.green, .appOrange], startPoint: .top, endPoint: .bottom)
-                        )
-                        .frame(width: 3, height: 52)
-
-                    Circle()
-                        .fill(Color.appOrange.opacity(0.14))
-                        .frame(width: 44, height: 44)
-                        .overlay(
-                            Image(systemName: "location.fill")
-                                .font(.system(size: 18, weight: .bold))
-                                .foregroundColor(.appOrange)
-                        )
-                }
-
-                VStack(alignment: .leading, spacing: 12) {
-                    // Origin node
+            // Route plan timeline (Start -> Stops -> Destination)
+            let orderedStops = (trip.routeStops ?? []).sorted(by: { $0.order < $1.order })
+            VStack(spacing: 0) {
+                // START
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(spacing: 0) {
+                        Circle()
+                            .fill(Color.green.opacity(0.14))
+                            .frame(width: 38, height: 38)
+                            .overlay(
+                                Image(systemName: "dot.radiowaves.left.and.right")
+                                    .font(.system(size: 15, weight: .bold))
+                                    .foregroundColor(.green)
+                            )
+                        Rectangle()
+                            .fill(LinearGradient(colors: [.green, .blue], startPoint: .top, endPoint: .bottom))
+                            .frame(width: 3, height: orderedStops.isEmpty ? 28 : 24)
+                    }
                     VStack(alignment: .leading, spacing: 4) {
                         Text("START")
                             .font(.system(size: 10, weight: .bold, design: .rounded))
@@ -606,8 +594,25 @@ struct TripDetailDriverView: View {
                         .font(.system(size: 11, weight: .medium, design: .rounded))
                         .foregroundColor(.appTextSecondary)
                     }
+                    Spacer(minLength: 0)
+                }
 
-                    ForEach(Array((trip.routeStops ?? []).sorted(by: { $0.order < $1.order }).enumerated()), id: \.element.id) { index, stop in
+                // STOPS
+                ForEach(Array(orderedStops.enumerated()), id: \.element.id) { index, stop in
+                    HStack(alignment: .top, spacing: 12) {
+                        VStack(spacing: 0) {
+                            Circle()
+                                .fill(Color.blue.opacity(0.14))
+                                .frame(width: 38, height: 38)
+                                .overlay(
+                                    Image(systemName: "mappin.circle.fill")
+                                        .font(.system(size: 15, weight: .bold))
+                                        .foregroundColor(.blue)
+                                )
+                            Rectangle()
+                                .fill(LinearGradient(colors: [.blue, .appOrange], startPoint: .top, endPoint: .bottom))
+                                .frame(width: 3, height: index == orderedStops.count - 1 ? 28 : 24)
+                        }
                         VStack(alignment: .leading, spacing: 4) {
                             Text("STOP \(index + 1)")
                                 .font(.system(size: 10, weight: .bold, design: .rounded))
@@ -619,9 +624,20 @@ struct TripDetailDriverView: View {
                                 .font(.system(size: 13, weight: .bold, design: .rounded))
                                 .foregroundColor(.appTextPrimary)
                         }
+                        Spacer(minLength: 0)
                     }
+                }
 
-                    // Destination node
+                // DESTINATION
+                HStack(alignment: .top, spacing: 12) {
+                    Circle()
+                        .fill(Color.appOrange.opacity(0.14))
+                        .frame(width: 38, height: 38)
+                        .overlay(
+                            Image(systemName: "location.fill")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundColor(.appOrange)
+                        )
                     VStack(alignment: .leading, spacing: 4) {
                         Text("DESTINATION")
                             .font(.system(size: 10, weight: .bold, design: .rounded))
@@ -641,6 +657,7 @@ struct TripDetailDriverView: View {
                             .foregroundColor(.orange)
                         }
                     }
+                    Spacer(minLength: 0)
                 }
             }
 

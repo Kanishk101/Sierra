@@ -193,7 +193,7 @@ struct TripNavigationContainerView: View {
               coordinator.trip.preInspectionId != nil else {
             return false
         }
-        return coordinator.trip.scheduledDate.timeIntervalSinceNow <= TripConstants.driverBlockWindowSeconds
+        return coordinator.trip.scheduledDate <= Date()
     }
 
     private var isPreStartScheduledTrip: Bool {

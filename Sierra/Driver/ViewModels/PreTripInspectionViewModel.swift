@@ -59,12 +59,28 @@ final class PreTripInspectionViewModel {
 
     /// Final confirmed odometer reading (nil until confirmed).
     var odometerReading: Double? {
-        Double(odometerText.trimmingCharacters(in: .whitespacesAndNewlines).filter { $0.isNumber || $0 == "." })
+        parseOdometerValue(from: odometerText)
     }
 
     /// True when odometer required but not yet filled in (pre-trip only).
     var odometerRequired: Bool { false }  // Bug 6: odometer moved to page 2 as a photo, not required for advance
-    var odometerValid: Bool { true }
+    var odometerValid: Bool { odometerValidationError == nil }
+
+    /// Odometer format rule:
+    /// - 1 to 6 integer digits
+    /// - optional 1 decimal place
+    /// - max value 999999.9
+    var odometerValidationError: String? {
+        let raw = odometerText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty else { return nil }
+        guard raw.range(of: #"^\d{1,6}(\.\d)?$"#, options: .regularExpression) != nil else {
+            return "Enter valid odometer (up to 6 digits, optional 1 decimal)."
+        }
+        guard let value = Double(raw), value <= 999_999.9 else {
+            return "Odometer cannot exceed 999999.9."
+        }
+        return nil
+    }
 
     var fuelLevelPct: Int? {
         let cleaned = fuelLevelText
@@ -72,6 +88,69 @@ final class PreTripInspectionViewModel {
             .replacingOccurrences(of: "%", with: "")
         guard let value = Int(cleaned) else { return nil }
         return min(100, max(0, value))
+    }
+
+    var hasRequiredMediaReadings: Bool {
+        odometerReading != nil && fuelLevelPct != nil
+    }
+
+    var mediaReadingsMissingMessage: String? {
+        let missingOdometer = odometerReading == nil
+        let missingFuel = fuelLevelPct == nil
+
+        if let odoError = odometerValidationError {
+            if missingFuel {
+                return "\(odoError) Fuel level is also required."
+            }
+            return odoError
+        }
+
+        if missingOdometer && missingFuel {
+            return "Odometer and fuel level are required before continuing."
+        }
+        if missingOdometer {
+            return "Odometer reading is required before continuing."
+        }
+        if missingFuel {
+            return "Fuel level is required before continuing."
+        }
+        return nil
+    }
+
+    func sanitizeOdometerInput(_ text: String) -> String {
+        let allowed = text.filter { $0.isNumber || $0 == "." }
+        var result = ""
+        var didUseDot = false
+        var intCount = 0
+        var fracCount = 0
+
+        for ch in allowed {
+            if ch == "." {
+                if didUseDot { continue }
+                if result.isEmpty { continue }
+                didUseDot = true
+                result.append(ch)
+                continue
+            }
+
+            if didUseDot {
+                if fracCount >= 1 { continue }
+                fracCount += 1
+            } else {
+                if intCount >= 6 { continue }
+                intCount += 1
+            }
+            result.append(ch)
+        }
+        return result
+    }
+
+    private func parseOdometerValue(from text: String) -> Double? {
+        let raw = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty else { return nil }
+        guard raw.range(of: #"^\d{1,6}(\.\d)?$"#, options: .regularExpression) != nil else { return nil }
+        guard let value = Double(raw), value <= 999_999.9 else { return nil }
+        return value
     }
 
     // MARK: - Fuel receipt (Post-trip)
@@ -153,7 +232,8 @@ final class PreTripInspectionViewModel {
     /// May advance to summary only when all failed items have at least one photo.
     /// M-06 FIX: Warning items that are flagged as needing photos are also gated.
     var canAdvanceToSummary: Bool {
-        inspectionType == .postTripInspection || failedItemsMissingPhoto.isEmpty
+        (inspectionType == .postTripInspection || failedItemsMissingPhoto.isEmpty)
+        && hasRequiredMediaReadings
     }
 
     /// Final submit gate: no failed item missing a photo + signature present.
@@ -161,7 +241,7 @@ final class PreTripInspectionViewModel {
         let photosOk = inspectionType == .postTripInspection || failedItemsMissingPhoto.isEmpty
         return photosOk
             && signatureImage != nil
-            && (inspectionType != .preTripInspection || odometerReading != nil)
+            && hasRequiredMediaReadings
     }
 
     // MARK: - Step 3: Computed results
@@ -481,8 +561,8 @@ final class PreTripInspectionViewModel {
         guard canSubmit else {
             if !allItemsChecked {
                 submitError = "All \(uncheckedCount) item(s) must be checked before submitting."
-            } else if inspectionType == .preTripInspection && odometerReading == nil {
-                submitError = "Please scan or enter odometer reading before completing pre-trip inspection."
+            } else if let mediaError = mediaReadingsMissingMessage {
+                submitError = mediaError
             } else {
                 let names = failedItemsMissingPhoto.map(\.name).joined(separator: ", ")
                 submitError = "Please add at least one photo for failed items: \(names)"
@@ -544,8 +624,10 @@ final class PreTripInspectionViewModel {
             // 4. Resolve vehicle license plate for maintenance request title
             let vehiclePlate = store.vehicle(for: vehicleId)?.licensePlate ?? vehicleId.uuidString.prefix(8).description
 
-            // 5. Auto-create maintenance task for warn OR fail
-            if hasIssues {
+            // 5. Auto-create maintenance task only for PRE-TRIP FAIL.
+            // Pre-trip warnings should notify only (no maintenance task).
+            // Post-trip flow uses explicit "Log Maintenance and Continue" UI.
+            if overallResult == .failed && inspectionType == .preTripInspection {
                 let issueItemNames = (failedItems + warningItems).map(\.name).joined(separator: ", ")
                 let typeLabel = inspectionType == .preTripInspection ? "Pre-trip" : "Post-trip"
                 let autoDescription = maintenanceDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -553,11 +635,7 @@ final class PreTripInspectionViewModel {
                     : maintenanceDescription
 
                 let priority: TaskPriority
-                if inspectionType == .postTripInspection {
-                    priority = .medium  // post-trip defects are never trip-blocking
-                } else {
-                    priority = overallResult == .failed ? .urgent : .medium
-                }
+                priority = overallResult == .failed ? .urgent : .medium
 
                 try? await MaintenanceTaskService.createDriverRequest(
                     vehicleId: vehicleId,
@@ -582,6 +660,10 @@ final class PreTripInspectionViewModel {
                 }
 
                 maintenanceBannerText = "Maintenance request submitted for \(vehiclePlate)"
+            }
+
+            if inspectionType == .postTripInspection {
+                await attachLatestPostTripMaintenanceRequestToInspection(inspectionId: inspection.id)
             }
 
             // 6. Update trip's inspection ID using targeted patch only.
@@ -622,5 +704,39 @@ final class PreTripInspectionViewModel {
         }
 
         isSubmitting = false
+    }
+
+    private func attachLatestPostTripMaintenanceRequestToInspection(inspectionId: UUID) async {
+        struct TaskRow: Decodable {
+            let id: UUID
+            let source_inspection_id: UUID?
+            let created_at: Date
+        }
+
+        do {
+            let rows: [TaskRow] = try await supabase
+                .from("maintenance_tasks")
+                .select("id, source_inspection_id, created_at")
+                .eq("vehicle_id", value: vehicleId.uuidString.lowercased())
+                .eq("created_by_admin_id", value: driverId.uuidString.lowercased())
+                .eq("task_type", value: MaintenanceTaskType.inspectionDefect.rawValue)
+                .order("created_at", ascending: false)
+                .limit(8)
+                .execute()
+                .value
+
+            guard let target = rows.first(where: { $0.source_inspection_id == nil }) else { return }
+
+            struct Payload: Encodable { let source_inspection_id: String }
+            try await supabase
+                .from("maintenance_tasks")
+                .update(Payload(source_inspection_id: inspectionId.uuidString))
+                .eq("id", value: target.id.uuidString)
+                .execute()
+        } catch {
+            #if DEBUG
+            print("[PreTripInspectionViewModel] Failed to attach inspection to maintenance request: \(error)")
+            #endif
+        }
     }
 }
