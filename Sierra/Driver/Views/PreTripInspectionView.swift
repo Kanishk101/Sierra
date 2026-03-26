@@ -252,6 +252,9 @@ struct PreTripInspectionView: View {
             // Bug 6: Adaptive Next button — label changes based on issue state
             let hasWarnings = !viewModel.warningItems.isEmpty
             let hasFails    = !viewModel.failedItems.isEmpty
+            let isPostTrip  = inspectionType == .postTripInspection
+            let maintenanceContinueLabel = "Log Maintenance and Continue"
+            let warnContinueLabel = isPostTrip ? maintenanceContinueLabel : "Notify Admin & Continue"
             Button {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 if hasFails {
@@ -266,10 +269,14 @@ struct PreTripInspectionView: View {
                     if isSendingNotification {
                         ProgressView().tint(.white).scaleEffect(0.8)
                     } else {
-                        Image(systemName: hasFails ? "exclamationmark.octagon.fill" : hasWarnings ? "bell.badge.fill" : "checkmark.circle.fill")
+                        Image(systemName: hasFails
+                              ? (isPostTrip ? "wrench.and.screwdriver.fill" : "exclamationmark.octagon.fill")
+                              : hasWarnings ? (isPostTrip ? "wrench.and.screwdriver.fill" : "bell.badge.fill") : "checkmark.circle.fill")
                             .font(.system(size: 15, weight: .bold))
                     }
-                    Text(hasFails ? "Vehicle Issue — Cannot Proceed" : hasWarnings ? "Notify Admin & Continue" : "All Clear → Next")
+                    Text(hasFails
+                         ? (isPostTrip ? maintenanceContinueLabel : "Vehicle Issue — Cannot Proceed")
+                         : hasWarnings ? warnContinueLabel : "All Clear → Next")
                         .font(.system(size: 16, weight: .bold, design: .rounded))
                 }
                 .foregroundColor(.white)
@@ -301,7 +308,7 @@ struct PreTripInspectionView: View {
             }
             // ── Warn alert: sends notification then advances ──────────
             .alert("Warnings Found", isPresented: $showWarnAlert) {
-                Button("Notify Admin & Continue") {
+                Button(warnContinueLabel) {
                     Task {
                         isSendingNotification = true
                         await sendWarnNotification()

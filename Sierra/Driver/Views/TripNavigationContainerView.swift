@@ -150,7 +150,7 @@ struct TripNavigationContainerView: View {
                             } catch {
                                 print("❌ Failed to complete trip after POD: \(error)")
                             }
-                            await store.loadDriverData(driverId: driverId)
+                            await store.refreshDriverData(driverId: driverId, force: true)
                         }
 
                         dismiss()

@@ -30,8 +30,10 @@ struct SOSAlertSheet: View {
                             .font(.title2)
                             .foregroundStyle(.white.opacity(0.7))
                     }
+                    .padding(.trailing, 6)
                 }
                 .padding(.horizontal, 20)
+                .padding(.top, 8)
 
                 Spacer()
 

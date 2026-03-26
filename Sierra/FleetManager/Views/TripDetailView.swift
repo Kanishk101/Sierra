@@ -230,7 +230,7 @@ struct TripDetailView: View {
             }
 
             // Awaiting acceptance info
-            if t.status == .pendingAcceptance, let deadline = t.acceptanceDeadline {
+            if let deadline = t.responseDeadline {
                 Section {
                     HStack(spacing: 10) {
                         Image(systemName: "clock.badge.exclamationmark.fill").foregroundStyle(.orange)

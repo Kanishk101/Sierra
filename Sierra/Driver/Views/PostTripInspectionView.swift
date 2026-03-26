@@ -92,6 +92,6 @@ struct PostTripInspectionView: View {
             }
         }
         withAnimation { phase = .completed }
-        Task { await store.loadDriverData(driverId: driverId) }
+        Task { await store.refreshDriverData(driverId: driverId, force: true) }
     }
 }

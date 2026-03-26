@@ -209,6 +209,93 @@ final class NotificationService {
         }
     }
 
+    // MARK: - Trip Response Overdue (deduplicated per admin + trip)
+    //
+    // Ensures each fleet manager receives at most one overdue-acceptance alert
+    // per trip by checking existing notifications before inserting.
+    static func notifyAdminsTripResponseOverdueIfNeeded(for trip: Trip) async {
+        guard trip.status.normalized == .pendingAcceptance, trip.isResponseOverdue else { return }
+        do {
+            struct StaffRow: Decodable { let id: UUID }
+            struct ExistingRow: Decodable { let id: UUID }
+
+            let admins: [StaffRow] = try await supabase
+                .from("staff_members")
+                .select("id")
+                .eq("role", value: UserRole.fleetManager.rawValue)
+                .execute()
+                .value
+
+            guard !admins.isEmpty else { return }
+
+            let title = "Trip Response Overdue: \(trip.taskId)"
+            let body = "Driver has not accepted trip \(trip.taskId) (\(trip.origin) → \(trip.destination)) before the required time."
+
+            for admin in admins {
+                let existing: [ExistingRow] = try await supabase
+                    .from("notifications")
+                    .select("id")
+                    .eq("recipient_id", value: admin.id.uuidString)
+                    .eq("type", value: NotificationType.tripAcceptanceReminder.rawValue)
+                    .eq("entity_type", value: "trip")
+                    .eq("entity_id", value: trip.id.uuidString)
+                    .limit(1)
+                    .execute()
+                    .value
+
+                guard existing.isEmpty else { continue }
+
+                try? await insertNotification(
+                    recipientId: admin.id,
+                    type: .tripAcceptanceReminder,
+                    title: title,
+                    body: body,
+                    entityType: "trip",
+                    entityId: trip.id
+                )
+            }
+        } catch {
+            #if DEBUG
+            print("[NotificationService] notifyAdminsTripResponseOverdueIfNeeded error: \(error)")
+            #endif
+        }
+    }
+
+    // MARK: - Trip Assigned (driver) fallback
+    //
+    // Guarantees driver receives assignment notification even if backend trigger
+    // is missing/misconfigured. Duplicate-safe via existence check.
+    static func notifyDriverTripAssignedIfNeeded(recipientId: UUID, trip: Trip) async {
+        do {
+            struct ExistingRow: Decodable { let id: UUID }
+            let existing: [ExistingRow] = try await supabase
+                .from("notifications")
+                .select("id")
+                .eq("recipient_id", value: recipientId.uuidString)
+                .eq("type", value: NotificationType.tripAssigned.rawValue)
+                .eq("entity_type", value: "trip")
+                .eq("entity_id", value: trip.id.uuidString)
+                .limit(1)
+                .execute()
+                .value
+
+            guard existing.isEmpty else { return }
+
+            try await insertNotification(
+                recipientId: recipientId,
+                type: .tripAssigned,
+                title: "New Trip Assigned: \(trip.taskId)",
+                body: "\(trip.origin) → \(trip.destination). Please review and accept.",
+                entityType: "trip",
+                entityId: trip.id
+            )
+        } catch {
+            #if DEBUG
+            print("[NotificationService] notifyDriverTripAssignedIfNeeded error: \(error)")
+            #endif
+        }
+    }
+
     // MARK: - Realtime Subscribe
     //
     // Server-side filter: only INSERT events for this specific recipient are

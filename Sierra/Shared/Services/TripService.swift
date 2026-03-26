@@ -220,7 +220,7 @@ struct TripService {
         try await supabase
             .from("trips")
             .select()
-            .order("scheduled_date", ascending: false)
+            .order("created_at", ascending: false)
             .limit(500)
             .execute()
             .value
@@ -241,7 +241,7 @@ struct TripService {
             .from("trips")
             .select()
             .eq("driver_id", value: driverId.uuidString.lowercased())
-            .order("scheduled_date", ascending: false)
+            .order("created_at", ascending: false)
             .limit(200)
             .execute()
             .value
@@ -252,7 +252,7 @@ struct TripService {
             .from("trips")
             .select()
             .eq("vehicle_id", value: vehicleId.uuidString.lowercased())
-            .order("scheduled_date", ascending: false)
+            .order("created_at", ascending: false)
             .limit(200)
             .execute()
             .value
