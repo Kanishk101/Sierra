@@ -39,9 +39,9 @@ public enum SierraTheme {
         /// Warm amber — gradient endpoints
         public static let appAmber     = Color(red: 1.0, green: 0.75, blue: 0.20)
         /// Standardized app background
-        public static let appSurface   = Color(red: 0.97, green: 0.97, blue: 0.96)
+        public static let appSurface   = Color(.systemGroupedBackground)
         /// Standardized card background
-        public static let appCardBg    = Color.white
+        public static let appCardBg    = Color(.secondarySystemGroupedBackground)
 
         // ── Neutrals ──
 
@@ -174,15 +174,15 @@ extension Color {
     /// Deep orange — gradient dark end, pressed states
     static let appDeepOrange  = Color(red: 0.90, green: 0.35, blue: 0.08)
     /// Light neutral surface — screen backgrounds
-    static let appSurface     = Color(red: 0.97, green: 0.97, blue: 0.96)
+    static let appSurface     = Color(.systemGroupedBackground)
     /// Card background (white)
-    static let appCardBg      = Color.white
+    static let appCardBg      = Color(.secondarySystemGroupedBackground)
     /// Primary text — near-black
-    static let appTextPrimary = Color(red: 0.12, green: 0.12, blue: 0.14)
+    static let appTextPrimary = Color.primary
     /// Secondary text — gray captions
-    static let appTextSecondary = Color(red: 0.45, green: 0.45, blue: 0.48)
+    static let appTextSecondary = Color.secondary
     /// Divider / separator lines
-    static let appDivider     = Color(red: 0.92, green: 0.92, blue: 0.93)
+    static let appDivider     = Color(.separator)
 }
 
 // MARK: - TripPriority UI Helpers

@@ -788,9 +788,9 @@ private struct InventoryPartDetailSheet: View {
             quantityAvailable: inStock,
             quantityAllocated: 0,
             quantityOnOrder: orderRequest ? quantity : part.onOrderQty,
+            expectedArrivalAt: orderRequest ? etaDate : nil,
             createdAt: Date(),
-            updatedAt: Date(),
-            expectedArrivalAt: orderRequest ? etaDate : nil
+            updatedAt: Date()
         )
         try? await store.addSparePartsRequest(request)
         if canPlaceDirectOrder, orderRequest,
