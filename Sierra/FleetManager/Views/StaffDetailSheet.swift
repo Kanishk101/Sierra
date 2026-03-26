@@ -93,11 +93,13 @@ struct StaffDetailSheet: View {
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
             .navigationTitle(member.displayName)
             .navigationBarTitleDisplayMode(.inline)
+            .tint(.orange)
+            .toolbarBackground(Color(.systemGroupedBackground), for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
                         .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(.orange)
                 }
             }
         }
@@ -140,17 +142,28 @@ struct StaffDetailSheet: View {
     }
 
     private func miniStatusCard(_ label: String, _ value: String, _ color: Color) -> some View {
-        VStack(spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(color)
+                    .frame(width: 6, height: 6)
+                Text(label)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
             Text(value)
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(color)
-            Text(label)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
-        .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(.vertical, 10)
+        .padding(.horizontal, 12)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color(.separator).opacity(0.15), lineWidth: 0.6)
+        )
     }
 
     // MARK: - Info Card
@@ -170,7 +183,10 @@ struct StaffDetailSheet: View {
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color(.separator).opacity(0.15), lineWidth: 0.6)
+        )
     }
 
     private func labeledRow(_ label: String, _ value: String) -> some View {
@@ -182,6 +198,7 @@ struct StaffDetailSheet: View {
             Text(value)
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(.primary)
+                .lineLimit(2)
             Spacer()
         }
     }

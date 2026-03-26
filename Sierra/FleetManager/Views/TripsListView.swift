@@ -36,11 +36,17 @@ struct TripsListView: View {
             }
         }
         .background(Color(.systemGroupedBackground).ignoresSafeArea())
+        .tint(.orange)
         .toolbarBackground(.hidden, for: .navigationBar)
         .navigationDestination(for: UUID.self) { TripDetailView(tripId: $0) }
         .navigationDestination(item: $navigationTarget) { TripDetailView(tripId: $0) }
         .sheet(isPresented: $showFilterSheet) { FilterSheetView(title: "Filter Trips", options: tripFilterOptions, selectedId: filterBinding) }
-        .sheet(isPresented: $showCreateSheet) { CreateTripView() }
+        .sheet(isPresented: $showCreateSheet) {
+            CreateTripView()
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(Color(.systemGroupedBackground))
+        }
         .task { if store.trips.isEmpty { await store.loadAll() } }
         .refreshable { await store.loadAll() }
     }
@@ -110,11 +116,17 @@ struct TripsListView: View {
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(statusColor(status).opacity(0.1), in: Capsule())
                 Text(trip.priority.rawValue).font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
             }
         }
-        .padding(16)
+        .padding(14)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 4)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color(.separator).opacity(0.15), lineWidth: 0.6)
+        )
     }
 
     @ViewBuilder
@@ -134,7 +146,7 @@ struct TripsListView: View {
         switch s { case .active: return "arrow.triangle.swap"; case .scheduled: return "clock"; case .pendingAcceptance: return "hourglass"; case .accepted: return "checkmark.circle"; case .completed: return "checkmark"; case .rejected: return "xmark.circle"; case .cancelled: return "xmark" }
     }
     private func statusColor(_ s: TripStatus) -> Color {
-        switch s { case .active: return .green; case .scheduled: return .blue; case .pendingAcceptance: return .orange; case .accepted: return .teal; case .completed: return Color.secondary; case .rejected, .cancelled: return .red }
+        switch s { case .active: return .green; case .scheduled: return .orange; case .pendingAcceptance: return .orange; case .accepted: return .teal; case .completed: return Color.secondary; case .rejected, .cancelled: return .red }
     }
 }
 

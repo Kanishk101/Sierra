@@ -104,7 +104,9 @@ struct StaffListView: View {
             .animation(.easeInOut(duration: 0.25), value: selectedSegment)
             .sheet(isPresented: $showAddSheet) {
                 CreateStaffView()
-                    .presentationDetents([.medium, .large])
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+                    .presentationBackground(Color(.systemGroupedBackground))
             }
             .sheet(item: $selectedMember) { member in
                 StaffDetailSheet(member: member)

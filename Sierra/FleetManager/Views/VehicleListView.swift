@@ -38,12 +38,6 @@ struct VehicleListView: View {
                 .padding(.top, 8)
 
                 if segmentMode == 0 {
-                    // ── My Vehicles ──
-                    headerRow
-                        .padding(.horizontal, 16)
-                        .padding(.top, 8)
-                        .padding(.bottom, 4)
-
                     Group {
                         if filteredVehicles.isEmpty {
                             SierraEmptyState(icon: "car.fill", title: "No vehicles found", message: selectedFilter == nil ? "Add your first vehicle to get started." : "No vehicles match this filter.")
@@ -57,49 +51,59 @@ struct VehicleListView: View {
                 }
             }
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
+            .tint(.orange)
+            .navigationTitle(segmentMode == 0 ? "Vehicles" : "Maintenance")
+            .navigationBarTitleDisplayMode(.large)
             .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbar {
+                if segmentMode == 0 {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            showAddSheet = true
+                        } label: {
+                            Image(systemName: "plus")
+                                .font(.title3.weight(.semibold))
+                        }
+                        .buttonStyle(.glass)
+                        .buttonBorderShape(.circle)
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            showFilterSheet = true
+                        } label: {
+                            Image(systemName: selectedFilter == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
+                                .font(.title3.weight(.semibold))
+                        }
+                        .buttonStyle(.glass)
+                        .buttonBorderShape(.circle)
+                        .tint(selectedFilter == nil ? .secondary : .orange)
+                    }
+                }
+            }
             .navigationDestination(for: UUID.self) { VehicleDetailView(vehicleId: $0) }
             .navigationDestination(item: $navigationTarget) { VehicleDetailView(vehicleId: $0) }
             .task { if store.vehicles.isEmpty { await store.loadAll() } }
             .sheet(isPresented: $showFilterSheet) {
                 FilterSheetView(title: "Filter Vehicles", options: vehicleFilterOptions, selectedId: filterBinding)
             }
-            .sheet(isPresented: $showAddSheet) { AddVehicleView() }
-            .sheet(item: $editingVehicle) { AddVehicleView(editingVehicle: $0) }
+            .sheet(isPresented: $showAddSheet) {
+                AddVehicleView()
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+                    .presentationBackground(Color(.systemGroupedBackground))
+            }
+            .sheet(item: $editingVehicle) {
+                AddVehicleView(editingVehicle: $0)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+                    .presentationBackground(Color(.systemGroupedBackground))
+            }
             .confirmationDialog("Delete Vehicle?", isPresented: .init(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } }), titleVisibility: .visible) {
                 Button("Delete", role: .destructive) {
                     if let v = deleteTarget { Task { try? await store.deleteVehicle(id: v.id) }; deleteTarget = nil }
                 }
                 Button("Cancel", role: .cancel) { deleteTarget = nil }
             } message: { Text("This vehicle will be permanently removed.") }
-        }
-    }
-
-    private var headerRow: some View {
-        HStack(spacing: 10) {
-            Text("Vehicles")
-                .font(.largeTitle.bold())
-
-            Spacer()
-
-            Button {
-                showAddSheet = true
-            } label: {
-                Image(systemName: "plus")
-                    .font(.title3.weight(.semibold))
-            }
-            .buttonStyle(.glass)
-            .buttonBorderShape(.circle)
-
-            Button {
-                showFilterSheet = true
-            } label: {
-                Image(systemName: selectedFilter == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
-                    .font(.title3.weight(.semibold))
-            }
-            .buttonStyle(.glass)
-            .buttonBorderShape(.circle)
-            .tint(selectedFilter == nil ? .secondary : .orange)
         }
     }
 
@@ -127,28 +131,36 @@ struct VehicleListView: View {
         let driver: StaffMember? = vehicle.assignedDriverId.flatMap { UUID(uuidString: $0) }.flatMap { store.staffMember(for: $0) }
         return HStack(spacing: 14) {
             Image(systemName: "car.fill")
-                .font(.system(size: 20)).foregroundStyle(.blue)
-                .frame(width: 44, height: 44)
-                .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .font(.system(size: 20)).foregroundStyle(.orange)
+                .frame(width: 42, height: 42)
+                .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             VStack(alignment: .leading, spacing: 3) {
                 Text(vehicle.name).font(.system(size: 15, weight: .semibold)).foregroundStyle(.primary)
                 Text("\(vehicle.model) \u{00B7} \(vehicle.licensePlate)")
-                    .font(.system(size: 12, weight: .medium, design: .monospaced)).foregroundStyle(.secondary)
+                    .font(.system(size: 12, weight: .medium, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1)
                 if let d = driver {
                     HStack(spacing: 4) {
                         Circle().fill(availabilityColor(d.availability)).frame(width: 6, height: 6)
-                        Text(d.displayName).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
+                        Text(d.displayName).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
                     }
                 } else {
                     Text("No driver assigned").font(.system(size: 11, weight: .medium)).foregroundStyle(.tertiary)
                 }
             }
             Spacer()
-            SierraBadge(vehicle.status, size: .compact)
+            VStack(alignment: .trailing, spacing: 8) {
+                SierraBadge(vehicle.status, size: .compact)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
         }
-        .padding(16)
+        .padding(14)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color(.separator).opacity(0.15), lineWidth: 0.6)
+        )
     }
 
     private func vehicleStatusIcon(_ status: VehicleStatus) -> String {

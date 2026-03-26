@@ -47,10 +47,7 @@ struct StaffTabView: View {
 
                 Picker("Segment", selection: $segment) {
                     ForEach(StaffSegment.allCases, id: \.self) { s in
-                        if s == .applications {
-                            let count = store.pendingCount
-                            Text(count > 0 ? "\(s.rawValue) (\(count))" : s.rawValue).tag(s)
-                        } else { Text(s.rawValue).tag(s) }
+                        Text(s.rawValue).tag(s)
                     }
                 }
                 .pickerStyle(.segmented).padding(.horizontal, 20).padding(.vertical, 8)
@@ -63,7 +60,12 @@ struct StaffTabView: View {
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
             .toolbarBackground(.hidden, for: .navigationBar)
             .animation(.easeInOut(duration: 0.2), value: segment)
-            .sheet(isPresented: $showCreateStaff) { NavigationStack { CreateStaffView() } }
+            .sheet(isPresented: $showCreateStaff) {
+                CreateStaffView()
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+                    .presentationBackground(Color(.systemGroupedBackground))
+            }
             .sheet(isPresented: $showFilterSheet) {
                 FilterSheetView(title: "Filter Staff", options: statusFilterOptions, selectedId: statusFilterBinding)
             }
@@ -141,24 +143,33 @@ struct StaffTabView: View {
     private func staffCard(_ member: StaffMember) -> some View {
         HStack(spacing: 14) {
             Circle()
-                .fill(Color(.systemGray5)).frame(width: 44, height: 44)
+                .fill(Color(.systemGray5)).frame(width: 42, height: 42)
                 .overlay(Text(member.initials).font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.primary))
             VStack(alignment: .leading, spacing: 2) {
                 Text(member.displayName).font(.system(size: 15, weight: .semibold)).foregroundStyle(.primary)
-                Text(member.email).font(.caption).foregroundStyle(.secondary)
+                Text(member.email).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer()
-            if member.status == .suspended {
-                Text("Suspended").font(.system(size: 9, weight: .bold)).foregroundStyle(.white)
-                    .padding(.horizontal, 6).padding(.vertical, 2).background(.red, in: Capsule())
-            } else {
-                availabilityBadge(member.availability)
+            HStack(spacing: 8) {
+                if member.status == .suspended {
+                    Text("Suspended").font(.system(size: 10, weight: .semibold)).foregroundStyle(.red)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(Color.red.opacity(0.10), in: Capsule())
+                } else {
+                    availabilityBadge(member.availability)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
             }
         }
-        .padding(16)
+        .padding(14)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color(.separator).opacity(0.15), lineWidth: 0.6)
+        )
         .opacity(member.status == .suspended ? 0.6 : 1.0)
-        .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
     }
 
     private func availabilityBadge(_ availability: StaffAvailability) -> some View {
@@ -187,9 +198,9 @@ private struct ApplicationsListView: View {
         VStack(spacing: 0) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    filterChip("Pending", count: viewModel.pendingCount, isSelected: viewModel.selectedFilter == .pending) { viewModel.selectedFilter = .pending }
-                    filterChip("Approved", count: nil, isSelected: viewModel.selectedFilter == .approved) { viewModel.selectedFilter = .approved }
-                    filterChip("Rejected", count: nil, isSelected: viewModel.selectedFilter == .rejected) { viewModel.selectedFilter = .rejected }
+                    filterChip("Pending", isSelected: viewModel.selectedFilter == .pending) { viewModel.selectedFilter = .pending }
+                    filterChip("Approved", isSelected: viewModel.selectedFilter == .approved) { viewModel.selectedFilter = .approved }
+                    filterChip("Rejected", isSelected: viewModel.selectedFilter == .rejected) { viewModel.selectedFilter = .rejected }
                 }
                 .padding(.horizontal, 20)
             }
@@ -223,12 +234,9 @@ private struct ApplicationsListView: View {
         .sheet(item: $selectedApplication) { StaffReviewSheet(application: $0, viewModel: viewModel).presentationDetents([.large]) }
     }
 
-    private func filterChip(_ label: String, count: Int?, isSelected: Bool, action: @escaping () -> Void) -> some View {
+    private func filterChip(_ label: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 2) {
-                Text(label).font(.caption)
-                if let count, count > 0 { Text("(\(count))").font(.caption2) }
-            }
+            Text(label).font(.caption)
             .foregroundStyle(isSelected ? .white : .primary)
             .padding(.horizontal, 16).padding(.vertical, 6)
             .background(isSelected ? Color.orange : Color(.secondarySystemGroupedBackground), in: Capsule())
@@ -239,32 +247,56 @@ private struct ApplicationsListView: View {
 
     private func applicationCard(_ app: StaffApplication) -> some View {
         HStack(spacing: 14) {
-            Circle().fill(avatarColor(for: app.status).opacity(0.15)).frame(width: 48, height: 48)
-                .overlay(Text(store.staffMember(for: app.staffMemberId)?.initials ?? String(app.phone.suffix(2))).font(.system(size: 16, weight: .bold, design: .rounded)).foregroundStyle(avatarColor(for: app.status)))
+            Circle()
+                .fill(Color(.systemGray5))
+                .frame(width: 48, height: 48)
+                .overlay(
+                    Text(store.staffMember(for: app.staffMemberId)?.initials ?? String(app.phone.suffix(2)))
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .foregroundStyle(.primary)
+                )
             VStack(alignment: .leading, spacing: 2) {
                 Text(store.staffMember(for: app.staffMemberId)?.displayName ?? app.phone).font(.system(size: 16, weight: .semibold)).foregroundStyle(.primary)
                 HStack(spacing: 6) {
-                    Text(app.role.displayName).font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 6).padding(.vertical, 3).background(Color(.systemGray5), in: Capsule())
+                    Text(app.role.displayName)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color(.tertiarySystemFill), in: Capsule())
                     Text("\u{00B7}").foregroundStyle(.tertiary)
                     Text(app.daysAgo).font(.caption2).foregroundStyle(.secondary)
                 }
             }
             Spacer()
-            if app.status == .pending {
-                Text("Review").font(.caption).foregroundStyle(.orange).padding(.horizontal, 16).padding(.vertical, 6).background(Color.orange.opacity(0.10), in: Capsule())
-            } else {
-                let (text, color): (String, Color) = app.status == .approved ? ("Approved", .green) : ("Rejected", .red)
-                Text(text).font(.caption2).foregroundStyle(color).padding(.horizontal, 8).padding(.vertical, 2).background(color.opacity(0.12), in: Capsule())
+            VStack(alignment: .trailing, spacing: 6) {
+                if app.status == .pending {
+                    Text("Review")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.orange)
+                        .padding(.horizontal, 12).padding(.vertical, 6)
+                        .background(Color.orange.opacity(0.10), in: Capsule())
+                } else {
+                    let (text, color): (String, Color) = app.status == .approved ? ("Approved", .green) : ("Rejected", .red)
+                    Text(text)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(color)
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .background(color.opacity(0.10), in: Capsule())
+                }
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
             }
         }
-        .padding(16)
+        .padding(14)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color(.separator).opacity(0.15), lineWidth: 0.6)
+        )
     }
 
-    private func avatarColor(for status: ApprovalStatus) -> Color {
-        switch status { case .pending: return .orange; case .approved: return .blue; case .rejected: return .red.opacity(0.7) }
-    }
 }
 
 #Preview { StaffTabView().environment(AppDataStore.shared) }

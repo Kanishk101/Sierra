@@ -25,8 +25,9 @@ struct TripDetailView: View {
                                        description: Text("This trip may have been deleted."))
             }
         }
-        .navigationTitle(trip?.taskId ?? "Trip")
-        .toolbarTitleDisplayMode(.inlineLarge)
+        .navigationTitle("Trip Details")
+        .tint(.orange)
+        .toolbarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
         .confirmationDialog("Cancel Trip?", isPresented: $showCancelConfirm, titleVisibility: .visible) {
             Button("Cancel Trip", role: .destructive) {
@@ -95,12 +96,12 @@ struct TripDetailView: View {
                    let driver = store.staffMember(for: dUUID) {
                     HStack(spacing: 12) {
                         Circle()
-                            .fill(Color.blue.opacity(0.12))
+                            .fill(Color.orange.opacity(0.12))
                             .frame(width: 40, height: 40)
                             .overlay(
                                 Text(driver.initials)
                                     .font(.system(size: 14, weight: .bold))
-                                    .foregroundStyle(.blue)
+                                    .foregroundStyle(.orange)
                             )
                         VStack(alignment: .leading, spacing: 2) {
                             Text(driver.displayName).font(.subheadline)
@@ -122,9 +123,9 @@ struct TripDetailView: View {
                             .font(.system(size: 18))
                             .foregroundStyle(.secondary)
                             .frame(width: 40, height: 40)
-                            .background(Color.blue.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+                            .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("\(vehicle.name) \(vehicle.model)").font(.subheadline)
+                            Text(vehicleDisplayName(vehicle)).font(.subheadline)
                             HStack(spacing: 6) {
                                 Text(vehicle.licensePlate)
                                     .font(.system(size: 12, design: .monospaced))
@@ -182,7 +183,7 @@ struct TripDetailView: View {
                     }
                     if let end = t.actualEndDate {
                         HStack {
-                            Image(systemName: "checkmark.circle.fill").foregroundStyle(.blue)
+                            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
                             Text("Completed").foregroundStyle(.secondary)
                             Spacer()
                             Text(end.formatted(.dateTime.month(.abbreviated).day().hour().minute()))
@@ -287,7 +288,7 @@ struct TripDetailView: View {
         let normalized = status.normalized
         let (text, color): (String, Color) = switch normalized {
         case .pendingAcceptance: ("Pending Acceptance", .orange)
-        case .scheduled:         ("Scheduled",          .blue)
+        case .scheduled:         ("Scheduled",          .orange)
         case .active:            ("Active",             .green)
         case .completed:         ("Completed",          Color.secondary)
         case .cancelled:         ("Cancelled",          .red)
@@ -304,7 +305,7 @@ struct TripDetailView: View {
     private func priorityBadge(_ priority: TripPriority) -> some View {
         let color: Color = switch priority {
         case .low:    .gray
-        case .normal: .blue
+        case .normal: .secondary
         case .high:   .orange
         case .urgent: .red
         }
@@ -314,6 +315,16 @@ struct TripDetailView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background(color.opacity(0.12), in: Capsule())
+    }
+
+    private func vehicleDisplayName(_ vehicle: Vehicle) -> String {
+        let trimmedName = vehicle.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedModel = vehicle.model.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedModel.isEmpty else { return trimmedName }
+        if trimmedName.localizedCaseInsensitiveContains(trimmedModel) {
+            return trimmedName
+        }
+        return "\(trimmedName) \(trimmedModel)"
     }
 
     // MARK: - Actions

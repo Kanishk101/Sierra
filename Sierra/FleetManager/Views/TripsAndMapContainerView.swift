@@ -37,6 +37,7 @@ struct TripsAndMapContainerView: View {
             }
         }
         .animation(.none, value: mapSegment)
+        .tint(.orange)
         .refreshable {
             await AppDataStore.shared.loadAll()
             if mapSegment == 0 {
@@ -45,6 +46,9 @@ struct TripsAndMapContainerView: View {
         }
         .sheet(isPresented: $showCreateTrip) {
             CreateTripView()
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(Color(.systemGroupedBackground))
         }
     }
 

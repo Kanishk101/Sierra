@@ -16,10 +16,12 @@ struct CreateStaffView: View {
             }
             .navigationTitle("Add Staff")
             .navigationBarTitleDisplayMode(.inline)
+            .tint(.orange)
+            .toolbarBackground(Color(.systemGroupedBackground), for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
-                        .foregroundStyle(.secondary)
                 }
             }
         }
@@ -74,8 +76,6 @@ struct CreateStaffView: View {
             if viewModel.isRoleSelected {
                 submitButton
                     .transition(.move(edge: .bottom).combined(with: .opacity))
-            } else {
-                continueButton
             }
         }
         .background(Color(.systemGroupedBackground).ignoresSafeArea())
@@ -134,11 +134,10 @@ struct CreateStaffView: View {
             .overlay(
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .strokeBorder(
-                        isSelected ? Color.orange : .clear,
-                        lineWidth: 2
+                        isSelected ? Color.orange : Color(.separator).opacity(0.15),
+                        lineWidth: isSelected ? 1.5 : 0.6
                     )
             )
-            .shadow(color: .black.opacity(isSelected ? 0.06 : 0.03), radius: isSelected ? 10 : 6, y: 4)
         }
         .buttonStyle(.plain)
     }
@@ -244,31 +243,17 @@ struct CreateStaffView: View {
 
     // MARK: - Buttons
 
-    private var continueButton: some View {
-        Button {} label: {
-            Text("Continue")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.5))
-                .frame(maxWidth: .infinity)
-                .frame(height: 54)
-                .background(Color.gray.opacity(0.3), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        }
-        .disabled(true)
-        .padding(.horizontal, 20)
-        .padding(.bottom, 16)
-    }
-
     private var submitButton: some View {
         Button {
             Task { await viewModel.createStaff() }
         } label: {
             Text("Create & Send Credentials")
                 .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(viewModel.canSubmit ? .white : .secondary)
                 .frame(maxWidth: .infinity)
                 .frame(height: 54)
                 .background(
-                    viewModel.canSubmit ? Color.orange : Color.gray.opacity(0.3),
+                    viewModel.canSubmit ? Color.orange : Color(.tertiarySystemFill),
                     in: RoundedRectangle(cornerRadius: 14, style: .continuous)
                 )
         }
@@ -324,10 +309,10 @@ struct CreateStaffView: View {
                 VStack(spacing: 8) {
                     HStack(spacing: 6) {
                         Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(.secondary)
                         Text("Email delivery failed")
                             .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(.primary)
                     }
                     Text("Share these credentials manually:")
                         .font(.caption).foregroundStyle(.secondary)
@@ -338,10 +323,10 @@ struct CreateStaffView: View {
                                 .foregroundStyle(.primary)
                             Text(pwd)
                                 .font(.system(.caption, design: .monospaced).weight(.bold))
-                                .foregroundStyle(.orange)
+                                .foregroundStyle(.primary)
                         }
                         .padding(12)
-                        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
                     }
                 }
                 .padding(.horizontal, 24)
@@ -396,7 +381,10 @@ struct CreateStaffView: View {
         .padding(.horizontal, 16)
         .frame(height: 52)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .shadow(color: .black.opacity(0.03), radius: 4, y: 2)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color(.separator).opacity(0.15), lineWidth: 0.6)
+        )
     }
 
     private func inlineError(_ text: String) -> some View {

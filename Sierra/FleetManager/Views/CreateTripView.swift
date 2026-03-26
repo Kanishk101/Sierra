@@ -44,6 +44,7 @@ struct CreateTripView: View {
             }
             .navigationTitle("Create Trip")
             .navigationBarTitleDisplayMode(.inline)
+            .tint(.orange)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     if !vm.showSuccess { Button("Cancel") { dismiss() } }
@@ -222,8 +223,8 @@ struct CreateTripView: View {
                     ForEach(drivers) { driver in
                         Button { vm.selectedDriverId = driver.id } label: {
                             HStack(spacing: 12) {
-                                Circle().fill(Color.blue.opacity(0.12)).frame(width: 40, height: 40)
-                                    .overlay(Text(driver.initials).font(.system(size: 14, weight: .bold)).foregroundStyle(.blue))
+                                Circle().fill(Color.orange.opacity(0.12)).frame(width: 40, height: 40)
+                                    .overlay(Text(driver.initials).font(.system(size: 14, weight: .bold)).foregroundStyle(.orange))
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(driver.displayName).font(.subheadline).foregroundStyle(.primary)
                                     Text(driver.phone ?? "No phone").font(.caption).foregroundStyle(.secondary)
@@ -323,7 +324,7 @@ struct CreateTripView: View {
                             } label: {
                                 HStack(spacing: 10) {
                                     Image(systemName: alreadyAdded ? "checkmark.circle.fill" : "plus.circle")
-                                        .foregroundStyle(alreadyAdded ? .green : .teal).font(.system(size: 18))
+                                        .foregroundStyle(alreadyAdded ? .green : .orange).font(.system(size: 18))
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(name).font(.subheadline).foregroundStyle(.primary)
                                         Text("Tap to add 500m monitoring zone").font(.caption2).foregroundStyle(.tertiary)
@@ -363,7 +364,7 @@ struct CreateTripView: View {
                     }
                     .font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
                     .frame(maxWidth: .infinity).frame(height: 50)
-                    .background(vm.step4Valid ? Color.green : Color.gray.opacity(0.4),
+                    .background(vm.step4Valid ? Color.orange : Color.gray.opacity(0.4),
                                 in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }.disabled(vm.isCreating || !vm.step4Valid)
             }.padding(.horizontal, 20).padding(.bottom, 12)
@@ -449,10 +450,10 @@ struct CreateTripView: View {
 
     private func geofenceTypeColor(_ type: GeofenceType) -> Color {
         switch type {
-        case .warehouse:      return .blue
+        case .warehouse:      return .orange
         case .deliveryPoint:  return .green
         case .restrictedZone: return .red
-        case .custom:         return .teal
+        case .custom:         return .orange
         }
     }
 
@@ -466,7 +467,7 @@ struct CreateTripView: View {
         case "gray", "grey": .gray
         case "green":        .green
         case "yellow":       .yellow
-        default:             .purple
+        default:             .secondary
         }
     }
 

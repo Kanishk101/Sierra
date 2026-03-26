@@ -53,8 +53,6 @@ struct DashboardHomeView: View {
     @State private var showProfile       = false
     @State private var showAnalytics     = false
     @State private var showNotifications = false
-    @State private var showReportsSheet   = false
-    @State private var showAlertsSheet    = false
     @State private var quickModal: DashboardQuickModal?
 
     private enum DashboardQuickModal: String, Identifiable {
@@ -88,7 +86,7 @@ struct DashboardHomeView: View {
 
                     recentTripsSection
                     expiringDocsSection
-                    fleetManagementSection.padding(.horizontal, 20)
+
                     Spacer(minLength: 40)
                 }
             }
@@ -101,21 +99,44 @@ struct DashboardHomeView: View {
                     .presentationDragIndicator(.visible)
             }
             .sheet(isPresented: $showAnalytics) {
-                AnalyticsDashboardView().environment(AppDataStore.shared)
+                AnalyticsDashboardView()
+                    .environment(AppDataStore.shared)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+                    .presentationBackground(Color(.systemGroupedBackground))
             }
             .sheet(isPresented: $showNotifications) {
                 NotificationCentreView()
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+                    .presentationBackground(Color(.systemGroupedBackground))
             }
             .sheet(item: $quickModal) { modal in
                 switch modal {
                 case .staff:
                     NavigationStack { StaffTabView().environment(AppDataStore.shared) }
+                        .tint(.orange)
+                        .presentationDetents([.large])
+                        .presentationDragIndicator(.visible)
+                        .presentationBackground(Color(.systemGroupedBackground))
                 case .trips:
                     NavigationStack { TripsListView().environment(AppDataStore.shared) }
+                        .tint(.orange)
+                        .presentationDetents([.large])
+                        .presentationDragIndicator(.visible)
+                        .presentationBackground(Color(.systemGroupedBackground))
                 case .vehicles:
                     NavigationStack { VehicleListView().environment(AppDataStore.shared) }
+                        .tint(.orange)
+                        .presentationDetents([.large])
+                        .presentationDragIndicator(.visible)
+                        .presentationBackground(Color(.systemGroupedBackground))
                 case .alerts:
                     NavigationStack { AlertsInboxView().environment(AppDataStore.shared) }
+                        .tint(.orange)
+                        .presentationDetents([.large])
+                        .presentationDragIndicator(.visible)
+                        .presentationBackground(Color(.systemGroupedBackground))
                 }
             }
             .onAppear {
@@ -254,10 +275,7 @@ struct DashboardHomeView: View {
         Button { UIImpactFeedbackGenerator(style: .light).impactOccurred(); showAnalytics = true } label: {
             VStack(alignment: .leading, spacing: 16) {
                 HStack {
-                    HStack(spacing: 6) {
-                        Image(systemName: "chart.pie.fill").font(.system(size: 13, weight: .semibold)).foregroundStyle(.orange)
-                        Text("Fleet Analytics").font(.headline).foregroundStyle(.primary)
-                    }
+                    Text("Fleet Analytics").font(.headline).foregroundStyle(.primary)
                     Spacer()
                     HStack(spacing: 4) {
                         Text("View Report").font(.subheadline).foregroundStyle(.orange)
@@ -288,9 +306,8 @@ struct DashboardHomeView: View {
                 }
             }
             .padding(16)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color.primary.opacity(0.05)))
-            .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color(.separator).opacity(0.2), lineWidth: 0.6))
         }
         .buttonStyle(.plain)
     }
@@ -331,7 +348,7 @@ struct DashboardHomeView: View {
     // MARK: - Recent Trips
     private var recentTripsSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            sectionHeader("Recent Trips", icon: "clock").padding(.horizontal, 20).padding(.bottom, 8)
+            sectionHeader("Recent Trips").padding(.horizontal, 20).padding(.bottom, 8)
             let trips = vm.recentTrips
             if trips.isEmpty {
                 emptyPlaceholder("No trips yet", icon: "arrow.triangle.swap").padding(.horizontal, 20)
@@ -380,7 +397,7 @@ struct DashboardHomeView: View {
     private func tripStatusColor(_ status: TripStatus) -> Color {
         switch status {
         case .active: return .green
-        case .scheduled: return .blue
+        case .scheduled: return .orange
         case .pendingAcceptance: return .orange
         case .accepted: return .teal
         case .completed: return Color.secondary
@@ -391,7 +408,7 @@ struct DashboardHomeView: View {
     // MARK: - Expiring Documents
     private var expiringDocsSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            sectionHeader("Expiring Documents", icon: "doc.badge.clock").padding(.horizontal, 20).padding(.bottom, 8)
+            sectionHeader("Expiring Documents").padding(.horizontal, 20).padding(.bottom, 8)
             let docs = vm.expiringDocs
             if docs.isEmpty {
                 emptyPlaceholder("All documents are up to date", icon: "checkmark.shield.fill").padding(.horizontal, 20)
@@ -432,55 +449,8 @@ struct DashboardHomeView: View {
         .padding(.horizontal, 16).padding(.vertical, 12)
     }
 
-    // MARK: - Fleet Management (no geofence create — view-only via list)
-    private var fleetManagementSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("FLEET MANAGEMENT").font(.caption.weight(.bold)).foregroundStyle(.secondary).kerning(1).padding(.horizontal, 2)
-
-            NavigationLink {
-                MaintenanceRequestsView().environment(AppDataStore.shared)
-            } label: {
-                managementCard(icon: "wrench.and.screwdriver.fill", title: "Maintenance", subtitle: "\(vm.pendingMaintenanceCount) pending tasks", color: .orange)
-            }
-
-            Button { showReportsSheet = true } label: {
-                managementCard(icon: "chart.bar.fill", title: "Reports & Analytics", subtitle: "Fleet performance and exports", color: .blue)
-            }
-
-            Button { showAlertsSheet = true } label: {
-                managementCard(icon: "bell.badge.fill", title: "Alerts Inbox", subtitle: "\(vm.activeAlertsCount) active alerts", color: .red)
-            }
-        }
-        .sheet(isPresented: $showReportsSheet) {
-            NavigationStack { ReportsView().environment(AppDataStore.shared) }.presentationDetents([.large])
-        }
-        .sheet(isPresented: $showAlertsSheet) {
-            NavigationStack { AlertsInboxView().environment(AppDataStore.shared) }.presentationDetents([.large])
-        }
-    }
-
-    private func managementCard(icon: String, title: String, subtitle: String, color: Color) -> some View {
-        HStack(spacing: 14) {
-            Image(systemName: icon)
-                .font(.system(size: 20, weight: .semibold)).foregroundStyle(color)
-                .frame(width: 44, height: 44)
-                .background(color.opacity(0.1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
-                Text(subtitle).font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer()
-        }
-        .padding(14)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(color: .black.opacity(0.04), radius: 6, y: 3)
-    }
-
-    private func sectionHeader(_ title: String, icon: String) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: icon).font(.system(size: 13, weight: .semibold)).foregroundStyle(.secondary)
-            Text(title).font(.system(size: 20, weight: .bold)).foregroundStyle(.primary)
-        }
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title).font(.system(size: 20, weight: .bold)).foregroundStyle(.primary)
     }
 
     private func emptyPlaceholder(_ message: String, icon: String) -> some View {

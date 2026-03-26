@@ -98,14 +98,54 @@ struct AdminDashboardView: View {
             .presentationBackground(Color(.systemBackground))
             .presentationDragIndicator(.visible)
         }
-        .sheet(isPresented: $showAlerts) { NavigationStack { AlertsInboxView().environment(AppDataStore.shared) } }
-        .sheet(isPresented: $showReports) { NavigationStack { ReportsView().environment(AppDataStore.shared) } }
-        .sheet(isPresented: $showGeofences) { NavigationStack { GeofenceListView().environment(AppDataStore.shared) } }
-        .sheet(isPresented: $showNotifications) { NotificationCentreView() }
-        .sheet(isPresented: $showCreateTrip)        { CreateTripView().presentationDetents([.large]) }
-        .sheet(isPresented: $showAddVehicle)        { AddVehicleView().presentationDetents([.large]) }
-        .sheet(isPresented: $showCreateStaff)       { CreateStaffView().presentationDetents([.large]) }
-        .sheet(isPresented: $showCreateMaintenance) { NavigationStack { MaintenanceRequestsView() }.presentationDetents([.large]) }
+        .sheet(isPresented: $showAlerts) {
+            NavigationStack { AlertsInboxView().environment(AppDataStore.shared) }
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(Color(.systemGroupedBackground))
+        }
+        .sheet(isPresented: $showReports) {
+            NavigationStack { ReportsView().environment(AppDataStore.shared) }
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(Color(.systemGroupedBackground))
+        }
+        .sheet(isPresented: $showGeofences) {
+            NavigationStack { GeofenceListView().environment(AppDataStore.shared) }
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(Color(.systemGroupedBackground))
+        }
+        .sheet(isPresented: $showNotifications) {
+            NotificationCentreView()
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(Color(.systemGroupedBackground))
+        }
+        .sheet(isPresented: $showCreateTrip) {
+            CreateTripView()
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(Color(.systemGroupedBackground))
+        }
+        .sheet(isPresented: $showAddVehicle) {
+            AddVehicleView()
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(Color(.systemGroupedBackground))
+        }
+        .sheet(isPresented: $showCreateStaff) {
+            CreateStaffView()
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(Color(.systemGroupedBackground))
+        }
+        .sheet(isPresented: $showCreateMaintenance) {
+            NavigationStack { MaintenanceRequestsView() }
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(Color(.systemGroupedBackground))
+        }
     }
 
     // MARK: - Search Tab Content
@@ -147,7 +187,7 @@ struct AdminDashboardView: View {
                                         Image(systemName: "car.fill")
                                             .font(.system(size: 16, weight: .semibold))
                                             .frame(width: 32, height: 32)
-                                            .background(Color.blue.opacity(0.12), in: Circle())
+                                            .background(Color.orange.opacity(0.12), in: Circle())
                                         VStack(alignment: .leading, spacing: 2) {
                                             Text(vehicle.name)
                                                 .font(.subheadline.weight(.semibold))

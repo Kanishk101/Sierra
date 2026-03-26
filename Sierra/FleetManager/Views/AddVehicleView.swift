@@ -58,10 +58,12 @@ struct AddVehicleView: View {
             }
             .navigationTitle(vm.isEditing ? "Edit Vehicle" : "Add Vehicle")
             .navigationBarTitleDisplayMode(.inline)
+            .tint(.orange)
+            .toolbarBackground(Color(.systemGroupedBackground), for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
-                        .foregroundStyle(.secondary)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if vm.isSubmitting {
@@ -78,7 +80,6 @@ struct AddVehicleView: View {
                         }
                         .disabled(!vm.isFormValid || vm.isSubmitting)
                         .fontWeight(.semibold)
-                        .foregroundStyle(.orange)
                     }
                 }
             }

@@ -55,6 +55,9 @@ struct AlertDetailView: View {
             .padding(16)
         }
         .background(Color(.systemGroupedBackground))
+        .tint(.orange)
+        .toolbarBackground(Color(.systemGroupedBackground), for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .navigationTitle("Alert Detail")
         .navigationBarTitleDisplayMode(.inline)
         .alert("Error", isPresented: $showError) {
@@ -89,7 +92,11 @@ struct AlertDetailView: View {
         }
         .mapStyle(.standard)
         .frame(height: 200)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color(.separator).opacity(0.15), lineWidth: 0.8)
+        )
     }
 
     // MARK: - Alert Info
@@ -121,7 +128,11 @@ struct AlertDetailView: View {
             .font(.caption).foregroundStyle(.secondary)
         }
         .padding(16)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color(.separator).opacity(0.15), lineWidth: 0.8)
+        )
     }
 
     // MARK: - Driver Card
@@ -129,7 +140,7 @@ struct AlertDetailView: View {
     private func driverCard(_ d: StaffMember) -> some View {
         HStack(spacing: 12) {
             Image(systemName: "person.circle.fill")
-                .font(.title2).foregroundStyle(SierraTheme.Colors.info)
+                .font(.title2).foregroundStyle(.orange)
             VStack(alignment: .leading, spacing: 2) {
                 Text(d.name ?? "Unknown").font(.subheadline.weight(.medium))
                 Text(d.phone ?? "No phone").font(.caption).foregroundStyle(.secondary)
@@ -151,7 +162,11 @@ struct AlertDetailView: View {
             }
         }
         .padding(16)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color(.separator).opacity(0.15), lineWidth: 0.8)
+        )
     }
 
     // MARK: - Vehicle Card
@@ -167,7 +182,11 @@ struct AlertDetailView: View {
             Spacer()
         }
         .padding(16)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color(.separator).opacity(0.15), lineWidth: 0.8)
+        )
     }
 
     // MARK: - Actions
@@ -195,13 +214,13 @@ struct AlertDetailView: View {
                     Task { await resolve() }
                 } label: {
                     HStack {
-                        if isResolving { ProgressView().tint(.white) }
+                        if isResolving { ProgressView().tint(.orange) }
                         Text("Resolve")
                             .font(.subheadline.weight(.semibold))
                     }
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.orange)
                     .frame(maxWidth: .infinity).frame(height: 46)
-                    .background(.green, in: RoundedRectangle(cornerRadius: 12))
+                    .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
                 }
                 .disabled(isResolving)
             }
@@ -213,9 +232,9 @@ struct AlertDetailView: View {
                 } label: {
                     Text("Create Maintenance Task")
                         .font(.subheadline.weight(.medium))
-                        .foregroundStyle(SierraTheme.Colors.info)
+                        .foregroundStyle(.orange)
                         .frame(maxWidth: .infinity).frame(height: 46)
-                        .background(SierraTheme.Colors.info.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
+                        .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 12))
                 }
             }
 
@@ -231,7 +250,7 @@ struct AlertDetailView: View {
                     }
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity).frame(height: 46)
-                    .background(SierraTheme.Colors.ember, in: RoundedRectangle(cornerRadius: 12))
+                    .background(.orange, in: RoundedRectangle(cornerRadius: 12))
                 }
             }
         }

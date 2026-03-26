@@ -18,74 +18,77 @@ struct AlertsInboxView: View {
     }
 
     var body: some View {
-        List {
-            // Filter picker
-            Section {
-                Picker("Filter", selection: $vm.selectedFilter) {
-                    ForEach(AlertsViewModel.AlertFilter.allCases, id: \.self) { filter in
-                        Text(filter.rawValue).tag(filter)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets())
-                .padding(.horizontal, -4)
-            }
+        VStack(spacing: 0) {
+            headerRow
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 4)
 
-            // Emergency alerts
-            if !vm.activeAlerts.isEmpty {
-                Section {
-                    ForEach(vm.activeAlerts) { alert in
-                        NavigationLink(value: alert.id) {
-                            emergencyRow(alert)
+            Picker("Filter", selection: $vm.selectedFilter) {
+                ForEach(AlertsViewModel.AlertFilter.allCases, id: \.self) { filter in
+                    Text(filter.rawValue).tag(filter)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 8)
+
+            List {
+                // Emergency alerts
+                if !vm.activeAlerts.isEmpty {
+                    Section {
+                        ForEach(vm.activeAlerts) { alert in
+                            NavigationLink(value: alert.id) {
+                                emergencyRow(alert)
+                            }
                         }
+                    } header: {
+                        sectionHeader("Emergency Alerts", count: vm.activeAlerts.count, color: .red)
                     }
-                } header: {
-                    sectionHeader("Emergency Alerts", count: vm.activeAlerts.count, color: .red)
                 }
-            }
 
-            // Route deviations
-            if !vm.unacknowledgedDeviations.isEmpty {
-                Section {
-                    ForEach(vm.unacknowledgedDeviations) { dev in
-                        deviationRow(dev)
+                // Route deviations
+                if !vm.unacknowledgedDeviations.isEmpty {
+                    Section {
+                        ForEach(vm.unacknowledgedDeviations) { dev in
+                            deviationRow(dev)
+                        }
+                    } header: {
+                        sectionHeader("Route Deviations", count: vm.unacknowledgedDeviations.count, color: .orange)
                     }
-                } header: {
-                    sectionHeader("Route Deviations", count: vm.unacknowledgedDeviations.count, color: .yellow)
                 }
-            }
 
-            // Overdue maintenance
-            if !overdueMaintenanceTasks.isEmpty {
-                Section {
-                    ForEach(overdueMaintenanceTasks) { task in
-                        overdueRow(task)
+                // Overdue maintenance
+                if !overdueMaintenanceTasks.isEmpty {
+                    Section {
+                        ForEach(overdueMaintenanceTasks) { task in
+                            overdueRow(task)
+                        }
+                    } header: {
+                        sectionHeader("Overdue Maintenance", count: overdueMaintenanceTasks.count, color: .orange)
                     }
-                } header: {
-                    sectionHeader("Overdue Maintenance", count: overdueMaintenanceTasks.count, color: .orange)
                 }
-            }
 
-            if vm.activeAlerts.isEmpty && vm.unacknowledgedDeviations.isEmpty && overdueMaintenanceTasks.isEmpty {
-                Section {
-                    VStack(spacing: 12) {
-                        Image(systemName: "checkmark.shield.fill")
-                            .font(.system(size: 40, weight: .light))
-                            .foregroundStyle(.green.opacity(0.5))
-                        Text("All clear — no active alerts")
-                            .font(.subheadline).foregroundStyle(.secondary)
+                if vm.activeAlerts.isEmpty && vm.unacknowledgedDeviations.isEmpty && overdueMaintenanceTasks.isEmpty {
+                    Section {
+                        VStack(spacing: 12) {
+                            Image(systemName: "checkmark.shield.fill")
+                                .font(.system(size: 40, weight: .light))
+                                .foregroundStyle(.green.opacity(0.5))
+                            Text("All clear — no active alerts")
+                                .font(.subheadline).foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 40)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 40)
                 }
             }
         }
-        .listStyle(.plain)
+        .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
-        .background(Color.appSurface.ignoresSafeArea())
-        .navigationTitle("Alerts")
-        .navigationBarTitleDisplayMode(.inline)
+        .background(Color(.systemGroupedBackground).ignoresSafeArea())
+        .tint(.orange)
+        .toolbarBackground(.hidden, for: .navigationBar)
         .task {
             await vm.load()
         }
@@ -98,6 +101,25 @@ struct AlertsInboxView: View {
                     Task { await vm.load() }
                 }
             }
+        }
+    }
+
+    private var headerRow: some View {
+        HStack(spacing: 10) {
+            Text("Alerts")
+                .font(.largeTitle.bold())
+
+            Spacer()
+
+            Button {
+                Task { await vm.load() }
+            } label: {
+                Image(systemName: "arrow.clockwise")
+                    .font(.title3.weight(.semibold))
+            }
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
+            .tint(.orange)
         }
     }
 
@@ -129,10 +151,10 @@ struct AlertsInboxView: View {
             }
         }
         .padding(12)
-        .background(Color.appCardBg, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color.appDivider.opacity(0.45), lineWidth: 1)
+                .stroke(Color(.separator).opacity(0.15), lineWidth: 0.8)
         )
         .task {
             await reverseGeocode(alert)
@@ -154,10 +176,10 @@ struct AlertsInboxView: View {
             Text(timeAgo(dev.detectedAt)).font(.caption2).foregroundStyle(.tertiary)
         }
         .padding(12)
-        .background(Color.appCardBg, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color.appDivider.opacity(0.45), lineWidth: 1)
+                .stroke(Color(.separator).opacity(0.15), lineWidth: 0.8)
         )
     }
 
@@ -176,10 +198,10 @@ struct AlertsInboxView: View {
             Text("\(days)d overdue").font(.caption.weight(.bold)).foregroundStyle(.red)
         }
         .padding(12)
-        .background(Color.appCardBg, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color.appDivider.opacity(0.45), lineWidth: 1)
+                .stroke(Color(.separator).opacity(0.15), lineWidth: 0.8)
         )
     }
 

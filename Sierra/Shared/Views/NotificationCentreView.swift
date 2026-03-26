@@ -40,7 +40,7 @@ struct NotificationCentreView: View {
                             } header: {
                                 Label("Upcoming Reminders", systemImage: "clock.badge")
                                     .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.orange)
+                                    .foregroundStyle(.secondary)
                                     .textCase(nil)
                             }
                         }
@@ -62,10 +62,15 @@ struct NotificationCentreView: View {
                         }
                     }
                     .listStyle(.insetGrouped)
+                    .scrollContentBackground(.hidden)
                 }
             }
+            .background(Color(.systemGroupedBackground))
             .navigationTitle("Notifications")
             .navigationBarTitleDisplayMode(.inline)
+            .tint(.blue)
+            .toolbarBackground(Color(.systemGroupedBackground), for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
@@ -103,7 +108,7 @@ struct NotificationCentreView: View {
         HStack(spacing: 12) {
             Image(systemName: notifIcon(notif.type))
                 .font(.title3)
-                .foregroundStyle(.orange)
+                .foregroundStyle(.tint)
                 .frame(width: 32)
 
             VStack(alignment: .leading, spacing: 3) {
@@ -122,10 +127,10 @@ struct NotificationCentreView: View {
             if let mins = notif.minutesUntilDelivery {
                 Text(mins == 0 ? "now" : "in \(mins)m")
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3)
-                    .background(Capsule().fill(Color.orange))
+                    .background(Capsule().fill(Color(.tertiarySystemFill)))
             }
         }
         .padding(.vertical, 4)
@@ -136,7 +141,7 @@ struct NotificationCentreView: View {
     private func notificationRow(_ notif: SierraNotification) -> some View {
         HStack(spacing: 12) {
             Circle()
-                .fill(notif.isRead ? Color.clear : Color.blue)
+                .fill(notif.isRead ? Color.clear : Color.accentColor)
                 .frame(width: 8, height: 8)
 
             Image(systemName: notifIcon(notif.type))
@@ -199,9 +204,9 @@ struct NotificationCentreView: View {
             return .red
         case .routeDeviation, .geofenceAlert, .tripRejected,
              .preInspectionReminder, .tripAcceptanceReminder:
-            return .orange
+            return .secondary
         case .maintenanceOverdue, .inspectionFailed, .documentExpiry:
-            return .yellow
+            return .secondary
         case .tripAssigned, .tripAccepted, .vehicleAssigned:
             return .blue
         case .maintenanceApproved, .maintenanceComplete, .partsApproved:
@@ -209,9 +214,9 @@ struct NotificationCentreView: View {
         case .partsRejected:
             return .red
         case .maintenanceRequest:
-            return .orange
+            return .blue
         case .general:
-            return .gray
+            return .secondary
         }
     }
 

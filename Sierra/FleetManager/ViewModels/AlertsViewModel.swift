@@ -31,7 +31,7 @@ final class AlertsViewModel {
         let base = emergencyAlerts.filter { $0.status == .active }
         switch selectedFilter {
         case .all: return base
-        case .sos: return base
+        case .sos: return base.filter { $0.alertType == .sos }
         case .deviation, .maintenance: return []
         }
     }

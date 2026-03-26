@@ -120,6 +120,7 @@ struct AnalyticsDashboardView: View {
                 .animation(.easeInOut(duration: 0.25), value: selectedPage)
             }
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
+            .tint(.orange)
             .navigationTitle("Fleet Analytics")
             .toolbarTitleDisplayMode(.inlineLarge)
             .toolbarBackground(.hidden, for: .navigationBar)
