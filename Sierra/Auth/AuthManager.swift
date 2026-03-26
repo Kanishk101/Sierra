@@ -28,6 +28,7 @@ final class AuthManager {
         static let sessionToken      = "com.sierra.sessionToken"
         static let hashedCred        = "com.sierra.hashedCredential"
         static let hasFullAuth       = "com.sierra.hasCompletedFullAuth"
+        static let fullAuthUserId    = "com.sierra.fullAuthUserId"
         // biometricOn + biometricPrompted moved to BiometricPreference (single canonical keys)
     }
 
@@ -59,7 +60,11 @@ final class AuthManager {
     //      JWT payload decoded inside to get user ID — no redundant getUser() call.
 
     func signIn(email: String, password: String) async throws -> UserRole {
-        otpLastSentAt = nil
+        // Preserve resend cooldown for repeated attempts on the same account so
+        // we do not spam OTP email sends and trigger provider 429s.
+        if pendingOTPEmail?.lowercased() != email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+            otpLastSentAt = nil
+        }
 
         #if DEBUG
         let signInStart = Date()
@@ -244,20 +249,19 @@ final class AuthManager {
     func beginCredentialSignInAttempt() {
         isAuthenticated = false
         needsReauth = false
-        hasCompletedFullAuth = false
-        KeychainService.delete(key: Keys.hasFullAuth)
+        setFullAuthState(false, for: nil)
         KeychainService.delete(key: Keys.sessionToken)
     }
 
     // MARK: - Complete Authentication
 
-    func completeAuthentication() {
+    /// Finalizes authenticated entry after login/reauth.
+    /// - Parameter markFullAuthCompleted:
+    ///   Set to `true` only when the user has completed the full login chain,
+    ///   including required 2FA for dashboard entry.
+    func completeAuthentication(markFullAuthCompleted: Bool = true) {
         isAuthenticated = true
-        // If we reach here, either 2FA succeeded or was skipped (e.g. non-dashboard).
-        // For dashboard destinations, 2FA is required.
-        // We set hasCompletedFullAuth here to mark that some form of valid entry happened.
-        hasCompletedFullAuth = true
-        _ = KeychainService.save("true".data(using: .utf8)!, forKey: Keys.hasFullAuth)
+        setFullAuthState(markFullAuthCompleted, for: markFullAuthCompleted ? currentUser?.id : nil)
         
         saveSessionToken()
         guard let user = currentUser else { return }
@@ -277,6 +281,14 @@ final class AuthManager {
         }
     }
 
+    /// Called on successful OTP verification to unlock biometric quick-login
+    /// for this specific user identity on future launches.
+    func markFullAuthCompletedAfterTwoFactor() {
+        guard let userId = currentUser?.id else { return }
+        setFullAuthState(true, for: userId)
+        saveSessionToken()
+    }
+
     // MARK: - Sign Out
 
     func signOut() {
@@ -286,7 +298,7 @@ final class AuthManager {
         currentUser = nil
         isAuthenticated = false
         needsReauth = false
-        hasCompletedFullAuth = false
+        setFullAuthState(false, for: nil)
         pendingOTPEmail = nil
         pendingResetToken = ""
         otpLastSentAt = nil
@@ -296,7 +308,6 @@ final class AuthManager {
         KeychainService.delete(key: Keys.currentUser)
         KeychainService.delete(key: Keys.hashedCred)
         KeychainService.delete(key: Keys.sessionToken)
-        KeychainService.delete(key: Keys.hasFullAuth)
         KeychainService.delete(key: Keys.backgroundTS)
         // Biometric preference is intentionally NOT cleared on signOut —
         // keeping it enables the biometric button to reappear on next login.
@@ -338,11 +349,42 @@ final class AuthManager {
         if let user = KeychainService.load(key: Keys.currentUser, as: AuthUser.self) {
             currentUser = user
         }
-        if let data = KeychainService.load(key: Keys.hasFullAuth),
-           let str = String(data: data, encoding: .utf8) {
-            hasCompletedFullAuth = (str == "true")
+        let storedFullAuth: Bool = {
+            guard let data = KeychainService.load(key: Keys.hasFullAuth),
+                  let str = String(data: data, encoding: .utf8) else { return false }
+            return str == "true"
+        }()
+        let storedFullAuthUserId: UUID? = {
+            guard let data = KeychainService.load(key: Keys.fullAuthUserId),
+                  let str = String(data: data, encoding: .utf8) else { return nil }
+            return UUID(uuidString: str)
+        }()
+
+        if storedFullAuth,
+           let currentId = currentUser?.id,
+           storedFullAuthUserId == currentId {
+            hasCompletedFullAuth = true
+        } else {
+            setFullAuthState(false, for: nil)
         }
         Task { _ = try? await supabase.auth.session }
+    }
+
+    private func setFullAuthState(_ enabled: Bool, for userId: UUID?) {
+        hasCompletedFullAuth = enabled
+        if enabled {
+            if let data = "true".data(using: .utf8) {
+                _ = KeychainService.save(data, forKey: Keys.hasFullAuth)
+            }
+            if let userId, let idData = userId.uuidString.data(using: .utf8) {
+                _ = KeychainService.save(idData, forKey: Keys.fullAuthUserId)
+            } else {
+                KeychainService.delete(key: Keys.fullAuthUserId)
+            }
+        } else {
+            KeychainService.delete(key: Keys.hasFullAuth)
+            KeychainService.delete(key: Keys.fullAuthUserId)
+        }
     }
 
     // MARK: - Routing

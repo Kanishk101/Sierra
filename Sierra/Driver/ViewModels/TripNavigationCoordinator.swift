@@ -267,13 +267,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     // MARK: - Route Methods
     func buildRoutes() async {
         await routeEngine.buildRoutes(trip: trip, currentLocation: currentLocation)
-        _cumulativeRouteCount = 0  // invalidate distance cache
-        recomputeStopRouteAnchors()
-        routeCursorIndex = min(max(routeCursorIndex, 0), max(0, routeEngine.decodedRouteCoordinates.count - 1))
-        maxRouteProgressFraction = max(maxRouteProgressFraction, Self.persistedProgress(for: trip.id))
-        if let location = currentLocation {
-            updateNavigationProgress(location: location)
-        }
+        refreshStateAfterRouteBuild()
     }
     // ISSUE-19 FIX: Renamed from selectGreenRoute
     func swapAlternativeRoute() {
@@ -283,6 +277,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     }
     func rebuildRoutes() async {
         await routeEngine.rebuildRoutes(trip: trip, currentLocation: currentLocation)
+        refreshStateAfterRouteBuild()
     }
     func setSimulationEnabled(_ enabled: Bool) {
         if enabled { startSimulation() }
@@ -582,7 +577,18 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         }
         lastRerouteRequestedAt = Date()
         routeEngine.triggerRerouteFromCurrentLocation()
-        Task { await routeEngine.buildRoutes(trip: trip, currentLocation: currentLocation) }
+        Task { await rebuildRoutes() }
+    }
+
+    private func refreshStateAfterRouteBuild() {
+        _cumulativeRouteCount = 0  // invalidate distance cache
+        recomputeStopRouteAnchors()
+        routeCursorIndex = min(max(routeCursorIndex, 0), max(0, routeEngine.decodedRouteCoordinates.count - 1))
+        maxRouteProgressFraction = max(maxRouteProgressFraction, Self.persistedProgress(for: trip.id))
+        trafficService.updateRoute(routeEngine.decodedRouteCoordinates)
+        if let location = currentLocation {
+            updateNavigationProgress(location: location)
+        }
     }
 
     // MARK: - Geofence Delegates

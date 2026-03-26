@@ -16,6 +16,7 @@ private let iso: ISO8601DateFormatter = {
 enum TripServiceError: LocalizedError {
     case tripNotFound(UUID)
     case driverMismatch
+    case sessionExpired
 
     var errorDescription: String? {
         switch self {
@@ -23,6 +24,8 @@ enum TripServiceError: LocalizedError {
             return "No trips row found for id \(id.uuidString.lowercased())"
         case .driverMismatch:
             return "You are not the assigned driver for this trip."
+        case .sessionExpired:
+            return "Your session expired. Please sign in again and retry."
         }
     }
 }
@@ -435,11 +438,13 @@ struct TripService {
         )
 
         do {
-            let options = try await SupabaseManager.functionOptions(body: body)
-            let result: OverlapResult = try await supabase.functions
-                .invoke("check-resource-overlap", options: options)
+            let result: OverlapResult = try await SupabaseManager
+                .invokeEdgeWithSessionRecovery("check-resource-overlap", body: body)
             return (result.driverConflict, result.vehicleConflict)
         } catch {
+            if SupabaseManager.isUnauthorizedEdgeError(error) || SupabaseManager.isSessionRecoveryError(error) {
+                throw TripServiceError.sessionExpired
+            }
             print("[TripService] checkOverlap failed: \(error.localizedDescription)")
             throw error
         }

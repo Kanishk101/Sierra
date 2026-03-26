@@ -8,9 +8,8 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 // Authorization header when verify_jwt is checked by the gateway. This causes
 // fast (~100-400ms) 401s before the Deno runtime even starts.
 //
-// Manual JWT verification below uses supabaseAnon.auth.getUser() which routes
-// through GoTrue and correctly validates ES256 tokens from the iOS SDK.
-// This is the proven pattern — v8 was 200 OK with this exact approach.
+// Manual JWT verification below uses auth.getUser(accessToken) explicitly,
+// with standardized 401 payloads for deterministic client retry behavior.
 //
 // POST body (JSON):
 // {
@@ -33,19 +32,23 @@ Deno.serve(async (req: Request) => {
   const authHeader = req.headers.get("Authorization") ?? "";
   const jwt = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
   if (!jwt) {
-    return errorResponse(401, "Missing Authorization header.");
+    return unauthorized("missing_token", "Missing Authorization bearer token.");
   }
 
   const supabaseAnon = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_ANON_KEY")!,
-    { global: { headers: { Authorization: `Bearer ${jwt}` } }, auth: { persistSession: false } }
+    { auth: { persistSession: false } }
   );
 
-  const { data: { user }, error: authError } = await supabaseAnon.auth.getUser();
+  const { data: { user }, error: authError } = await supabaseAnon.auth.getUser(jwt);
   if (authError || !user) {
     console.error("[check-resource-overlap] JWT validation failed:", authError?.message);
-    return errorResponse(401, "Invalid or expired token.");
+    return unauthorized(
+      "invalid_or_expired_token",
+      "Invalid or expired access token.",
+      authError?.message
+    );
   }
   // ──────────────────────────────────────────────────────────────────────────
 
@@ -113,6 +116,18 @@ function corsHeaders(): Record<string, string> {
 function errorResponse(status: number, message: string): Response {
   return new Response(JSON.stringify({ error: message }), {
     status,
+    headers: { "Content-Type": "application/json", ...corsHeaders() },
+  });
+}
+
+function unauthorized(code: "missing_token" | "invalid_or_expired_token", message: string, detail?: string): Response {
+  return new Response(JSON.stringify({
+    error: "Unauthorized",
+    code,
+    message,
+    detail: detail ?? null,
+  }), {
+    status: 401,
     headers: { "Content-Type": "application/json", ...corsHeaders() },
   });
 }

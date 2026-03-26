@@ -59,8 +59,7 @@ final class TrafficIncidentService {
 
     private func fetchIncidents() async {
         guard !routeCoordinates.isEmpty, !isFetching else { return }
-        guard let token = Bundle.main.object(forInfoDictionaryKey: "MBXAccessToken") as? String,
-              !token.isEmpty else { return }
+        guard let token = MapService.accessToken else { return }
 
         isFetching = true
         defer { isFetching = false }
@@ -88,18 +87,12 @@ final class TrafficIncidentService {
             for feature in features {
                 guard let properties = feature["properties"] as? [String: Any],
                       let geometry = feature["geometry"] as? [String: Any],
-                      let coords = geometry["coordinates"] as? [Double],
-                      coords.count >= 2 else { continue }
+                      let coordinate = extractCoordinate(from: geometry) else { continue }
 
                 let id = properties["id"] as? String ?? UUID().uuidString
                 let desc = properties["description"] as? String ?? "Traffic incident"
-                let severityStr = properties["severity"] as? String ?? "minor"
-                let severity = TrafficIncident.IncidentSeverity(rawValue: severityStr) ?? .minor
+                let severity = parseSeverity(from: properties["severity"])
                 let roadName = properties["street"] as? String
-
-                let coordinate = TrafficIncident.IncidentCoordinate(
-                    latitude: coords[1], longitude: coords[0]
-                )
 
                 var incident = TrafficIncident(
                     id: id, description: desc, severity: severity,
@@ -167,10 +160,49 @@ final class TrafficIncidentService {
     }
 
     /// Whether there's a severe/critical incident within auto-reroute proximity.
-    func hasSevereIncidentNearby(thresholdMetres: Double = 1000) -> Bool {
+    func hasSevereIncidentNearby(thresholdMetres: Double = TripConstants.autoRerouteProximityMetres) -> Bool {
         activeIncidents.contains { incident in
             incident.severity >= .major &&
             (incident.distanceAheadMetres ?? .greatestFiniteMagnitude) < thresholdMetres
         }
+    }
+
+    private func extractCoordinate(from geometry: [String: Any]) -> TrafficIncident.IncidentCoordinate? {
+        if let coords = geometry["coordinates"] as? [Double], coords.count >= 2 {
+            return TrafficIncident.IncidentCoordinate(latitude: coords[1], longitude: coords[0])
+        }
+        if let segments = geometry["coordinates"] as? [[Double]],
+           let first = segments.first,
+           first.count >= 2 {
+            return TrafficIncident.IncidentCoordinate(latitude: first[1], longitude: first[0])
+        }
+        return nil
+    }
+
+    private func parseSeverity(from raw: Any?) -> TrafficIncident.IncidentSeverity {
+        if let severityString = raw as? String {
+            switch severityString.lowercased() {
+            case "critical", "severe":
+                return .critical
+            case "major", "serious":
+                return .major
+            case "moderate", "medium":
+                return .moderate
+            default:
+                return .minor
+            }
+        }
+        if let severityInt = raw as? Int {
+            switch severityInt {
+            case 4...: return .critical
+            case 3:    return .major
+            case 2:    return .moderate
+            default:   return .minor
+            }
+        }
+        if let severityDouble = raw as? Double {
+            return parseSeverity(from: Int(severityDouble.rounded()))
+        }
+        return .minor
     }
 }

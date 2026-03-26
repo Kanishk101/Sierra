@@ -66,6 +66,12 @@ struct NotificationCentreView: View {
             }
             .navigationTitle("Notifications")
             .navigationBarTitleDisplayMode(.inline)
+            .task {
+                await store.loadAndSubscribeNotifications(for: currentUserId, forceRefresh: true)
+            }
+            .refreshable {
+                await store.loadAndSubscribeNotifications(for: currentUserId, forceRefresh: true)
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }

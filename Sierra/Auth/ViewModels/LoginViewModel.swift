@@ -124,7 +124,9 @@ final class LoginViewModel {
                 #if DEBUG
                 print("🖥️ [LoginViewModel.signIn] ⏩ Skipping 2FA (non-dashboard destination)")
                 #endif
-                AuthManager.shared.completeAuthentication()
+                // Non-dashboard routes (e.g. forced password change/onboarding)
+                // must not unlock biometric quick-login yet.
+                AuthManager.shared.completeAuthentication(markFullAuthCompleted: false)
                 return
             }
 
@@ -193,8 +195,20 @@ final class LoginViewModel {
                 return
             }
 
+            do {
+                _ = try await SupabaseManager.ensureValidSession()
+            } catch {
+                if SupabaseManager.isSessionRecoveryError(error) {
+                    AuthManager.shared.signOut()
+                    authState = .error("Session expired. Please sign in with email and password.")
+                } else {
+                    authState = .error("Network unavailable. Please reconnect and try again.")
+                }
+                return
+            }
+
             // completeAuthentication() performs the role-specific data load.
-            AuthManager.shared.completeAuthentication()
+            AuthManager.shared.completeAuthentication(markFullAuthCompleted: true)
             AuthManager.shared.reauthCompleted()
 
             // CRITICAL: explicitly set .authenticated so LoginView's onChange

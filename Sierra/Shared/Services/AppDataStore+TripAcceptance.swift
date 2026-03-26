@@ -79,12 +79,31 @@ extension AppDataStore {
         let driverName  = staff.first { $0.id == driverId }?.displayName ?? "Driver"
         let taskId      = trip?.taskId ?? tripId.uuidString
         let destination = trip?.destination ?? "destination"
-        await NotificationService.sendToAdmins(
-            type: .tripAccepted,
-            title: "Trip Accepted: \(taskId)",
-            body: "\(driverName) accepted the trip to \(destination).",
-            entityType: "trip",
-            entityId: tripId
-        )
+        let title = "Trip Accepted: \(taskId)"
+        let body = "\(driverName) accepted the trip to \(destination)."
+
+        // Prefer direct recipient routing via trip.createdByAdminId.
+        // This avoids driver-side staff lookup failures under strict RLS.
+        if
+            let trip,
+            let fleetManagerId = UUID(uuidString: trip.createdByAdminId)
+        {
+            try? await NotificationService.insertNotification(
+                recipientId: fleetManagerId,
+                type: .tripAccepted,
+                title: title,
+                body: body,
+                entityType: "trip",
+                entityId: tripId
+            )
+        } else {
+            await NotificationService.sendToAdmins(
+                type: .tripAccepted,
+                title: title,
+                body: body,
+                entityType: "trip",
+                entityId: tripId
+            )
+        }
     }
 }

@@ -1,5 +1,6 @@
 import Supabase
 import Foundation
+import Functions
 
 // MARK: - Supabase Global Client
 // Used by all service files as `supabase`
@@ -38,27 +39,25 @@ final class SupabaseManager {
 
 // MARK: - Edge Function Auth Helpers
 //
-// ROOT CAUSE OF ALL 401s:
-// The Supabase Swift SDK's FunctionsClient computes headers using a synchronous
-// _headers property. When the async session fetch can't be awaited synchronously,
-// the SDK falls back to `Authorization: Bearer <anon_key>`. Supabase's gateway
-// for functions with verify_jwt:true rejects anon keys immediately (~100-400ms),
-// before the Deno runtime ever boots. This is confirmed by the edge function logs
-// showing 127–392ms 401 responses (gateway-level) vs 1000ms+ for real function runs.
-//
-// THE FIX: Explicitly get the access token via `supabase.auth.session` (async, correct)
-// and pass it as the Authorization header in every functions.invoke() call.
+// These helpers enforce a single, consistent path for edge calls:
+// 1. Ensure session is valid and server-verifiable.
+// 2. Attach explicit Bearer token in FunctionInvokeOptions.
+// 3. Retry once on HTTP 401 after a forced refresh.
 
 extension SupabaseManager {
 
+    enum SessionRecoveryError: LocalizedError {
+        case unableToValidateSession
+
+        var errorDescription: String? {
+            switch self {
+            case .unableToValidateSession:
+                return "Session could not be validated. Please sign in again."
+            }
+        }
+    }
+
     // MARK: - currentBearerToken
-    //
-    // Gets the current user session's access token as a "Bearer <token>" string.
-    // Throws if there is no active session (user is not authenticated).
-    //
-    // USAGE: Every functions.invoke() call MUST use this.
-    //   let opts = try await SupabaseManager.functionOptions(body: myPayload)
-    //   let result: MyType = try await supabase.functions.invoke("fn-name", options: opts)
 
     static func currentBearerToken() async throws -> String {
         let session = try await supabase.auth.session
@@ -88,12 +87,57 @@ extension SupabaseManager {
         return "Bearer \(session.accessToken)"
     }
 
-    // MARK: - functionOptions (Encodable body)
-    //
-    // Creates FunctionInvokeOptions with:
-    //   - Authorization: Bearer <user_access_token>  ← THE CRITICAL FIX
-    //   - Content-Type:  application/json             ← explicit for clarity
-    //   - body:          JSON-encoded payload
+    // MARK: - Session Preflight
+
+    /// Ensures there is a valid, server-verifiable auth session.
+    /// If validation fails, refreshes once and retries verification.
+    @discardableResult
+    static func ensureValidSession() async throws -> Session {
+        do {
+            let session = try await supabase.auth.session
+            _ = try await supabase.auth.user(jwt: session.accessToken)
+            return session
+        } catch {
+            if isLikelyConnectivityError(error) { throw error }
+            do {
+                _ = try await supabase.auth.refreshSession()
+                let refreshed = try await supabase.auth.session
+                _ = try await supabase.auth.user(jwt: refreshed.accessToken)
+                return refreshed
+            } catch let refreshError {
+                if isLikelyConnectivityError(refreshError) { throw refreshError }
+                throw SessionRecoveryError.unableToValidateSession
+            }
+        }
+    }
+
+    static func isSessionRecoveryError(_ error: Error) -> Bool {
+        error is SessionRecoveryError
+    }
+
+    static func isUnauthorizedEdgeError(_ error: Error) -> Bool {
+        if let fnError = error as? FunctionsError,
+           case .httpError(let code, _) = fnError {
+            return code == 401
+        }
+
+        let description = String(describing: error).lowercased()
+        return description.contains("non-2xx status code: 401")
+            || description.contains("unauthorized")
+    }
+
+    static func isLikelyConnectivityError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain { return true }
+
+        let description = String(describing: error).lowercased()
+        return description.contains("internet connection appears to be offline")
+            || description.contains("timed out")
+            || description.contains("tls")
+            || description.contains("network")
+    }
+
+    // MARK: - functionOptions
 
     static func functionOptions<T: Encodable>(body: T) async throws -> FunctionInvokeOptions {
         let bearerToken = try await currentBearerToken()
@@ -106,10 +150,6 @@ extension SupabaseManager {
         )
     }
 
-    // MARK: - functionOptionsNoBody
-    //
-    // For edge functions that take no request body.
-
     static func functionOptionsNoBody() async throws -> FunctionInvokeOptions {
         let bearerToken = try await currentBearerToken()
         return FunctionInvokeOptions(
@@ -118,6 +158,43 @@ extension SupabaseManager {
                 "Content-Type":  "application/json",
             ]
         )
+    }
+
+    // MARK: - invokeEdgeWithSessionRecovery
+
+    static func invokeEdgeWithSessionRecovery<Response: Decodable, Body: Encodable>(
+        _ functionName: String,
+        body: Body,
+        decoder: JSONDecoder = JSONDecoder()
+    ) async throws -> Response {
+        _ = try await ensureValidSession()
+
+        do {
+            let options = try await functionOptions(body: body)
+            return try await supabase.functions.invoke(functionName, options: options, decoder: decoder)
+        } catch {
+            guard isUnauthorizedEdgeError(error) else { throw error }
+            _ = try await ensureValidSession()
+            let retryOptions = try await functionOptions(body: body)
+            return try await supabase.functions.invoke(functionName, options: retryOptions, decoder: decoder)
+        }
+    }
+
+    static func invokeEdgeWithSessionRecovery<Response: Decodable>(
+        _ functionName: String,
+        decoder: JSONDecoder = JSONDecoder()
+    ) async throws -> Response {
+        _ = try await ensureValidSession()
+
+        do {
+            let options = try await functionOptionsNoBody()
+            return try await supabase.functions.invoke(functionName, options: options, decoder: decoder)
+        } catch {
+            guard isUnauthorizedEdgeError(error) else { throw error }
+            _ = try await ensureValidSession()
+            let retryOptions = try await functionOptionsNoBody()
+            return try await supabase.functions.invoke(functionName, options: retryOptions, decoder: decoder)
+        }
     }
 
 }

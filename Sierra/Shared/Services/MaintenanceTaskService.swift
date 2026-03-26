@@ -237,7 +237,7 @@ struct MaintenanceTaskService {
 
     static func createDriverRequest(
         vehicleId: UUID,
-        driverId: UUID,
+        createdById: UUID,
         title: String,
         description: String,
         priority: TaskPriority,
@@ -257,7 +257,7 @@ struct MaintenanceTaskService {
 
         let payload = DriverRequestPayload(
             vehicle_id: vehicleId.uuidString.lowercased(),
-            created_by_admin_id: driverId.uuidString.lowercased(),
+            created_by_admin_id: createdById.uuidString.lowercased(),
             title: title,
             task_description: description,
             priority: priority.rawValue,

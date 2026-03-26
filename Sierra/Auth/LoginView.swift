@@ -54,7 +54,7 @@ struct LoginView: View {
                     service: viewModel.otpService,
                     onVerified: {
                         twoFactorRoute = nil
-                        AuthManager.shared.completeAuthentication()
+                        AuthManager.shared.completeAuthentication(markFullAuthCompleted: true)
                     },
                     onCancelled: {
                         twoFactorRoute = nil

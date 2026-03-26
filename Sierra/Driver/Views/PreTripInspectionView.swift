@@ -206,6 +206,8 @@ struct PreTripInspectionView: View {
     @State private var showMaintenanceRequestSheet = false
     @State private var maintenanceDraftTitle = ""
     @State private var maintenanceDraftDescription = ""
+    @State private var maintenanceIssueSummary = ""
+    @State private var preTripFailRaised = false
 
     private var checklistStep: some View {
         VStack(spacing: 0) {
@@ -257,19 +259,27 @@ struct PreTripInspectionView: View {
             let hasFails    = !viewModel.failedItems.isEmpty
             let isPostTrip  = inspectionType == .postTripInspection
             let maintenanceContinueLabel = "Log Maintenance and Continue"
-            let warnContinueLabel = isPostTrip ? "Notify Fleet Manager & Continue" : "Notify Admin & Continue"
+            let warnContinueLabel = isPostTrip ? "Log Maintenance and Continue" : "Notify Fleet Manager & Continue"
             Button {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 if hasFails {
                     if isPostTrip {
                         maintenanceDraftTitle = "Post-Trip Defect"
                         maintenanceDraftDescription = ""
+                        maintenanceIssueSummary = viewModel.failedItems.map(\.name).joined(separator: ", ")
                         showMaintenanceRequestSheet = true
                     } else {
-                        showFailAlert = true
+                        Task { await submitPreTripFailAndAlert() }
                     }
                 } else if hasWarnings {
-                    showWarnAlert = true
+                    if isPostTrip {
+                        maintenanceDraftTitle = "Post-Trip Warning"
+                        maintenanceDraftDescription = ""
+                        maintenanceIssueSummary = viewModel.warningItems.map(\.name).joined(separator: ", ")
+                        showMaintenanceRequestSheet = true
+                    } else {
+                        showWarnAlert = true
+                    }
                 } else {
                     withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { viewModel.currentStep = 2 }
                 }
@@ -342,7 +352,7 @@ struct PreTripInspectionView: View {
                     initialDescription: maintenanceDraftDescription,
                     lockCoreFields: true,
                     fixedTripDisplayId: store.trips.first(where: { $0.id == tripId })?.taskId ?? tripId.uuidString.prefix(8).uppercased(),
-                    fixedIssueSummary: viewModel.failedItems.map(\.name).joined(separator: ", "),
+                    fixedIssueSummary: maintenanceIssueSummary,
                     showsSeverityPicker: false,
                     onSubmitted: {
                         withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
@@ -368,6 +378,87 @@ struct PreTripInspectionView: View {
             entityType: isPostTrip ? "post_trip_warning" : "pre_trip_warning",
             entityId: tripId
         )
+    }
+
+    private func submitPreTripFailAndAlert() async {
+        if preTripFailRaised {
+            showFailAlert = true
+            return
+        }
+        guard !isSendingNotification else { return }
+        isSendingNotification = true
+        defer { isSendingNotification = false }
+
+        let failedNames = viewModel.failedItems.map(\.name)
+        let issueSummary = failedNames.joined(separator: ", ")
+        guard !issueSummary.isEmpty else {
+            showFailAlert = true
+            return
+        }
+
+        let trip = store.trips.first(where: { $0.id == tripId })
+        let fleetManagerId = trip.flatMap { UUID(uuidString: $0.createdByAdminId) }
+        let vehiclePlate = store.vehicle(for: vehicleId)?.licensePlate ?? vehicleId.uuidString.prefix(8).description
+        let driverName = store.staffMember(for: driverId)?.displayName ?? "Driver"
+        let taskCode = trip?.taskId ?? tripId.uuidString.prefix(8).uppercased()
+
+        let description = "Pre-trip inspection failed for trip \(taskCode). Issue(s): \(issueSummary). Vehicle change required before trip start."
+
+        do {
+            try await MaintenanceTaskService.createDriverRequest(
+                vehicleId: vehicleId,
+                createdById: fleetManagerId ?? driverId,
+                title: "Pre-Trip Defect \u{2013} \(vehiclePlate)",
+                description: description,
+                priority: .urgent,
+                sourceInspectionId: nil
+            )
+
+            let lat = trip?.originLatitude ?? trip?.destinationLatitude ?? 0
+            let lon = trip?.originLongitude ?? trip?.destinationLongitude ?? 0
+            let defectAlert = EmergencyAlert(
+                id: UUID(),
+                driverId: driverId,
+                tripId: tripId,
+                vehicleId: vehicleId,
+                latitude: lat,
+                longitude: lon,
+                alertType: .defect,
+                status: .active,
+                description: "Pre-trip fail: \(issueSummary)",
+                acknowledgedBy: nil,
+                acknowledgedAt: nil,
+                resolvedAt: nil,
+                triggeredAt: Date(),
+                createdAt: Date()
+            )
+            try? await EmergencyAlertService.addEmergencyAlert(defectAlert)
+
+            if let fleetManagerId {
+                try? await NotificationService.insertNotification(
+                    recipientId: fleetManagerId,
+                    type: .defectAlert,
+                    title: "Pre-Trip Inspection Failed: \(taskCode)",
+                    body: "\(driverName) reported pre-trip fail (\(issueSummary)). Reassign vehicle required.",
+                    entityType: "pre_trip_defect",
+                    entityId: tripId
+                )
+            } else {
+                await NotificationService.sendToAdmins(
+                    type: .defectAlert,
+                    title: "Pre-Trip Inspection Failed: \(taskCode)",
+                    body: "\(driverName) reported pre-trip fail (\(issueSummary)). Reassign vehicle required.",
+                    entityType: "pre_trip_defect",
+                    entityId: tripId
+                )
+            }
+
+            preTripFailRaised = true
+            viewModel.maintenanceBannerText = "Maintenance request submitted for \(vehiclePlate)"
+            showFailAlert = true
+        } catch {
+            viewModel.submitError = error.localizedDescription
+        }
     }
 
     private func checkItemRow(item: Binding<InspectionCheckItem>) -> some View {

@@ -59,7 +59,7 @@ struct ForcePasswordChangeView: View {
                     maskedEmail: AuthManager.shared.maskedEmail,
                     onVerified: {
                         viewModel.awaitingOTP = false
-                        AuthManager.shared.saveSessionToken()
+                        AuthManager.shared.markFullAuthCompletedAfterTwoFactor()
                     },
                     onCancelled: {
                         viewModel.awaitingOTP = false

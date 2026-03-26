@@ -95,29 +95,36 @@ final class DriverMaintenanceRequestViewModel {
             }
 
             let finalDescription = composedDescription(photoURLs: uploadedURLs)
+            let fleetManagerId = await resolveFleetManagerId()
+            let requestOwnerId = fleetManagerId ?? driverId
 
-            do {
-                try await MaintenanceTaskService.createDriverRequest(
-                    vehicleId: vehicleId,
-                    driverId: driverId,
-                    title: title,
-                    description: finalDescription,
-                    priority: priority,
-                    sourceInspectionId: sourceInspectionId
-                )
-            } catch {
-                // Frontend-only fallback for environments where maintenance_tasks INSERT
-                // is blocked for driver role by RLS. Do not block post-trip flow.
-                guard isMaintenanceInsertRLSDenied(error) else { throw error }
-            }
-
-            await NotificationService.sendToAdmins(
-                type: .maintenanceRequest,
-                title: "Maintenance Request: \(title)",
-                body: finalDescription,
-                entityType: "vehicle",
-                entityId: vehicleId
+            try await MaintenanceTaskService.createDriverRequest(
+                vehicleId: vehicleId,
+                createdById: requestOwnerId,
+                title: title,
+                description: finalDescription,
+                priority: priority,
+                sourceInspectionId: sourceInspectionId
             )
+
+            if let fleetManagerId {
+                try? await NotificationService.insertNotification(
+                    recipientId: fleetManagerId,
+                    type: .maintenanceRequest,
+                    title: "Maintenance Request: \(title)",
+                    body: finalDescription,
+                    entityType: "vehicle",
+                    entityId: vehicleId
+                )
+            } else {
+                await NotificationService.sendToAdmins(
+                    type: .maintenanceRequest,
+                    title: "Maintenance Request: \(title)",
+                    body: finalDescription,
+                    entityType: "vehicle",
+                    entityId: vehicleId
+                )
+            }
             submitSuccess = true
         } catch {
             submitError = error.localizedDescription
@@ -150,10 +157,13 @@ final class DriverMaintenanceRequestViewModel {
         return notes + photoBlock
     }
 
-    private func isMaintenanceInsertRLSDenied(_ error: Error) -> Bool {
-        let msg = String(describing: error).lowercased()
-        return msg.contains("row-level security")
-            && msg.contains("maintenance_tasks")
+    private func resolveFleetManagerId() async -> UUID? {
+        if let tripId,
+           let trip = try? await TripService.fetchTrip(id: tripId),
+           let id = UUID(uuidString: trip.createdByAdminId) {
+            return id
+        }
+        return nil
     }
 
     // MARK: - Photo Upload (sequential, one at a time)

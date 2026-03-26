@@ -58,14 +58,32 @@ Deno.serve(async (req: Request) => {
   const ip = getClientIp(req);
   const recipient = String(to).trim().toLowerCase();
 
-  const ipAllowed = await enforceRateLimit(admin, "send-email-ip", `ip:${ip}`, 600, 20);
+  const isAuthCodeEmail = /verification code|password reset code/i.test(subject);
+  const ipMaxRequests = isAuthCodeEmail ? 60 : 20;
+  const recipientMaxRequests = isAuthCodeEmail ? 20 : 5;
+
+  const ipAllowed = await enforceRateLimit(admin, "send-email-ip", `ip:${ip}`, 600, ipMaxRequests);
   if (!ipAllowed) {
-    return json({ error: "Too many requests. Please wait and try again." }, 429);
+    return json(
+      { error: "Too many requests. Please wait and try again." },
+      429,
+      { "Retry-After": "30" }
+    );
   }
 
-  const recipientAllowed = await enforceRateLimit(admin, "send-email-recipient", `to:${recipient}`, 600, 5);
+  const recipientAllowed = await enforceRateLimit(
+    admin,
+    "send-email-recipient",
+    `to:${recipient}`,
+    600,
+    recipientMaxRequests
+  );
   if (!recipientAllowed) {
-    return json({ error: "Too many emails sent to this recipient. Please wait." }, 429);
+    return json(
+      { error: "Too many emails sent to this recipient. Please wait." },
+      429,
+      { "Retry-After": "30" }
+    );
   }
 
   try {
@@ -95,10 +113,10 @@ Deno.serve(async (req: Request) => {
   }
 });
 
-function json(data: unknown, status: number): Response {
+function json(data: unknown, status: number, extraHeaders: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { "Content-Type": "application/json", ...corsHeaders },
+    headers: { "Content-Type": "application/json", ...corsHeaders, ...extraHeaders },
   });
 }
 

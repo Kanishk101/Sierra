@@ -140,7 +140,15 @@ final class RouteEngine {
                 totalRouteDistanceMetres = fastest.distance
                 estimatedArrivalTime = Date().addingTimeInterval(fastest.expectedTravelTime)
                 if let firstStep = fastest.legs.first?.steps.first { currentStepInstruction = firstStep.instructions }
-                if routes.count > 1 { alternativeRoute = routes.enumerated().first(where: { $0.offset != fastestIndex })?.element }
+
+                let alternativeIndices = routes.indices.filter { $0 != fastestIndex }
+                if let greenIndex = alternativeIndices.min(by: { routes[$0].distance < routes[$1].distance }) {
+                    alternativeRoute = routes[greenIndex]
+                } else if let fallbackIndex = alternativeIndices.first {
+                    alternativeRoute = routes[fallbackIndex]
+                } else {
+                    alternativeRoute = nil
+                }
             }
             if let shape = currentRoute?.shape { decodedRouteCoordinates = shape.coordinates }
             if hasDeviated { hasDeviated = false }

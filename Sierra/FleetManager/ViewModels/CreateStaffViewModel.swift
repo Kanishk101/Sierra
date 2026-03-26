@@ -79,17 +79,7 @@ final class CreateStaffViewModel {
 
         // ─────────────────────────────────────────────────────────────────────
         // ── Phase 1: Create account (atomic — auth user + staff_members row) ──
-        //
-        // FIX: The 401 was caused by the Supabase Swift SDK sending the anon key
-        // (not the user session JWT) to functions.invoke(). Supabase's gateway
-        // rejects this in ~100-400ms before Deno even starts.
-        //
-        // Confirmed from edge function logs:
-        //   create-staff-account v4: all 127-392ms 401s = gateway-level rejections
-        //   create-staff-account v5: 2644ms 401 = function ran but callerClient.auth.getUser() failed
-        //
-        // SOLUTION: Explicitly get the user access token via supabase.auth.session
-        // (async, correct) and pass it as the Authorization header directly.
+        // Uses centralized session preflight + one-time 401 recovery.
         // ─────────────────────────────────────────────────────────────────────
 
         do {
@@ -100,18 +90,21 @@ final class CreateStaffViewModel {
                 role: role.rawValue
             )
 
-            let options = try await SupabaseManager.functionOptions(body: payload)
-            let created: CreateStaffAccountResponse = try await supabase.functions
-                .invoke("create-staff-account", options: options)
+            let created: CreateStaffAccountResponse = try await SupabaseManager
+                .invokeEdgeWithSessionRecovery("create-staff-account", body: payload)
 
             guard UUID(uuidString: created.id) != nil else {
                 throw URLError(.badServerResponse)
             }
         } catch {
             isLoading = false
-            errorMessage = error.localizedDescription.contains("already registered")
-                ? "An account with this email already exists."
-                : "Failed to create account: \(error.localizedDescription)"
+            if error.localizedDescription.contains("already registered") {
+                errorMessage = "An account with this email already exists."
+            } else if SupabaseManager.isUnauthorizedEdgeError(error) || SupabaseManager.isSessionRecoveryError(error) {
+                errorMessage = "Your session expired. Please sign in again and retry."
+            } else {
+                errorMessage = "Failed to create account: \(error.localizedDescription)"
+            }
             return
         }
 

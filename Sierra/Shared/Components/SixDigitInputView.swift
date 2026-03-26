@@ -192,6 +192,19 @@ private struct OTPHiddenTextField: UIViewRepresentable {
             self.parent = parent
         }
 
+        private func commit(text: String, cursorIndex: Int) {
+            let boundedCursor = max(0, min(cursorIndex, text.count))
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                if self.parent.text != text {
+                    self.parent.text = text
+                }
+                if self.parent.cursorIndex != boundedCursor {
+                    self.parent.cursorIndex = boundedCursor
+                }
+            }
+        }
+
         func textField(_ textField: UITextField,
                        shouldChangeCharactersIn range: NSRange,
                        replacementString string: String) -> Bool {
@@ -205,8 +218,7 @@ private struct OTPHiddenTextField: UIViewRepresentable {
             let pastedDigits = string.filter(\.isNumber)
             if pastedDigits.count > 1 {
                 let sanitized = String(pastedDigits.prefix(6))
-                parent.text = sanitized
-                parent.cursorIndex = min(sanitized.count, 5)
+                commit(text: sanitized, cursorIndex: min(sanitized.count, 5))
                 return false
             }
 
@@ -220,8 +232,7 @@ private struct OTPHiddenTextField: UIViewRepresentable {
                 }
                 let updated = current.replacingCharacters(in: deleteStart..<deleteEnd, with: "")
                 let digitsOnly = String(updated.filter { $0.isNumber }.prefix(6))
-                parent.text = digitsOnly
-                parent.cursorIndex = deleteLocation
+                commit(text: digitsOnly, cursorIndex: deleteLocation)
                 return false
             }
 
@@ -234,16 +245,14 @@ private struct OTPHiddenTextField: UIViewRepresentable {
                 }
                 let updated = current.replacingCharacters(in: start..<end, with: String(pastedDigits))
                 let digitsOnly = String(updated.filter(\.isNumber).prefix(6))
-                parent.text = digitsOnly
-                parent.cursorIndex = min(range.location + 1, digitsOnly.count)
+                commit(text: digitsOnly, cursorIndex: min(range.location + 1, digitsOnly.count))
                 return false
             }
 
             let updated = current.replacingCharacters(in: swiftRange, with: string)
             let digitsOnly = String(updated.filter { $0.isNumber }.prefix(6))
             let newCursor = max(0, min(range.location + string.count, digitsOnly.count))
-            parent.text = digitsOnly
-            parent.cursorIndex = newCursor
+            commit(text: digitsOnly, cursorIndex: newCursor)
             return false
         }
 

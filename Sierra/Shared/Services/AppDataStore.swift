@@ -1254,29 +1254,34 @@ final class AppDataStore {
 
     // MARK: - Notifications
 
-    func loadAndSubscribeNotifications(for userId: UUID) async {
-        if subscribedNotificationsUserId == userId { return }
-        NotificationService.shared.unsubscribeFromNotifications()
-        subscribedNotificationsUserId = userId
-        notifications = []
+    func loadAndSubscribeNotifications(for userId: UUID, forceRefresh: Bool = false) async {
+        let isSameUser = (subscribedNotificationsUserId == userId)
+        if isSameUser && !forceRefresh { return }
+        if !isSameUser {
+            NotificationService.shared.unsubscribeFromNotifications()
+            subscribedNotificationsUserId = userId
+            notifications = []
+        }
         do {
             notifications = try await NotificationService.fetchNotifications(for: userId)
             notifications.sort { $0.sentAt > $1.sentAt }
         } catch {
             print("[AppDataStore] Failed to fetch notifications: \(error)")
         }
-        NotificationService.shared.subscribeToNotifications(for: userId) { [weak self] newNotification in
-            guard let self else { return }
-            Task { @MainActor in
-                if let existingIndex = self.notifications.firstIndex(where: { $0.id == newNotification.id }) {
-                    self.notifications[existingIndex] = newNotification
-                } else {
-                    self.notifications.insert(newNotification, at: 0)
-                    if self.deliveredRealtimeNotificationIds.insert(newNotification.id).inserted {
-                        LocalNotificationService.notifyFromSierraNotification(newNotification)
+        if !isSameUser {
+            NotificationService.shared.subscribeToNotifications(for: userId) { [weak self] newNotification in
+                guard let self else { return }
+                Task { @MainActor in
+                    if let existingIndex = self.notifications.firstIndex(where: { $0.id == newNotification.id }) {
+                        self.notifications[existingIndex] = newNotification
+                    } else {
+                        self.notifications.insert(newNotification, at: 0)
+                        if self.deliveredRealtimeNotificationIds.insert(newNotification.id).inserted {
+                            LocalNotificationService.notifyFromSierraNotification(newNotification)
+                        }
                     }
+                    self.notifications.sort { $0.sentAt > $1.sentAt }
                 }
-                self.notifications.sort { $0.sentAt > $1.sentAt }
             }
         }
     }

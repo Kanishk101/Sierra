@@ -4,18 +4,15 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 // create-staff-account  (Sierra Fleet Management System)
 //
 // verify_jwt: FALSE
-// Same proven pattern as check-resource-overlap v10:
-// - jsr: imports (not esm.sh which resolves unreliably in Deno edge runtime)
-// - Deno.serve() not the old serve() from deno.land/std
-// - anonClient with JWT in global headers + getUser() with NO argument
-//   (not getUser(token)) — this routes through GoTrue and correctly validates
-//   ES256 iOS SDK tokens. Identical to the pattern that has 200 OK logs.
+// Same verified auth pattern used across critical functions:
+// - verify_jwt remains FALSE at gateway level
+// - explicit caller JWT validation via auth.getUser(accessToken)
+// - standardized 401 payloads for deterministic client retry behavior
 //
 // POST body (JSON):
 // { email, password, name, role: "driver" | "maintenancePersonnel" }
 
 const SUPABASE_URL              = Deno.env.get("SUPABASE_URL")              ?? "";
-const SUPABASE_ANON_KEY         = Deno.env.get("SUPABASE_ANON_KEY")         ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
 const corsHeaders = {
@@ -43,32 +40,32 @@ Deno.serve(async (req: Request) => {
     const authHeader = req.headers.get("Authorization") ?? "";
     if (!authHeader.startsWith("Bearer ")) {
       console.error("[create-staff-account] Missing Bearer token");
-      return json(401, { error: "Unauthorized: no Bearer token" });
+      return unauthorized("missing_token", "Missing Authorization bearer token.");
     }
     const accessToken = authHeader.slice(7).trim();
+    if (!accessToken) {
+      return unauthorized("missing_token", "Missing Authorization bearer token.");
+    }
     console.log("[create-staff-account] token_length=", accessToken.length);
 
     // ── Step 2: Validate token via GoTrue (proven pattern) ────────────────
-    // Use anon client with JWT in global headers + getUser() with no argument.
-    // This is identical to check-resource-overlap v10 which has 200 OK logs.
-    const anonClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      global: { headers: { Authorization: `Bearer ${accessToken}` } },
-      auth: { persistSession: false },
+    const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    const { data: { user }, error: userErr } = await anonClient.auth.getUser();
+    const { data: { user }, error: userErr } = await adminClient.auth.getUser(accessToken);
     if (userErr || !user) {
       console.error("[create-staff-account] GoTrue rejected token:", userErr?.message);
-      return json(401, { error: "Unauthorized", detail: userErr?.message });
+      return unauthorized(
+        "invalid_or_expired_token",
+        "Invalid or expired access token.",
+        userErr?.message
+      );
     }
     const callerId = user.id;
     console.log("[create-staff-account] Caller validated: sub=", callerId);
 
     // ── Step 3: Verify caller is a fleet manager ──────────────────────────
-    const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
-
     const { data: staffRow, error: staffErr } = await adminClient
       .from("staff_members")
       .select("role")
@@ -144,5 +141,14 @@ function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json", ...corsHeaders },
+  });
+}
+
+function unauthorized(code: "missing_token" | "invalid_or_expired_token", message: string, detail?: string): Response {
+  return json(401, {
+    error: "Unauthorized",
+    code,
+    message,
+    detail: detail ?? null,
   });
 }

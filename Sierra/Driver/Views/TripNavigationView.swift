@@ -321,12 +321,20 @@ struct TripNavigationView: UIViewRepresentable {
         // MARK: - Route / Breadcrumb Rendering
 
         private func updateRoute(mapView: MapView, coordinates: [CLLocationCoordinate2D], congestionLevels: [MapboxDirections.CongestionLevel]?) {
-            // Skip if route data hasn't meaningfully changed (count + first coord)
+            // Skip if route/congestion data hasn't meaningfully changed.
             var hasher = Hasher()
             hasher.combine(coordinates.count)
             if let first = coordinates.first {
                 hasher.combine(Int(first.latitude * 100_000))
                 hasher.combine(Int(first.longitude * 100_000))
+            }
+            if let levels = congestionLevels {
+                hasher.combine(levels.count)
+                for level in levels.prefix(12) {
+                    hasher.combine(level.rawValue)
+                }
+            } else {
+                hasher.combine(0)
             }
             let newHash = hasher.finalize()
             guard newHash != lastRouteHash else { return }
