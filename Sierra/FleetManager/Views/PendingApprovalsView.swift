@@ -23,6 +23,7 @@ struct PendingApprovalsView: View {
                 .pickerStyle(.segmented)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)
+                .background(Color.appSurface)
 
                 // List
                 if viewModel.filteredApplications.isEmpty {
@@ -42,7 +43,7 @@ struct PendingApprovalsView: View {
                     }
                 }
             }
-            .background(Color(.systemGroupedBackground).ignoresSafeArea())
+            .background(Color.appSurface.ignoresSafeArea())
             .navigationTitle("Staff Applications")
             .toolbarTitleDisplayMode(.inlineLarge)
             .toolbarBackground(.hidden, for: .navigationBar)
@@ -97,8 +98,12 @@ struct PendingApprovalsView: View {
             }
         }
         .padding(16)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
+        .background(Color.appCardBg, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.appDivider.opacity(0.45), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.05), radius: 10, y: 4)
     }
 
     // MARK: - Badges

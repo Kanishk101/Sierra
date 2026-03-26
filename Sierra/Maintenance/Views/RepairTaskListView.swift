@@ -31,7 +31,7 @@ struct RepairTaskListView: View {
             if q.isEmpty { return true }
             let vehicle = store.vehicle(for: task.vehicleId)
             let idText = "MNT-\(task.id.uuidString.prefix(8).uppercased())".lowercased()
-            let blob = "\(task.title) \(task.taskDescription) \(vehicle?.licensePlate ?? "") \(vehicle?.name ?? "")".lowercased()
+            let blob = "\(task.title) \(vehicle?.licensePlate ?? "") \(vehicle?.name ?? "")".lowercased()
             return idText.contains(q) || blob.contains(q)
         }
     }
@@ -42,25 +42,23 @@ struct RepairTaskListView: View {
     private var completedCount: Int { repairTasks.filter { $0.status == .completed }.count }
 
     var body: some View {
-        VStack(spacing: 10) {
-            searchBar
-            summaryRow
+        VStack(spacing: 0) {
+            searchBar.padding(.top, 12).padding(.bottom, 8)
+            summaryRow.padding(.bottom, 6)
 
-            ScrollView {
-                LazyVStack(spacing: 12) {
-                    ForEach(filteredTasks) { task in
-                        NavigationLink(value: task) {
-                            TaskCard(task: task, store: store)
+            if filteredTasks.isEmpty {
+                emptyState
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 14) {
+                        ForEach(filteredTasks) { task in
+                            NavigationLink(value: task) { TaskCard(task: task, store: store) }
+                                .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
+                    .padding(.horizontal, 20).padding(.top, 4).padding(.bottom, 28)
                 }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 24)
             }
-        }
-        .overlay {
-            if filteredTasks.isEmpty { emptyState }
         }
         .background(Color.appSurface.ignoresSafeArea())
         .navigationTitle("Repairs")
@@ -92,13 +90,18 @@ struct RepairTaskListView: View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(Color.appTextSecondary)
-            TextField("Search task ID, vehicle, title", text: $searchText)
+            TextField("Search task ID, vehicle, title…", text: $searchText)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled(true)
                 .font(.system(size: 14, weight: .medium, design: .rounded))
+            if !searchText.isEmpty {
+                Button { searchText = "" } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(Color.appTextSecondary)
+                }
+            }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
         .background(
             Capsule()
                 .fill(Color.appCardBg)
@@ -107,36 +110,35 @@ struct RepairTaskListView: View {
             Capsule()
                 .stroke(Color.appDivider.opacity(0.45), lineWidth: 1)
         )
-        .padding(.horizontal, 16)
-        .padding(.top, 6)
+        .padding(.horizontal, 20)
     }
 
     private var summaryRow: some View {
         HStack(spacing: 10) {
-            summaryBox(value: totalCount, label: "Total", icon: "list.bullet.rectangle.fill", tint: .appOrange)
-            summaryBox(value: activeCount, label: "Active", icon: "clock.fill", tint: .blue)
-            summaryBox(value: completedCount, label: "Done", icon: "checkmark.seal.fill", tint: .green)
+            summaryPill(value: totalCount, label: "Total", icon: "list.bullet.rectangle.fill", tint: .appOrange)
+            summaryPill(value: activeCount, label: "Active", icon: "clock.fill", tint: .blue)
+            summaryPill(value: completedCount, label: "Done", icon: "checkmark.seal.fill", tint: .green)
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 20)
     }
 
-    private func summaryBox(value: Int, label: String, icon: String, tint: Color) -> some View {
+    private func summaryPill(value: Int, label: String, icon: String, tint: Color) -> some View {
         VStack(spacing: 4) {
             HStack(spacing: 4) {
                 Image(systemName: icon)
                     .font(.system(size: 10, weight: .semibold))
                 Text("\(value)")
-                    .font(.system(size: 21, weight: .bold, design: .rounded))
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
             }
             .foregroundStyle(tint)
             Text(label)
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
                 .foregroundStyle(Color.appTextSecondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 10)
-        .background(RoundedRectangle(cornerRadius: 14).fill(tint.opacity(0.08)))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(tint.opacity(0.18), lineWidth: 1))
+        .padding(.vertical, 12)
+        .background(RoundedRectangle(cornerRadius: 16).fill(tint.opacity(0.07)))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(tint.opacity(0.15), lineWidth: 1))
     }
 
     // MARK: - Filter Menu
@@ -157,7 +159,7 @@ struct RepairTaskListView: View {
                 }
             }
         } label: {
-            Image(systemName: "line.3.horizontal.decrease.circle\(isFilterActive ? ".fill" : "")")
+            Image(systemName: isFilterActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(Color.appOrange)
         }
@@ -192,13 +194,15 @@ struct RepairTaskListView: View {
     // MARK: - Empty State
 
     private var emptyState: some View {
-        VStack(spacing: 14) {
+        VStack {
+            Spacer(minLength: 60)
             Image(systemName: isFilterActive ? "line.3.horizontal.decrease.circle" : "wrench.and.screwdriver")
                 .font(.system(size: 48, weight: .light))
                 .foregroundStyle(Color.appOrange.opacity(0.3))
             Text(isFilterActive ? "No Matches" : "No Repair Tasks")
                 .font(.system(size: 20, weight: .bold, design: .rounded))
                 .foregroundStyle(Color.appTextPrimary)
+                .padding(.top, 6)
             Text(isFilterActive ? "Try a different filter." : "No assigned repair tasks right now.")
                 .font(.system(size: 14, weight: .medium, design: .rounded))
                 .foregroundStyle(Color.appTextSecondary)
@@ -211,9 +215,11 @@ struct RepairTaskListView: View {
                         .padding(.horizontal, 20).padding(.vertical, 10)
                         .background(Color.appOrange.opacity(0.1), in: Capsule())
                 }
+                .padding(.top, 4)
             }
+            Spacer()
         }
-        .padding(40)
+        .padding(.horizontal, 40)
     }
 
     private func initials(for name: String) -> String {

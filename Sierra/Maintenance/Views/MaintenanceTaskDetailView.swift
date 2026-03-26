@@ -24,20 +24,14 @@ struct MaintenanceTaskDetailView: View {
     private var vehicle: Vehicle? { store.vehicle(for: task.vehicleId) }
     private var sprs: [SparePartsRequest] { store.sparePartsRequests(forTask: task.id) }
     private var phases: [WorkOrderPhase] { store.phases(forWorkOrder: workOrder?.id ?? UUID()) }
-    private var allPhasesDone: Bool {
-        !phases.isEmpty && phases.allSatisfy { $0.isCompleted }
-    }
+    private var allPhasesDone: Bool { !phases.isEmpty && phases.allSatisfy { $0.isCompleted } }
 
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
-                // 1. Overview Section
                 overviewCard
-                // 2. Progress Section (phases — only when in progress)
                 if task.status == .inProgress { progressCard }
-                // 3. Parts Section
                 if !sprs.isEmpty || task.status == .assigned { partsCard }
-                // Actions
                 actionButtons
             }
             .padding(.horizontal, 20)
@@ -48,21 +42,13 @@ struct MaintenanceTaskDetailView: View {
         .navigationTitle("Task Overview")
         .navigationBarTitleDisplayMode(.large)
         .sheet(isPresented: $showPartsRequestSheet) {
-            SparePartsRequestSheet(task: task)
-                .environment(store)
+            SparePartsRequestSheet(task: task).environment(store)
         }
         .sheet(isPresented: $showVehicleSheet) {
-            if let vehicle {
-                VehicleQuickStatusSheet(vehicle: vehicle)
-                    .environment(store)
-            }
+            if let vehicle { VehicleQuickStatusSheet(vehicle: vehicle).environment(store) }
         }
-        .sheet(isPresented: $showEstimatedTimeSheet) {
-            estimatedTimeSheet
-        }
-        .sheet(isPresented: $showPhasePlanner) {
-            phasePlannerSheet
-        }
+        .sheet(isPresented: $showEstimatedTimeSheet) { estimatedTimeSheet }
+        .sheet(isPresented: $showPhasePlanner) { phasePlannerSheet }
         .task {
             if let wo = workOrder {
                 await store.loadWorkOrderPhases(workOrderId: wo.id)
@@ -71,11 +57,11 @@ struct MaintenanceTaskDetailView: View {
         }
     }
 
-    // MARK: - 1. Overview Card (Task + Vehicle + Status combined)
+    // MARK: - Overview Card
 
     private var overviewCard: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Status banner at top
+            // Status banner
             HStack(spacing: 10) {
                 Image(systemName: statusBannerIcon(task.status))
                     .font(.system(size: 16, weight: .semibold))
@@ -97,9 +83,8 @@ struct MaintenanceTaskDetailView: View {
 
             Divider()
 
-            // Task info
             VStack(alignment: .leading, spacing: 12) {
-                // Title + priority
+                // Title + priority (NO description shown in overview)
                 HStack(alignment: .top) {
                     Text(task.title)
                         .font(.system(size: 18, weight: .bold, design: .rounded))
@@ -108,123 +93,73 @@ struct MaintenanceTaskDetailView: View {
                     priorityBadge(task.priority)
                 }
 
-                // Description
-                Text(task.taskDescription)
-                    .font(.system(size: 14, weight: .medium, design: .rounded))
-                    .foregroundStyle(Color.appTextSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
                 Divider()
 
-                // Info rows
                 infoRow(icon: "calendar", label: "Due", value: task.dueDate.formatted(.dateTime.month(.abbreviated).day().hour().minute()))
                 if let wo = workOrder {
                     infoRow(icon: "tag.fill", label: "Type", value: wo.workOrderType.rawValue.capitalized)
                 }
 
-                // Vehicle sub-section
                 if let v = vehicle {
                     Divider()
-                    Button {
-                        showVehicleSheet = true
-                    } label: {
+                    Button { showVehicleSheet = true } label: {
                         HStack(spacing: 12) {
                             ZStack {
-                                RoundedRectangle(cornerRadius: 12)
-                                    .fill(Color.appOrange.opacity(0.1))
-                                    .frame(width: 44, height: 44)
-                                Image(systemName: "car.fill")
-                                    .font(.system(size: 18))
-                                    .foregroundStyle(Color.appOrange)
+                                RoundedRectangle(cornerRadius: 12).fill(Color.appOrange.opacity(0.1)).frame(width: 44, height: 44)
+                                Image(systemName: "car.fill").font(.system(size: 18)).foregroundStyle(Color.appOrange)
                             }
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(v.name)
-                                    .font(.system(size: 15, weight: .bold, design: .rounded))
-                                    .foregroundStyle(Color.appTextPrimary)
-                                Text("\(v.licensePlate) · \(v.model)")
-                                    .font(.system(size: 13, weight: .medium, design: .rounded))
-                                    .foregroundStyle(Color.appTextSecondary)
+                                Text(v.name).font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextPrimary)
+                                Text("\(v.licensePlate) · \(v.model)").font(.system(size: 13, weight: .medium, design: .rounded)).foregroundStyle(Color.appTextSecondary)
                             }
                             Spacer()
-                            Text("\(Int(v.odometer)) km")
-                                .font(.system(size: 12, weight: .bold, design: .rounded))
-                                .foregroundStyle(Color.appTextSecondary)
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundStyle(Color.appTextSecondary)
+                            Text("\(Int(v.odometer)) km").font(.system(size: 12, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextSecondary)
+                            Image(systemName: "chevron.right").font(.system(size: 11, weight: .bold)).foregroundStyle(Color.appTextSecondary)
                         }
                     }
                     .buttonStyle(.plain)
                 }
 
-                // ETA (set once)
                 if let wo = workOrder, let eta = wo.estimatedCompletionAt {
                     Divider()
                     HStack(spacing: 10) {
-                        Image(systemName: "clock.badge")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Color.appOrange)
-                            .frame(width: 20)
-                        Text("ETA")
-                            .font(.system(size: 13, weight: .medium, design: .rounded))
-                            .foregroundStyle(Color.appTextSecondary)
+                        Image(systemName: "clock.badge").font(.system(size: 12)).foregroundStyle(Color.appOrange).frame(width: 20)
+                        Text("ETA").font(.system(size: 13, weight: .medium, design: .rounded)).foregroundStyle(Color.appTextSecondary)
                         Spacer()
                         Text(eta.formatted(.dateTime.month(.abbreviated).day().hour().minute()))
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
-                            .foregroundStyle(Color.appTextPrimary)
+                            .font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextPrimary)
                     }
-                    Text("ETA is locked after start")
+                    Text("ETA is locked after work starts")
                         .font(.system(size: 11, weight: .medium, design: .rounded))
                         .foregroundStyle(Color.appTextSecondary)
                 }
             }
             .padding(18)
         }
-        .background(
-            RoundedRectangle(cornerRadius: 22)
-                .fill(Color.appCardBg)
-                .shadow(color: .black.opacity(0.05), radius: 12, x: 0, y: 4)
-        )
+        .background(RoundedRectangle(cornerRadius: 22).fill(Color.appCardBg).shadow(color: .black.opacity(0.05), radius: 12, x: 0, y: 4))
         .clipShape(RoundedRectangle(cornerRadius: 22))
-        .overlay(
-            RoundedRectangle(cornerRadius: 22)
-                .stroke(Color.appDivider, lineWidth: 1)
-        )
+        .overlay(RoundedRectangle(cornerRadius: 22).stroke(Color.appDivider, lineWidth: 1))
     }
 
     private func infoRow(icon: String, label: String, value: String) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 12))
-                .foregroundStyle(Color.appOrange)
-                .frame(width: 20)
-            Text(label)
-                .font(.system(size: 13, weight: .medium, design: .rounded))
-                .foregroundStyle(Color.appTextSecondary)
+            Image(systemName: icon).font(.system(size: 12)).foregroundStyle(Color.appOrange).frame(width: 20)
+            Text(label).font(.system(size: 13, weight: .medium, design: .rounded)).foregroundStyle(Color.appTextSecondary)
             Spacer()
-            Text(value)
-                .font(.system(size: 13, weight: .bold, design: .rounded))
-                .foregroundStyle(Color.appTextPrimary)
+            Text(value).font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextPrimary)
         }
     }
 
-    // MARK: - 2. Progress Card (Phases)
+    // MARK: - Progress Card
 
     private var progressCard: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header
             HStack {
-                Text("Progress")
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.appTextPrimary)
+                Text("Progress").font(.system(size: 16, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextPrimary)
                 Spacer()
                 if task.status == .inProgress {
-                    Button {
-                        showPhasePlanner = true
-                    } label: {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(Color.appOrange)
+                    Button { showPhasePlanner = true } label: {
+                        Image(systemName: "plus.circle.fill").font(.system(size: 18, weight: .semibold)).foregroundStyle(Color.appOrange)
                     }
                     .buttonStyle(.plain)
                 }
@@ -238,32 +173,18 @@ struct MaintenanceTaskDetailView: View {
             .padding(18)
 
             if !phasesLoaded {
-                HStack { Spacer(); ProgressView().tint(Color.appOrange); Spacer() }
-                    .padding(18)
+                HStack { Spacer(); ProgressView().tint(Color.appOrange); Spacer() }.padding(18)
             } else if phases.isEmpty {
-                Text("No phases defined")
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
-                    .foregroundStyle(Color.appTextSecondary)
-                    .padding(.horizontal, 18)
-                    .padding(.bottom, 18)
+                Text("No phases defined").font(.system(size: 13, weight: .medium, design: .rounded)).foregroundStyle(Color.appTextSecondary).padding(.horizontal, 18).padding(.bottom, 18)
             } else {
                 ForEach(Array(phases.enumerated()), id: \.element.id) { idx, phase in
                     phaseRow(phase)
-                    if idx < phases.count - 1 {
-                        Divider().padding(.leading, 56)
-                    }
+                    if idx < phases.count - 1 { Divider().padding(.leading, 56) }
                 }
             }
         }
-        .background(
-            RoundedRectangle(cornerRadius: 22)
-                .fill(Color.appCardBg)
-                .shadow(color: .black.opacity(0.05), radius: 12, x: 0, y: 4)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 22)
-                .stroke(Color.appDivider, lineWidth: 1)
-        )
+        .background(RoundedRectangle(cornerRadius: 22).fill(Color.appCardBg).shadow(color: .black.opacity(0.05), radius: 12, x: 0, y: 4))
+        .overlay(RoundedRectangle(cornerRadius: 22).stroke(Color.appDivider, lineWidth: 1))
     }
 
     private func phaseRow(_ phase: WorkOrderPhase) -> some View {
@@ -272,9 +193,7 @@ struct MaintenanceTaskDetailView: View {
                 guard !phase.isCompleted else { return }
                 Task {
                     try? await store.completePhase(phase)
-                    if let wo = workOrder {
-                        await store.loadWorkOrderPhases(workOrderId: wo.id)
-                    }
+                    if let wo = workOrder { await store.loadWorkOrderPhases(workOrderId: wo.id) }
                 }
             } label: {
                 Image(systemName: phase.isCompleted ? "checkmark.circle.fill" : "circle")
@@ -290,37 +209,26 @@ struct MaintenanceTaskDetailView: View {
                     .foregroundStyle(phase.isCompleted ? Color.appTextSecondary : Color.appTextPrimary)
                     .strikethrough(phase.isCompleted)
                 if let desc = phase.description, !desc.isEmpty {
-                    Text(desc)
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundStyle(Color.appTextSecondary)
-                        .lineLimit(2)
+                    Text(desc).font(.system(size: 12, weight: .medium, design: .rounded)).foregroundStyle(Color.appTextSecondary).lineLimit(2)
                 }
                 if let mins = phase.estimatedMinutes, mins > 0 {
-                    Text("ETA \(mins / 60)h \(mins % 60)m")
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .foregroundStyle(Color.appOrange)
+                    Text("ETA \(mins / 60)h \(mins % 60)m").font(.system(size: 11, weight: .medium, design: .rounded)).foregroundStyle(Color.appOrange)
                 }
                 if phase.isCompleted, let completedAt = phase.completedAt {
-                    Text("Done \(completedAt.formatted(.dateTime.hour().minute()))")
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .foregroundStyle(.green)
+                    Text("Done \(completedAt.formatted(.dateTime.hour().minute()))").font(.system(size: 11, weight: .medium, design: .rounded)).foregroundStyle(.green)
                 }
             }
             Spacer()
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 18).padding(.vertical, 12)
     }
 
-    // MARK: - 3. Parts Card
+    // MARK: - Parts Card
 
     private var partsCard: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header
             HStack {
-                Text("Parts")
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.appTextPrimary)
+                Text("Parts").font(.system(size: 16, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextPrimary)
                 Spacer()
                 if let wo = workOrder, wo.partsSubStatus != .none {
                     Label(wo.partsSubStatus.displayText, systemImage: wo.partsSubStatus.icon)
@@ -331,61 +239,36 @@ struct MaintenanceTaskDetailView: View {
             .padding(18)
 
             if sprs.isEmpty {
-                Text("No parts requested yet")
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
-                    .foregroundStyle(Color.appTextSecondary)
-                    .padding(.horizontal, 18)
-                    .padding(.bottom, 18)
+                Text("No parts requested yet").font(.system(size: 13, weight: .medium, design: .rounded)).foregroundStyle(Color.appTextSecondary).padding(.horizontal, 18).padding(.bottom, 18)
             } else {
                 ForEach(Array(sprs.enumerated()), id: \.element.id) { idx, spr in
                     HStack(spacing: 12) {
-                        Circle()
-                            .fill(sprStatusColor(spr.status))
-                            .frame(width: 8, height: 8)
+                        Circle().fill(sprStatusColor(spr.status)).frame(width: 8, height: 8)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(spr.partName)
-                                .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                .foregroundStyle(Color.appTextPrimary)
+                            Text(spr.partName).font(.system(size: 14, weight: .semibold, design: .rounded)).foregroundStyle(Color.appTextPrimary)
                             if let pn = spr.partNumber, !pn.isEmpty {
-                                Text(pn)
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .foregroundStyle(Color.appTextSecondary)
+                                Text(pn).font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.appTextSecondary)
                             }
                         }
                         Spacer()
-                        Text("×\(spr.quantity)")
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                            .foregroundStyle(Color.appTextPrimary)
+                        Text("×\(spr.quantity)").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextPrimary)
                     }
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 10)
-                    if idx < sprs.count - 1 {
-                        Divider().padding(.leading, 38)
-                    }
+                    .padding(.horizontal, 18).padding(.vertical, 10)
+                    if idx < sprs.count - 1 { Divider().padding(.leading, 38) }
                 }
-
-                // Summary row
                 Divider()
                 HStack {
                     let pending = sprs.filter { $0.status == .pending }.count
                     let approved = sprs.filter { $0.status == .approved }.count
                     let fulfilled = sprs.filter { $0.status == .fulfilled }.count
                     Text("\(sprs.count) item\(sprs.count == 1 ? "" : "s") · \(pending) pending · \(approved) approved · \(fulfilled) fulfilled")
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundStyle(Color.appTextSecondary)
+                        .font(.system(size: 12, weight: .medium, design: .rounded)).foregroundStyle(Color.appTextSecondary)
                 }
                 .padding(18)
             }
         }
-        .background(
-            RoundedRectangle(cornerRadius: 22)
-                .fill(Color.appCardBg)
-                .shadow(color: .black.opacity(0.05), radius: 12, x: 0, y: 4)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 22)
-                .stroke(Color.appDivider, lineWidth: 1)
-        )
+        .background(RoundedRectangle(cornerRadius: 22).fill(Color.appCardBg).shadow(color: .black.opacity(0.05), radius: 12, x: 0, y: 4))
+        .overlay(RoundedRectangle(cornerRadius: 22).stroke(Color.appDivider, lineWidth: 1))
     }
 
     // MARK: - Action Buttons
@@ -395,33 +278,16 @@ struct MaintenanceTaskDetailView: View {
         let status = task.status
         VStack(spacing: 10) {
             if status == .assigned || status == .inProgress {
-                actionButton(
-                    title: sprs.isEmpty ? "Request Parts" : "Request More Parts",
-                    icon: "shippingbox.fill",
-                    color: Color.appOrange
-                ) { showPartsRequestSheet = true }
+                actionButton(title: sprs.isEmpty ? "Request Parts" : "Request More Parts", icon: "shippingbox.fill", color: Color.appOrange) { showPartsRequestSheet = true }
             }
-
-            if status == .assigned,
-               let wo = workOrder,
-               (wo.partsSubStatus == .ready || wo.partsSubStatus == .approved || wo.partsSubStatus == .none) {
-                actionButton(
-                    title: "Start Work",
-                    icon: "play.fill",
-                    color: .purple
-                ) { showEstimatedTimeSheet = true }
-
-                actionButton(
-                    title: "Plan Phases",
-                    icon: "list.number",
-                    color: Color.appTextPrimary
-                ) { showPhasePlanner = true }
+            if status == .assigned, let wo = workOrder, (wo.partsSubStatus == .ready || wo.partsSubStatus == .approved || wo.partsSubStatus == .none) {
+                HStack(spacing: 10) {
+                    actionButton(title: "Plan Phases", icon: "list.number", color: Color.appTextPrimary) { showPhasePlanner = true }
+                    actionButton(title: "Start Work", icon: "play.fill", color: .purple) { showEstimatedTimeSheet = true }
+                }
             }
-
             if status == .inProgress {
-                Button {
-                    Task { await markRepairDone() }
-                } label: {
+                Button { Task { await markRepairDone() } } label: {
                     HStack(spacing: 8) {
                         if isCompleting { ProgressView().tint(.white) }
                         Image(systemName: "checkmark.seal.fill")
@@ -430,18 +296,13 @@ struct MaintenanceTaskDetailView: View {
                     }
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity).frame(height: 52)
-                    .background(
-                        allPhasesDone ? Color.green : Color.green.opacity(0.35),
-                        in: RoundedRectangle(cornerRadius: 16)
-                    )
+                    .background(allPhasesDone ? Color.green : Color.green.opacity(0.35), in: RoundedRectangle(cornerRadius: 16))
                 }
                 .disabled(isCompleting || !allPhasesDone)
 
                 if !phases.isEmpty && !allPhasesDone {
-                    let completedCount = phases.filter { $0.isCompleted }.count
-                    Text("\(completedCount)/\(phases.count) phases completed")
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundStyle(Color.appTextSecondary)
+                    Text("\(phases.filter { $0.isCompleted }.count)/\(phases.count) phases completed")
+                        .font(.system(size: 12, weight: .medium, design: .rounded)).foregroundStyle(Color.appTextSecondary)
                 }
             }
         }
@@ -451,8 +312,7 @@ struct MaintenanceTaskDetailView: View {
         Button(action: action) {
             HStack(spacing: 8) {
                 Image(systemName: icon)
-                Text(title)
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                Text(title).font(.system(size: 15, weight: .bold, design: .rounded))
             }
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity).frame(height: 52)
@@ -460,7 +320,7 @@ struct MaintenanceTaskDetailView: View {
         }
     }
 
-    // MARK: - Estimated Time Sheet
+    // MARK: - ETA Sheet
 
     private var estimatedTimeSheet: some View {
         NavigationStack {
@@ -469,66 +329,28 @@ struct MaintenanceTaskDetailView: View {
                 VStack(spacing: 0) {
                     VStack(spacing: 8) {
                         ZStack {
-                            Circle()
-                                .fill(Color.appOrange.opacity(0.1))
-                                .frame(width: 64, height: 64)
-                            Image(systemName: "timer")
-                                .font(.system(size: 28, weight: .light))
-                                .foregroundStyle(Color.appOrange)
+                            Circle().fill(Color.appOrange.opacity(0.1)).frame(width: 64, height: 64)
+                            Image(systemName: "timer").font(.system(size: 28, weight: .light)).foregroundStyle(Color.appOrange)
                         }
-                        Text("Set Estimated Time")
-                            .font(.system(size: 20, weight: .bold, design: .rounded))
-                            .foregroundStyle(Color.appTextPrimary)
-                        Text("How long will this repair take?")
-                            .font(.system(size: 14, weight: .medium, design: .rounded))
-                            .foregroundStyle(Color.appTextSecondary)
+                        Text("Set Estimated Time").font(.system(size: 20, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextPrimary)
+                        Text("How long will this repair take?").font(.system(size: 14, weight: .medium, design: .rounded)).foregroundStyle(Color.appTextSecondary)
                     }
-                    .padding(.top, 28)
-                    .padding(.bottom, 20)
+                    .padding(.top, 28).padding(.bottom, 20)
 
                     VStack(spacing: 0) {
                         HStack(spacing: 0) {
-                            Text("Days").font(.system(size: 11, weight: .bold, design: .rounded))
-                                .foregroundStyle(Color.appTextSecondary)
-                                .frame(maxWidth: .infinity)
-                            Text("Hours").font(.system(size: 11, weight: .bold, design: .rounded))
-                                .foregroundStyle(Color.appTextSecondary)
-                                .frame(maxWidth: .infinity)
-                            Text("Minutes").font(.system(size: 11, weight: .bold, design: .rounded))
-                                .foregroundStyle(Color.appTextSecondary)
-                                .frame(maxWidth: .infinity)
+                            Text("Days").font(.system(size: 11, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextSecondary).frame(maxWidth: .infinity)
+                            Text("Hours").font(.system(size: 11, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextSecondary).frame(maxWidth: .infinity)
+                            Text("Minutes").font(.system(size: 11, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextSecondary).frame(maxWidth: .infinity)
                         }
-                        .padding(.horizontal, 24)
-                        .padding(.bottom, 4)
+                        .padding(.horizontal, 24).padding(.bottom, 4)
 
                         HStack(spacing: 0) {
-                            Picker("Days", selection: $estimatedDays) {
-                                ForEach(0..<31, id: \.self) { d in
-                                    Text(d == 0 ? "–" : "\(d)d").tag(d)
-                                }
-                            }
-                            .pickerStyle(.wheel)
-                            .frame(maxWidth: .infinity)
-
-                            Picker("Hours", selection: $estimatedHours) {
-                                ForEach(0..<24, id: \.self) { h in
-                                    Text(h == 0 ? "–" : "\(h)h").tag(h)
-                                }
-                            }
-                            .pickerStyle(.wheel)
-                            .frame(maxWidth: .infinity)
-
-                            Picker("Minutes", selection: $estimatedMinutes) {
-                                ForEach(Array(stride(from: 0, through: 60, by: 5)), id: \.self) { m in
-                                    Text(m == 0 ? "0m" : "\(m)m").tag(m)
-                                }
-                            }
-                            .pickerStyle(.wheel)
-                            .frame(maxWidth: .infinity)
+                            Picker("Days", selection: $estimatedDays) { ForEach(0..<31, id: \.self) { Text($0 == 0 ? "–" : "\($0)d").tag($0) } }.pickerStyle(.wheel).frame(maxWidth: .infinity)
+                            Picker("Hours", selection: $estimatedHours) { ForEach(0..<24, id: \.self) { Text($0 == 0 ? "–" : "\($0)h").tag($0) } }.pickerStyle(.wheel).frame(maxWidth: .infinity)
+                            Picker("Minutes", selection: $estimatedMinutes) { ForEach(Array(stride(from: 0, through: 60, by: 5)), id: \.self) { Text($0 == 0 ? "0m" : "\($0)m").tag($0) } }.pickerStyle(.wheel).frame(maxWidth: .infinity)
                         }
-                        .tint(Color.appOrange)
-                        .frame(height: 160)
-                        .padding(.horizontal, 8)
+                        .tint(Color.appOrange).frame(height: 160).padding(.horizontal, 8)
                     }
                     .padding(.vertical, 12)
                     .background(Color.appCardBg, in: RoundedRectangle(cornerRadius: 22))
@@ -539,104 +361,115 @@ struct MaintenanceTaskDetailView: View {
                     HStack(spacing: 6) {
                         Image(systemName: "clock.fill").font(.system(size: 12)).foregroundStyle(Color.appOrange)
                         if totalMins == 0 {
-                            Text("Select a duration")
-                                .font(.system(size: 13, weight: .medium, design: .rounded))
-                                .foregroundStyle(Color.appTextSecondary)
+                            Text("Select a duration").font(.system(size: 13, weight: .medium, design: .rounded)).foregroundStyle(Color.appTextSecondary)
                         } else {
                             Text("ETA: \(etaSummary(days: estimatedDays, hours: estimatedHours, mins: estimatedMinutes))")
-                                .font(.system(size: 13, weight: .bold, design: .rounded))
-                                .foregroundStyle(Color.appTextPrimary)
+                                .font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextPrimary)
                         }
                     }
                     .padding(.top, 14)
 
                     if phases.isEmpty {
-                        Button {
-                            showEstimatedTimeSheet = false
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                                showPhasePlanner = true
-                            }
-                        } label: {
-                            Text("Plan Phases First")
-                                .font(.system(size: 13, weight: .bold, design: .rounded))
-                                .foregroundStyle(Color.appOrange)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 8)
-                                .background(Capsule().fill(Color.appOrange.opacity(0.1)))
+                        Button { showEstimatedTimeSheet = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { showPhasePlanner = true } } label: {
+                            Text("Plan Phases First").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(Color.appOrange)
+                                .padding(.horizontal, 12).padding(.vertical, 8).background(Capsule().fill(Color.appOrange.opacity(0.1)))
                         }
                         .padding(.top, 10)
                     }
 
                     Spacer()
 
-                    Button {
-                        Task { await startWork() }
-                    } label: {
+                    Button { Task { await startWork() } } label: {
                         HStack(spacing: 8) {
                             if isStarting { ProgressView().tint(.white).scaleEffect(0.85) }
                             Image(systemName: "play.fill")
-                            Text("Start Work Now")
-                                .font(.system(size: 15, weight: .bold, design: .rounded))
+                            Text("Start Work Now").font(.system(size: 15, weight: .bold, design: .rounded))
                         }
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity).frame(height: 52)
-                        .background(
-                            totalMins == 0 ? Color.appTextSecondary.opacity(0.35) : Color.purple,
-                            in: RoundedRectangle(cornerRadius: 16)
-                        )
+                        .background(totalMins == 0 ? Color.appTextSecondary.opacity(0.35) : Color.purple, in: RoundedRectangle(cornerRadius: 16))
                     }
                     .disabled(isStarting || totalMins == 0)
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 28)
+                    .padding(.horizontal, 20).padding(.bottom, 28)
                 }
             }
             .navigationTitle("Set ETA")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { showEstimatedTimeSheet = false }
-                        .foregroundStyle(Color.appOrange)
+                    Button("Cancel") { showEstimatedTimeSheet = false }.foregroundStyle(Color.appOrange)
                 }
             }
         }
         .presentationDetents([.large])
     }
 
+    // MARK: - Phase Planner Sheet (Sierra card style — no List)
+
     private var phasePlannerSheet: some View {
         NavigationStack {
-            List {
-                Section("Phases") {
-                    ForEach(phasePlanDrafts.indices, id: \.self) { idx in
-                        VStack(alignment: .leading, spacing: 8) {
-                            TextField("Phase title", text: $phasePlanDrafts[idx].title)
-                            TextField("Description (optional)", text: $phasePlanDrafts[idx].details)
-                            Stepper("ETA \(phasePlanDrafts[idx].estimatedMinutes / 60)h \(phasePlanDrafts[idx].estimatedMinutes % 60)m",
-                                    value: $phasePlanDrafts[idx].estimatedMinutes,
-                                    in: 15...1440,
-                                    step: 15)
-                        }
+            ZStack {
+                Color.appSurface.ignoresSafeArea()
+                VStack(spacing: 0) {
+                    // Header hint
+                    HStack {
+                        Image(systemName: "info.circle")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Color.appOrange)
+                        Text("Drag to reorder · Swipe left to delete")
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundStyle(Color.appTextSecondary)
+                        Spacer()
                     }
-                    .onMove(perform: moveDraftPhase)
-                    .onDelete(perform: deleteDraftPhase)
+                    .padding(.horizontal, 20).padding(.vertical, 10)
 
-                    Button {
-                        phasePlanDrafts.append(.init(title: "", details: "", estimatedMinutes: 60))
-                    } label: {
-                        Label("Add Phase", systemImage: "plus.circle.fill")
+                    ScrollView {
+                        VStack(spacing: 12) {
+                            ForEach(phasePlanDrafts.indices, id: \.self) { idx in
+                                PhaseEditorCard(
+                                    draft: $phasePlanDrafts[idx],
+                                    phaseNumber: idx + 1,
+                                    onDelete: { deleteDraftPhase(at: idx) }
+                                )
+                            }
+
+                            // Add phase button
+                            Button {
+                                withAnimation(.spring(response: 0.35, dampingFraction: 0.78)) {
+                                    phasePlanDrafts.append(.init(title: "", details: "", estimatedMinutes: 60))
+                                }
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "plus.circle.fill")
+                                        .font(.system(size: 16, weight: .semibold))
+                                    Text("Add Phase")
+                                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                                }
+                                .foregroundStyle(Color.appOrange)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 16)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 16)
+                                        .fill(Color.appOrange.opacity(0.07))
+                                        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.appOrange.opacity(0.25), style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])))
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.horizontal, 20).padding(.top, 4).padding(.bottom, 32)
                     }
                 }
             }
-            .environment(\.editMode, .constant(.active))
             .navigationTitle("Plan Phases")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { showPhasePlanner = false }
+                    Button("Close") { showPhasePlanner = false }.foregroundStyle(Color.appOrange)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        Task { await persistPhasePlan() }
-                    }
+                    Button("Save") { Task { await persistPhasePlan() } }
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color.appTextPrimary)
                 }
             }
             .onAppear {
@@ -656,69 +489,37 @@ struct MaintenanceTaskDetailView: View {
     // MARK: - Backend Actions
 
     private func startWork() async {
-        isStarting = true
-        defer { isStarting = false }
-
+        isStarting = true; defer { isStarting = false }
         let totalMins = estimatedDays * 1440 + estimatedHours * 60 + estimatedMinutes
         let eta = Date().addingTimeInterval(Double(totalMins * 60))
-
         if var wo = workOrder {
-            wo.estimatedCompletionAt = eta
-            wo.startedAt = Date()
-            wo.status = .inProgress
+            wo.estimatedCompletionAt = eta; wo.startedAt = Date(); wo.status = .inProgress
             try? await store.updateWorkOrder(wo)
-            if phases.isEmpty {
-                await persistPhasePlan(workOrderId: wo.id, closeSheet: false)
-            }
+            if phases.isEmpty { await persistPhasePlan(workOrderId: wo.id, closeSheet: false) }
         }
-
         if let idx = store.maintenanceTasks.firstIndex(where: { $0.id == task.id }) {
             store.maintenanceTasks[idx].status = .inProgress
             try? await MaintenanceTaskService.updateMaintenanceTask(store.maintenanceTasks[idx])
         }
-
         showEstimatedTimeSheet = false
     }
 
-    private func moveDraftPhase(from source: IndexSet, to destination: Int) {
-        phasePlanDrafts.move(fromOffsets: source, toOffset: destination)
-    }
-
-    private func deleteDraftPhase(at offsets: IndexSet) {
-        phasePlanDrafts.remove(atOffsets: offsets)
-        if phasePlanDrafts.isEmpty {
-            phasePlanDrafts.append(.init(title: "", details: "", estimatedMinutes: 60))
-        }
+    private func deleteDraftPhase(at index: Int) {
+        withAnimation { _ = phasePlanDrafts.remove(at: index) }
+        if phasePlanDrafts.isEmpty { phasePlanDrafts.append(.init(title: "", details: "", estimatedMinutes: 60)) }
     }
 
     private func persistPhasePlan(workOrderId: UUID? = nil, closeSheet: Bool = true) async {
-        let woId = workOrderId ?? workOrder?.id
-        guard let woId else { return }
+        let woId = workOrderId ?? workOrder?.id; guard let woId else { return }
         let clean = phasePlanDrafts
-            .map { PhasePlanDraft(title: $0.title.trimmingCharacters(in: .whitespacesAndNewlines),
-                                  details: $0.details.trimmingCharacters(in: .whitespacesAndNewlines),
-                                  estimatedMinutes: max(15, $0.estimatedMinutes)) }
+            .map { PhasePlanDraft(title: $0.title.trimmingCharacters(in: .whitespacesAndNewlines), details: $0.details.trimmingCharacters(in: .whitespacesAndNewlines), estimatedMinutes: max(15, $0.estimatedMinutes)) }
             .filter { !$0.title.isEmpty }
         guard !clean.isEmpty else { return }
-
         for (idx, draft) in clean.enumerated() {
             if phases.indices.contains(idx) {
-                let existing = phases[idx]
-                try? await store.updatePhasePlan(
-                    phaseId: existing.id,
-                    phaseNumber: idx + 1,
-                    title: draft.title,
-                    description: draft.details.isEmpty ? nil : draft.details,
-                    estimatedMinutes: draft.estimatedMinutes
-                )
+                try? await store.updatePhasePlan(phaseId: phases[idx].id, phaseNumber: idx + 1, title: draft.title, description: draft.details.isEmpty ? nil : draft.details, estimatedMinutes: draft.estimatedMinutes)
             } else {
-                try? await store.createPhase(
-                    workOrderId: woId,
-                    phaseNumber: idx + 1,
-                    title: draft.title,
-                    description: draft.details.isEmpty ? nil : draft.details,
-                    estimatedMinutes: draft.estimatedMinutes
-                )
+                try? await store.createPhase(workOrderId: woId, phaseNumber: idx + 1, title: draft.title, description: draft.details.isEmpty ? nil : draft.details, estimatedMinutes: draft.estimatedMinutes)
             }
         }
         await store.loadWorkOrderPhases(workOrderId: woId)
@@ -726,98 +527,52 @@ struct MaintenanceTaskDetailView: View {
     }
 
     private func markRepairDone() async {
-        isCompleting = true
-        defer { isCompleting = false }
+        isCompleting = true; defer { isCompleting = false }
         try? await store.closeWorkOrder(id: workOrder?.id ?? UUID())
     }
 
-    // MARK: - Badge & Helper Views
+    // MARK: - Helper Views & Functions
 
     private func priorityBadge(_ p: TaskPriority) -> some View {
-        let color = priorityColor(p)
+        let c = priorityColor(p)
         return HStack(spacing: 4) {
             Image(systemName: priorityIcon(p)).font(.system(size: 10))
             Text(p.rawValue).font(.system(size: 10, weight: .bold, design: .rounded))
         }
-        .foregroundStyle(color)
-        .padding(.horizontal, 10).padding(.vertical, 5)
-        .background(color.opacity(0.1), in: Capsule())
+        .foregroundStyle(c).padding(.horizontal, 10).padding(.vertical, 5).background(c.opacity(0.1), in: Capsule())
     }
 
-    // MARK: - Helpers
-
     private var dueCountdown: String {
-        guard task.status == .inProgress,
-              let wo = workOrder,
-              let eta = wo.estimatedCompletionAt else { return "" }
-        let remaining = eta.timeIntervalSince(Date())
-        if remaining <= 0 { return "Overdue" }
-        let h = Int(remaining) / 3600
-        let m = (Int(remaining) % 3600) / 60
+        guard task.status == .inProgress, let eta = workOrder?.estimatedCompletionAt else { return "" }
+        let r = eta.timeIntervalSince(Date())
+        if r <= 0 { return "Overdue" }
+        let h = Int(r) / 3600; let m = (Int(r) % 3600) / 60
         return h > 0 ? "\(h)h \(m)m left" : "\(m)m left"
     }
 
     private var statusBannerText: String {
-        if task.status == .assigned, let wo = workOrder, wo.partsSubStatus != .none {
-            return wo.partsSubStatus.displayText
-        }
+        if task.status == .assigned, let wo = workOrder, wo.partsSubStatus != .none { return wo.partsSubStatus.displayText }
         return task.status.rawValue
     }
 
-    private func taskStatusColor(_ status: MaintenanceTaskStatus) -> Color {
-        switch status {
-        case .pending:    return .gray
-        case .assigned:   return .blue
-        case .inProgress: return .purple
-        case .completed:  return .green
-        case .cancelled:  return .red
-        }
+    private func taskStatusColor(_ s: MaintenanceTaskStatus) -> Color {
+        switch s { case .pending: .gray; case .assigned: .blue; case .inProgress: .purple; case .completed: .green; case .cancelled: .red }
     }
-
-    private func statusBannerIcon(_ status: MaintenanceTaskStatus) -> String {
-        switch status {
-        case .pending:    return "clock"
-        case .assigned:   return "person.badge.clock"
-        case .inProgress: return "wrench.and.screwdriver"
-        case .completed:  return "checkmark.seal.fill"
-        case .cancelled:  return "xmark.circle"
-        }
+    private func statusBannerIcon(_ s: MaintenanceTaskStatus) -> String {
+        switch s { case .pending: "clock"; case .assigned: "person.badge.clock"; case .inProgress: "wrench.and.screwdriver"; case .completed: "checkmark.seal.fill"; case .cancelled: "xmark.circle" }
     }
-
     private func priorityColor(_ p: TaskPriority) -> Color {
-        switch p {
-        case .low: return .green; case .medium: return .blue
-        case .high: return .orange; case .urgent: return .red
-        }
+        switch p { case .low: .green; case .medium: .blue; case .high: .orange; case .urgent: .red }
     }
-
     private func priorityIcon(_ p: TaskPriority) -> String {
-        switch p {
-        case .low: return "arrow.down"; case .medium: return "minus"
-        case .high: return "arrow.up"; case .urgent: return "exclamationmark.2"
-        }
+        switch p { case .low: "arrow.down"; case .medium: "minus"; case .high: "arrow.up"; case .urgent: "exclamationmark.2" }
     }
-
-    private func partsStatusColor(_ status: PartsSubStatus) -> Color {
-        switch status {
-        case .none:           return .gray
-        case .requested:      return .orange
-        case .partiallyReady: return .orange
-        case .approved:       return Color(red: 0.1, green: 0.7, blue: 0.4)
-        case .orderPlaced:    return .orange
-        case .ready:          return .green
-        }
+    private func partsStatusColor(_ s: PartsSubStatus) -> Color {
+        switch s { case .none: .gray; case .requested, .partiallyReady, .orderPlaced: .orange; case .approved: Color(red: 0.1, green: 0.7, blue: 0.4); case .ready: .green }
     }
-
-    private func sprStatusColor(_ status: SparePartsRequestStatus) -> Color {
-        switch status {
-        case .pending:   return .orange
-        case .approved:  return .blue
-        case .rejected:  return .red
-        case .fulfilled: return .green
-        }
+    private func sprStatusColor(_ s: SparePartsRequestStatus) -> Color {
+        switch s { case .pending: .orange; case .approved: .blue; case .rejected: .red; case .fulfilled: .green }
     }
-
     private func etaSummary(days: Int, hours: Int, mins: Int) -> String {
         var parts: [String] = []
         if days > 0  { parts.append("\(days) day\(days == 1 ? "" : "s")") }
@@ -826,6 +581,112 @@ struct MaintenanceTaskDetailView: View {
         return parts.isEmpty ? "–" : parts.joined(separator: " ")
     }
 }
+
+// MARK: - Phase Editor Card (Sierra-styled, replaces List rows)
+
+private struct PhaseEditorCard: View {
+    @Binding var draft: PhasePlanDraft
+    let phaseNumber: Int
+    var onDelete: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                // Phase number circle
+                ZStack {
+                    Circle()
+                        .fill(Color.appOrange.opacity(0.1))
+                        .frame(width: 28, height: 28)
+                    Text("\(phaseNumber)")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color.appOrange)
+                }
+                Text("Phase \(phaseNumber)")
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.appTextPrimary)
+                Spacer()
+                Button(action: onDelete) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.red.opacity(0.7))
+                }
+                .buttonStyle(.plain)
+            }
+
+            // Title field
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Title")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Color.appTextSecondary)
+                TextField("e.g. Disassemble engine block", text: $draft.title)
+                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                    .padding(.horizontal, 12).padding(.vertical, 10)
+                    .background(Color.appSurface, in: RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.appDivider.opacity(0.6), lineWidth: 1))
+            }
+
+            // Details field
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Notes (optional)")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Color.appTextSecondary)
+                TextField("Add notes or instructions…", text: $draft.details, axis: .vertical)
+                    .lineLimit(2...4)
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .padding(.horizontal, 12).padding(.vertical, 10)
+                    .background(Color.appSurface, in: RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.appDivider.opacity(0.6), lineWidth: 1))
+            }
+
+            // ETA stepper
+            HStack {
+                Image(systemName: "clock").font(.system(size: 12)).foregroundStyle(Color.appOrange)
+                Text("ETA").font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(Color.appTextSecondary)
+                Spacer()
+                HStack(spacing: 12) {
+                    Button {
+                        if draft.estimatedMinutes > 15 { draft.estimatedMinutes -= 15 }
+                    } label: {
+                        Image(systemName: "minus.circle.fill")
+                            .font(.system(size: 22))
+                            .foregroundStyle(draft.estimatedMinutes > 15 ? Color.appOrange : Color.appDivider)
+                    }
+                    .buttonStyle(.plain)
+
+                    Text(etaLabel(draft.estimatedMinutes))
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color.appTextPrimary)
+                        .frame(minWidth: 60, alignment: .center)
+
+                    Button {
+                        if draft.estimatedMinutes < 1440 { draft.estimatedMinutes += 15 }
+                    } label: {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 22))
+                            .foregroundStyle(draft.estimatedMinutes < 1440 ? Color.appOrange : Color.appDivider)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 18)
+                .fill(Color.appCardBg)
+                .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 3)
+        )
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.appDivider.opacity(0.35), lineWidth: 1))
+    }
+
+    private func etaLabel(_ mins: Int) -> String {
+        let h = mins / 60; let m = mins % 60
+        if h == 0 { return "\(m)m" }
+        if m == 0 { return "\(h)h" }
+        return "\(h)h \(m)m"
+    }
+}
+
+// MARK: - Phase Plan Draft Model
 
 private struct PhasePlanDraft {
     var title: String

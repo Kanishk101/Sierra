@@ -63,7 +63,7 @@ struct SparePartsRequestSheet: View {
     // MARK: - Header
 
     private var headerBanner: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 Image(systemName: "wrench.fill")
                     .font(.title3.weight(.medium))
@@ -78,9 +78,18 @@ struct SparePartsRequestSheet: View {
                 }
                 Spacer()
             }
+
+            HStack(spacing: 8) {
+                statCapsule(title: "Required", value: requiredParts.count, tint: .appOrange)
+                statCapsule(title: "Additional", value: additionalParts.count, tint: .blue)
+            }
         }
         .padding(16)
-        .background(Color.appOrange.opacity(0.06))
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.appOrange.opacity(0.06))
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.appOrange.opacity(0.18), lineWidth: 1))
+        )
         .padding(.horizontal, 16)
         .padding(.top, 16)
     }
@@ -118,11 +127,14 @@ struct SparePartsRequestSheet: View {
             }
         }
         .padding(16)
-            .background(Color.appCardBg)
-            .clipShape(RoundedRectangle(cornerRadius: 14))
-            .shadow(color: Color.black.opacity(0.05), radius: 6, x: 0, y: 2)
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.appCardBg)
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.appDivider.opacity(0.45), lineWidth: 1))
+                .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 3)
+        )
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
     }
 
     // MARK: - Additional Parts
@@ -172,11 +184,14 @@ struct SparePartsRequestSheet: View {
             }
         }
         .padding(16)
-            .background(Color.appCardBg)
-            .clipShape(RoundedRectangle(cornerRadius: 14))
-            .shadow(color: Color.black.opacity(0.05), radius: 6, x: 0, y: 2)
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.appCardBg)
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.appDivider.opacity(0.45), lineWidth: 1))
+                .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 3)
+        )
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
     }
 
     // MARK: - Bottom Submit Bar
@@ -209,6 +224,19 @@ struct SparePartsRequestSheet: View {
             .padding(.vertical, 12)
         }
         .background(.ultraThinMaterial)
+    }
+
+    private func statCapsule(title: String, value: Int, tint: Color) -> some View {
+        HStack(spacing: 4) {
+            Text("\(value)")
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+            Text(title)
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+        }
+        .foregroundStyle(tint)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(tint.opacity(0.12), in: Capsule())
     }
 
     // MARK: - Submit
@@ -330,12 +358,19 @@ struct PartInputRow: View {
             // Quantity
             HStack {
                 Text("Qty").font(.caption.weight(.medium)).foregroundStyle(Color.appTextSecondary)
-                Stepper("\(part.quantity)", value: $part.quantity, in: 1...99)
-                    .labelsHidden()
-                Text("\(part.quantity)")
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.appTextPrimary)
-                    .padding(.horizontal, 8)
+                Spacer()
+                HStack(spacing: 10) {
+                    qtyButton(icon: "minus") { part.quantity = max(1, part.quantity - 1) }
+                    Text("\(part.quantity)")
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color.appTextPrimary)
+                        .frame(minWidth: 26)
+                    qtyButton(icon: "plus") { part.quantity = min(99, part.quantity + 1) }
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color.appCardBg))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.appDivider.opacity(0.6), lineWidth: 1))
             }
 
             // Reason
@@ -345,6 +380,18 @@ struct PartInputRow: View {
         .padding(12)
         .background(Color.appSurface)
         .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.appDivider.opacity(0.5), lineWidth: 1))
+    }
+
+    private func qtyButton(icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(Color.appTextPrimary)
+                .frame(width: 24, height: 24)
+                .background(Circle().fill(Color.appSurface))
+        }
+        .buttonStyle(.plain)
     }
 }
 

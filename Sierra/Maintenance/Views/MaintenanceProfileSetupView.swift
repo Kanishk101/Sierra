@@ -24,7 +24,7 @@ struct MaintenanceProfileSetupView: View {
             }
             .animation(.spring(duration: 0.4, bounce: 0.1), value: viewModel.currentStep)
         }
-        .background(SierraTheme.Colors.appBackground.ignoresSafeArea())
+        .background(Color.appSurface.ignoresSafeArea())
         .interactiveDismissDisabled()
         .navigationBarBackButtonHidden(true)
         .fullScreenCover(isPresented: $viewModel.profileSubmitted) {
@@ -36,24 +36,24 @@ struct MaintenanceProfileSetupView: View {
         VStack(spacing: 12) {
             HStack {
                 Text("Maintenance Setup")
-                    .font(SierraFont.caption1.weight(.bold))
-                    .foregroundStyle(SierraTheme.Colors.secondaryText)
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.appTextSecondary)
                     .textCase(.uppercase)
                     .tracking(1.0)
                 Spacer()
                 Text("Step \(viewModel.currentStep) of 2")
-                    .font(SierraFont.caption1.weight(.semibold))
-                    .foregroundStyle(SierraTheme.Colors.ember)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Color.appOrange)
             }
 
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 3)
-                        .fill(SierraTheme.Colors.cloud.opacity(0.4))
+                        .fill(Color.appDivider.opacity(0.7))
                         .frame(height: 6)
 
                     RoundedRectangle(cornerRadius: 3)
-                        .fill(SierraTheme.Colors.ember)
+                        .fill(Color.appOrange)
                         .frame(
                             width: geo.size.width * (CGFloat(viewModel.currentStep) / 2.0),
                             height: 6
@@ -65,8 +65,10 @@ struct MaintenanceProfileSetupView: View {
         .padding(.horizontal, 24)
         .padding(.top, 20)
         .padding(.bottom, 16)
-        .background(SierraTheme.Colors.appBackground)
-        .sierraShadow(SierraShadow(color: .black.opacity(0.03), radius: 4, x: 0, y: 2))
+        .background(
+            Color.appCardBg
+                .overlay(Rectangle().fill(Color.appDivider.opacity(0.5)).frame(height: 1), alignment: .bottom)
+        )
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Profile setup progress: step \(viewModel.currentStep) of 2")
     }

@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// Admin detail view for a maintenance task.
-/// Includes approval, assignment, phases, ETA, and spare-parts approvals.
+/// Sierra design system: no description in overview, driver dual-button actions,
+/// clean timeline, appCardBg throughout.
 struct MaintenanceApprovalDetailView: View {
 
     let task: MaintenanceTask
@@ -17,56 +18,32 @@ struct MaintenanceApprovalDetailView: View {
     @State private var showRejectSheet = false
     @State private var showVehicleSheet = false
     @State private var showWorkOrderSheet = false
-
     @State private var fetchedWorkOrder: WorkOrder?
     @State private var loadedPhases = false
-
     @State private var rejectPartTarget: SparePartsRequest?
-
     @State private var errorMessage: String?
     @State private var showError = false
 
     private var currentUserId: UUID { AuthManager.shared.currentUser?.id ?? UUID() }
 
     private var availableStaff: [StaffMember] {
-        store.staff.filter {
-            $0.role == .maintenancePersonnel
-                && $0.status == .active
-                && $0.availability == .available
-        }
+        store.staff.filter { $0.role == .maintenancePersonnel && $0.status == .active && $0.availability == .available }
     }
 
-    private var workOrder: WorkOrder? {
-        store.workOrder(forMaintenanceTask: task.id) ?? fetchedWorkOrder
-    }
-
-    private var vehicle: Vehicle? {
-        store.vehicle(for: task.vehicleId)
-    }
-
-    private var phases: [WorkOrderPhase] {
-        guard let wo = workOrder else { return [] }
-        return store.phases(forWorkOrder: wo.id)
-    }
-
-    private var spareParts: [SparePartsRequest] {
-        store.sparePartsRequests(forTask: task.id).sorted { $0.createdAt > $1.createdAt }
-    }
-
+    private var workOrder: WorkOrder? { store.workOrder(forMaintenanceTask: task.id) ?? fetchedWorkOrder }
+    private var vehicle: Vehicle? { store.vehicle(for: task.vehicleId) }
+    private var phases: [WorkOrderPhase] { guard let wo = workOrder else { return [] }; return store.phases(forWorkOrder: wo.id) }
+    private var spareParts: [SparePartsRequest] { store.sparePartsRequests(forTask: task.id).sorted { $0.createdAt > $1.createdAt } }
     private var donePhases: Int { phases.filter(\.isCompleted).count }
 
     private var progressValue: Double {
         let base: Double
         switch task.status {
-        case .pending: base = 0.15
-        case .assigned: base = 0.32
-        case .inProgress: base = 0.55
-        case .completed: base = 1.0
-        case .cancelled: base = 0.0
+        case .pending: base = 0.15; case .assigned: base = 0.32
+        case .inProgress: base = 0.55; case .completed: base = 1.0; case .cancelled: base = 0.0
         }
-        if phases.isEmpty { return base }
-        let phaseProgress = Double(donePhases) / Double(phases.count)
-        return max(base, phaseProgress)
+        guard !phases.isEmpty else { return base }
+        return max(base, Double(donePhases) / Double(phases.count))
     }
 
     var body: some View {
@@ -77,7 +54,7 @@ struct MaintenanceApprovalDetailView: View {
                 vehicleCard
                 timelineCard
                 phaseCard
-                partsCard
+                if !spareParts.isEmpty { partsCard }
                 assignmentCard
                 progressCard
                 actionCard
@@ -92,20 +69,14 @@ struct MaintenanceApprovalDetailView: View {
         .task { await loadData() }
         .sheet(isPresented: $showRejectSheet) { rejectSheet }
         .sheet(isPresented: $showVehicleSheet) {
-            if let vehicle {
-                VehicleQuickStatusSheet(vehicle: vehicle)
-                    .environment(store)
-            }
+            if let vehicle { VehicleQuickStatusSheet(vehicle: vehicle).environment(store) }
         }
         .sheet(isPresented: $showWorkOrderSheet) {
-            WorkOrderDetailSheet(task: task)
-                .environment(store)
+            WorkOrderDetailSheet(task: task).environment(store)
         }
         .sheet(item: $rejectPartTarget) { part in
             RejectPartReasonSheet(part: part) { reason in
-                Task {
-                    try? await store.rejectSparePartsRequest(id: part.id, reviewedBy: currentUserId, reason: reason)
-                }
+                Task { try? await store.rejectSparePartsRequest(id: part.id, reviewedBy: currentUserId, reason: reason) }
             }
         }
         .alert("Error", isPresented: $showError) {
@@ -115,29 +86,29 @@ struct MaintenanceApprovalDetailView: View {
         }
     }
 
+    // MARK: - Status Strip
+
     private var statusStripCard: some View {
         HStack(spacing: 10) {
-            Circle()
-                .fill(statusColor(task.status))
-                .frame(width: 10, height: 10)
-
-            Text(task.status.rawValue)
-                .font(.system(size: 13, weight: .bold, design: .rounded))
-                .foregroundStyle(statusColor(task.status))
-
+            HStack(spacing: 6) {
+                Circle().fill(statusColor(task.status)).frame(width: 8, height: 8)
+                Text(task.status.rawValue)
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundStyle(statusColor(task.status))
+            }
             Spacer()
-
             Text(task.priority.rawValue)
                 .font(.system(size: 11, weight: .bold, design: .rounded))
                 .foregroundStyle(priorityColor(task.priority))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
+                .padding(.horizontal, 10).padding(.vertical, 5)
                 .background(priorityColor(task.priority).opacity(0.12), in: Capsule())
         }
         .padding(14)
-        .background(Color.appCardBg, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(Color.appCardBg, in: RoundedRectangle(cornerRadius: 16))
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.appDivider.opacity(0.35), lineWidth: 1))
     }
+
+    // MARK: - Overview Card (NO description)
 
     private var overviewCard: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -154,45 +125,44 @@ struct MaintenanceApprovalDetailView: View {
                 typeBadge
             }
 
-            Text(task.taskDescription)
-                .font(.system(size: 14, weight: .medium, design: .rounded))
-                .foregroundStyle(Color.appTextSecondary)
-
-            Rectangle()
-                .fill(Color.appDivider.opacity(0.6))
-                .frame(height: 1)
+            Rectangle().fill(Color.appDivider.opacity(0.6)).frame(height: 1)
 
             HStack(spacing: 12) {
-                Label(task.dueDate.formatted(.dateTime.month(.abbreviated).day().hour().minute()), systemImage: "calendar")
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.appTextSecondary)
+                HStack(spacing: 5) {
+                    Image(systemName: "calendar").font(.system(size: 11))
+                    Text(task.dueDate.formatted(.dateTime.month(.abbreviated).day().hour().minute()))
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                }
+                .foregroundStyle(Color.appTextSecondary)
                 Spacer()
                 if let eta = workOrder?.estimatedCompletionAt {
-                    Label("ETA \(eta.formatted(.dateTime.month(.abbreviated).day().hour().minute()))", systemImage: "clock")
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Color.appTextSecondary)
+                    HStack(spacing: 5) {
+                        Image(systemName: "clock").font(.system(size: 11))
+                        Text("ETA \(eta.formatted(.dateTime.month(.abbreviated).day().hour().minute()))")
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    }
+                    .foregroundStyle(Color.appTextSecondary)
                 }
             }
         }
         .padding(14)
-        .background(Color.appCardBg, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(Color.appCardBg, in: RoundedRectangle(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.appDivider.opacity(0.35), lineWidth: 1))
         .shadow(color: .black.opacity(0.05), radius: 10, x: 0, y: 4)
     }
 
+    // MARK: - Vehicle Card
+
     @ViewBuilder
     private var vehicleCard: some View {
         if let vehicle {
-            Button {
-                showVehicleSheet = true
-            } label: {
+            Button { showVehicleSheet = true } label: {
                 HStack(spacing: 10) {
                     Image(systemName: "car.fill")
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Color.appOrange)
                         .frame(width: 34, height: 34)
                         .background(Color.appOrange.opacity(0.12), in: Circle())
-
                     VStack(alignment: .leading, spacing: 2) {
                         Text(vehicle.licensePlate)
                             .font(.system(size: 12, weight: .bold, design: .monospaced))
@@ -207,17 +177,20 @@ struct MaintenanceApprovalDetailView: View {
                         .foregroundStyle(Color.appTextSecondary)
                 }
                 .padding(14)
-                .background(Color.appCardBg, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .background(Color.appCardBg, in: RoundedRectangle(cornerRadius: 16))
                 .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.appDivider.opacity(0.35), lineWidth: 1))
             }
             .buttonStyle(.plain)
         }
     }
 
+    // MARK: - Timeline Card
+
     private var timelineCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Status Timeline")
                 .font(.system(size: 15, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.appTextPrimary)
 
             ForEach(Array(timelineStages.enumerated()), id: \.offset) { index, stage in
                 HStack(alignment: .top, spacing: 10) {
@@ -239,207 +212,178 @@ struct MaintenanceApprovalDetailView: View {
             }
         }
         .padding(14)
-        .background(Color.appCardBg, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(Color.appCardBg, in: RoundedRectangle(cornerRadius: 16))
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.appDivider.opacity(0.35), lineWidth: 1))
     }
+
+    // MARK: - Phase Card
 
     private var phaseCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("Phases")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                Text("Phases").font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextPrimary)
                 Spacer()
                 if !phases.isEmpty {
                     Text("\(donePhases)/\(phases.count)")
                         .font(.system(size: 11, weight: .bold, design: .rounded))
                         .foregroundStyle(donePhases == phases.count ? .green : Color.appOrange)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
+                        .padding(.horizontal, 10).padding(.vertical, 4)
                         .background((donePhases == phases.count ? Color.green : Color.appOrange).opacity(0.12), in: Capsule())
                 }
             }
 
             if !loadedPhases {
-                HStack { Spacer(); ProgressView(); Spacer() }
+                HStack { Spacer(); ProgressView().tint(Color.appOrange); Spacer() }
             } else if phases.isEmpty {
                 Text("Phases will appear once work starts.")
                     .font(.system(size: 13, weight: .medium, design: .rounded))
                     .foregroundStyle(Color.appTextSecondary)
             } else {
-                ForEach(phases) { phase in
+                ForEach(Array(phases.enumerated()), id: \.element.id) { idx, phase in
                     HStack(spacing: 10) {
                         Image(systemName: phase.isCompleted ? "checkmark.circle.fill" : "circle")
-                            .font(.system(size: 18))
-                            .foregroundStyle(phase.isCompleted ? .green : Color.appDivider)
+                            .font(.system(size: 18)).foregroundStyle(phase.isCompleted ? .green : Color.appDivider)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(phase.title)
-                                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                .foregroundStyle(Color.appTextPrimary)
+                            Text(phase.title).font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(Color.appTextPrimary)
                             if let desc = phase.description, !desc.isEmpty {
-                                Text(desc)
-                                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                                    .foregroundStyle(Color.appTextSecondary)
-                                    .lineLimit(2)
+                                Text(desc).font(.system(size: 12, weight: .medium, design: .rounded)).foregroundStyle(Color.appTextSecondary).lineLimit(2)
                             }
                         }
                         Spacer()
                     }
-                    if phase.id != phases.last?.id {
-                        Rectangle()
-                            .fill(Color.appDivider.opacity(0.6))
-                            .frame(height: 1)
-                    }
+                    if idx < phases.count - 1 { Divider() }
                 }
             }
         }
         .padding(14)
-        .background(Color.appCardBg, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(Color.appCardBg, in: RoundedRectangle(cornerRadius: 16))
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.appDivider.opacity(0.35), lineWidth: 1))
     }
+
+    // MARK: - Parts Card
 
     private var partsCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("Parts Requested")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                Text("Parts Requested").font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextPrimary)
                 Spacer()
                 Text("\(spareParts.count)")
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.appOrange)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(Color.appOrange.opacity(0.1), in: Capsule())
+                    .font(.system(size: 11, weight: .bold, design: .rounded)).foregroundStyle(Color.appOrange)
+                    .padding(.horizontal, 10).padding(.vertical, 4).background(Color.appOrange.opacity(0.1), in: Capsule())
             }
 
-            if spareParts.isEmpty {
-                Text("No spare parts requests for this task.")
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
-                    .foregroundStyle(Color.appTextSecondary)
-            } else {
-                ForEach(spareParts) { part in
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(part.partName)
-                                    .font(.system(size: 14, weight: .bold, design: .rounded))
-                                if let pn = part.partNumber, !pn.isEmpty {
-                                    Text("Part #\(pn)")
-                                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                                        .foregroundStyle(Color.appTextSecondary)
-                                }
-                            }
-                            Spacer()
-                            Text("x\(part.quantity)")
-                                .font(.system(size: 12, weight: .bold, design: .rounded))
-                                .foregroundStyle(Color.appOrange)
-                        }
-
-                        HStack(spacing: 8) {
-                            statusPill(for: part.status)
-                            Spacer()
-                            if part.status == .pending {
-                                Button {
-                                    rejectPartTarget = part
-                                } label: {
-                                    Text("Reject")
-                                        .font(.system(size: 12, weight: .bold, design: .rounded))
-                                        .foregroundStyle(.red)
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 6)
-                                        .background(Color.red.opacity(0.1), in: Capsule())
-                                }
-                                .buttonStyle(.plain)
-
-                                Button {
-                                    Task { try? await store.approveSparePartsRequest(id: part.id, reviewedBy: currentUserId) }
-                                } label: {
-                                    Text("Approve")
-                                        .font(.system(size: 12, weight: .bold, design: .rounded))
-                                        .foregroundStyle(.white)
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 6)
-                                        .background(Color.black, in: Capsule())
-                                }
-                                .buttonStyle(.plain)
+            ForEach(Array(spareParts.enumerated()), id: \.element.id) { idx, part in
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(part.partName).font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextPrimary)
+                            if let pn = part.partNumber, !pn.isEmpty {
+                                Text("Part #\(pn)").font(.system(size: 11, weight: .semibold, design: .monospaced)).foregroundStyle(Color.appTextSecondary)
                             }
                         }
+                        Spacer()
+                        Text("×\(part.quantity)").font(.system(size: 12, weight: .bold, design: .rounded)).foregroundStyle(Color.appOrange)
                     }
-                    if part.id != spareParts.last?.id {
-                        Rectangle()
-                            .fill(Color.appDivider.opacity(0.6))
-                            .frame(height: 1)
+                    HStack(spacing: 8) {
+                        statusPill(for: part.status)
+                        Spacer()
+                        if part.status == .pending {
+                            Button { rejectPartTarget = part } label: {
+                                Text("Reject").font(.system(size: 12, weight: .bold, design: .rounded)).foregroundStyle(.red)
+                                    .padding(.horizontal, 10).padding(.vertical, 6).background(Color.red.opacity(0.1), in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            Button { Task { try? await store.approveSparePartsRequest(id: part.id, reviewedBy: currentUserId) } } label: {
+                                Text("Approve").font(.system(size: 12, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                                    .padding(.horizontal, 12).padding(.vertical, 6).background(Color.appTextPrimary, in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
+                if idx < spareParts.count - 1 { Divider() }
             }
         }
         .padding(14)
-        .background(Color.appCardBg, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(Color.appCardBg, in: RoundedRectangle(cornerRadius: 16))
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.appDivider.opacity(0.35), lineWidth: 1))
     }
 
+    // MARK: - Assignment Card
+
     private var assignmentCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Assignment")
-                .font(.system(size: 15, weight: .bold, design: .rounded))
+            Text("Assignment").font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextPrimary)
 
             if let assigneeId = task.assignedToId, let staff = store.staffMember(for: assigneeId) {
-                HStack(spacing: 8) {
-                    Image(systemName: "person.fill")
-                    Text(staff.displayName)
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                HStack(spacing: 10) {
+                    ZStack {
+                        Circle().fill(Color.appOrange.opacity(0.12)).frame(width: 32, height: 32)
+                        Text(staff.initials).font(.system(size: 12, weight: .bold, design: .rounded)).foregroundStyle(Color.appOrange)
+                    }
+                    Text(staff.displayName).font(.system(size: 14, weight: .semibold, design: .rounded)).foregroundStyle(Color.appTextPrimary)
                     Spacer()
+                    Text("Assigned").font(.system(size: 11, weight: .bold, design: .rounded)).foregroundStyle(.green)
+                        .padding(.horizontal, 8).padding(.vertical, 4).background(Color.green.opacity(0.1), in: Capsule())
                 }
-                .foregroundStyle(Color.appTextPrimary)
+            } else if task.status == .pending {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Select available technician")
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundStyle(Color.appTextSecondary)
+                    Picker("Assign To", selection: $selectedStaffId) {
+                        Text("Choose technician…").tag(UUID?.none)
+                        ForEach(availableStaff) { member in
+                            Text(member.displayName).tag(Optional(member.id))
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .padding(10)
+                    .background(Color.appSurface, in: RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.appDivider.opacity(0.6), lineWidth: 1))
+                    .tint(Color.appOrange)
+
+                    if availableStaff.isEmpty {
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 11)).foregroundStyle(.orange)
+                            Text("No available maintenance personnel right now.")
+                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                                .foregroundStyle(Color.appTextSecondary)
+                        }
+                    }
+                }
             } else {
                 Text("No technician assigned yet.")
                     .font(.system(size: 13, weight: .medium, design: .rounded))
                     .foregroundStyle(Color.appTextSecondary)
-            }
-
-            if task.status == .pending {
-                Picker("Assign To", selection: $selectedStaffId) {
-                    Text("Select available staff").tag(UUID?.none)
-                    ForEach(availableStaff) { member in
-                        Text(member.displayName).tag(Optional(member.id))
+                if workOrder != nil {
+                    Button { showWorkOrderSheet = true } label: {
+                        Text("Open Full Work Order")
+                            .font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                            .frame(maxWidth: .infinity).padding(.vertical, 11)
+                            .background(Color.appTextPrimary, in: Capsule())
                     }
+                    .buttonStyle(.plain)
                 }
-                .pickerStyle(.menu)
-                .padding(10)
-                .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            } else if workOrder != nil {
-                Button {
-                    showWorkOrderSheet = true
-                } label: {
-                    Text("Open Full Work Order")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 11)
-                        .background(Color.black, in: Capsule())
-                }
-                .buttonStyle(.plain)
             }
         }
         .padding(14)
-        .background(Color.appCardBg, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(Color.appCardBg, in: RoundedRectangle(cornerRadius: 16))
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.appDivider.opacity(0.35), lineWidth: 1))
     }
+
+    // MARK: - Progress Card
 
     private var progressCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Task Progress")
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                Text("Task Progress").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextPrimary)
                 Spacer()
-                Text("\(Int(progressValue * 100))%")
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.appTextSecondary)
+                Text("\(Int(progressValue * 100))%").font(.system(size: 12, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextSecondary)
             }
-
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 5)
-                        .fill(Color.appDivider.opacity(0.8))
+                    RoundedRectangle(cornerRadius: 5).fill(Color.appDivider.opacity(0.8))
                     RoundedRectangle(cornerRadius: 5)
                         .fill(task.status == .completed ? Color.green : Color.appOrange)
                         .frame(width: geo.size.width * progressValue)
@@ -448,38 +392,39 @@ struct MaintenanceApprovalDetailView: View {
             .frame(height: 8)
         }
         .padding(14)
-        .background(Color.appCardBg, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(Color.appCardBg, in: RoundedRectangle(cornerRadius: 16))
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.appDivider.opacity(0.35), lineWidth: 1))
     }
+
+    // MARK: - Action Card — driver dual-button pattern
 
     @ViewBuilder
     private var actionCard: some View {
         if task.status == .pending {
-            HStack(spacing: 10) {
-                Button {
-                    showRejectSheet = true
-                } label: {
-                    Text("Reject")
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundStyle(.red)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(Color.red.opacity(0.1), in: Capsule())
+            HStack(spacing: 12) {
+                // Left: Reject (red outline)
+                Button { showRejectSheet = true } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "xmark.circle").font(.system(size: 13, weight: .semibold))
+                        Text("Reject").font(.system(size: 14, weight: .bold, design: .rounded))
+                    }
+                    .foregroundStyle(.red)
+                    .frame(maxWidth: .infinity).padding(.vertical, 13)
+                    .background(Capsule().fill(Color.red.opacity(0.08)))
+                    .overlay(Capsule().stroke(Color.red.opacity(0.22), lineWidth: 1.5))
                 }
                 .buttonStyle(.plain)
 
-                Button {
-                    Task { await approveTask() }
-                } label: {
-                    HStack(spacing: 8) {
-                        if isApproving { ProgressView().tint(.white) }
-                        Text("Approve & Assign")
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                // Right: Approve & Assign (black filled)
+                Button { Task { await approveTask() } } label: {
+                    HStack(spacing: 6) {
+                        if isApproving { ProgressView().tint(.white).scaleEffect(0.8) }
+                        Image(systemName: "checkmark.seal.fill").font(.system(size: 13, weight: .semibold))
+                        Text("Approve & Assign").font(.system(size: 14, weight: .bold, design: .rounded))
                     }
                     .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(selectedStaffId != nil ? Color.black : Color.gray, in: Capsule())
+                    .frame(maxWidth: .infinity).padding(.vertical, 13)
+                    .background(Capsule().fill(selectedStaffId != nil ? Color.appTextPrimary : Color.appDivider))
                 }
                 .buttonStyle(.plain)
                 .disabled(selectedStaffId == nil || isApproving)
@@ -488,196 +433,106 @@ struct MaintenanceApprovalDetailView: View {
         }
     }
 
+    // MARK: - Helpers
+
     private var typeBadge: some View {
         let isService = task.taskType == .scheduled
         let color: Color = isService ? .blue : Color.appOrange
         let icon = isService ? "calendar.badge.checkmark" : "wrench.and.screwdriver.fill"
         return HStack(spacing: 4) {
             Image(systemName: icon).font(.system(size: 10, weight: .bold))
-            Text(isService ? "Service" : "Repair")
-                .font(.system(size: 10, weight: .bold, design: .rounded))
+            Text(isService ? "Service" : "Repair").font(.system(size: 10, weight: .bold, design: .rounded))
         }
-        .foregroundStyle(color)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .background(color.opacity(0.12), in: Capsule())
+        .foregroundStyle(color).padding(.horizontal, 10).padding(.vertical, 5).background(color.opacity(0.12), in: Capsule())
     }
 
     private func statusPill(for status: SparePartsRequestStatus) -> some View {
         let tint: Color
-        switch status {
-        case .pending: tint = Color.appOrange
-        case .approved: tint = .green
-        case .rejected: tint = .red
-        case .fulfilled: tint = .blue
-        }
-        return Text(status.rawValue)
-            .font(.system(size: 11, weight: .bold, design: .rounded))
-            .foregroundStyle(tint)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(tint.opacity(0.12), in: Capsule())
+        switch status { case .pending: tint = Color.appOrange; case .approved: tint = .green; case .rejected: tint = .red; case .fulfilled: tint = .blue }
+        return Text(status.rawValue).font(.system(size: 11, weight: .bold, design: .rounded)).foregroundStyle(tint)
+            .padding(.horizontal, 8).padding(.vertical, 4).background(tint.opacity(0.12), in: Capsule())
     }
 
     private var timelineStages: [(label: String, complete: Bool, current: Bool)] {
         let currentIndex: Int
-        switch task.status {
-        case .pending: currentIndex = 0
-        case .assigned: currentIndex = 1
-        case .inProgress: currentIndex = 2
-        case .completed: currentIndex = 3
-        case .cancelled: currentIndex = 0
-        }
-
-        let labels = ["Reported", "Assigned", "In Progress", "Completed"]
-        return labels.enumerated().map { index, label in
+        switch task.status { case .pending: currentIndex = 0; case .assigned: currentIndex = 1; case .inProgress: currentIndex = 2; case .completed: currentIndex = 3; case .cancelled: currentIndex = 0 }
+        return ["Reported", "Assigned", "In Progress", "Completed"].enumerated().map { index, label in
             (label, index < currentIndex || task.status == .completed, index == currentIndex && task.status != .completed)
         }
     }
 
     private func statusColor(_ s: MaintenanceTaskStatus) -> Color {
-        switch s {
-        case .pending: return Color.appOrange
-        case .assigned: return .blue
-        case .inProgress: return .purple
-        case .completed: return .green
-        case .cancelled: return .gray
-        }
+        switch s { case .pending: Color.appOrange; case .assigned: .blue; case .inProgress: .purple; case .completed: .green; case .cancelled: .gray }
     }
-
     private func priorityColor(_ p: TaskPriority) -> Color {
-        switch p {
-        case .low: return .green
-        case .medium: return .blue
-        case .high: return Color.appOrange
-        case .urgent: return .red
-        }
+        switch p { case .low: .green; case .medium: .blue; case .high: Color.appOrange; case .urgent: .red }
     }
 
     private func loadData() async {
         do {
             if let wo = try await WorkOrderService.fetchWorkOrder(maintenanceTaskId: task.id) {
                 fetchedWorkOrder = wo
-                if store.workOrders.first(where: { $0.id == wo.id }) == nil {
-                    store.workOrders.append(wo)
-                }
+                if store.workOrders.first(where: { $0.id == wo.id }) == nil { store.workOrders.append(wo) }
                 await store.loadWorkOrderPhases(workOrderId: wo.id)
             }
-        } catch {
-            // Work order may not exist yet for pending requests.
-        }
+        } catch {}
         loadedPhases = true
     }
 
     private func approveTask() async {
-        guard task.status == .pending else {
-            errorMessage = "This task is already \(task.status.rawValue)."
-            showError = true
-            return
-        }
-        guard let assigneeId = selectedStaffId else { return }
-
-        isApproving = true
-        defer { isApproving = false }
-
+        guard task.status == .pending, let assigneeId = selectedStaffId else { return }
+        isApproving = true; defer { isApproving = false }
         do {
-            try await MaintenanceTaskService.approveTask(
-                taskId: task.id,
-                approvedById: currentUserId,
-                assignedToId: assigneeId
-            )
-
-            do {
-                try await NotificationService.insertNotification(
-                    recipientId: assigneeId,
-                    type: .general,
-                    title: "New Maintenance Task",
-                    body: "You were assigned: \(task.title)",
-                    entityType: "maintenance_task",
-                    entityId: task.id
-                )
-            } catch {
-                print("[MaintenanceApprovalDetailView] Non-fatal assignee notify error: \(error)")
-            }
-
-            onUpdate()
-            dismiss()
+            try await MaintenanceTaskService.approveTask(taskId: task.id, approvedById: currentUserId, assignedToId: assigneeId)
+            try? await NotificationService.insertNotification(recipientId: assigneeId, type: .general, title: "New Maintenance Task", body: "You were assigned: \(task.title)", entityType: "maintenance_task", entityId: task.id)
+            onUpdate(); dismiss()
         } catch {
-            errorMessage = "Failed to approve task: \(error.localizedDescription)"
-            showError = true
+            errorMessage = "Failed to approve task: \(error.localizedDescription)"; showError = true
         }
     }
 
     private var rejectSheet: some View {
         NavigationStack {
             VStack(spacing: 14) {
-                Text("Provide a rejection reason")
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-
-                TextEditor(text: $rejectionReason)
-                    .frame(minHeight: 110)
-                    .padding(10)
-                    .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .padding(.horizontal, 16)
-
-                Button {
-                    Task { await rejectTask() }
-                } label: {
+                Text("Provide a rejection reason").font(.system(size: 14, weight: .semibold, design: .rounded)).foregroundStyle(Color.appTextSecondary)
+                ZStack(alignment: .topLeading) {
+                    RoundedRectangle(cornerRadius: 14).fill(Color.appCardBg).overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.appDivider, lineWidth: 1)).frame(minHeight: 110)
+                    if rejectionReason.isEmpty { Text("Reason for rejection…").font(.system(size: 14, weight: .medium, design: .rounded)).foregroundStyle(Color.appTextSecondary.opacity(0.5)).padding(14) }
+                    TextEditor(text: $rejectionReason).frame(minHeight: 110).padding(10).background(Color.clear)
+                }
+                .padding(.horizontal, 16)
+                Button { Task { await rejectTask() } } label: {
                     HStack(spacing: 8) {
                         if isRejecting { ProgressView().tint(.white) }
-                        Text("Confirm Rejection")
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                        Text("Confirm Rejection").font(.system(size: 14, weight: .bold, design: .rounded))
                     }
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
+                    .foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 13)
                     .background(rejectionReason.isEmpty ? Color.gray : Color.red, in: Capsule())
                 }
-                .buttonStyle(.plain)
-                .disabled(rejectionReason.isEmpty || isRejecting)
-                .padding(.horizontal, 16)
-
+                .buttonStyle(.plain).disabled(rejectionReason.isEmpty || isRejecting).padding(.horizontal, 16)
                 Spacer()
             }
             .padding(.top, 18)
             .background(Color.appSurface.ignoresSafeArea())
-            .navigationTitle("Reject Task")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { showRejectSheet = false }
-                }
-            }
+            .navigationTitle("Reject Task").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { showRejectSheet = false }.foregroundStyle(Color.appOrange) } }
         }
         .presentationDetents([.medium])
     }
 
     private func rejectTask() async {
-        guard task.status == .pending || task.status == .assigned else {
-            errorMessage = "This task is already \(task.status.rawValue)."
-            showError = true
-            return
-        }
-
-        isRejecting = true
-        defer { isRejecting = false }
-
+        guard task.status == .pending || task.status == .assigned else { return }
+        isRejecting = true; defer { isRejecting = false }
         do {
-            try await MaintenanceTaskService.rejectTask(
-                taskId: task.id,
-                approvedById: currentUserId,
-                reason: rejectionReason
-            )
-
-            showRejectSheet = false
-            onUpdate()
-            dismiss()
+            try await MaintenanceTaskService.rejectTask(taskId: task.id, approvedById: currentUserId, reason: rejectionReason)
+            showRejectSheet = false; onUpdate(); dismiss()
         } catch {
-            errorMessage = "Failed to reject task: \(error.localizedDescription)"
-            showError = true
+            errorMessage = "Failed to reject task: \(error.localizedDescription)"; showError = true
         }
     }
 }
+
+// MARK: - Reject Part Reason Sheet
 
 private struct RejectPartReasonSheet: View {
     let part: SparePartsRequest
@@ -685,51 +540,31 @@ private struct RejectPartReasonSheet: View {
 
     @State private var reason = ""
     @Environment(\.dismiss) private var dismiss
+    private var trimmed: String { reason.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 14) {
                 Text("Add rejection reason for \(part.partName).")
-                    .font(.system(size: 14, weight: .medium, design: .rounded))
-                    .foregroundStyle(Color.appTextSecondary)
-
-                TextEditor(text: $reason)
-                    .frame(minHeight: 120)
-                    .padding(10)
-                    .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-
-                Button {
-                    let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !trimmed.isEmpty else { return }
-                    onConfirm(trimmed)
-                    dismiss()
-                } label: {
-                    Text("Reject Part")
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(trimmedReason.isEmpty ? Color.gray : Color.red, in: Capsule())
+                    .font(.system(size: 14, weight: .medium, design: .rounded)).foregroundStyle(Color.appTextSecondary)
+                ZStack(alignment: .topLeading) {
+                    RoundedRectangle(cornerRadius: 14).fill(Color.appCardBg).overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.appDivider, lineWidth: 1)).frame(minHeight: 120)
+                    if reason.isEmpty { Text("Reason…").font(.system(size: 14, weight: .medium, design: .rounded)).foregroundStyle(Color.appTextSecondary.opacity(0.5)).padding(14) }
+                    TextEditor(text: $reason).frame(minHeight: 120).padding(10).background(Color.clear)
                 }
-                .buttonStyle(.plain)
-                .disabled(trimmedReason.isEmpty)
-
+                Button { onConfirm(trimmed); dismiss() } label: {
+                    Text("Reject Part").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                        .frame(maxWidth: .infinity).padding(.vertical, 12)
+                        .background(trimmed.isEmpty ? Color.gray : Color.red, in: Capsule())
+                }
+                .disabled(trimmed.isEmpty)
                 Spacer()
             }
             .padding(16)
             .background(Color.appSurface.ignoresSafeArea())
-            .navigationTitle("Reject Part")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-            }
+            .navigationTitle("Reject Part").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.foregroundStyle(Color.appOrange) } }
         }
         .presentationDetents([.medium])
-    }
-
-    private var trimmedReason: String {
-        reason.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

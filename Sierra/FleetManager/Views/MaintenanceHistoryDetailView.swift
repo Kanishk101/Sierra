@@ -102,7 +102,9 @@ struct MaintenanceHistoryDetailView: View {
                 }
             }
         }
-        .listStyle(.insetGrouped)
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(Color.appSurface.ignoresSafeArea())
         .navigationTitle("Service Record")
         .navigationBarTitleDisplayMode(.inline)
     }

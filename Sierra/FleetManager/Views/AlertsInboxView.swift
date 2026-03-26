@@ -81,7 +81,9 @@ struct AlertsInboxView: View {
                 }
             }
         }
-        .listStyle(.insetGrouped)
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(Color.appSurface.ignoresSafeArea())
         .navigationTitle("Alerts")
         .navigationBarTitleDisplayMode(.inline)
         .task {
@@ -126,7 +128,12 @@ struct AlertsInboxView: View {
                 Text("near \(address)").font(.caption2).foregroundStyle(.secondary).italic()
             }
         }
-        .padding(.vertical, 4)
+        .padding(12)
+        .background(Color.appCardBg, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.appDivider.opacity(0.45), lineWidth: 1)
+        )
         .task {
             await reverseGeocode(alert)
         }
@@ -146,7 +153,12 @@ struct AlertsInboxView: View {
             Spacer()
             Text(timeAgo(dev.detectedAt)).font(.caption2).foregroundStyle(.tertiary)
         }
-        .padding(.vertical, 4)
+        .padding(12)
+        .background(Color.appCardBg, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.appDivider.opacity(0.45), lineWidth: 1)
+        )
     }
 
     // MARK: - Overdue Row
@@ -163,7 +175,12 @@ struct AlertsInboxView: View {
             let days = max(1, Int(Date().timeIntervalSince(task.dueDate) / 86400))
             Text("\(days)d overdue").font(.caption.weight(.bold)).foregroundStyle(.red)
         }
-        .padding(.vertical, 4)
+        .padding(12)
+        .background(Color.appCardBg, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.appDivider.opacity(0.45), lineWidth: 1)
+        )
     }
 
     // MARK: - Helpers

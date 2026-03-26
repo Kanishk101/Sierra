@@ -50,70 +50,46 @@ struct InventoryAdminView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                Section {
-                    Picker("Filter", selection: $stockFilter) {
-                        ForEach(StockFilter.allCases) { filter in
-                            Text(filter.rawValue).tag(filter)
-                        }
-                    }
-                    .pickerStyle(.segmented)
+            VStack(spacing: 0) {
+                searchBar
+                    .padding(.top, 12)
+                    .padding(.bottom, 8)
 
-                    HStack(spacing: 10) {
-                        quickMetricChip(title: "Low Stock", value: lowStockCount, tint: .red)
-                        quickMetricChip(title: "On Order", value: onOrderCount, tint: .blue)
-                        quickMetricChip(title: "Overdue", value: overdueDeliveryCount, tint: .orange)
-                    }
-                }
+                summaryRow
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 10)
 
-                Section("Parts") {
-                    ForEach(filtered) { part in
-                        Button {
-                            editingPart = part
-                        } label: {
-                            HStack(spacing: 12) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(part.partName)
-                                        .font(.system(size: 15, weight: .bold, design: .rounded))
-                                        .foregroundStyle(Color.appTextPrimary)
-                                    Text((part.partNumber?.isEmpty == false ? part.partNumber! : "No part number") + " · " + (part.supplier ?? "No supplier"))
-                                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                                        .foregroundStyle(Color.appTextSecondary)
+                filterChips
+                    .padding(.bottom, 8)
+
+                if filtered.isEmpty {
+                    emptyState
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 12) {
+                            ForEach(filtered) { part in
+                                Button {
+                                    editingPart = part
+                                } label: {
+                                    partRowCard(part)
                                 }
-
-                                Spacer()
-
-                                VStack(alignment: .trailing, spacing: 3) {
-                                    Text("QTY \(part.currentQuantity)")
-                                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                                        .foregroundStyle(part.currentQuantity <= part.reorderLevel ? Color.red : Color.green)
-                                    if part.onOrderQuantity > 0 {
-                                        Text("On order: \(part.onOrderQuantity)")
-                                            .font(.system(size: 10, weight: .semibold, design: .rounded))
-                                            .foregroundStyle(Color.blue)
-                                    }
-                                    if !part.isActive {
-                                        Text("Inactive")
-                                            .font(.system(size: 10, weight: .semibold, design: .rounded))
-                                            .foregroundStyle(.secondary)
+                                .buttonStyle(.plain)
+                                .swipeActions(edge: .trailing) {
+                                    Button(role: .destructive) {
+                                        deletingPart = part
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
                                     }
                                 }
                             }
                         }
-                        .buttonStyle(.plain)
-                        .swipeActions(edge: .trailing) {
-                            Button(role: .destructive) {
-                                deletingPart = part
-                            } label: {
-                                Label("Delete", systemImage: "trash")
-                            }
-                        }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 24)
                     }
                 }
             }
-            .listStyle(.insetGrouped)
+            .background(Color.appSurface.ignoresSafeArea())
             .navigationTitle("Parts Inventory")
-            .searchable(text: $searchText, prompt: "Search parts")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Close") { dismiss() }
@@ -158,6 +134,65 @@ struct InventoryAdminView: View {
         }
     }
 
+    private var searchBar: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(Color.appTextSecondary)
+            TextField("Search parts", text: $searchText)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled(true)
+                .font(.system(size: 14, weight: .medium, design: .rounded))
+            if !searchText.isEmpty {
+                Button { searchText = "" } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(Color.appTextSecondary)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Capsule().fill(Color.appCardBg))
+        .overlay(Capsule().stroke(Color.appDivider.opacity(0.45), lineWidth: 1))
+        .padding(.horizontal, 20)
+    }
+
+    private var summaryRow: some View {
+        HStack(spacing: 10) {
+            quickMetricChip(title: "Low Stock", value: lowStockCount, tint: .red)
+            quickMetricChip(title: "On Order", value: onOrderCount, tint: .blue)
+            quickMetricChip(title: "Overdue", value: overdueDeliveryCount, tint: .orange)
+        }
+    }
+
+    private var filterChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(StockFilter.allCases) { filter in
+                    Button {
+                        stockFilter = filter
+                    } label: {
+                        Text(filter.rawValue)
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .foregroundStyle(stockFilter == filter ? Color.appOrange : Color.appTextSecondary)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(
+                                Capsule().fill(stockFilter == filter ? Color.appOrange.opacity(0.13) : Color.appCardBg)
+                            )
+                            .overlay(
+                                Capsule().stroke(
+                                    stockFilter == filter ? Color.appOrange.opacity(0.35) : Color.appDivider.opacity(0.45),
+                                    lineWidth: 1
+                                )
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 20)
+        }
+    }
+
     private func quickMetricChip(title: String, value: Int, tint: Color) -> some View {
         VStack(spacing: 2) {
             Text("\(value)")
@@ -168,8 +203,101 @@ struct InventoryAdminView: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
-        .background(tint.opacity(0.09), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .padding(.vertical, 10)
+        .background(tint.opacity(0.09), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(tint.opacity(0.18), lineWidth: 1)
+        )
+    }
+
+    private func partRowCard(_ part: InventoryPart) -> some View {
+        let lowStock = part.currentQuantity <= part.reorderLevel
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(part.partName)
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color.appTextPrimary)
+                        .lineLimit(2)
+                    Text((part.partNumber?.isEmpty == false ? part.partNumber! : "No part number") + " · " + (part.supplier ?? "No supplier"))
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(Color.appTextSecondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                Text(lowStock ? "Low Stock" : "In Stock")
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .foregroundStyle(lowStock ? Color.red : Color.green)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 6)
+                    .background((lowStock ? Color.red : Color.green).opacity(0.12), in: Capsule())
+            }
+
+            HStack(spacing: 14) {
+                metricText("Current", value: part.currentQuantity, tint: lowStock ? .red : .green)
+                metricText("Reorder", value: part.reorderLevel, tint: .orange)
+                metricText("On Order", value: part.onOrderQuantity, tint: .blue)
+            }
+
+            if let eta = part.expectedArrivalAt, part.onOrderQuantity > 0 {
+                HStack(spacing: 6) {
+                    Image(systemName: "clock.badge.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text("ETA \(eta.formatted(.dateTime.day().month(.abbreviated).hour().minute()))")
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                }
+                .foregroundStyle(Color.blue.opacity(0.9))
+            }
+
+            if !part.isActive {
+                Text("Inactive Part")
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.appTextSecondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Color.appDivider.opacity(0.7), in: Capsule())
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 18)
+                .fill(Color.appCardBg)
+                .shadow(color: .black.opacity(0.05), radius: 10, x: 0, y: 4)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18)
+                .stroke(Color.appDivider.opacity(0.45), lineWidth: 1)
+        )
+    }
+
+    private func metricText(_ label: String, value: Int, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("\(value)")
+                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .foregroundStyle(tint)
+            Text(label)
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .foregroundStyle(Color.appTextSecondary)
+        }
+    }
+
+    private var emptyState: some View {
+        VStack {
+            Spacer(minLength: 60)
+            Image(systemName: "shippingbox")
+                .font(.system(size: 46, weight: .light))
+                .foregroundStyle(Color.appOrange.opacity(0.35))
+            Text("No Parts Found")
+                .font(.system(size: 20, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.appTextPrimary)
+                .padding(.top, 6)
+            Text("Try a different filter or add a new part.")
+                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .foregroundStyle(Color.appTextSecondary)
+            Spacer()
+        }
+        .padding(.horizontal, 36)
     }
 
     private func matchesStockFilter(_ part: InventoryPart) -> Bool {
