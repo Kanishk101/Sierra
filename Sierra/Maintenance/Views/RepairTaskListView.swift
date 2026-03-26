@@ -14,7 +14,13 @@ struct RepairTaskListView: View {
     /// Repair tasks only (non-scheduled)
     private var repairTasks: [MaintenanceTask] {
         store.maintenanceTasks.filter { task in
-            task.assignedToId == currentUserId && task.taskType != .scheduled
+            guard task.assignedToId == currentUserId else { return false }
+            // Backend-safe fallback:
+            // if work order exists, trust its type; else infer from task type.
+            if let workOrder = store.workOrder(forMaintenanceTask: task.id) {
+                return workOrder.workOrderType == .repair
+            }
+            return task.taskType != .scheduled
         }
     }
 
@@ -38,7 +44,7 @@ struct RepairTaskListView: View {
     var body: some View {
         VStack(spacing: 10) {
             searchBar
-            statsRow
+            summaryRow
 
             ScrollView {
                 LazyVStack(spacing: 12) {
@@ -74,6 +80,12 @@ struct RepairTaskListView: View {
             VehicleQuickStatusSheet(vehicle: vehicle)
                 .environment(store)
         }
+        .task {
+            await store.loadMaintenanceData(staffId: currentUserId)
+        }
+        .refreshable {
+            await store.loadMaintenanceData(staffId: currentUserId)
+        }
     }
 
     private var searchBar: some View {
@@ -87,35 +99,44 @@ struct RepairTaskListView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
-        .background(Color(.secondarySystemGroupedBackground), in: Capsule())
+        .background(
+            Capsule()
+                .fill(Color.appCardBg)
+        )
+        .overlay(
+            Capsule()
+                .stroke(Color.appDivider.opacity(0.45), lineWidth: 1)
+        )
         .padding(.horizontal, 16)
         .padding(.top, 6)
     }
 
-    private var statsRow: some View {
+    private var summaryRow: some View {
         HStack(spacing: 10) {
-            statPill(value: totalCount, label: "Total", color: Color.appOrange, icon: "list.bullet.rectangle.fill")
-            statPill(value: activeCount, label: "Active", color: .blue, icon: "clock.fill")
-            statPill(value: completedCount, label: "Done", color: .green, icon: "checkmark.seal.fill")
+            summaryBox(value: totalCount, label: "Total", icon: "list.bullet.rectangle.fill", tint: .appOrange)
+            summaryBox(value: activeCount, label: "Active", icon: "clock.fill", tint: .blue)
+            summaryBox(value: completedCount, label: "Done", icon: "checkmark.seal.fill", tint: .green)
         }
         .padding(.horizontal, 16)
     }
 
-    private func statPill(value: Int, label: String, color: Color, icon: String) -> some View {
-        VStack(spacing: 3) {
+    private func summaryBox(value: Int, label: String, icon: String, tint: Color) -> some View {
+        VStack(spacing: 4) {
             HStack(spacing: 4) {
-                Image(systemName: icon).font(.system(size: 10, weight: .semibold))
-                Text("\(value)").font(.system(size: 16, weight: .bold, design: .rounded))
+                Image(systemName: icon)
+                    .font(.system(size: 10, weight: .semibold))
+                Text("\(value)")
+                    .font(.system(size: 21, weight: .bold, design: .rounded))
             }
-            .foregroundStyle(color)
+            .foregroundStyle(tint)
             Text(label)
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .foregroundStyle(Color.appTextSecondary)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 10)
-        .background(Color.appCardBg, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.appDivider.opacity(0.35), lineWidth: 1))
+        .background(RoundedRectangle(cornerRadius: 14).fill(tint.opacity(0.08)))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(tint.opacity(0.18), lineWidth: 1))
     }
 
     // MARK: - Filter Menu

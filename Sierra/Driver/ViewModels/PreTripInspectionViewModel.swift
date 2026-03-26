@@ -152,13 +152,11 @@ final class PreTripInspectionViewModel {
 
     /// May advance to summary only when all failed items have at least one photo.
     /// M-06 FIX: Warning items that are flagged as needing photos are also gated.
-    /// For post-trip: photos are optional, always allow advancing.
     var canAdvanceToSummary: Bool {
         inspectionType == .postTripInspection || failedItemsMissingPhoto.isEmpty
     }
 
     /// Final submit gate: no failed item missing a photo + signature present.
-    /// For post-trip: photos for failed items are optional (maintenance request is auto-created).
     var canSubmit: Bool {
         let photosOk = inspectionType == .postTripInspection || failedItemsMissingPhoto.isEmpty
         return photosOk
@@ -521,7 +519,6 @@ final class PreTripInspectionViewModel {
             let confirmedOdometer = odometerReading
 
             let defectsText    = failedItems.isEmpty ? nil : failedItems.map(\.name).joined(separator: ", ")
-            let warningsText   = warningItems.isEmpty ? nil : warningItems.map(\.name).joined(separator: ", ")
             let isDefectRaised = overallResult == .failed
             let hasIssues      = overallResult == .failed || overallResult == .passedWithWarnings
 

@@ -110,6 +110,11 @@ struct SierraTextField: View {
             .frame(height: 48)
             .background(fieldBackground, in: fieldShape)
             .overlay { fieldBorder }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                guard !isDisabled else { return }
+                isFocused = true
+            }
 
             // ── Error Message ──
             if let errorMessage {

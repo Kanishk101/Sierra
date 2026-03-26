@@ -14,9 +14,10 @@ struct MaintenanceTaskDetailView: View {
     @State private var estimatedMinutes: Int = 0
     @State private var isStarting = false
     @State private var isCompleting = false
-    @State private var etaDate: Date = Date()
     @State private var phasesLoaded = false
     @State private var showVehicleSheet = false
+    @State private var showPhasePlanner = false
+    @State private var phasePlanDrafts: [PhasePlanDraft] = []
 
     private var currentUserId: UUID { AuthManager.shared.currentUser?.id ?? UUID() }
     private var workOrder: WorkOrder? { store.workOrder(forMaintenanceTask: task.id) }
@@ -25,9 +26,6 @@ struct MaintenanceTaskDetailView: View {
     private var phases: [WorkOrderPhase] { store.phases(forWorkOrder: workOrder?.id ?? UUID()) }
     private var allPhasesDone: Bool {
         !phases.isEmpty && phases.allSatisfy { $0.isCompleted }
-    }
-    private var assignedBy: String {
-        store.staffMember(for: task.createdByAdminId)?.name ?? "Admin"
     }
 
     var body: some View {
@@ -62,9 +60,11 @@ struct MaintenanceTaskDetailView: View {
         .sheet(isPresented: $showEstimatedTimeSheet) {
             estimatedTimeSheet
         }
+        .sheet(isPresented: $showPhasePlanner) {
+            phasePlannerSheet
+        }
         .task {
             if let wo = workOrder {
-                if let eta = wo.estimatedCompletionAt { etaDate = eta }
                 await store.loadWorkOrderPhases(workOrderId: wo.id)
                 phasesLoaded = true
             }
@@ -117,7 +117,6 @@ struct MaintenanceTaskDetailView: View {
                 Divider()
 
                 // Info rows
-                infoRow(icon: "person.fill", label: "Assigned by", value: assignedBy)
                 infoRow(icon: "calendar", label: "Due", value: task.dueDate.formatted(.dateTime.month(.abbreviated).day().hour().minute()))
                 if let wo = workOrder {
                     infoRow(icon: "tag.fill", label: "Type", value: wo.workOrderType.rawValue.capitalized)
@@ -158,33 +157,25 @@ struct MaintenanceTaskDetailView: View {
                     .buttonStyle(.plain)
                 }
 
-                // ETA editor
-                if task.status == .inProgress, let wo = workOrder, wo.estimatedCompletionAt != nil {
+                // ETA (set once)
+                if let wo = workOrder, let eta = wo.estimatedCompletionAt {
                     Divider()
-                    HStack {
-                        Label("ETA", systemImage: "clock.badge")
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                    HStack(spacing: 10) {
+                        Image(systemName: "clock.badge")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.appOrange)
+                            .frame(width: 20)
+                        Text("ETA")
+                            .font(.system(size: 13, weight: .medium, design: .rounded))
                             .foregroundStyle(Color.appTextSecondary)
                         Spacer()
+                        Text(eta.formatted(.dateTime.month(.abbreviated).day().hour().minute()))
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundStyle(Color.appTextPrimary)
                     }
-                    DatePicker(
-                        "ETA",
-                        selection: $etaDate,
-                        in: Date()...,
-                        displayedComponents: [.date, .hourAndMinute]
-                    )
-                    .datePickerStyle(.compact)
-                    .tint(Color.appOrange)
-                    .labelsHidden()
-                    .onChange(of: etaDate) { _, newDate in
-                        guard let woId = workOrder?.id else { return }
-                        Task {
-                            try? await WorkOrderService.updateEstimatedCompletion(workOrderId: woId, date: newDate)
-                            if let idx = store.workOrders.firstIndex(where: { $0.id == woId }) {
-                                store.workOrders[idx].estimatedCompletionAt = newDate
-                            }
-                        }
-                    }
+                    Text("ETA is locked after start")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(Color.appTextSecondary)
                 }
             }
             .padding(18)
@@ -227,6 +218,16 @@ struct MaintenanceTaskDetailView: View {
                     .font(.system(size: 16, weight: .bold, design: .rounded))
                     .foregroundStyle(Color.appTextPrimary)
                 Spacer()
+                if task.status == .inProgress {
+                    Button {
+                        showPhasePlanner = true
+                    } label: {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(Color.appOrange)
+                    }
+                    .buttonStyle(.plain)
+                }
                 let done = phases.filter { $0.isCompleted }.count
                 Text("\(done)/\(phases.count)")
                     .font(.system(size: 13, weight: .bold, design: .rounded))
@@ -293,6 +294,11 @@ struct MaintenanceTaskDetailView: View {
                         .font(.system(size: 12, weight: .medium, design: .rounded))
                         .foregroundStyle(Color.appTextSecondary)
                         .lineLimit(2)
+                }
+                if let mins = phase.estimatedMinutes, mins > 0 {
+                    Text("ETA \(mins / 60)h \(mins % 60)m")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(Color.appOrange)
                 }
                 if phase.isCompleted, let completedAt = phase.completedAt {
                     Text("Done \(completedAt.formatted(.dateTime.hour().minute()))")
@@ -404,6 +410,12 @@ struct MaintenanceTaskDetailView: View {
                     icon: "play.fill",
                     color: .purple
                 ) { showEstimatedTimeSheet = true }
+
+                actionButton(
+                    title: "Plan Phases",
+                    icon: "list.number",
+                    color: Color.appTextPrimary
+                ) { showPhasePlanner = true }
             }
 
             if status == .inProgress {
@@ -538,6 +550,23 @@ struct MaintenanceTaskDetailView: View {
                     }
                     .padding(.top, 14)
 
+                    if phases.isEmpty {
+                        Button {
+                            showEstimatedTimeSheet = false
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                                showPhasePlanner = true
+                            }
+                        } label: {
+                            Text("Plan Phases First")
+                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                                .foregroundStyle(Color.appOrange)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(Capsule().fill(Color.appOrange.opacity(0.1)))
+                        }
+                        .padding(.top, 10)
+                    }
+
                     Spacer()
 
                     Button {
@@ -573,6 +602,57 @@ struct MaintenanceTaskDetailView: View {
         .presentationDetents([.large])
     }
 
+    private var phasePlannerSheet: some View {
+        NavigationStack {
+            List {
+                Section("Phases") {
+                    ForEach(phasePlanDrafts.indices, id: \.self) { idx in
+                        VStack(alignment: .leading, spacing: 8) {
+                            TextField("Phase title", text: $phasePlanDrafts[idx].title)
+                            TextField("Description (optional)", text: $phasePlanDrafts[idx].details)
+                            Stepper("ETA \(phasePlanDrafts[idx].estimatedMinutes / 60)h \(phasePlanDrafts[idx].estimatedMinutes % 60)m",
+                                    value: $phasePlanDrafts[idx].estimatedMinutes,
+                                    in: 15...1440,
+                                    step: 15)
+                        }
+                    }
+                    .onMove(perform: moveDraftPhase)
+                    .onDelete(perform: deleteDraftPhase)
+
+                    Button {
+                        phasePlanDrafts.append(.init(title: "", details: "", estimatedMinutes: 60))
+                    } label: {
+                        Label("Add Phase", systemImage: "plus.circle.fill")
+                    }
+                }
+            }
+            .environment(\.editMode, .constant(.active))
+            .navigationTitle("Plan Phases")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { showPhasePlanner = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        Task { await persistPhasePlan() }
+                    }
+                }
+            }
+            .onAppear {
+                if phasePlanDrafts.isEmpty {
+                    if phases.isEmpty {
+                        phasePlanDrafts = [.init(title: "", details: "", estimatedMinutes: 60)]
+                    } else {
+                        phasePlanDrafts = phases.map {
+                            .init(title: $0.title, details: $0.description ?? "", estimatedMinutes: $0.estimatedMinutes ?? 60)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // MARK: - Backend Actions
 
     private func startWork() async {
@@ -587,6 +667,9 @@ struct MaintenanceTaskDetailView: View {
             wo.startedAt = Date()
             wo.status = .inProgress
             try? await store.updateWorkOrder(wo)
+            if phases.isEmpty {
+                await persistPhasePlan(workOrderId: wo.id, closeSheet: false)
+            }
         }
 
         if let idx = store.maintenanceTasks.firstIndex(where: { $0.id == task.id }) {
@@ -595,6 +678,51 @@ struct MaintenanceTaskDetailView: View {
         }
 
         showEstimatedTimeSheet = false
+    }
+
+    private func moveDraftPhase(from source: IndexSet, to destination: Int) {
+        phasePlanDrafts.move(fromOffsets: source, toOffset: destination)
+    }
+
+    private func deleteDraftPhase(at offsets: IndexSet) {
+        phasePlanDrafts.remove(atOffsets: offsets)
+        if phasePlanDrafts.isEmpty {
+            phasePlanDrafts.append(.init(title: "", details: "", estimatedMinutes: 60))
+        }
+    }
+
+    private func persistPhasePlan(workOrderId: UUID? = nil, closeSheet: Bool = true) async {
+        let woId = workOrderId ?? workOrder?.id
+        guard let woId else { return }
+        let clean = phasePlanDrafts
+            .map { PhasePlanDraft(title: $0.title.trimmingCharacters(in: .whitespacesAndNewlines),
+                                  details: $0.details.trimmingCharacters(in: .whitespacesAndNewlines),
+                                  estimatedMinutes: max(15, $0.estimatedMinutes)) }
+            .filter { !$0.title.isEmpty }
+        guard !clean.isEmpty else { return }
+
+        for (idx, draft) in clean.enumerated() {
+            if phases.indices.contains(idx) {
+                let existing = phases[idx]
+                try? await store.updatePhasePlan(
+                    phaseId: existing.id,
+                    phaseNumber: idx + 1,
+                    title: draft.title,
+                    description: draft.details.isEmpty ? nil : draft.details,
+                    estimatedMinutes: draft.estimatedMinutes
+                )
+            } else {
+                try? await store.createPhase(
+                    workOrderId: woId,
+                    phaseNumber: idx + 1,
+                    title: draft.title,
+                    description: draft.details.isEmpty ? nil : draft.details,
+                    estimatedMinutes: draft.estimatedMinutes
+                )
+            }
+        }
+        await store.loadWorkOrderPhases(workOrderId: woId)
+        if closeSheet { showPhasePlanner = false }
     }
 
     private func markRepairDone() async {
@@ -697,4 +825,10 @@ struct MaintenanceTaskDetailView: View {
         if mins > 0  { parts.append("\(mins) min") }
         return parts.isEmpty ? "–" : parts.joined(separator: " ")
     }
+}
+
+private struct PhasePlanDraft {
+    var title: String
+    var details: String
+    var estimatedMinutes: Int
 }

@@ -82,23 +82,32 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     var isUsingStoredRouteFallback: Bool        { routeEngine.isUsingStoredRouteFallback }
     var routeEngineError: String?               { routeEngine.lastBuildError }
     var activeIncidents: [TrafficIncident]      { trafficService.activeIncidents }
+    // Cached geofences — recomputed only when the trip's stops change.
+    private var _cachedGeofences: [Geofence]?
+    private var _geofenceAnchorCount: Int = -1
     var activeGeofences: [Geofence] {
-        let anchors: [CLLocationCoordinate2D] = {
-            var points: [CLLocationCoordinate2D] = []
-            if let lat = trip.originLatitude, let lng = trip.originLongitude {
-                points.append(CLLocationCoordinate2D(latitude: lat, longitude: lng))
-            }
-            for stop in (trip.routeStops ?? []).sorted(by: { $0.order < $1.order }) {
-                points.append(CLLocationCoordinate2D(latitude: stop.latitude, longitude: stop.longitude))
-            }
-            if let lat = trip.destinationLatitude, let lng = trip.destinationLongitude {
-                points.append(CLLocationCoordinate2D(latitude: lat, longitude: lng))
-            }
-            return points
-        }()
-        guard !anchors.isEmpty else { return [] }
+        let stops = trip.routeStops ?? []
+        let anchorCount = stops.count + 2  // origin + stops + destination
+        if let cached = _cachedGeofences, anchorCount == _geofenceAnchorCount {
+            return cached
+        }
+        var anchors: [CLLocationCoordinate2D] = []
+        if let lat = trip.originLatitude, let lng = trip.originLongitude {
+            anchors.append(CLLocationCoordinate2D(latitude: lat, longitude: lng))
+        }
+        for stop in stops.sorted(by: { $0.order < $1.order }) {
+            anchors.append(CLLocationCoordinate2D(latitude: stop.latitude, longitude: stop.longitude))
+        }
+        if let lat = trip.destinationLatitude, let lng = trip.destinationLongitude {
+            anchors.append(CLLocationCoordinate2D(latitude: lat, longitude: lng))
+        }
+        guard !anchors.isEmpty else {
+            _cachedGeofences = []
+            _geofenceAnchorCount = anchorCount
+            return []
+        }
 
-        return AppDataStore.shared.geofences
+        let result = AppDataStore.shared.geofences
             .filter(\.isActive)
             .filter { geofence in
                 anchors.contains { anchor in
@@ -107,6 +116,9 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
                     return a.distance(from: g) <= max(geofence.radiusMeters, 80)
                 }
             }
+        _cachedGeofences = result
+        _geofenceAnchorCount = anchorCount
+        return result
     }
     var currentRouteCoordinate: CLLocationCoordinate2D? {
         guard routeEngine.decodedRouteCoordinates.indices.contains(routeCursorIndex) else { return currentLocation?.coordinate }
@@ -138,6 +150,66 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         get { routeEngine.avoidHighways }
         set { routeEngine.avoidHighways = newValue }
     }
+    /// Distance from driver's current location to the end of the current step (i.e. start of the next maneuver).
+    /// Uses route-following distance along the current step's shape when possible,
+    /// otherwise falls back to straight-line distance, then total remaining.
+    var distanceToNextManeuverMetres: Double {
+        guard let route = routeEngine.currentRoute,
+              let leg = route.legs.first,
+              let location = currentLocation else {
+            return distanceToEndOfCurrentSegment
+        }
+        let steps = leg.steps
+        guard currentStepIndex < steps.count else { return distanceToEndOfCurrentSegment }
+
+        let currentStep = steps[currentStepIndex]
+
+        if let shape = currentStep.shape {
+            let coords = shape.coordinates
+            guard coords.count >= 2 else {
+                if let last = coords.last {
+                    return location.distance(from: CLLocation(latitude: last.latitude, longitude: last.longitude))
+                }
+                return currentStep.distance
+            }
+
+            var bestSegIdx = 0
+            var bestDist = Double.greatestFiniteMagnitude
+            for i in 0 ..< coords.count {
+                let segLoc = CLLocation(latitude: coords[i].latitude, longitude: coords[i].longitude)
+                let d = location.distance(from: segLoc)
+                if d < bestDist { bestDist = d; bestSegIdx = i }
+            }
+
+            var dist: Double = 0
+            for i in bestSegIdx ..< coords.count - 1 {
+                let a = CLLocation(latitude: coords[i].latitude, longitude: coords[i].longitude)
+                let b = CLLocation(latitude: coords[i + 1].latitude, longitude: coords[i + 1].longitude)
+                dist += a.distance(from: b)
+            }
+            return max(0, dist)
+        }
+
+        return currentStep.distance
+    }
+
+    /// Distance from current position to the end of the next ~2 km segment of route
+    /// coordinates. Used as fallback when no Mapbox Route object is available.
+    private var distanceToEndOfCurrentSegment: Double {
+        let coords = routeEngine.decodedRouteCoordinates
+        guard coords.count >= 2, let location = currentLocation else { return distanceRemainingMetres }
+        let start = min(max(routeCursorIndex, 0), coords.count - 1)
+        var dist: Double = 0
+        let driverLoc = CLLocation(latitude: coords[start].latitude, longitude: coords[start].longitude)
+        dist += location.distance(from: driverLoc)
+        for i in start ..< coords.count - 1 {
+            let a = CLLocation(latitude: coords[i].latitude, longitude: coords[i].longitude)
+            let b = CLLocation(latitude: coords[i + 1].latitude, longitude: coords[i + 1].longitude)
+            dist += a.distance(from: b)
+            if dist > 2000 { return dist }
+        }
+        return max(0, min(dist, distanceRemainingMetres))
+    }
     // MARK: - Coordinator-owned State
     var isNavigating: Bool = false
     var currentSpeedKmh: Double = 0
@@ -145,6 +217,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     var currentSpeedLimit: Int?
     var currentStepManeuver: String = ""
     var nextStepInstruction: String = ""
+    var requestRecenter: Bool = false
 
     /// Returns a value in [0.0, 1.0] representing how far along the route the driver is.
     /// 0.0 = at origin, 1.0 = arrived at destination.
@@ -172,6 +245,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     private var currentStepIndex: Int = 0
     private var lastStepChangeLocation: CLLocation?  // ISSUE-13 FIX: hysteresis tracking
     private var lastRerouteRequestedAt: Date = .distantPast  // Fix 9: reroute cooldown
+    private var lastTrafficUpdateAt: Date = .distantPast     // throttle traffic service
     private var didAnnounceInitialInstruction = false
 
     // MARK: - Init / deinit
@@ -193,6 +267,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     // MARK: - Route Methods
     func buildRoutes() async {
         await routeEngine.buildRoutes(trip: trip, currentLocation: currentLocation)
+        _cumulativeRouteCount = 0  // invalidate distance cache
         recomputeStopRouteAnchors()
         routeCursorIndex = min(max(routeCursorIndex, 0), max(0, routeEngine.decodedRouteCoordinates.count - 1))
         maxRouteProgressFraction = max(maxRouteProgressFraction, Self.persistedProgress(for: trip.id))
@@ -219,10 +294,27 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     }
 
     // MARK: - Location Manager
-    func startLocationTracking() {
-        guard !simulated else { return }
+    func startEarlyLocationUpdates() {
+        guard locationManager == nil, !simulated else { return }
         let manager = CLLocationManager()
         manager.delegate = self
+        manager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
+        manager.distanceFilter = 5
+
+        let status = manager.authorizationStatus
+        if status == .notDetermined || status == .authorizedWhenInUse {
+            manager.requestWhenInUseAuthorization()
+        }
+        manager.startUpdatingLocation()
+        locationManager = manager
+    }
+
+    func startLocationTracking() {
+        guard !simulated else { return }
+        if locationManager == nil {
+            startEarlyLocationUpdates()
+        }
+        guard let manager = locationManager else { return }
         manager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
         manager.allowsBackgroundLocationUpdates = true
         manager.showsBackgroundLocationIndicator = true
@@ -337,7 +429,11 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         currentLocation = location
         appendBreadcrumbCoordinateIfNeeded(location.coordinate)
         currentSpeedKmh = max(0, location.speed * 3.6)
-        trafficService.updateLocation(location)
+        let now = Date()
+        if now.timeIntervalSince(lastTrafficUpdateAt) >= 15 {
+            lastTrafficUpdateAt = now
+            trafficService.updateLocation(location)
+        }
         updateNavigationProgress(location: location)
         checkDeviation(from: location)
 
@@ -358,19 +454,20 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
 
         // Stop-safe progression: search forward window and never move cursor backwards.
         let lastSegmentIndex = routeCoords.count - 2
-        let forwardStart = min(max(routeCursorIndex - 12, 0), lastSegmentIndex)
-        let forwardEnd = min(max(routeCursorIndex + 180, 0), lastSegmentIndex)
-        let candidateRange = forwardStart <= forwardEnd
-            ? Array(forwardStart...forwardEnd)
-            : Array(0...lastSegmentIndex)
+        let forwardStart = min(max(routeCursorIndex - 8, 0), lastSegmentIndex)
+        let forwardEnd = min(routeCursorIndex + 40, lastSegmentIndex)
+        let candidateRange = forwardStart...forwardEnd
+
+        let driverLat = location.coordinate.latitude
+        let driverLon = location.coordinate.longitude
 
         var minDist = Double.greatestFiniteMagnitude
         var closestSegIndex = routeCursorIndex
         for i in candidateRange {
-            let dist = pointToSegmentDistance(
-                point: location.coordinate,
-                segStart: routeCoords[i],
-                segEnd: routeCoords[i + 1]
+            let dist = fastSegmentDistance(
+                pLat: driverLat, pLon: driverLon,
+                aLat: routeCoords[i].latitude, aLon: routeCoords[i].longitude,
+                bLat: routeCoords[i + 1].latitude, bLon: routeCoords[i + 1].longitude
             )
             if dist < minDist {
                 minDist = dist
@@ -379,19 +476,8 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         }
         routeCursorIndex = max(routeCursorIndex, closestSegIndex)
 
-        // Sum remaining segment lengths from closest point forward
-        var remainingDist: Double = 0
-        if routeCursorIndex + 1 < routeCoords.count {
-            let next = CLLocation(latitude: routeCoords[routeCursorIndex + 1].latitude,
-                                  longitude: routeCoords[routeCursorIndex + 1].longitude)
-            remainingDist += location.distance(from: next)
-        }
-        for i in (routeCursorIndex + 1)..<(routeCoords.count - 1) {
-            let a = CLLocation(latitude: routeCoords[i].latitude, longitude: routeCoords[i].longitude)
-            let b = CLLocation(latitude: routeCoords[i + 1].latitude, longitude: routeCoords[i + 1].longitude)
-            remainingDist += a.distance(from: b)
-        }
-        routeEngine.distanceRemainingMetres = max(0, remainingDist)
+        let remaining = cumulativeRemainingDistance(from: routeCursorIndex, driverLocation: location, routeCoords: routeCoords)
+        routeEngine.distanceRemainingMetres = max(0, remaining)
         maxRouteProgressFraction = max(maxRouteProgressFraction, routeProgressFraction)
         Self.savePersistedProgress(maxRouteProgressFraction, for: trip.id)
 
@@ -407,7 +493,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         }
 
         // Arrival check using route distance, not crow-fly
-        if remainingDist < 50 && !hasArrived {
+        if remaining < 50 && !hasArrived {
             hasArrived = true
             routeEngine.distanceRemainingMetres = 0
             maxRouteProgressFraction = 1.0
@@ -425,7 +511,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         } else {
             avgSpeed = 35.0 / 3.6
         }
-        let remainingTime = avgSpeed > 0 ? remainingDist / avgSpeed : 0
+        let remainingTime = avgSpeed > 0 ? remaining / avgSpeed : 0
         routeEngine.estimatedArrivalTime = Date().addingTimeInterval(remainingTime)
 
         guard let route = routeEngine.currentRoute, let leg = route.legs.first else {
@@ -577,21 +663,64 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         }
     }
 
-    private func pointToSegmentDistance(
-        point: CLLocationCoordinate2D,
-        segStart: CLLocationCoordinate2D,
-        segEnd: CLLocationCoordinate2D
-    ) -> Double {
-        let pLoc = CLLocation(latitude: point.latitude, longitude: point.longitude)
-        let aLoc = CLLocation(latitude: segStart.latitude, longitude: segStart.longitude)
-        let bLoc = CLLocation(latitude: segEnd.latitude, longitude: segEnd.longitude)
-        let ab = bLoc.distance(from: aLoc)
-        guard ab > 0 else { return pLoc.distance(from: aLoc) }
-        let ap = pLoc.distance(from: aLoc)
-        let bp = pLoc.distance(from: bLoc)
+    // MARK: - Fast Geometry Helpers (avoid CLLocation allocation on every tick)
+
+    private var _cumulativeDistFromEnd: [Double] = []
+    private var _cumulativeRouteCount: Int = 0
+
+    private func cumulativeRemainingDistance(from fromIndex: Int, driverLocation: CLLocation, routeCoords: [CLLocationCoordinate2D]) -> Double {
+        if _cumulativeRouteCount != routeCoords.count {
+            rebuildCumulativeDistances(routeCoords)
+        }
+        guard !_cumulativeDistFromEnd.isEmpty else { return 0 }
+        let idx = min(max(fromIndex, 0), routeCoords.count - 1)
+        var dist: Double = 0
+        if idx + 1 < routeCoords.count {
+            dist += haversineDistance(
+                lat1: driverLocation.coordinate.latitude, lon1: driverLocation.coordinate.longitude,
+                lat2: routeCoords[idx + 1].latitude, lon2: routeCoords[idx + 1].longitude
+            )
+        }
+        if idx + 1 < _cumulativeDistFromEnd.count {
+            dist += _cumulativeDistFromEnd[idx + 1]
+        }
+        return dist
+    }
+
+    private func rebuildCumulativeDistances(_ coords: [CLLocationCoordinate2D]) {
+        let n = coords.count
+        _cumulativeRouteCount = n
+        guard n >= 2 else { _cumulativeDistFromEnd = []; return }
+        var arr = [Double](repeating: 0, count: n)
+        for i in stride(from: n - 2, through: 0, by: -1) {
+            arr[i] = arr[i + 1] + haversineDistance(
+                lat1: coords[i].latitude, lon1: coords[i].longitude,
+                lat2: coords[i + 1].latitude, lon2: coords[i + 1].longitude
+            )
+        }
+        _cumulativeDistFromEnd = arr
+    }
+
+    private func fastSegmentDistance(pLat: Double, pLon: Double,
+                                     aLat: Double, aLon: Double,
+                                     bLat: Double, bLon: Double) -> Double {
+        let ab = haversineDistance(lat1: aLat, lon1: aLon, lat2: bLat, lon2: bLon)
+        guard ab > 0 else { return haversineDistance(lat1: pLat, lon1: pLon, lat2: aLat, lon2: aLon) }
+        let ap = haversineDistance(lat1: pLat, lon1: pLon, lat2: aLat, lon2: aLon)
+        let bp = haversineDistance(lat1: pLat, lon1: pLon, lat2: bLat, lon2: bLon)
         let s = (ab + ap + bp) / 2
         let area = sqrt(max(0, s * (s - ab) * (s - ap) * (s - bp)))
         return (2 * area) / ab
+    }
+
+    private func haversineDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double) -> Double {
+        let r = 6_371_000.0
+        let dLat = (lat2 - lat1) * .pi / 180
+        let dLon = (lon2 - lon1) * .pi / 180
+        let a = sin(dLat / 2) * sin(dLat / 2) +
+                cos(lat1 * .pi / 180) * cos(lat2 * .pi / 180) *
+                sin(dLon / 2) * sin(dLon / 2)
+        return r * 2 * atan2(sqrt(a), sqrt(1 - a))
     }
 
     // MARK: - Simulation

@@ -66,8 +66,9 @@ struct PendingApprovalView: View {
 
     private func startPolling() {
         pollingTask = Task {
+            try? await AuthManager.shared.refreshCurrentUser()
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(10))
+                try? await Task.sleep(for: .seconds(5))
                 guard !Task.isCancelled else { return }
                 try? await AuthManager.shared.refreshCurrentUser()
             }

@@ -12,6 +12,12 @@ struct MaintenanceTabView: View {
 
     var body: some View {
         TabView {
+            Tab("Home", systemImage: "house.fill") {
+                NavigationStack {
+                    MaintenanceHomeView()
+                }
+            }
+
             Tab("Service", systemImage: "gearshape.2.fill") {
                 NavigationStack {
                     ServiceTaskListView()

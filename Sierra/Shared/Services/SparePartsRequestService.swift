@@ -82,6 +82,17 @@ struct SparePartsRequestService {
             .value
     }
 
+    // MARK: Fetch — all requests (used by maintenance inventory catalog)
+
+    static func fetchAllRequests() async throws -> [SparePartsRequest] {
+        try await supabase
+            .from("spare_parts_requests")
+            .select()
+            .order("created_at", ascending: false)
+            .execute()
+            .value
+    }
+
     // MARK: Fetch — all pending (used by loadAll for fleet manager)
     // Fleet manager sees all pending requests awaiting their approval.
 

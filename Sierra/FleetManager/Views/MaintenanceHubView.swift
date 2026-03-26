@@ -26,6 +26,7 @@ struct MaintenanceHubView: View {
 
     @State private var selectedTask: MaintenanceTask?
     @State private var vehicleSheetVehicle: Vehicle?
+    @State private var showInventoryAdmin = false
 
     @State private var rejectPartTarget: SparePartsRequest?
 
@@ -101,6 +102,15 @@ struct MaintenanceHubView: View {
         .searchable(text: $searchText, prompt: "Search task ID, vehicle, or title")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showInventoryAdmin = true
+                } label: {
+                    Image(systemName: "shippingbox")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(Color.appOrange)
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 filterMenu
             }
         }
@@ -126,6 +136,10 @@ struct MaintenanceHubView: View {
                     try? await store.rejectSparePartsRequest(id: part.id, reviewedBy: adminId, reason: reason)
                 }
             }
+        }
+        .sheet(isPresented: $showInventoryAdmin) {
+            InventoryAdminView()
+                .environment(store)
         }
         .task {
             if store.maintenanceTasks.isEmpty || store.workOrders.isEmpty { await store.loadAll() }

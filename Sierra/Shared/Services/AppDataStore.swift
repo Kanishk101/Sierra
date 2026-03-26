@@ -16,6 +16,11 @@ final class AppDataStore {
     private var vehiclesChannel:        RealtimeChannelV2?
     private var tripsChannel:           RealtimeChannelV2?
     private var notificationsChannel:   RealtimeChannelV2?
+    private var maintenanceTasksChannel: RealtimeChannelV2?
+    private var workOrdersChannel:       RealtimeChannelV2?
+    private var sparePartsChannel:       RealtimeChannelV2?
+    private var partsUsedChannel:        RealtimeChannelV2?
+    private var inventoryPartsChannel:   RealtimeChannelV2?
     private var subscribedNotificationsUserId: UUID?
 
     // MARK: - Data Arrays
@@ -42,6 +47,7 @@ final class AppDataStore {
     var currentTripDeviations: [RouteDeviationEvent] = []
     var activeTripExpenses: [TripExpense] = []
     var sparePartsRequests: [SparePartsRequest] = []
+    var inventoryParts: [InventoryPart] = []
     var workOrderPhases: [WorkOrderPhase] = []
     var vehicleLocations: [String: VehicleLocationHistory] = [:]
     var routeDeviationEvents: [RouteDeviationEvent] = []
@@ -76,6 +82,7 @@ final class AppDataStore {
         async let activityTask     = ActivityLogService.fetchRecentLogs(limit: 100)
         async let routeDevsTask    = RouteDeviationService.fetchAllDeviations()
         async let sparePartsTask   = SparePartsRequestService.fetchAllSparePartsRequests()
+        async let inventoryTask    = InventoryPartService.fetchAllInventoryParts()
 
         var errors: [String] = []
         do { staff               = try await staffTask }        catch { errors.append("staff: \(error.localizedDescription)") }
@@ -98,6 +105,7 @@ final class AppDataStore {
         do { activityLogs        = try await activityTask }     catch { errors.append("activityLogs: \(error.localizedDescription)") }
         do { routeDeviationEvents = try await routeDevsTask }   catch { errors.append("routeDeviationEvents: \(error.localizedDescription)") }
         do { sparePartsRequests  = try await sparePartsTask }   catch { errors.append("sparePartsRequests: \(error.localizedDescription)") }
+        do { inventoryParts      = try await inventoryTask }    catch { errors.append("inventoryParts: \(error.localizedDescription)") }
 
         if !errors.isEmpty {
             loadError = "Partial load failure: \(errors.joined(separator: "; "))"
@@ -116,6 +124,7 @@ final class AppDataStore {
         subscribeToStaffMemberUpdates()
         subscribeToVehicleUpdates()
         subscribeToTripUpdates()
+        subscribeToMaintenanceRealtime(staffId: nil)
         if let userId = AuthManager.shared.currentUser?.id {
             await loadAndSubscribeNotifications(for: userId)
         }
@@ -163,6 +172,7 @@ final class AppDataStore {
         guard !isLoading else { return }
         await tearDownRealtimeChannels()
         isLoading = true
+        loadError = nil
 
         async let selfMemberTask = StaffMemberService.fetchStaffMember(id: staffId)
         async let vehiclesTask   = VehicleService.fetchAllVehicles()
@@ -171,20 +181,38 @@ final class AppDataStore {
         async let maintRecsTask  = MaintenanceRecordService.fetchMaintenanceRecords(performedById: staffId)
         async let partsTask      = PartUsedService.fetchAllPartsUsed()
         async let maintProfTask  = MaintenanceProfileService.fetchMaintenanceProfile(staffMemberId: staffId)
-        async let sparePartsTask = SparePartsRequestService.fetchAllRequests(requestedById: staffId)
+        // Inventory tab needs full pipeline visibility (pending approvals, on-order, deliveries),
+        // so fetch all spare parts requests instead of only current staff requests.
+        async let sparePartsTask = SparePartsRequestService.fetchAllRequests()
+        async let inventoryTask  = InventoryPartService.fetchAllInventoryParts()
 
+        var errors: [String] = []
         do { if let m = try await selfMemberTask { staff = [m] } }
-            catch { print("[loadMaintenanceData] staff: \(error)") }
-        do { vehicles = try await vehiclesTask }              catch { print("[loadMaintenanceData] vehicles: \(error)") }
-        do { workOrders = try await workOrdersTask }          catch { print("[loadMaintenanceData] workOrders: \(error)") }
-        do { maintenanceTasks = try await maintTasksTask }    catch { print("[loadMaintenanceData] maintenanceTasks: \(error)") }
-        do { maintenanceRecords = try await maintRecsTask }   catch { print("[loadMaintenanceData] maintenanceRecords: \(error)") }
-        do { partsUsed = try await partsTask }                catch { print("[loadMaintenanceData] partsUsed: \(error)") }
+            catch { errors.append("Staff: \(error.localizedDescription)") }
+        do { vehicles = try await vehiclesTask }
+            catch { errors.append("Vehicles: \(error.localizedDescription)") }
+        do { workOrders = try await workOrdersTask }
+            catch { errors.append("Work orders: \(error.localizedDescription)") }
+        do { maintenanceTasks = try await maintTasksTask }
+            catch { errors.append("Maintenance tasks: \(error.localizedDescription)") }
+        do { maintenanceRecords = try await maintRecsTask }
+            catch { errors.append("Maintenance records: \(error.localizedDescription)") }
+        do { partsUsed = try await partsTask }
+            catch { errors.append("Parts used: \(error.localizedDescription)") }
         do { if let p = try await maintProfTask { maintenanceProfiles = [p] } }
-            catch { print("[loadMaintenanceData] maintenanceProfile: \(error)") }
-        do { sparePartsRequests = try await sparePartsTask }  catch { print("[loadMaintenanceData] sparePartsRequests: \(error)") }
+            catch { errors.append("Maintenance profile: \(error.localizedDescription)") }
+        do { sparePartsRequests = try await sparePartsTask }
+            catch { errors.append("Spare parts requests: \(error.localizedDescription)") }
+        do { inventoryParts = try await inventoryTask }
+            catch { errors.append("Inventory parts: \(error.localizedDescription)") }
+
+        if !errors.isEmpty {
+            loadError = "Some maintenance data failed to load: \(errors.joined(separator: "; "))"
+            print("[loadMaintenanceData] Partial errors: \(errors)")
+        }
 
         isLoading = false
+        subscribeToMaintenanceRealtime(staffId: staffId)
         await loadAndSubscribeNotifications(for: staffId)
     }
 
@@ -196,6 +224,11 @@ final class AppDataStore {
         if let ch = vehiclesChannel        { await ch.unsubscribe(); vehiclesChannel = nil }
         if let ch = tripsChannel           { await ch.unsubscribe(); tripsChannel = nil }
         if let ch = notificationsChannel   { await ch.unsubscribe(); notificationsChannel = nil }
+        if let ch = maintenanceTasksChannel { await ch.unsubscribe(); maintenanceTasksChannel = nil }
+        if let ch = workOrdersChannel       { await ch.unsubscribe(); workOrdersChannel = nil }
+        if let ch = sparePartsChannel       { await ch.unsubscribe(); sparePartsChannel = nil }
+        if let ch = partsUsedChannel        { await ch.unsubscribe(); partsUsedChannel = nil }
+        if let ch = inventoryPartsChannel   { await ch.unsubscribe(); inventoryPartsChannel = nil }
         subscribedNotificationsUserId = nil
         NotificationService.shared.unsubscribeFromNotifications()
     }
@@ -251,6 +284,77 @@ final class AppDataStore {
         if let idx = maintenanceProfiles.firstIndex(where: { $0.id == profile.id }) { maintenanceProfiles[idx] = profile }
     }
 
+    // MARK: - Inventory Parts (Admin CRUD)
+
+    func createInventoryPart(
+        partName: String,
+        partNumber: String?,
+        supplier: String?,
+        category: String?,
+        unit: String,
+        currentQuantity: Int,
+        reorderLevel: Int,
+        onOrderQuantity: Int,
+        expectedArrivalAt: Date?,
+        compatibleVehicleIds: [UUID],
+        isActive: Bool
+    ) async throws {
+        let created = try await InventoryPartService.createInventoryPart(
+            partName: partName,
+            partNumber: partNumber,
+            supplier: supplier,
+            category: category,
+            unit: unit,
+            currentQuantity: currentQuantity,
+            reorderLevel: reorderLevel,
+            onOrderQuantity: onOrderQuantity,
+            expectedArrivalAt: expectedArrivalAt,
+            compatibleVehicleIds: compatibleVehicleIds,
+            isActive: isActive
+        )
+        inventoryParts.insert(created, at: 0)
+    }
+
+    func updateInventoryPart(
+        id: UUID,
+        partName: String,
+        partNumber: String?,
+        supplier: String?,
+        category: String?,
+        unit: String,
+        currentQuantity: Int,
+        reorderLevel: Int,
+        onOrderQuantity: Int,
+        expectedArrivalAt: Date?,
+        compatibleVehicleIds: [UUID],
+        isActive: Bool
+    ) async throws {
+        let updated = try await InventoryPartService.updateInventoryPart(
+            id: id,
+            partName: partName,
+            partNumber: partNumber,
+            supplier: supplier,
+            category: category,
+            unit: unit,
+            currentQuantity: currentQuantity,
+            reorderLevel: reorderLevel,
+            onOrderQuantity: onOrderQuantity,
+            expectedArrivalAt: expectedArrivalAt,
+            compatibleVehicleIds: compatibleVehicleIds,
+            isActive: isActive
+        )
+        if let idx = inventoryParts.firstIndex(where: { $0.id == id }) {
+            inventoryParts[idx] = updated
+        } else {
+            inventoryParts.insert(updated, at: 0)
+        }
+    }
+
+    func deleteInventoryPart(id: UUID) async throws {
+        try await InventoryPartService.deleteInventoryPart(id: id)
+        inventoryParts.removeAll { $0.id == id }
+    }
+
     // MARK: - Staff Applications
 
     private enum StaffApplicationFlowError: LocalizedError {
@@ -302,28 +406,47 @@ final class AppDataStore {
         // 2. Set is_approved, status=Active, availability=Available in staff_members
         try await StaffMemberService.setApprovalStatus(staffId: app.staffMemberId, approved: true, rejectionReason: nil)
 
-        // 3. Copy personal data + create driver/maintenance profile row
-        //    (Non-fatal: approval is already committed above; profile copy is best-effort
-        //     but we still throw so the UI can surface any problem.)
-        try await StaffMemberService.copyApplicationDataToProfile(app)
-
-        // 4. Update local store
-        if let si = staff.firstIndex(where: { $0.id == app.staffMemberId }) {
-            staff[si].isApproved         = true
-            staff[si].status             = .active
-            staff[si].availability       = .available
-            staff[si].isProfileComplete  = true
-            staff[si].phone              = app.phone
-            staff[si].dateOfBirth        = app.dateOfBirth
-            staff[si].gender             = app.gender
-            staff[si].address            = app.address
-            staff[si].emergencyContactName  = app.emergencyContactName
-            staff[si].emergencyContactPhone = app.emergencyContactPhone
-            staff[si].aadhaarNumber      = app.aadhaarNumber
-            staff[si].profilePhotoUrl    = app.profilePhotoUrl
+        // 3. Copy personal data + create driver/maintenance profile row.
+        // Non-fatal: approval should not be blocked by profile-copy edge cases.
+        do {
+            try await StaffMemberService.copyApplicationDataToProfile(app)
+        } catch {
+            print("[AppDataStore.approveStaffApplication] Non-fatal profile copy error: \(error)")
         }
 
-        // 5. Notify the driver
+        // 4. Update local store (optimistic)
+        if let si = staff.firstIndex(where: { $0.id == app.staffMemberId }) {
+            staff[si].isApproved            = true
+            staff[si].status                = .active
+            staff[si].availability          = .available
+            staff[si].isProfileComplete     = true
+            staff[si].phone                 = app.phone
+            staff[si].dateOfBirth           = app.dateOfBirth
+            staff[si].gender                = app.gender
+            staff[si].address               = app.address
+            staff[si].emergencyContactName  = app.emergencyContactName
+            staff[si].emergencyContactPhone = app.emergencyContactPhone
+            staff[si].aadhaarNumber         = app.aadhaarNumber
+            staff[si].profilePhotoUrl       = app.profilePhotoUrl
+        }
+
+        // 5. Reconcile from backend so admin UI and driver-side login use canonical values.
+        if let refreshedApp = try await StaffApplicationService.fetchStaffApplication(id: id) {
+            if let ai = staffApplications.firstIndex(where: { $0.id == refreshedApp.id }) {
+                staffApplications[ai] = refreshedApp
+            } else {
+                staffApplications.append(refreshedApp)
+            }
+        }
+        if let refreshedMember = try await StaffMemberService.fetchStaffMember(id: app.staffMemberId) {
+            if let si = staff.firstIndex(where: { $0.id == refreshedMember.id }) {
+                staff[si] = refreshedMember
+            } else {
+                staff.append(refreshedMember)
+            }
+        }
+
+        // 6. Notify the driver
         try? await NotificationService.insertNotification(
             recipientId: app.staffMemberId, type: .general,
             title: "Application Approved",
@@ -799,6 +922,45 @@ final class AppDataStore {
             }
         }
     }
+
+    func createPhase(
+        workOrderId: UUID,
+        phaseNumber: Int,
+        title: String,
+        description: String?,
+        estimatedMinutes: Int?
+    ) async throws {
+        let created = try await WorkOrderPhaseService().createPhase(
+            workOrderId: workOrderId,
+            phaseNumber: phaseNumber,
+            title: title,
+            description: description,
+            estimatedMinutes: estimatedMinutes
+        )
+        workOrderPhases.append(created)
+    }
+
+    func updatePhasePlan(
+        phaseId: UUID,
+        phaseNumber: Int,
+        title: String,
+        description: String?,
+        estimatedMinutes: Int?
+    ) async throws {
+        try await WorkOrderPhaseService().updatePhase(
+            phaseId: phaseId,
+            phaseNumber: phaseNumber,
+            title: title,
+            description: description,
+            estimatedMinutes: estimatedMinutes
+        )
+        if let idx = workOrderPhases.firstIndex(where: { $0.id == phaseId }) {
+            workOrderPhases[idx].phaseNumber = phaseNumber
+            workOrderPhases[idx].title = title
+            workOrderPhases[idx].description = description
+            workOrderPhases[idx].estimatedMinutes = estimatedMinutes
+        }
+    }
     func routeDeviations(forTrip tripId: UUID) -> [RouteDeviationEvent] { routeDeviationEvents.filter { $0.tripId == tripId } }
 
     // MARK: - Computed Aggregates
@@ -902,6 +1064,158 @@ final class AppDataStore {
         Task {
             do { try await channel.subscribeWithError() } catch { print("[AppDataStore] Trips channel: \(error)") }
             await MainActor.run { self.tripsChannel = channel }
+        }
+    }
+
+    // MARK: - Realtime — Maintenance Tables
+
+    private func subscribeToMaintenanceRealtime(staffId: UUID?) {
+        subscribeToMaintenanceTaskUpdates(staffId: staffId)
+        subscribeToWorkOrderUpdates(staffId: staffId)
+        subscribeToSparePartsUpdates(staffId: staffId)
+        subscribeToPartsUsedUpdates()
+        subscribeToInventoryPartsUpdates()
+    }
+
+    private func subscribeToMaintenanceTaskUpdates(staffId: UUID?) {
+        let channel = supabase.channel("maintenance_tasks_updates_channel")
+
+        _ = channel.onPostgresChange(UpdateAction.self, schema: "public", table: "maintenance_tasks") { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in await self.refreshMaintenanceTasks(staffId: staffId) }
+        }
+        _ = channel.onPostgresChange(InsertAction.self, schema: "public", table: "maintenance_tasks") { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in await self.refreshMaintenanceTasks(staffId: staffId) }
+        }
+
+        Task {
+            do { try await channel.subscribeWithError() } catch { print("[AppDataStore] Maintenance tasks channel: \(error)") }
+            await MainActor.run { self.maintenanceTasksChannel = channel }
+        }
+    }
+
+    private func subscribeToWorkOrderUpdates(staffId: UUID?) {
+        let channel = supabase.channel("work_orders_updates_channel")
+
+        _ = channel.onPostgresChange(UpdateAction.self, schema: "public", table: "work_orders") { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in await self.refreshWorkOrders(staffId: staffId) }
+        }
+        _ = channel.onPostgresChange(InsertAction.self, schema: "public", table: "work_orders") { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in await self.refreshWorkOrders(staffId: staffId) }
+        }
+
+        Task {
+            do { try await channel.subscribeWithError() } catch { print("[AppDataStore] Work orders channel: \(error)") }
+            await MainActor.run { self.workOrdersChannel = channel }
+        }
+    }
+
+    private func subscribeToSparePartsUpdates(staffId: UUID?) {
+        let channel = supabase.channel("spare_parts_requests_updates_channel")
+
+        _ = channel.onPostgresChange(UpdateAction.self, schema: "public", table: "spare_parts_requests") { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in await self.refreshSparePartsRequests(staffId: staffId) }
+        }
+        _ = channel.onPostgresChange(InsertAction.self, schema: "public", table: "spare_parts_requests") { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in await self.refreshSparePartsRequests(staffId: staffId) }
+        }
+
+        Task {
+            do { try await channel.subscribeWithError() } catch { print("[AppDataStore] Spare parts channel: \(error)") }
+            await MainActor.run { self.sparePartsChannel = channel }
+        }
+    }
+
+    private func subscribeToPartsUsedUpdates() {
+        let channel = supabase.channel("parts_used_updates_channel")
+
+        _ = channel.onPostgresChange(UpdateAction.self, schema: "public", table: "parts_used") { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in await self.refreshPartsUsed() }
+        }
+        _ = channel.onPostgresChange(InsertAction.self, schema: "public", table: "parts_used") { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in await self.refreshPartsUsed() }
+        }
+
+        Task {
+            do { try await channel.subscribeWithError() } catch { print("[AppDataStore] Parts used channel: \(error)") }
+            await MainActor.run { self.partsUsedChannel = channel }
+        }
+    }
+
+    private func subscribeToInventoryPartsUpdates() {
+        let channel = supabase.channel("inventory_parts_updates_channel")
+
+        _ = channel.onPostgresChange(UpdateAction.self, schema: "public", table: "inventory_parts") { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in await self.refreshInventoryParts() }
+        }
+        _ = channel.onPostgresChange(InsertAction.self, schema: "public", table: "inventory_parts") { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in await self.refreshInventoryParts() }
+        }
+
+        Task {
+            do { try await channel.subscribeWithError() } catch { print("[AppDataStore] Inventory parts channel: \(error)") }
+            await MainActor.run { self.inventoryPartsChannel = channel }
+        }
+    }
+
+    private func refreshMaintenanceTasks(staffId: UUID?) async {
+        do {
+            if let staffId {
+                maintenanceTasks = try await MaintenanceTaskService.fetchMaintenanceTasks(assignedToId: staffId)
+            } else {
+                maintenanceTasks = try await MaintenanceTaskService.fetchAllMaintenanceTasks()
+            }
+        } catch {
+            print("[AppDataStore] Refresh maintenance tasks failed: \(error)")
+        }
+    }
+
+    private func refreshWorkOrders(staffId: UUID?) async {
+        do {
+            if let staffId {
+                workOrders = try await WorkOrderService.fetchWorkOrders(assignedToId: staffId)
+            } else {
+                workOrders = try await WorkOrderService.fetchAllWorkOrders()
+            }
+        } catch {
+            print("[AppDataStore] Refresh work orders failed: \(error)")
+        }
+    }
+
+    private func refreshSparePartsRequests(staffId: UUID?) async {
+        do {
+            if staffId == nil {
+                sparePartsRequests = try await SparePartsRequestService.fetchAllSparePartsRequests()
+            } else {
+                sparePartsRequests = try await SparePartsRequestService.fetchAllRequests()
+            }
+        } catch {
+            print("[AppDataStore] Refresh spare parts requests failed: \(error)")
+        }
+    }
+
+    private func refreshPartsUsed() async {
+        do {
+            partsUsed = try await PartUsedService.fetchAllPartsUsed()
+        } catch {
+            print("[AppDataStore] Refresh parts used failed: \(error)")
+        }
+    }
+
+    private func refreshInventoryParts() async {
+        do {
+            inventoryParts = try await InventoryPartService.fetchAllInventoryParts()
+        } catch {
+            print("[AppDataStore] Refresh inventory parts failed: \(error)")
         }
     }
 

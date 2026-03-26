@@ -1300,14 +1300,7 @@ struct TripDetailDriverView: View {
             return "Completed"
         }
         switch status.normalized {
-        case .scheduled:
-            if trip?.acceptedAt != nil {
-                if trip?.preInspectionId != nil {
-                    return "Active — In Progress"
-                }
-                return "Accepted — Awaiting Time Window"
-            }
-            return "Scheduled"
+        case .scheduled:         return trip?.acceptedAt != nil ? "Accepted — Awaiting Time Window" : "Scheduled"
         case .pendingAcceptance: return "Awaiting Your Acceptance"
         case .active:            return "Active — In Progress"
         case .completed:         return "Completed"
@@ -1321,14 +1314,7 @@ struct TripDetailDriverView: View {
             return .gray
         }
         switch status.normalized {
-        case .scheduled:
-            if trip?.acceptedAt != nil {
-                if trip?.preInspectionId != nil {
-                    return SierraTheme.Colors.alpineMint
-                }
-                return .teal
-            }
-            return SierraTheme.Colors.info
+        case .scheduled:         return trip?.acceptedAt != nil ? .teal : SierraTheme.Colors.info
         case .pendingAcceptance: return .orange
         case .active:            return SierraTheme.Colors.alpineMint
         case .completed:         return .gray

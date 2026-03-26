@@ -46,20 +46,21 @@ struct TripNavigationContainerView: View {
                     Button {
                         if coordinator.isNavigating { showDismissAlert = true } else { dismissView() }
                     } label: {
-                        ZStack {
-                            Circle().fill(.black.opacity(0.55)).frame(width: 40, height: 40)
-                            Image(systemName: "xmark").font(.system(size: 15, weight: .bold)).foregroundStyle(.white)
-                        }
-                        .shadow(color: .black.opacity(0.3), radius: 6, y: 2)
+                        Image(systemName: "xmark")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 36, height: 36)
+                            .background(.ultraThinMaterial, in: Circle())
+                            .shadow(color: .black.opacity(0.2), radius: 6, y: 2)
                     }
-                    .padding(.leading, 18)
-                    .padding(.top, 56)
+                    .padding(.leading, 16)
+                    .padding(.top, 60)
                     Spacer()
                 }
                 Spacer()
             }
             .ignoresSafeArea(edges: .top)
-            .zIndex(10)
+            .zIndex(20)
 
             // Route building spinner
             if isBuildingRoutes {
@@ -109,6 +110,13 @@ struct TripNavigationContainerView: View {
         .navigationBarHidden(true)
         .toolbar(.hidden, for: .tabBar)
         .task {
+            // Start GPS early so currentLocation is available for route origin
+            coordinator.startEarlyLocationUpdates()
+            // Brief wait for a GPS fix (up to 2 seconds), then build routes
+            for _ in 0..<20 {
+                if coordinator.currentLocation != nil { break }
+                try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
+            }
             await buildAndShowRoutes()
         }
         .task {

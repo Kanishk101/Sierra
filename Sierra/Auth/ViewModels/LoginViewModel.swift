@@ -44,10 +44,16 @@ final class LoginViewModel {
     // not on the LoginView login screen.
 
     var showBiometricButton: Bool {
-        BiometricManager.shared.canUseBiometrics()
+        let canShowInCurrentState: Bool
+        switch authState {
+        case .idle, .error: canShowInCurrentState = true
+        case .loading, .requiresTwoFactor, .authenticated: canShowInCurrentState = false
+        }
+        return BiometricManager.shared.canUseBiometrics()
             && AuthManager.shared.currentUser != nil
             && AuthManager.shared.hasCompletedFullAuth
             && BiometricPreference.isEnabled
+            && canShowInCurrentState
     }
 
     var biometricLabel: String { "Sign in with \(BiometricManager.shared.biometricDisplayName)" }
@@ -74,6 +80,7 @@ final class LoginViewModel {
         emailError = nil
         passwordError = nil
         guard validate() else { return }
+        AuthManager.shared.beginCredentialSignInAttempt()
         authState = .loading
 
         #if DEBUG

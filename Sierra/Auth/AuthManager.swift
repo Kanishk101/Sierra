@@ -239,6 +239,16 @@ final class AuthManager {
         return user.role
     }
 
+    /// Called when password-based sign-in is initiated.
+    /// Hides biometric sign-in until the full flow (including 2FA) succeeds.
+    func beginCredentialSignInAttempt() {
+        isAuthenticated = false
+        needsReauth = false
+        hasCompletedFullAuth = false
+        KeychainService.delete(key: Keys.hasFullAuth)
+        KeychainService.delete(key: Keys.sessionToken)
+    }
+
     // MARK: - Complete Authentication
 
     func completeAuthentication() {
@@ -276,6 +286,7 @@ final class AuthManager {
         currentUser = nil
         isAuthenticated = false
         needsReauth = false
+        hasCompletedFullAuth = false
         pendingOTPEmail = nil
         pendingResetToken = ""
         otpLastSentAt = nil
@@ -285,6 +296,7 @@ final class AuthManager {
         KeychainService.delete(key: Keys.currentUser)
         KeychainService.delete(key: Keys.hashedCred)
         KeychainService.delete(key: Keys.sessionToken)
+        KeychainService.delete(key: Keys.hasFullAuth)
         KeychainService.delete(key: Keys.backgroundTS)
         // Biometric preference is intentionally NOT cleared on signOut —
         // keeping it enables the biometric button to reappear on next login.
@@ -610,6 +622,7 @@ final class AuthManager {
 
     func appWillEnterForeground() {
         guard isAuthenticated else { return }
+        guard !AppLifecycleMonitor.shared.showBiometricLock else { return }
         guard let data = KeychainService.load(key: Keys.backgroundTS),
               let str = String(data: data, encoding: .utf8),
               let ts  = TimeInterval(str) else { return }

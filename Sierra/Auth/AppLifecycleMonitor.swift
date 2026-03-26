@@ -13,6 +13,7 @@ final class AppLifecycleMonitor {
     /// Seconds before requiring biometric on resume.
     private let lockThresholdSeconds: TimeInterval = 60
     private var backgroundedAt: Date?
+    private var suppressUntil: Date = .distantPast
 
     private init() {}
 
@@ -30,6 +31,11 @@ final class AppLifecycleMonitor {
                 backgroundedAt = nil
                 return
             }
+            guard Date() >= suppressUntil else {
+                backgroundedAt = nil
+                return
+            }
+            guard !showBiometricLock else { return }
             guard BiometricPreference.isEnabled, BiometricManager.shared.canUseBiometrics() else {
                 backgroundedAt = nil
                 showBiometricLock = false
@@ -70,6 +76,7 @@ final class AppLifecycleMonitor {
 
     func biometricUnlocked() {
         showBiometricLock = false
+        suppressUntil = Date().addingTimeInterval(2)
         // Also clear needsReauth so ContentView doesn't fall back to LoginView.
         // Both AppLifecycleMonitor (60s threshold) and AuthManager (300s threshold)
         // set their respective flags on foreground. Unlocking the overlay must
@@ -80,6 +87,7 @@ final class AppLifecycleMonitor {
 
     func passwordFallbackUsed() {
         showBiometricLock = false
+        suppressUntil = Date().addingTimeInterval(2)
         // signOut() already sets needsReauth = false and isAuthenticated = false,
         // so ContentView will route to LoginView cleanly.
     }

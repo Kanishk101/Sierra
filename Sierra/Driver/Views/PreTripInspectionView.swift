@@ -54,12 +54,7 @@ struct PreTripInspectionView: View {
                             dismiss()
                         } else {
                             withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                                // Post-trip: if on signature (3) and we skipped media (2), go back to checklist (1)
-                                if inspectionType == .postTripInspection && viewModel.currentStep == 3 && viewModel.itemsNeedingPhotos.isEmpty {
-                                    viewModel.currentStep = 1
-                                } else {
-                                    viewModel.currentStep = max(1, viewModel.currentStep - 1)
-                                }
+                                viewModel.currentStep = max(1, viewModel.currentStep - 1)
                             }
                         }
                     }) {
@@ -257,42 +252,24 @@ struct PreTripInspectionView: View {
             // Bug 6: Adaptive Next button — label changes based on issue state
             let hasWarnings = !viewModel.warningItems.isEmpty
             let hasFails    = !viewModel.failedItems.isEmpty
-            let isPostTrip  = inspectionType == .postTripInspection
             Button {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                if hasFails && !isPostTrip {
+                if hasFails {
                     showFailAlert = true
-                } else if hasFails && isPostTrip {
-                    // Post-trip: allow continuing with fails — photos for issues then sign
-                    if viewModel.itemsNeedingPhotos.isEmpty {
-                        // No items need photos, skip to signature
-                        withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { viewModel.currentStep = 3 }
-                    } else {
-                        withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { viewModel.currentStep = 2 }
-                    }
                 } else if hasWarnings {
                     showWarnAlert = true
                 } else {
-                    // All clear — for post-trip skip media step, go straight to signature
-                    if isPostTrip {
-                        withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { viewModel.currentStep = 3 }
-                    } else {
-                        withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { viewModel.currentStep = 2 }
-                    }
+                    withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { viewModel.currentStep = 2 }
                 }
             } label: {
                 HStack(spacing: 8) {
                     if isSendingNotification {
                         ProgressView().tint(.white).scaleEffect(0.8)
                     } else {
-                        Image(systemName: hasFails
-                              ? (isPostTrip ? "wrench.and.screwdriver.fill" : "exclamationmark.octagon.fill")
-                              : hasWarnings ? "bell.badge.fill" : "checkmark.circle.fill")
+                        Image(systemName: hasFails ? "exclamationmark.octagon.fill" : hasWarnings ? "bell.badge.fill" : "checkmark.circle.fill")
                             .font(.system(size: 15, weight: .bold))
                     }
-                    Text(hasFails
-                         ? (isPostTrip ? "Log Maintenance & Continue" : "Vehicle Issue — Cannot Proceed")
-                         : hasWarnings ? "Notify Admin & Continue" : "All Clear → Next")
+                    Text(hasFails ? "Vehicle Issue — Cannot Proceed" : hasWarnings ? "Notify Admin & Continue" : "All Clear → Next")
                         .font(.system(size: 16, weight: .bold, design: .rounded))
                 }
                 .foregroundColor(.white)
@@ -300,15 +277,15 @@ struct PreTripInspectionView: View {
                 .padding(.vertical, 17)
                 .background(
                     Capsule().fill(
-                        hasFails    ? (isPostTrip ? Color.appOrange : Color(red: 0.90, green: 0.22, blue: 0.18)) :
+                        hasFails    ? Color(red: 0.90, green: 0.22, blue: 0.18) :
                         hasWarnings ? Color.appOrange :
-                                      Color.green
+                                      Color(red: 0.20, green: 0.65, blue: 0.32)
                     )
                 )
                 .shadow(
-                    color: (hasFails ? (isPostTrip ? Color.appOrange : Color(red: 0.90, green: 0.22, blue: 0.18)) :
+                    color: (hasFails ? Color(red: 0.90, green: 0.22, blue: 0.18) :
                             hasWarnings ? Color.appOrange :
-                            Color.green).opacity(0.3),
+                            Color(red: 0.20, green: 0.65, blue: 0.32)).opacity(0.3),
                     radius: 12, x: 0, y: 6
                 )
             }
@@ -330,16 +307,7 @@ struct PreTripInspectionView: View {
                         await sendWarnNotification()
                         isSendingNotification = false
                         withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
-                            if inspectionType == .postTripInspection {
-                                // Post-trip: skip media, go to signature (or issue photos if needed)
-                                if viewModel.itemsNeedingPhotos.isEmpty {
-                                    viewModel.currentStep = 3
-                                } else {
-                                    viewModel.currentStep = 2
-                                }
-                            } else {
-                                viewModel.currentStep = 2
-                            }
+                            viewModel.currentStep = 2
                         }
                     }
                 }
@@ -506,35 +474,35 @@ struct PreTripInspectionView: View {
             ScrollView {
                 VStack(spacing: 20) {
 
-                    if inspectionType == .postTripInspection {
-                        // ── Post-trip: Maintenance Request Form ──────────────
-                        postTripMaintenanceForm
-                    } else {
-                        // ── Pre-trip: Document Vehicle State ─────────────────
-                        VStack(spacing: 6) {
-                            Image(systemName: "camera.badge.ellipsis")
-                                .font(.system(size: 36))
-                                .foregroundStyle(SierraTheme.Colors.ember.opacity(0.7))
-                            Text("Document Vehicle State")
-                                .font(.headline)
-                            Text("Capture fuel gauge and odometer details before departure.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.center)
-                        }
-                        .padding(.top, 8)
+                    // ── Header ──────────────────────────────────────────────
+                    VStack(spacing: 6) {
+                        Image(systemName: "camera.badge.ellipsis")
+                            .font(.system(size: 36))
+                            .foregroundStyle(SierraTheme.Colors.ember.opacity(0.7))
+                        Text("Document Vehicle State")
+                            .font(.headline)
+                        Text(inspectionType == .preTripInspection
+                             ? "Capture fuel gauge and odometer details before departure."
+                             : "Capture fuel gauge and odometer details before completing trip.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(.top, 8)
 
-                        fuelGaugeCaptureCard
-                        odometerCaptureCard
+                    fuelGaugeCaptureCard
 
-                        if !viewModel.itemsNeedingPhotos.isEmpty {
-                            VStack(alignment: .leading, spacing: 12) {
-                                Label("Issue Documentation", systemImage: "exclamationmark.triangle.fill")
-                                    .font(.caption.weight(.bold))
-                                    .foregroundStyle(SierraTheme.Colors.danger)
-                                ForEach(viewModel.itemsNeedingPhotos) { item in
-                                    itemPhotoRow(item: item)
-                                }
+                    // OCR-first odometer capture with manual fallback.
+                    odometerCaptureCard
+
+                    // ── Failed items still need per-item photos ──────────────
+                    if !viewModel.itemsNeedingPhotos.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Label("Issue Documentation", systemImage: "exclamationmark.triangle.fill")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(SierraTheme.Colors.danger)
+                            ForEach(viewModel.itemsNeedingPhotos) { item in
+                                itemPhotoRow(item: item)
                             }
                         }
                     }
@@ -562,81 +530,6 @@ struct PreTripInspectionView: View {
             }
             .buttonStyle(.plain)
             .padding(16)
-        }
-    }
-
-    // MARK: - Post-Trip Maintenance Request Form
-
-    private var postTripMaintenanceForm: some View {
-        VStack(spacing: 20) {
-            VStack(spacing: 6) {
-                Image(systemName: "wrench.and.screwdriver")
-                    .font(.system(size: 36))
-                    .foregroundStyle(SierraTheme.Colors.ember.opacity(0.7))
-                Text("Create Maintenance Request")
-                    .font(.headline)
-                Text("Describe the issue(s) found. Photos are optional.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-            .padding(.top, 8)
-
-            // Failed/warning items summary
-            if !viewModel.failedItems.isEmpty || !viewModel.warningItems.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("Items with Issues", systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(SierraTheme.Colors.danger)
-                    ForEach(viewModel.failedItems + viewModel.warningItems) { item in
-                        HStack(spacing: 8) {
-                            Image(systemName: item.result == .failed ? "xmark.circle.fill" : "exclamationmark.triangle.fill")
-                                .font(.caption)
-                                .foregroundColor(item.result == .failed ? SierraTheme.Colors.danger : SierraTheme.Colors.warning)
-                            Text(item.name)
-                                .font(.subheadline.weight(.medium))
-                            Spacer()
-                            Text(item.result == .failed ? "Failed" : "Warning")
-                                .font(.caption2.weight(.bold))
-                                .foregroundColor(item.result == .failed ? SierraTheme.Colors.danger : SierraTheme.Colors.warning)
-                                .padding(.horizontal, 8).padding(.vertical, 3)
-                                .background(
-                                    Capsule().fill((item.result == .failed ? SierraTheme.Colors.danger : SierraTheme.Colors.warning).opacity(0.12))
-                                )
-                        }
-                    }
-                }
-                .padding(14)
-                .background(SierraTheme.Colors.danger.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(SierraTheme.Colors.danger.opacity(0.15), lineWidth: 1))
-            }
-
-            // Maintenance description
-            VStack(alignment: .leading, spacing: 8) {
-                Label("Issue Description", systemImage: "text.alignleft")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.secondary)
-
-                TextEditor(text: Bindable(viewModel).maintenanceDescription)
-                    .font(.system(size: 14, design: .rounded))
-                    .frame(minHeight: 120)
-                    .padding(12)
-                    .scrollContentBackground(.hidden)
-                    .background(RoundedRectangle(cornerRadius: 14).fill(Color.appSurface))
-                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.appDivider, lineWidth: 1))
-            }
-
-            // Optional photos
-            if !viewModel.itemsNeedingPhotos.isEmpty {
-                VStack(alignment: .leading, spacing: 12) {
-                    Label("Photos (Optional)", systemImage: "camera.fill")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.secondary)
-                    ForEach(viewModel.itemsNeedingPhotos) { item in
-                        itemPhotoRow(item: item)
-                    }
-                }
-            }
         }
     }
 
@@ -673,23 +566,23 @@ struct PreTripInspectionView: View {
                             .foregroundColor(.appTextPrimary)
                         Text(fuelPhoto == nil ? "OCR detects percentage from gauge display" : "✓ Photo captured — tap to retake")
                             .font(.system(size: 12, weight: .medium, design: .rounded))
-                            .foregroundColor(fuelPhoto == nil ? .appTextSecondary : Color.green)
+                            .foregroundColor(fuelPhoto == nil ? .appTextSecondary : Color(red: 0.20, green: 0.65, blue: 0.32))
                     }
 
                     Spacer()
 
                     Image(systemName: fuelPhoto == nil ? "camera.viewfinder" : "checkmark.circle.fill")
                         .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(fuelPhoto == nil ? SierraTheme.Colors.warning : Color.green)
+                        .foregroundColor(fuelPhoto == nil ? SierraTheme.Colors.warning : Color(red: 0.20, green: 0.65, blue: 0.32))
                 }
                 .padding(14)
                 .background(
                     RoundedRectangle(cornerRadius: 16)
-                        .fill(fuelPhoto == nil ? SierraTheme.Colors.warning.opacity(0.06) : Color.green.opacity(0.06))
+                        .fill(fuelPhoto == nil ? SierraTheme.Colors.warning.opacity(0.06) : Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.06))
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
-                        .stroke(fuelPhoto == nil ? SierraTheme.Colors.warning.opacity(0.2) : Color.green.opacity(0.3), lineWidth: 1.5)
+                        .stroke(fuelPhoto == nil ? SierraTheme.Colors.warning.opacity(0.2) : Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.3), lineWidth: 1.5)
                 )
             }
             .buttonStyle(.plain)
@@ -953,13 +846,13 @@ struct PreTripInspectionView: View {
                 .background(
                     Capsule()
                         .fill((viewModel.isSubmitting || !viewModel.canSubmit)
-                            ? Color.green.opacity(0.4)
-                            : Color.green)
+                            ? Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.4)
+                            : Color(red: 0.20, green: 0.65, blue: 0.32))
                 )
                 .shadow(
                     color: (viewModel.isSubmitting || !viewModel.canSubmit)
                         ? Color.clear
-                        : Color.green.opacity(0.3),
+                        : Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.3),
                     radius: 12, x: 0, y: 6
                 )
             }
@@ -1327,7 +1220,7 @@ struct InspectionCompleteOverlay: View {
                     ForEach(0..<3, id: \.self) { i in
                         Circle()
                             .stroke(
-                                Color.green.opacity(confettiVisible ? 0 : 0.3),
+                                Color(red: 0.20, green: 0.65, blue: 0.32).opacity(confettiVisible ? 0 : 0.3),
                                 lineWidth: 2
                             )
                             .frame(width: 80 + CGFloat(i) * 30, height: 80 + CGFloat(i) * 30)
@@ -1339,9 +1232,9 @@ struct InspectionCompleteOverlay: View {
                     }
 
                     Circle()
-                        .fill(Color.green)
+                        .fill(Color(red: 0.20, green: 0.65, blue: 0.32))
                         .frame(width: 80, height: 80)
-                        .shadow(color: Color.green.opacity(0.4), radius: 20)
+                        .shadow(color: Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.4), radius: 20)
 
                     Image(systemName: "checkmark")
                         .font(.system(size: 36, weight: .bold))
@@ -1368,7 +1261,7 @@ struct InspectionCompleteOverlay: View {
                         .foregroundColor(.white)
                         .padding(.horizontal, 60)
                         .padding(.vertical, 15)
-                        .background(Capsule().fill(Color.green))
+                        .background(Capsule().fill(Color(red: 0.20, green: 0.65, blue: 0.32)))
                 }
                 .opacity(contentOpacity)
             }

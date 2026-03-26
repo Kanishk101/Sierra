@@ -50,19 +50,18 @@ final class RouteEngine {
 
         let isRerouting = rerouteFromCurrentLocation
         rerouteFromCurrentLocation = false
+        _ = isRerouting  // consumed above; origin always uses currentLocation now
         lastBuildError = nil
         clearDerivedRouteState()
 
         // --- Determine origin ---
+        // Always prefer the driver's actual GPS position so the route starts
+        // from where they physically are, not the trip's stored origin.
         let originCoord: CLLocationCoordinate2D
-        if isRerouting, let loc = currentLocation {
+        if let loc = currentLocation {
             originCoord = loc.coordinate
         } else if let lat = trip.originLatitude, let lng = trip.originLongitude {
             originCoord = CLLocationCoordinate2D(latitude: lat, longitude: lng)
-        } else if let loc = currentLocation {
-            // Trip has no stored coordinates — use driver's current position as origin
-            print("[RouteEngine] No trip origin coords, using current location as origin")
-            originCoord = loc.coordinate
         } else {
             lastBuildError = "Trip has no location data and GPS is not yet available. Move to get a GPS fix and retry."
             print("[RouteEngine] \(lastBuildError!)")

@@ -56,9 +56,9 @@ struct DriverTripAcceptanceSheet: View {
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
                         .frame(height: 56)
-                        .background(Color.green,
+                        .background(Color(red: 0.20, green: 0.65, blue: 0.32),
                                     in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .shadow(color: Color.green.opacity(0.3),
+                        .shadow(color: Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.3),
                                 radius: 10, y: 4)
                     }
                     .disabled(isAccepting)

@@ -377,9 +377,9 @@ struct StaffMemberService {
             let is_approved: Bool
             let status: String
             let rejection_reason: String?
-            let availability: String
-            let joined_date: String
         }
+        struct AvailabilityPayload: Encodable { let availability: String }
+        struct JoinedDatePayload: Encodable { let joined_date: String }
         struct RejectPayload: Encodable {
             let is_approved: Bool
             let status: String
@@ -387,16 +387,31 @@ struct StaffMemberService {
         }
 
         if approved {
-            let nowISO = ISO8601DateFormatter().string(from: Date())
             try await supabase
                 .from("staff_members")
                 .update(ApprovePayload(
                     is_approved:      true,
                     status:           StaffStatus.active.rawValue,
-                    rejection_reason: nil,
-                    availability:     StaffAvailability.available.rawValue,
-                    joined_date:      nowISO
+                    rejection_reason: nil
                 ))
+                .eq("id", value: staffId.uuidString.lowercased())
+                .execute()
+
+            // Best-effort enrichments: do not fail approval if these optional writes fail.
+            _ = try? await supabase
+                .from("staff_members")
+                .update(AvailabilityPayload(availability: StaffAvailability.available.rawValue))
+                .eq("id", value: staffId.uuidString.lowercased())
+                .execute()
+
+            let df = DateFormatter()
+            df.locale = Locale(identifier: "en_US_POSIX")
+            df.dateFormat = "yyyy-MM-dd"
+            let joinedDate = df.string(from: Date())
+
+            _ = try? await supabase
+                .from("staff_members")
+                .update(JoinedDatePayload(joined_date: joinedDate))
                 .eq("id", value: staffId.uuidString.lowercased())
                 .execute()
         } else {

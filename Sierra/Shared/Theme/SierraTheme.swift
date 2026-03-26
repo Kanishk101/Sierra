@@ -174,15 +174,15 @@ extension Color {
     /// Deep orange — gradient dark end, pressed states
     static let appDeepOrange  = Color(red: 0.90, green: 0.35, blue: 0.08)
     /// Light neutral surface — screen backgrounds
-    static let appSurface     = Color(.systemGroupedBackground)
+    static let appSurface     = Color(red: 0.97, green: 0.97, blue: 0.96)
     /// Card background (white)
-    static let appCardBg      = Color(.secondarySystemGroupedBackground)
+    static let appCardBg      = Color.white
     /// Primary text — near-black
-    static let appTextPrimary = Color.primary
+    static let appTextPrimary = Color(red: 0.12, green: 0.12, blue: 0.14)
     /// Secondary text — gray captions
-    static let appTextSecondary = Color.secondary
+    static let appTextSecondary = Color(red: 0.45, green: 0.45, blue: 0.48)
     /// Divider / separator lines
-    static let appDivider     = Color(.separator)
+    static let appDivider     = Color(red: 0.92, green: 0.92, blue: 0.93)
 }
 
 // MARK: - TripPriority UI Helpers
@@ -190,28 +190,28 @@ extension Color {
 extension TripPriority {
     var color: Color {
         switch self {
-        case .urgent: return .red
+        case .urgent: return Color(red: 0.85, green: 0.18, blue: 0.15)
         case .high:   return Color.appOrange
-        case .normal: return .blue
-        case .low:    return Color.secondary
+        case .normal: return Color(red: 0.20, green: 0.50, blue: 0.90)
+        case .low:    return Color.appTextSecondary
         }
     }
 
     var bgColor: Color {
         switch self {
-        case .urgent: return Color.red.opacity(0.10)
+        case .urgent: return Color(red: 0.85, green: 0.18, blue: 0.15).opacity(0.10)
         case .high:   return Color.appOrange.opacity(0.10)
-        case .normal: return Color.blue.opacity(0.10)
-        case .low:    return Color.secondary.opacity(0.10)
+        case .normal: return Color(red: 0.20, green: 0.50, blue: 0.90).opacity(0.10)
+        case .low:    return Color.appTextSecondary.opacity(0.10)
         }
     }
 
     var borderColor: Color {
         switch self {
-        case .urgent: return Color.red.opacity(0.35)
+        case .urgent: return Color(red: 0.85, green: 0.18, blue: 0.15).opacity(0.35)
         case .high:   return Color.appOrange.opacity(0.35)
-        case .normal: return Color.blue.opacity(0.35)
-        case .low:    return Color.secondary.opacity(0.35)
+        case .normal: return Color(red: 0.20, green: 0.50, blue: 0.90).opacity(0.35)
+        case .low:    return Color.appTextSecondary.opacity(0.35)
         }
     }
 

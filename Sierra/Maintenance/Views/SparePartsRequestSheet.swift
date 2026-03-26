@@ -87,9 +87,8 @@ struct SparePartsRequestSheet: View {
 
     // MARK: - Required Parts Section
 
-    @ViewBuilder
     private var requiredPartsSection: some View {
-        let sectionContent = VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Label("INVENTORY REQUIREMENTS", systemImage: "shippingbox")
                     .font(.caption.weight(.bold))
@@ -118,8 +117,7 @@ struct SparePartsRequestSheet: View {
                 )
             }
         }
-        sectionContent
-            .padding(16)
+        .padding(16)
             .background(Color.appCardBg)
             .clipShape(RoundedRectangle(cornerRadius: 14))
             .shadow(color: Color.black.opacity(0.05), radius: 6, x: 0, y: 2)
@@ -129,9 +127,8 @@ struct SparePartsRequestSheet: View {
 
     // MARK: - Additional Parts
 
-    @ViewBuilder
     private var additionalPartsSection: some View {
-        let sectionContent = VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Label("ADDITIONAL PARTS", systemImage: "plus.square.on.square")
                     .font(.caption.weight(.bold))
@@ -174,8 +171,7 @@ struct SparePartsRequestSheet: View {
                 }
             }
         }
-        sectionContent
-            .padding(16)
+        .padding(16)
             .background(Color.appCardBg)
             .clipShape(RoundedRectangle(cornerRadius: 14))
             .shadow(color: Color.black.opacity(0.05), radius: 6, x: 0, y: 2)

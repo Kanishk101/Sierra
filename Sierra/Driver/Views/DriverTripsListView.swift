@@ -330,9 +330,9 @@ struct DriverTripsListView: View {
     private func openPostTripInspection(for trip: Trip) {
         guard trip.requiresPostTripInspection else { return }
         inspectionMode = .post
-        inspectionTrip = store.trips.first(where: { $0.id == trip.id }) ?? trip
+        inspectionTrip = trip
         dismissDetail()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { showInspection = true }
+        showInspection = true
     }
 
     private func startInspection(for trip: Trip) {
@@ -369,7 +369,7 @@ struct DriverTripsListView: View {
             statItem(value: "\(urgentCount)", label: "Urgent", icon: "flame.fill", color: Color(red: 0.85, green: 0.18, blue: 0.15))
             Divider().frame(height: 32).padding(.horizontal, 4)
             // Bug 7: label is "Accepted", counts scheduled+accepted trips only
-            statItem(value: "\(acceptedCount)", label: "Accepted", icon: "checkmark.seal.fill", color: Color.green)
+            statItem(value: "\(acceptedCount)", label: "Accepted", icon: "checkmark.seal.fill", color: Color(red: 0.20, green: 0.65, blue: 0.32))
         }
         .padding(.vertical, 14)
         .padding(.horizontal, 8)
@@ -423,100 +423,8 @@ struct DriverTripsListView: View {
 
     private func tripCard(_ trip: Trip) -> some View {
         let isJustAccepted = acceptedTripID == trip.id
-        let isAcceptedAwaitingInspection = trip.status.normalized == .scheduled
-            && trip.acceptedAt != nil
-            && trip.preInspectionId == nil
 
-        if isAcceptedAwaitingInspection {
-            return AnyView(acceptedTripCard(trip, isJustAccepted: isJustAccepted))
-        } else {
-            return AnyView(standardTripCard(trip, isJustAccepted: isJustAccepted))
-        }
-    }
-
-    // MARK: - Accepted Trip Card (compact with View Details + Accepted)
-
-    private func acceptedTripCard(_ trip: Trip, isJustAccepted: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Image(systemName: "bus.fill")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.appTextSecondary)
-                Text(trip.taskId)
-                    .font(.system(size: 13, weight: .bold, design: .monospaced))
-                    .foregroundColor(Color.appOrange)
-                Spacer()
-                priorityBadge(trip.priority)
-            }
-
-            HStack(spacing: 10) {
-                cityLabel(trip.origin)
-                RouteArrow()
-                cityLabel(trip.destination)
-            }
-
-            vehicleInfo(trip)
-
-            HStack(spacing: 6) {
-                Image(systemName: "calendar.badge.clock").font(.system(size: 13)).foregroundColor(.appTextSecondary)
-                Text(trip.scheduledDate.formatted(.dateTime.day().month(.abbreviated).hour().minute()))
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
-                    .foregroundColor(.appTextSecondary)
-            }
-
-            Rectangle().fill(Color.appDivider).frame(height: 1).padding(.vertical, 2)
-
-            // View Details + Accepted buttons
-            HStack(spacing: 12) {
-                Button {
-                    showTripDetail(trip)
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "doc.text.magnifyingglass").font(.system(size: 13, weight: .semibold))
-                        Text("View Details").font(.system(size: 14, weight: .bold, design: .rounded))
-                    }
-                    .foregroundColor(Color.appOrange)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(Capsule().fill(Color.appOrange.opacity(0.08)))
-                    .overlay(Capsule().stroke(Color.appOrange.opacity(0.25), lineWidth: 1.5))
-                }
-                .buttonStyle(.plain)
-
-                HStack(spacing: 6) {
-                    Image(systemName: "checkmark.seal.fill").font(.system(size: 13, weight: .semibold))
-                    Text("Accepted").font(.system(size: 14, weight: .bold, design: .rounded))
-                }
-                .foregroundColor(Color.green)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(Capsule().fill(Color.green.opacity(0.12)))
-                .overlay(Capsule().stroke(Color.green.opacity(0.3), lineWidth: 1.5))
-            }
-        }
-        .padding(18)
-        .background(
-            RoundedRectangle(cornerRadius: 22)
-                .fill(Color.appCardBg)
-                .shadow(color: trip.priority.color.opacity(0.10), radius: 14, x: 0, y: 6)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 22)
-                .stroke(
-                    isJustAccepted
-                        ? Color.green.opacity(0.5)
-                        : trip.priority.color.opacity(0.22),
-                    lineWidth: isJustAccepted ? 2 : 1
-                )
-        )
-        .scaleEffect(isJustAccepted ? 1.02 : 1.0)
-        .animation(.spring(response: 0.3), value: isJustAccepted)
-    }
-
-    // MARK: - Standard Trip Card (compact)
-
-    private func standardTripCard(_ trip: Trip, isJustAccepted: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
+        return VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Image(systemName: "bus.fill")
                     .font(.system(size: 14, weight: .semibold))
@@ -565,7 +473,7 @@ struct DriverTripsListView: View {
             RoundedRectangle(cornerRadius: 22)
                 .stroke(
                     isJustAccepted
-                        ? Color.green.opacity(0.5)
+                        ? Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.5)
                         : trip.priority.color.opacity(0.22),
                     lineWidth: isJustAccepted ? 2 : 1
                 )
@@ -622,11 +530,11 @@ struct DriverTripsListView: View {
                     Image(systemName: "checkmark.circle.fill").font(.system(size: 13, weight: .semibold))
                     Text("Completed").font(.system(size: 14, weight: .bold, design: .rounded))
                 }
-                .foregroundColor(Color.green)
+                .foregroundColor(Color(red: 0.20, green: 0.65, blue: 0.32))
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
-                .background(Capsule().fill(Color.green.opacity(0.12)))
-                .overlay(Capsule().stroke(Color.green.opacity(0.3), lineWidth: 1.5))
+                .background(Capsule().fill(Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.12)))
+                .overlay(Capsule().stroke(Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.3), lineWidth: 1.5))
             }
         } else {
             HStack(spacing: 12) {
@@ -690,23 +598,23 @@ struct DriverTripsListView: View {
                         Image(systemName: "checkmark.seal.fill").font(.system(size: 13, weight: .semibold))
                         Text("Accepted").font(.system(size: 14, weight: .bold, design: .rounded))
                     }
-                    .foregroundColor(Color.green)
+                    .foregroundColor(Color(red: 0.20, green: 0.65, blue: 0.32))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
-                    .background(Capsule().fill(Color.green.opacity(0.12)))
-                    .overlay(Capsule().stroke(Color.green.opacity(0.3), lineWidth: 1.5))
+                    .background(Capsule().fill(Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.12)))
+                    .overlay(Capsule().stroke(Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.3), lineWidth: 1.5))
                 } else if isReadyToStart {
                     Button {
                         navigationTrip = trip
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "location.fill").font(.system(size: 13, weight: .semibold))
-                            Text("Navigate").font(.system(size: 14, weight: .bold, design: .rounded))
+                            Text("Start Navigation").font(.system(size: 14, weight: .bold, design: .rounded))
                         }
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
-                        .background(Capsule().fill(Color.green))
+                        .background(Capsule().fill(Color(red: 0.20, green: 0.65, blue: 0.32)))
                     }
                     .buttonStyle(.plain)
                 } else if status == .active && !trip.hasEndedNavigationPhase && !navigationLockedByProgress {
@@ -716,12 +624,12 @@ struct DriverTripsListView: View {
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "location.fill").font(.system(size: 13, weight: .semibold))
-                            Text("Navigate").font(.system(size: 14, weight: .bold, design: .rounded))
+                            Text("Start Navigation").font(.system(size: 14, weight: .bold, design: .rounded))
                         }
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
-                        .background(Capsule().fill(Color.green))
+                        .background(Capsule().fill(Color(red: 0.20, green: 0.65, blue: 0.32)))
                     }
                     .buttonStyle(.plain)
                 } else if isCompleted {
@@ -729,11 +637,11 @@ struct DriverTripsListView: View {
                         Image(systemName: "checkmark.circle.fill").font(.system(size: 13, weight: .semibold))
                         Text("Completed").font(.system(size: 14, weight: .bold, design: .rounded))
                     }
-                    .foregroundColor(Color.green)
+                    .foregroundColor(Color(red: 0.20, green: 0.65, blue: 0.32))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
-                    .background(Capsule().fill(Color.green.opacity(0.12)))
-                    .overlay(Capsule().stroke(Color.green.opacity(0.3), lineWidth: 1.5))
+                    .background(Capsule().fill(Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.12)))
+                    .overlay(Capsule().stroke(Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.3), lineWidth: 1.5))
                 } else {
                     // Fallback: any other status (cancelled, legacy)
                     HStack(spacing: 6) {
@@ -761,10 +669,10 @@ struct DriverTripsListView: View {
             Image(systemName: "checkmark.circle.fill").font(.system(size: 11, weight: .bold))
             Text("Completed").font(.system(size: 12, weight: .bold, design: .rounded))
         }
-        .foregroundColor(Color.green)
+        .foregroundColor(Color(red: 0.20, green: 0.65, blue: 0.32))
         .padding(.horizontal, 12).padding(.vertical, 6)
-        .background(Capsule().fill(Color.green.opacity(0.10)))
-        .overlay(Capsule().stroke(Color.green.opacity(0.35), lineWidth: 1.5))
+        .background(Capsule().fill(Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.10)))
+        .overlay(Capsule().stroke(Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.35), lineWidth: 1.5))
     }
 
     private func cityLabel(_ text: String) -> some View {
@@ -856,7 +764,7 @@ struct DriverTripsListView: View {
 
     private func statusColor(_ status: TripStatus) -> Color {
         switch status {
-        case .active:               return Color.green
+        case .active:               return Color(red: 0.20, green: 0.65, blue: 0.32)
         case .scheduled:            return .blue
         case .pendingAcceptance:    return Color.appOrange
         case .completed:            return .appTextSecondary
@@ -932,13 +840,13 @@ struct AcceptSuccessOverlay: View {
             VStack(spacing: 16) {
                 ZStack {
                     Circle()
-                        .fill(Color.green.opacity(0.15))
+                        .fill(Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.15))
                         .frame(width: 110, height: 110)
                         .scaleEffect(scale > 0.8 ? 1.3 : 0.8)
                     Circle()
-                        .fill(Color.green)
+                        .fill(Color(red: 0.20, green: 0.65, blue: 0.32))
                         .frame(width: 80, height: 80)
-                        .shadow(color: Color.green.opacity(0.4), radius: 20)
+                        .shadow(color: Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.4), radius: 20)
                     Image(systemName: "checkmark")
                         .font(.system(size: 36, weight: .bold))
                         .foregroundColor(.white)
@@ -967,10 +875,10 @@ struct CompletedBadge: View {
             Image(systemName: "checkmark.circle.fill").font(.system(size: 11, weight: .bold))
             Text("Completed").font(.system(size: 12, weight: .bold, design: .rounded))
         }
-        .foregroundColor(Color.green)
+        .foregroundColor(Color(red: 0.20, green: 0.65, blue: 0.32))
         .padding(.horizontal, 12).padding(.vertical, 6)
-        .background(Capsule().fill(Color.green.opacity(0.10)))
-        .overlay(Capsule().stroke(Color.green.opacity(0.35), lineWidth: 1.5))
+        .background(Capsule().fill(Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.10)))
+        .overlay(Capsule().stroke(Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.35), lineWidth: 1.5))
     }
 }
 

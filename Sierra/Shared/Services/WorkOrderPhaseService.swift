@@ -27,13 +27,15 @@ final class WorkOrderPhaseService {
         workOrderId: UUID,
         phaseNumber: Int,
         title: String,
-        description: String? = nil
+        description: String? = nil,
+        estimatedMinutes: Int? = nil
     ) async throws -> WorkOrderPhase {
         let payload: [String: AnyJSON] = [
             "work_order_id": .string(workOrderId.uuidString),
             "phase_number":  .double(Double(phaseNumber)),
             "title":         .string(title),
             "description":   description.map { .string($0) } ?? .null,
+            "estimated_minutes": estimatedMinutes.map { .double(Double($0)) } ?? .null,
             "is_completed":  .bool(false)
         ]
         return try await client
@@ -43,6 +45,28 @@ final class WorkOrderPhaseService {
             .single()
             .execute()
             .value
+    }
+
+    // MARK: - Update Phase Plan
+
+    func updatePhase(
+        phaseId: UUID,
+        phaseNumber: Int,
+        title: String,
+        description: String?,
+        estimatedMinutes: Int?
+    ) async throws {
+        let payload: [String: AnyJSON] = [
+            "phase_number": .double(Double(phaseNumber)),
+            "title": .string(title),
+            "description": description.map { .string($0) } ?? .null,
+            "estimated_minutes": estimatedMinutes.map { .double(Double($0)) } ?? .null
+        ]
+        try await client
+            .from("work_order_phases")
+            .update(payload)
+            .eq("id", value: phaseId.uuidString)
+            .execute()
     }
 
     // MARK: - Complete Phase

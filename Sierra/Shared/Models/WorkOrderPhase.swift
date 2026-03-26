@@ -15,6 +15,7 @@ struct WorkOrderPhase: Identifiable, Codable, Equatable {
     var phaseNumber: Int                // phase_number — ordering within WO
     var title: String                   // title — e.g. "Replace headlights"
     var description: String?            // description — optional detail
+    var estimatedMinutes: Int?          // estimated_minutes — planned ETA for phase
 
     // MARK: Completion
     var isCompleted: Bool               // is_completed (default false)
@@ -33,6 +34,7 @@ struct WorkOrderPhase: Identifiable, Codable, Equatable {
         case phaseNumber    = "phase_number"
         case title
         case description
+        case estimatedMinutes = "estimated_minutes"
         case isCompleted    = "is_completed"
         case completedAt    = "completed_at"
         case createdAt      = "created_at"

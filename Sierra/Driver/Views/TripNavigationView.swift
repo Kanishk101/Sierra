@@ -34,16 +34,20 @@ struct TripNavigationView: UIViewRepresentable {
         mapView.location.options.puckBearingEnabled = true
         mapView.location.options.puckBearing = .course
 
-        mapView.viewport.transition(to:
-            mapView.viewport.makeFollowPuckViewportState(
-                options: FollowPuckViewportStateOptions(
-                    padding: UIEdgeInsets(top: 200, left: 20, bottom: 280, right: 20),
-                    zoom: 16,
-                    bearing: .course,
-                    pitch: 45
-                )
+        let followPuck = mapView.viewport.makeFollowPuckViewportState(
+            options: FollowPuckViewportStateOptions(
+                padding: UIEdgeInsets(top: 240, left: 40, bottom: 320, right: 40),
+                zoom: 16.5,
+                bearing: .course,
+                pitch: 50
             )
         )
+        // Set immediately so the first scheduleRender skips the overview camera
+        context.coordinator.isFollowingPuck = true
+        mapView.viewport.transition(to: followPuck)
+
+        // Detect when user manually drags/pinches the map → break follow-puck
+        mapView.viewport.addStatusObserver(context.coordinator)
 
         context.coordinator.attach(to: mapView)
         context.coordinator.scheduleRender(
@@ -60,6 +64,27 @@ struct TripNavigationView: UIViewRepresentable {
     }
 
     func updateUIView(_ mapView: MapView, context: Context) {
+        // Handle explicit recenter request from HUD
+        if coordinator.requestRecenter {
+            coordinator.requestRecenter = false
+
+            // Cancel any competing camera animation, then re-engage follow-puck
+            mapView.viewport.idle()
+            let followState = mapView.viewport.makeFollowPuckViewportState(
+                options: FollowPuckViewportStateOptions(
+                    padding: UIEdgeInsets(top: 240, left: 40, bottom: 320, right: 40),
+                    zoom: 16.5,
+                    bearing: .course,
+                    pitch: 50
+                )
+            )
+            mapView.viewport.transition(to: followState) { success in
+                if success {
+                    context.coordinator.isFollowingPuck = true
+                }
+            }
+        }
+
         let congestion = coordinator.currentRoute?.legs.first?.segmentCongestionLevels
         context.coordinator.scheduleRender(
             mapView: mapView,
@@ -79,12 +104,36 @@ struct TripNavigationView: UIViewRepresentable {
 
     // MARK: - Map Coordinator
 
-    final class MapCoordinator {
+    final class MapCoordinator: ViewportStatusObserver {
         weak var mapView: MapView?
 
+        var isFollowingPuck = false
         private var routeCameraApplied = false
         private var styleIsReady = false
         private var cancellables = Set<AnyCancellable>()
+
+        // Change-detection: skip GeoJSON uploads when data hasn't changed
+        private var lastRouteHash: Int = 0
+        private var lastBreadcrumbCount: Int = 0
+        private var lastTravelerLat: Double = 0
+        private var lastTravelerLon: Double = 0
+        private var lastGeofenceCount: Int = 0
+        private var lastStopCount: Int = -1
+        private var lastEndpointHash: Int = 0
+
+        // Cached geofence circle polygons keyed by (lat, lon, radius)
+        private var geofenceCircleCache: [String: [CLLocationCoordinate2D]] = [:]
+        // MARK: ViewportStatusObserver
+        func viewportStatusDidChange(from fromStatus: ViewportStatus,
+                                     to toStatus: ViewportStatus,
+                                     reason: ViewportStatusChangeReason) {
+            // When the user drags/pinches the map, Mapbox moves the viewport to
+            // idle.  Mark isFollowingPuck false so the next SwiftUI render (or
+            // recenter tap) will re-engage follow-puck.
+            if reason == .userInteraction {
+                isFollowingPuck = false
+            }
+        }
 
         private var pendingTrip: Trip?
         private var pendingRouteCoordinates: [CLLocationCoordinate2D] = []
@@ -272,6 +321,17 @@ struct TripNavigationView: UIViewRepresentable {
         // MARK: - Route / Breadcrumb Rendering
 
         private func updateRoute(mapView: MapView, coordinates: [CLLocationCoordinate2D], congestionLevels: [MapboxDirections.CongestionLevel]?) {
+            // Skip if route data hasn't meaningfully changed (count + first coord)
+            var hasher = Hasher()
+            hasher.combine(coordinates.count)
+            if let first = coordinates.first {
+                hasher.combine(Int(first.latitude * 100_000))
+                hasher.combine(Int(first.longitude * 100_000))
+            }
+            let newHash = hasher.finalize()
+            guard newHash != lastRouteHash else { return }
+            lastRouteHash = newHash
+
             // Fix 11: Use per-segment congestion colors when available
             if let levels = congestionLevels, coordinates.count >= 2 {
                 updateCongestionColoredRoute(mapView: mapView, coordinates: coordinates, levels: levels)
@@ -284,7 +344,9 @@ struct TripNavigationView: UIViewRepresentable {
                 return
             }
 
-            guard !routeCameraApplied else { return }
+            // Skip overview camera when follow-puck is active — the viewport
+            // is already tracking the driver's location.
+            guard !routeCameraApplied, !isFollowingPuck else { return }
             routeCameraApplied = true
 
             let camera: CameraOptions
@@ -372,6 +434,9 @@ struct TripNavigationView: UIViewRepresentable {
         }
 
         private func updateBreadcrumbTrail(mapView: MapView, coordinates: [CLLocationCoordinate2D]) {
+            // Skip if breadcrumb count hasn't changed (grows monotonically during navigation)
+            guard coordinates.count != lastBreadcrumbCount else { return }
+            lastBreadcrumbCount = coordinates.count
             updateLineSource(mapView: mapView, sourceId: "breadcrumb-source", coordinates: coordinates)
         }
 
@@ -381,6 +446,13 @@ struct TripNavigationView: UIViewRepresentable {
             headingTarget: CLLocationCoordinate2D?
         ) {
             guard let coordinate else { return }
+
+            // Skip if puck hasn't moved noticeably (~1m ≈ 0.00001°)
+            let dLat = abs(coordinate.latitude - lastTravelerLat)
+            let dLon = abs(coordinate.longitude - lastTravelerLon)
+            guard dLat > 0.00001 || dLon > 0.00001 else { return }
+            lastTravelerLat = coordinate.latitude
+            lastTravelerLon = coordinate.longitude
 
             let feature = Feature(geometry: .point(Point(coordinate)))
             mapView.mapboxMap.updateGeoJSONSource(withId: "traveler-source", geoJSON: .feature(feature))
@@ -397,9 +469,20 @@ struct TripNavigationView: UIViewRepresentable {
         }
 
         private func renderGeofences(mapView: MapView, geofences: [Geofence]) {
+            // Skip if geofence set hasn't changed
+            guard geofences.count != lastGeofenceCount else { return }
+            lastGeofenceCount = geofences.count
+
             let features: [Feature] = geofences.compactMap { geofence in
                 let center = CLLocationCoordinate2D(latitude: geofence.latitude, longitude: geofence.longitude)
-                let ring = geodesicCircleCoordinates(center: center, radiusMeters: geofence.radiusMeters)
+                let cacheKey = "\(geofence.latitude),\(geofence.longitude),\(geofence.radiusMeters)"
+                let ring: [CLLocationCoordinate2D]
+                if let cached = geofenceCircleCache[cacheKey] {
+                    ring = cached
+                } else {
+                    ring = geodesicCircleCoordinates(center: center, radiusMeters: geofence.radiusMeters)
+                    geofenceCircleCache[cacheKey] = ring
+                }
                 guard ring.count >= 4 else { return nil }
                 return Feature(geometry: .polygon(Polygon([ring])))
             }
@@ -455,13 +538,16 @@ struct TripNavigationView: UIViewRepresentable {
         // MARK: - Render Stops
 
         private func renderStops(mapView: MapView, trip: Trip) {
+            let stops = (trip.routeStops ?? []).sorted { $0.order < $1.order }
+            // Skip if stop count hasn't changed (stops are static during a trip)
+            guard stops.count != lastStopCount else { return }
+            lastStopCount = stops.count
+
             if (try? mapView.mapboxMap.source(withId: "stops-source")) != nil {
                 try? mapView.mapboxMap.removeLayer(withId: "stops-labels")
                 try? mapView.mapboxMap.removeLayer(withId: "stops-circles")
                 try? mapView.mapboxMap.removeSource(withId: "stops-source")
             }
-
-            let stops = (trip.routeStops ?? []).sorted { $0.order < $1.order }
             guard !stops.isEmpty else { return }
 
             var features: [Feature] = []
@@ -501,6 +587,11 @@ struct TripNavigationView: UIViewRepresentable {
         // MARK: - Render Origin + Destination Markers
 
         private func renderEndpoints(mapView: MapView, trip: Trip) {
+            // Endpoints are static for a given trip — skip if already rendered
+            let hash = trip.id.hashValue
+            guard hash != lastEndpointHash else { return }
+            lastEndpointHash = hash
+
             if (try? mapView.mapboxMap.source(withId: "endpoints-source")) != nil {
                 try? mapView.mapboxMap.removeLayer(withId: "endpoints-labels")
                 try? mapView.mapboxMap.removeLayer(withId: "endpoints-circles")

@@ -1,131 +1,196 @@
 import SwiftUI
+import UIKit
 
 // MARK: - Six Digit Input
 
-/// Reusable 6-digit OTP input used by TwoFactorView.
-/// Supabase is configured to send 6-digit OTP tokens (set in Auth > Settings > OTP length).
+/// Reusable 6-digit OTP input used by TwoFactorView / ForgotPasswordView.
+/// Uses a single hidden UITextField to avoid keyboard bounce when moving focus between boxes.
 struct SixDigitInputView: View {
 
     @Binding var digits: [String] // must have exactly 6 elements
     @Binding var focusedIndex: Int?
     var onComplete: () -> Void
 
+    @State private var code: String = ""
+
+    private var isKeyboardActive: Binding<Bool> {
+        Binding(
+            get: { focusedIndex != nil },
+            set: { active in
+                if !active { focusedIndex = nil }
+            }
+        )
+    }
+
     var body: some View {
-        HStack(spacing: 12) {
-            ForEach(0..<6, id: \.self) { index in
-                SingleDigitField(
-                    text: Binding(
-                        get: { digits[index] },
-                        set: { newValue in handleInput(newValue, at: index) }
+        ZStack {
+            VStack(spacing: 10) {
+                OTPHiddenTextField(
+                    text: $code,
+                    cursorIndex: Binding(
+                        get: { focusedIndex ?? max(0, min(code.count, 6)) },
+                        set: { focusedIndex = max(0, min($0, 6)) }
                     ),
-                    isFocused: focusedIndex == index,
-                    onTap: { 
-                        withAnimation(.spring(duration: 0.2)) {
-                            focusedIndex = index 
-                        }
-                    },
-                    onBackspace: { handleBackspace(at: index) },
-                    onPaste: { handlePaste($0, startingAt: index) }
+                    isFirstResponder: isKeyboardActive
                 )
-                .accessibilityLabel("Digit \(index + 1)")
-                .accessibilityValue(digits[index].isEmpty ? "Empty" : digits[index])
+                .frame(width: 1, height: 1)
+                .opacity(0.01)
+                .accessibilityHidden(true)
+
+                HStack(spacing: 12) {
+                    ForEach(0..<6, id: \.self) { index in
+                        otpBox(at: index)
+                            .onTapGesture {
+                                focusAt(index)
+                            }
+                            .onTapGesture(count: 2) {
+                                if let paste = pasteableOTPCode {
+                                    applyPastedCode(paste)
+                                }
+                            }
+                            .accessibilityLabel("Digit \(index + 1)")
+                            .accessibilityValue(character(at: index).isEmpty ? "Empty" : character(at: index))
+                    }
+                }
+                .padding(.horizontal, 4)
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    if focusedIndex == nil {
+                        focusedIndex = max(0, min(code.count, 5))
+                    }
+                }
+
+                if let paste = pasteableOTPCode {
+                    Button {
+                        applyPastedCode(paste)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "doc.on.clipboard")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text("Paste Code")
+                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                        }
+                        .foregroundStyle(Color.appOrange)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(Capsule().fill(Color.appOrange.opacity(0.10)))
+                        .overlay(Capsule().stroke(Color.appOrange.opacity(0.24), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                }
             }
         }
-        .padding(.horizontal, 4)
-        .frame(maxWidth: .infinity)
-    }
-
-    // MARK: - Input Handling
-
-    private func handleInput(_ value: String, at index: Int) {
-        let filtered = value.filter { $0.isNumber }
-        guard let lastChar = filtered.last else { return }
-        digits[index] = String(lastChar)
-
-        if index < 5 {
-            focusedIndex = index + 1
-        } else {
-            focusedIndex = nil
-            let code = digits.joined()
-            if code.count == 6 { onComplete() }
+        .onAppear {
+            syncCodeFromDigits()
+            if focusedIndex == nil {
+                focusedIndex = max(0, min(code.count, 5))
+            }
+        }
+        .onChange(of: code) { _, newValue in
+            let sanitized = String(newValue.filter { $0.isNumber }.prefix(6))
+            if sanitized != newValue {
+                code = sanitized
+                return
+            }
+            syncDigitsFromCode(sanitized)
         }
     }
 
-    private func handleBackspace(at index: Int) {
-        if digits[index].isEmpty && index > 0 {
-            focusedIndex = index - 1
-            digits[index - 1] = ""
-        } else {
-            digits[index] = ""
-        }
-    }
+    private func otpBox(at index: Int) -> some View {
+        let char = character(at: index)
+        let activeIndex = focusedIndex ?? max(0, min(code.count, 5))
+        let isActive = activeIndex == index
 
-    private func handlePaste(_ pastedDigits: String, startingAt startIndex: Int) {
-        let chars = Array(pastedDigits.filter { $0.isNumber }.prefix(6))
-        for (offset, char) in chars.enumerated() {
-            let idx = startIndex + offset
-            guard idx < 6 else { break }
-            digits[idx] = String(char)
-        }
-        let nextIndex = min(startIndex + chars.count, 6)
-        if nextIndex == 6 {
-            focusedIndex = nil
-            onComplete()
-        } else {
-            focusedIndex = nextIndex
-        }
-    }
-}
-
-// MARK: - Single Digit Field
-
-struct SingleDigitField: View {
-
-    @Binding var text: String
-    let isFocused: Bool
-    let onTap: () -> Void
-    let onBackspace: () -> Void
-    var onPaste: ((String) -> Void)? = nil
-
-    var body: some View {
-        BackspaceDetectingTextField(
-            text: $text,
-            isFocused: isFocused,
-            onBackspace: onBackspace,
-            onPaste: onPaste
-        )
-        .frame(width: 48, height: 64)
-        .multilineTextAlignment(.center)
-        .font(SierraFont.body(28, weight: .bold))
-        .foregroundStyle(SierraTheme.Colors.primaryText)
-        .background(
+        return ZStack {
             RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                 .fill(Color(.secondarySystemGroupedBackground))
-        )
-        .overlay(
+
             RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                 .strokeBorder(
-                    isFocused ? SierraTheme.Colors.ember : SierraTheme.Colors.cloud.opacity(0.8),
-                    lineWidth: isFocused ? 2 : 1
+                    isActive ? SierraTheme.Colors.ember : SierraTheme.Colors.cloud.opacity(0.8),
+                    lineWidth: isActive ? 2 : 1
                 )
+
+            Text(char)
+                .font(SierraFont.body(28, weight: .bold))
+                .foregroundStyle(SierraTheme.Colors.primaryText)
+                .monospacedDigit()
+        }
+        .frame(width: 48, height: 64)
+        .sierraShadow(isActive
+            ? SierraShadow(color: SierraTheme.Colors.ember.opacity(0.12), radius: 8, x: 0, y: 3)
+            : SierraShadow(color: .clear, radius: 0, x: 0, y: 0)
         )
-        .sierraShadow(isFocused ? SierraShadow(color: SierraTheme.Colors.ember.opacity(0.12), radius: 8, x: 0, y: 3) : SierraShadow(color: .clear, radius: 0, x: 0, y: 0))
-        .contentShape(Rectangle())
-        .onTapGesture { onTap() }
+        .animation(.easeOut(duration: 0.14), value: code)
+        .animation(.easeOut(duration: 0.14), value: focusedIndex)
+    }
+
+    private func character(at index: Int) -> String {
+        guard index < code.count else { return "" }
+        let stringIndex = code.index(code.startIndex, offsetBy: index)
+        return String(code[stringIndex])
+    }
+
+    private func focusAt(_ index: Int) {
+        // Move cursor to tapped box without mutating the existing code.
+        focusedIndex = index
+    }
+
+    private var pasteableOTPCode: String? {
+        let raw = UIPasteboard.general.string ?? ""
+        let digitsOnly = String(raw.filter { $0.isNumber }.prefix(6))
+        return digitsOnly.isEmpty ? nil : digitsOnly
+    }
+
+    private func applyPastedCode(_ value: String) {
+        let sanitized = String(value.filter { $0.isNumber }.prefix(6))
+        guard !sanitized.isEmpty else { return }
+        code = sanitized
+        syncDigitsFromCode(sanitized)
+        if sanitized.count < 6 {
+            focusedIndex = sanitized.count
+        }
+    }
+
+    private func syncCodeFromDigits() {
+        if digits.count != 6 {
+            digits = Array(repeating: "", count: 6)
+        }
+        let joined = digits.joined().filter { $0.isNumber }
+        code = String(joined.prefix(6))
+        syncDigitsFromCode(code)
+    }
+
+    private func syncDigitsFromCode(_ value: String) {
+        if digits.count != 6 {
+            digits = Array(repeating: "", count: 6)
+        }
+
+        var next = Array(repeating: "", count: 6)
+        for (i, c) in value.enumerated() where i < 6 {
+            next[i] = String(c)
+        }
+        digits = next
+
+        if value.count == 6 {
+            focusedIndex = 5
+            onComplete()
+        } else {
+            focusedIndex = max(0, min(value.count, 5))
+        }
     }
 }
 
-// MARK: - Backspace-Detecting TextField (UIKit wrapper)
+// MARK: - Hidden OTP UITextField
 
-struct BackspaceDetectingTextField: UIViewRepresentable {
-
+private struct OTPHiddenTextField: UIViewRepresentable {
     @Binding var text: String
-    var isFocused: Bool
-    var onBackspace: () -> Void
-    var onPaste: ((String) -> Void)?
+    @Binding var cursorIndex: Int
+    @Binding var isFirstResponder: Bool
 
-    func makeUIView(context: Context) -> BackspaceTextField {
-        let tf = BackspaceTextField()
+    func makeUIView(context: Context) -> UITextField {
+        let tf = UITextField(frame: .zero)
         tf.keyboardType = .numberPad
         tf.textContentType = .oneTimeCode
         tf.autocorrectionType = .no
@@ -134,54 +199,79 @@ struct BackspaceDetectingTextField: UIViewRepresentable {
         tf.smartDashesType = .no
         tf.smartQuotesType = .no
         tf.autocapitalizationType = .none
-        tf.textAlignment = .center
-        tf.font = .systemFont(ofSize: 26, weight: .bold)
+        tf.tintColor = UIColor.clear
+        tf.textColor = .clear
         tf.delegate = context.coordinator
-        tf.onBackspace = onBackspace
-        tf.textColor = UIColor(SierraTheme.Colors.primaryText)
-        tf.tintColor = UIColor(SierraTheme.Colors.ember)
         return tf
     }
 
-    func updateUIView(_ uiView: BackspaceTextField, context: Context) {
-        if uiView.text != text { uiView.text = text }
-        if isFocused {
+    func updateUIView(_ uiView: UITextField, context: Context) {
+        if uiView.text != text {
+            uiView.text = text
+        }
+
+        context.coordinator.setCursorIfNeeded(in: uiView, index: cursorIndex, textCount: text.count)
+
+        if isFirstResponder {
             if !uiView.isFirstResponder {
                 uiView.becomeFirstResponder()
             }
         } else if uiView.isFirstResponder {
             uiView.resignFirstResponder()
         }
-        uiView.onBackspace = onBackspace
     }
 
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
 
-    class Coordinator: NSObject, UITextFieldDelegate {
-        let parent: BackspaceDetectingTextField
-        init(_ parent: BackspaceDetectingTextField) { self.parent = parent }
+    final class Coordinator: NSObject, UITextFieldDelegate {
+        var parent: OTPHiddenTextField
 
-        func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange,
-                        replacementString string: String) -> Bool {
-            if string.isEmpty { return true }
-            let digits = string.filter { $0.isNumber }
-            if digits.count > 1 {
-                parent.onPaste?(digits)
+        init(_ parent: OTPHiddenTextField) {
+            self.parent = parent
+        }
+
+        func textField(_ textField: UITextField,
+                       shouldChangeCharactersIn range: NSRange,
+                       replacementString string: String) -> Bool {
+            guard let current = textField.text,
+                  let swiftRange = Range(range, in: current) else {
                 return false
             }
-            guard digits.count == 1 else { return false }
-            parent.text = digits
+
+            // Number pad backspace on a hidden field can sometimes report a 0-length delete.
+            // Handle it explicitly to keep UX stable when deleting inside OTP boxes.
+            if string.isEmpty && range.length == 0 && range.location > 0 {
+                let deleteLocation = max(0, min(range.location - 1, current.count - 1))
+                guard let deleteStart = current.index(current.startIndex, offsetBy: deleteLocation, limitedBy: current.endIndex),
+                      let deleteEnd = current.index(deleteStart, offsetBy: 1, limitedBy: current.endIndex) else {
+                    return false
+                }
+                let updated = current.replacingCharacters(in: deleteStart..<deleteEnd, with: "")
+                let digitsOnly = String(updated.filter { $0.isNumber }.prefix(6))
+                parent.text = digitsOnly
+                parent.cursorIndex = deleteLocation
+                return false
+            }
+
+            let updated = current.replacingCharacters(in: swiftRange, with: string)
+            let digitsOnly = String(updated.filter { $0.isNumber }.prefix(6))
+            let newCursor = max(0, min(range.location + string.count, digitsOnly.count))
+            parent.text = digitsOnly
+            parent.cursorIndex = newCursor
             return false
         }
-    }
-}
 
-class BackspaceTextField: UITextField {
-    var onBackspace: (() -> Void)?
-
-    override func deleteBackward() {
-        if text?.isEmpty == true { onBackspace?() }
-        super.deleteBackward()
+        func setCursorIfNeeded(in textField: UITextField, index: Int, textCount: Int) {
+            let target = max(0, min(index, textCount))
+            guard let start = textField.position(from: textField.beginningOfDocument, offset: target),
+                  let selected = textField.selectedTextRange else { return }
+            let currentOffset = textField.offset(from: textField.beginningOfDocument, to: selected.start)
+            if currentOffset != target {
+                textField.selectedTextRange = textField.textRange(from: start, to: start)
+            }
+        }
     }
 }
 

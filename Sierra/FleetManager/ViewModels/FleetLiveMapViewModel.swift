@@ -174,13 +174,8 @@ final class FleetLiveMapViewModel {
         }
         let lats = active.map { $0.latitude }
         let lngs = active.map { $0.longitude }
-        guard let minLat = lats.min(), let maxLat = lats.max(),
-              let minLng = lngs.min(), let maxLng = lngs.max() else {
-            return .region(MKCoordinateRegion(
-                center: CLLocationCoordinate2D(latitude: 20.5937, longitude: 78.9629),
-                latitudinalMeters: 2_000_000, longitudinalMeters: 2_000_000
-            ))
-        }
+        let minLat = lats.min()!, maxLat = lats.max()!
+        let minLng = lngs.min()!, maxLng = lngs.max()!
         let center = CLLocationCoordinate2D(
             latitude: (minLat + maxLat) / 2,
             longitude: (minLng + maxLng) / 2
