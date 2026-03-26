@@ -1,9 +1,0 @@
-diff a/Sierra/FleetManager/Views/MaintenanceApprovalDetailView.swift b/Sierra/FleetManager/Views/MaintenanceApprovalDetailView.swift	(rejected hunks)
-@@ -51,6 +61,7 @@ struct MaintenanceApprovalDetailView: View {
-             VStack(spacing: 14) {
-                 statusStripCard
-                 overviewCard
-+                issueEvidenceCard
-                 vehicleCard
-                 timelineCard
-                 phaseCard

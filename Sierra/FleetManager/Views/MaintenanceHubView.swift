@@ -17,7 +17,7 @@ struct MaintenanceHubView: View {
     }
 
     @State private var requestType: RequestTypeFilter = .all
-    @State private var statusFilter: StatusFilter = .all
+    @State private var statusFilter: StatusFilter = .pending
     @State private var selectedTask: MaintenanceTask?
     @State private var vehicleSheetVehicle: Vehicle?
     @State private var showInventoryAdmin = false
@@ -180,9 +180,9 @@ struct MaintenanceHubView: View {
             Picker("Status", selection: $statusFilter) {
                 ForEach(StatusFilter.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }
-            if requestType != .all || statusFilter != .all {
+            if requestType != .all || statusFilter != .pending {
                 Divider()
-                Button("Reset Filters") { requestType = .all; statusFilter = .all }
+                Button("Reset Filters") { requestType = .all; statusFilter = .pending }
             }
         } label: {
             Image(systemName: "line.3.horizontal.decrease.circle")

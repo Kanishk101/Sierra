@@ -64,6 +64,7 @@ struct MaintenanceApprovalDetailView: View {
             VStack(spacing: 14) {
                 statusStripCard
                 overviewCard
+                issueEvidenceCard
                 assignmentFleetCard
                 timelineCard
                 if !spareParts.isEmpty { partsCard }

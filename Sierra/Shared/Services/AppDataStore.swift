@@ -55,9 +55,10 @@ final class AppDataStore {
     var loadError: String?
     private var lastDriverRefreshAt: Date?
     private var sentOverdueTripResponseAlerts: Set<UUID> = []
+    private var deliveredRealtimeNotificationIds: Set<UUID> = []
 
     /// Shared refresh cadence for driver screens.
-    var driverRefreshInterval: TimeInterval { 30 }
+    var driverRefreshInterval: TimeInterval { 10 }
 
     private func sortTripsByAssignmentRecency() {
         trips.sort { Trip.isMoreRecentlyAssigned($0, than: $1) }
@@ -1260,14 +1261,22 @@ final class AppDataStore {
         notifications = []
         do {
             notifications = try await NotificationService.fetchNotifications(for: userId)
+            notifications.sort { $0.sentAt > $1.sentAt }
         } catch {
             print("[AppDataStore] Failed to fetch notifications: \(error)")
         }
         NotificationService.shared.subscribeToNotifications(for: userId) { [weak self] newNotification in
             guard let self else { return }
             Task { @MainActor in
-                self.notifications.insert(newNotification, at: 0)
-                LocalNotificationService.notifyFromSierraNotification(newNotification)
+                if let existingIndex = self.notifications.firstIndex(where: { $0.id == newNotification.id }) {
+                    self.notifications[existingIndex] = newNotification
+                } else {
+                    self.notifications.insert(newNotification, at: 0)
+                    if self.deliveredRealtimeNotificationIds.insert(newNotification.id).inserted {
+                        LocalNotificationService.notifyFromSierraNotification(newNotification)
+                    }
+                }
+                self.notifications.sort { $0.sentAt > $1.sentAt }
             }
         }
     }
@@ -1308,6 +1317,7 @@ final class AppDataStore {
         case missingAssignment
         case tripNotAccepted
         case missingPreInspection
+        case scheduledStartNotReached(Date)
         case driverUnavailable
         case vehicleUnavailable
         case resourceConflict
@@ -1324,6 +1334,8 @@ final class AppDataStore {
                 return "Trip must be accepted before it can start."
             case .missingPreInspection:
                 return "Complete pre-trip inspection before starting."
+            case .scheduledStartNotReached(let startAt):
+                return "Trip navigation can start only at \(startAt.formatted(.dateTime.hour().minute()))."
             case .driverUnavailable:
                 return "Driver is not available to start this trip."
             case .vehicleUnavailable:
@@ -1351,6 +1363,9 @@ final class AppDataStore {
         }
         guard trip.preInspectionId != nil else {
             throw StartTripPreflightError.missingPreInspection
+        }
+        if trip.scheduledDate > Date() {
+            throw StartTripPreflightError.scheduledStartNotReached(trip.scheduledDate)
         }
 
         if let driver = staff.first(where: { $0.id == driverId }) {
@@ -1400,6 +1415,11 @@ final class AppDataStore {
             trips[idx].startMileage = startMileage
         }
 
+        if let startedTrip = trips.first(where: { $0.id == tripId }) {
+            let driverName = staff.first(where: { $0.id == preflight.driverId })?.displayName ?? "Driver"
+            await NotificationService.notifyAdminsTripStartedIfNeeded(trip: startedTrip, driverName: driverName)
+        }
+
         // Set driver to Busy
         try? await {
             let _ = try await StaffMemberService.setAvailability(staffId: preflight.driverId, availability: .busy)
@@ -1419,6 +1439,7 @@ final class AppDataStore {
 
     func endTrip(tripId: UUID, endMileage: Double? = nil) async throws {
         try await TripService.completeTrip(tripId: tripId, endMileage: endMileage)
+        var completedTrip: Trip?
         if let idx = trips.firstIndex(where: { $0.id == tripId }) {
             let driverIdStr = trips[idx].driverId
             let vehicleId = trips[idx].vehicleUUID
@@ -1427,6 +1448,7 @@ final class AppDataStore {
             if let endMileage {
                 trips[idx].endMileage = endMileage
             }
+            completedTrip = trips[idx]
             // Set driver back to Available
             if let driverIdStr, let driverId = UUID(uuidString: driverIdStr) {
                 try? await {
@@ -1444,6 +1466,11 @@ final class AppDataStore {
                     }
                 }()
             }
+        }
+        if let completedTrip {
+            let driverName = completedTrip.driverUUID
+                .flatMap { id in staff.first(where: { $0.id == id })?.displayName } ?? "Driver"
+            await NotificationService.notifyAdminsTripEndedIfNeeded(trip: completedTrip, driverName: driverName)
         }
         activeTripLocationHistory = []; currentTripDeviations = []; activeTripExpenses = []
     }
