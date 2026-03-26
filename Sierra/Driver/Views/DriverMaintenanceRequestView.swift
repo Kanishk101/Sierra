@@ -102,7 +102,13 @@ struct DriverMaintenanceRequestView: View {
     }
 
     private var lockedPostTripLayout: some View {
-        ZStack {
+        let isPreTripDefect = vm.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().contains("pre-trip")
+        let defectHeader = isPreTripDefect ? "Pre-Trip Defect" : "Post-Trip Defect"
+        let defectSubtitle = isPreTripDefect
+            ? "Submit this request so fleet manager can reassign vehicle before trip start."
+            : "Submit this request and continue post-trip inspection."
+
+        return ZStack {
             Color.appSurface.ignoresSafeArea()
 
             ScrollView {
@@ -111,12 +117,12 @@ struct DriverMaintenanceRequestView: View {
                         HStack(spacing: 8) {
                             Image(systemName: "wrench.and.screwdriver.fill")
                                 .foregroundStyle(Color.appOrange)
-                            Text("Post-Trip Defect")
+                            Text(defectHeader)
                                 .font(.system(size: 19, weight: .bold, design: .rounded))
                                 .foregroundStyle(Color.appTextPrimary)
                         }
 
-                        Text("Submit this request and continue post-trip inspection.")
+                        Text(defectSubtitle)
                             .font(.system(size: 13, weight: .medium, design: .rounded))
                             .foregroundStyle(Color.appTextSecondary)
                     }

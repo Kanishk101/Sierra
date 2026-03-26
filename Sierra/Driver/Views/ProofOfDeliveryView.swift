@@ -2,6 +2,7 @@ import SwiftUI
 import PhotosUI
 import CryptoKit
 import Supabase
+import UserNotifications
 
 /// Proof of delivery capture — FMS_SS themed.
 /// Three tabs: Photo, Signature, OTP — each with the orange-accent card design.
@@ -40,6 +41,8 @@ struct ProofOfDeliveryView: View {
     @State private var otpShowMismatch = false
     @State private var generatedOTPTime: Date?
     @State private var otpExpired = false
+    @State private var otpSentNotification = false
+    @State private var otpNotificationFailed = false
 
     // Camera
     @State private var showCamera = false
@@ -427,7 +430,7 @@ struct ProofOfDeliveryView: View {
                         .multilineTextAlignment(.center)
 
                     Button {
-                        generateOTP()
+                        Task { await generateOTP() }
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "key.fill")
@@ -447,17 +450,22 @@ struct ProofOfDeliveryView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
             } else {
-                // OTP Display
+                // OTP sent confirmation (code intentionally hidden)
                 VStack(spacing: 10) {
-                    Text("READ THIS CODE TO RECIPIENT")
+                    Text("OTP SENT TO DRIVER ALERTS")
                         .font(.system(size: 11, weight: .bold, design: .rounded))
                         .foregroundColor(.appTextSecondary)
                         .tracking(1.5)
 
-                    Text(generatedOTP ?? "")
-                        .font(.system(size: 38, weight: .bold, design: .monospaced))
-                        .foregroundColor(.appOrange)
-                        .kerning(10)
+                    HStack(spacing: 8) {
+                        Image(systemName: "bell.badge.fill")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(.appOrange)
+                        Text("OTP sent as notification. Copy and paste here.")
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            .foregroundColor(.appTextPrimary)
+                    }
+                    .multilineTextAlignment(.center)
 
                     HStack(spacing: 4) {
                         Image(systemName: "clock")
@@ -466,6 +474,24 @@ struct ProofOfDeliveryView: View {
                             .font(.system(size: 12, weight: .medium, design: .rounded))
                     }
                     .foregroundColor(.appTextSecondary)
+
+                    if otpSentNotification {
+                        HStack(spacing: 5) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 12, weight: .bold))
+                            Text("Notification delivered")
+                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        }
+                        .foregroundColor(Color(red: 0.20, green: 0.65, blue: 0.32))
+                    } else if otpNotificationFailed {
+                        HStack(spacing: 5) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 12, weight: .bold))
+                            Text("Alerts sync delayed. OTP still valid here.")
+                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        }
+                        .foregroundColor(Color(red: 0.90, green: 0.22, blue: 0.18))
+                    }
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
@@ -560,6 +586,24 @@ struct ProofOfDeliveryView: View {
                         }
                         .foregroundColor(Color(red: 0.90, green: 0.22, blue: 0.18))
                     }
+
+                    Button {
+                        Task { await generateOTP() }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.clockwise.circle.fill")
+                                .font(.system(size: 13, weight: .bold))
+                            Text("Regenerate OTP")
+                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                        }
+                        .foregroundColor(.appOrange)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(
+                            Capsule().fill(Color.appOrange.opacity(0.12))
+                        )
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         }
@@ -678,15 +722,43 @@ struct ProofOfDeliveryView: View {
 
     // MARK: - OTP Logic
 
-    private func generateOTP() {
+    private func generateOTP() async {
         let otp = String(format: "%06d", Int.random(in: 0...999999))
         generatedOTP = otp
         generatedOTPTime = Date()
         otpExpired = false
+        otpVerified = false
+        otpShowMismatch = false
+        otpEnteredByRecipient = ""
+        otpSentNotification = false
+        otpNotificationFailed = false
 
         let credential = CryptoService.hash(password: otp)
         otpHash = credential.hash
         otpSalt = credential.salt
+
+        let tripCode = store.trips.first(where: { $0.id == tripId })?.taskId ?? tripId.uuidString.prefix(8).uppercased()
+        await sendLocalOTPNotification(otp: otp, tripCode: tripCode)
+        otpSentNotification = true
+
+        // Non-blocking remote notification row. OTP flow must continue regardless.
+        Task {
+            do {
+                try await NotificationService.insertNotification(
+                    recipientId: driverId,
+                    type: .general,
+                    title: "Delivery OTP: \(tripCode)",
+                    body: "Your delivery verification code is \(otp). Valid for 10 minutes.",
+                    entityType: "delivery_otp",
+                    entityId: tripId
+                )
+            } catch {
+                await MainActor.run {
+                    otpSentNotification = false
+                    otpNotificationFailed = true
+                }
+            }
+        }
 
         Task {
             try? await Task.sleep(for: .seconds(600))
@@ -695,6 +767,24 @@ struct ProofOfDeliveryView: View {
                 generatedOTP = nil
             }
         }
+    }
+
+    private func sendLocalOTPNotification(otp: String, tripCode: String) async {
+        let center = UNUserNotificationCenter.current()
+        let granted = try? await center.requestAuthorization(options: [.alert, .sound, .badge])
+        guard granted == true else { return }
+
+        let content = UNMutableNotificationContent()
+        content.title = "Delivery OTP • \(tripCode)"
+        content.body = "Code \(otp). Tap and copy, then paste in app."
+        content.sound = .default
+
+        let request = UNNotificationRequest(
+            identifier: "delivery-otp-\(tripId.uuidString)",
+            content: content,
+            trigger: nil
+        )
+        try? await center.add(request)
     }
 
     private func verifyOTP() {
@@ -800,13 +890,32 @@ struct ProofOfDeliveryView: View {
                 createdAt: Date()
             )
 
-            try await store.addProofOfDelivery(pod)
+            try await addProofWithRetry(pod)
             onComplete()
         } catch {
-            errorMessage = error.localizedDescription
+            if isTimeout(error) {
+                errorMessage = "Submission timed out. Please retry once — your proof may already be saved."
+            } else {
+                errorMessage = error.localizedDescription
+            }
             showError = true
         }
 
         isSubmitting = false
+    }
+
+    private func addProofWithRetry(_ pod: ProofOfDelivery) async throws {
+        do {
+            try await store.addProofOfDelivery(pod)
+        } catch {
+            guard isTimeout(error) else { throw error }
+            try? await Task.sleep(for: .milliseconds(450))
+            try await store.addProofOfDelivery(pod)
+        }
+    }
+
+    private func isTimeout(_ error: Error) -> Bool {
+        let message = error.localizedDescription.lowercased()
+        return message.contains("timed out") || message.contains("timeout")
     }
 }

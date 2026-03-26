@@ -29,6 +29,7 @@ struct CreateGeofenceSheet: View {
             longitudinalMeters: 50000
         )
     )
+    @State private var mapCenterCoordinate = CLLocationCoordinate2D(latitude: 20.5937, longitude: 78.9629)
 
     @State private var isSaving = false
     @State private var errorMessage: String?
@@ -57,16 +58,12 @@ struct CreateGeofenceSheet: View {
                             .textFieldStyle(.roundedBorder)
 
                         fieldLabel("Type")
-                        Picker("Type", selection: $geofenceType) {
-                            ForEach(GeofenceType.allCases, id: \.self) { type in
-                                Text(type.rawValue).tag(type)
-                            }
-                        }
-                        .pickerStyle(.segmented)
+                        geofenceTypeChips
 
                         fieldLabel("Radius: \(Int(radiusMeters))m")
                         Slider(value: $radiusMeters, in: 100...5000, step: 50)
                             .tint(SierraTheme.Colors.ember)
+                        radiusPresets
 
                         Toggle("Alert on Entry", isOn: $alertOnEntry)
                             .font(.subheadline)
@@ -97,6 +94,7 @@ struct CreateGeofenceSheet: View {
             }
             .navigationTitle("Create Geofence")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -129,6 +127,44 @@ struct CreateGeofenceSheet: View {
         .mapStyle(.standard)
         .frame(height: 200)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(alignment: .center) {
+            Image(systemName: "plus")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(SierraTheme.Colors.ember)
+                .padding(5)
+                .background(.ultraThinMaterial, in: Circle())
+        }
+        .overlay(alignment: .bottomTrailing) {
+            HStack(spacing: 8) {
+                Button {
+                    coordinate = mapCenterCoordinate
+                    hasSetLocation = true
+                } label: {
+                    Label("Set Pin Here", systemImage: "mappin.and.ellipse")
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(.ultraThinMaterial, in: Capsule())
+                }
+                .buttonStyle(.plain)
+
+                if hasSetLocation {
+                    Button {
+                        hasSetLocation = false
+                        coordinate = .init(latitude: 0, longitude: 0)
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(.red.opacity(0.85))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(10)
+        }
+        .onMapCameraChange(frequency: .continuous) { context in
+            mapCenterCoordinate = context.region.center
+        }
         .onTapGesture { location in
             // Note: SwiftUI Map doesn't support direct tap-to-coordinate.
             // Admin should use address search to set coordinates.
@@ -190,6 +226,78 @@ struct CreateGeofenceSheet: View {
         case .deliveryPoint: return .green
         case .restrictedZone: return .red
         case .custom: return .gray
+        }
+    }
+
+    private var geofenceTypeChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(GeofenceType.allCases, id: \.self) { type in
+                    let selected = geofenceType == type
+                    Button {
+                        geofenceType = type
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: geofenceTypeIcon(type))
+                                .font(.system(size: 11, weight: .semibold))
+                            Text(type.rawValue)
+                                .font(.system(size: 12, weight: .semibold))
+                                .lineLimit(1)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(
+                            selected ? geofenceColor.opacity(0.15) : Color(.secondarySystemBackground),
+                            in: Capsule()
+                        )
+                        .overlay(
+                            Capsule()
+                                .stroke(selected ? geofenceColor : Color.gray.opacity(0.25), lineWidth: 1)
+                        )
+                        .foregroundStyle(selected ? geofenceColor : .secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.vertical, 2)
+        }
+    }
+
+    private var radiusPresets: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach([100.0, 250.0, 500.0, 1000.0, 2000.0, 5000.0], id: \.self) { preset in
+                    let selected = abs(radiusMeters - preset) < 0.1
+                    Button {
+                        radiusMeters = preset
+                    } label: {
+                        Text(preset >= 1000 ? "\(Int(preset / 1000)) km" : "\(Int(preset)) m")
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(
+                                selected ? SierraTheme.Colors.ember.opacity(0.15) : Color(.secondarySystemBackground),
+                                in: Capsule()
+                            )
+                            .overlay(
+                                Capsule()
+                                    .stroke(selected ? SierraTheme.Colors.ember : Color.gray.opacity(0.25), lineWidth: 1)
+                            )
+                            .foregroundStyle(selected ? SierraTheme.Colors.ember : .secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.vertical, 2)
+        }
+    }
+
+    private func geofenceTypeIcon(_ type: GeofenceType) -> String {
+        switch type {
+        case .warehouse: return "building.2.fill"
+        case .deliveryPoint: return "shippingbox.fill"
+        case .restrictedZone: return "exclamationmark.octagon.fill"
+        case .custom: return "mappin.circle.fill"
         }
     }
 
@@ -261,7 +369,7 @@ struct CreateGeofenceSheet: View {
 
         isSaving = true
         do {
-            try await GeofenceService.createGeofence(
+            let persisted = try await GeofenceService.createGeofence(
                 name: name,
                 description: geofenceDescription,
                 latitude: coordinate.latitude,
@@ -273,9 +381,11 @@ struct CreateGeofenceSheet: View {
                 createdByAdminId: adminId
             )
 
-            // Refresh geofences
-            let updated = try await GeofenceService.fetchAllGeofences()
-            store.geofences = updated
+            if let idx = store.geofences.firstIndex(where: { $0.id == persisted.id }) {
+                store.geofences[idx] = persisted
+            } else {
+                store.geofences.append(persisted)
+            }
 
             dismiss()
         } catch {

@@ -45,7 +45,7 @@ struct PendingApprovalsView: View {
             }
             .background(Color.appSurface.ignoresSafeArea())
             .navigationTitle("Staff Applications")
-            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarTitleDisplayMode(.inline)
             .toolbarBackground(.hidden, for: .navigationBar)
             .animation(.easeInOut(duration: 0.25), value: viewModel.selectedFilter)
             .sheet(item: $selectedApplication) { app in

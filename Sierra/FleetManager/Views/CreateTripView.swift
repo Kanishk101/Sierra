@@ -22,6 +22,8 @@ struct CreateTripView: View {
     @Environment(AppDataStore.self) private var store
 
     @State private var vm = CreateTripViewModel()
+    @State private var showRoutePinEditor = false
+    @State private var stopEditMode: EditMode = .inactive
 
     var body: some View {
         NavigationStack {
@@ -44,6 +46,7 @@ struct CreateTripView: View {
             }
             .navigationTitle("Create Trip")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     if !vm.showSuccess { Button("Cancel") { dismiss() } }
@@ -54,6 +57,15 @@ struct CreateTripView: View {
                             HStack(spacing: 4) {
                                 Image(systemName: "chevron.left").font(.caption)
                                 Text("Back")
+                            }
+                        }
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    if vm.currentStep == 1 && !vm.showSuccess && !vm.stops.isEmpty {
+                        Button(stopEditMode == .active ? "Done" : "Reorder Stops") {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                stopEditMode = stopEditMode == .active ? .inactive : .active
                             }
                         }
                     }
@@ -94,49 +106,87 @@ struct CreateTripView: View {
         VStack(spacing: 0) {
             Form {
                 Section("Route") {
-                    Button { vm.showOriginSearch = true } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: "circle.fill").font(.system(size: 10)).foregroundStyle(.green)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Origin").font(.caption).foregroundStyle(.secondary)
-                                Text(vm.origin.isEmpty ? "Search origin address…" : vm.origin)
-                                    .font(.subheadline).foregroundStyle(vm.origin.isEmpty ? .tertiary : .primary).lineLimit(2)
+                    HStack(spacing: 10) {
+                        Button { vm.showOriginSearch = true } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "circle.fill").font(.system(size: 10)).foregroundStyle(.green)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Origin").font(.caption).foregroundStyle(.secondary)
+                                    Text(vm.origin.isEmpty ? "Search origin address…" : vm.origin)
+                                        .font(.subheadline).foregroundStyle(vm.origin.isEmpty ? .tertiary : .primary).lineLimit(2)
+                                }
+                                Spacer()
+                                Image(systemName: "magnifyingglass").font(.caption).foregroundStyle(.secondary)
                             }
-                            Spacer()
-                            Image(systemName: "magnifyingglass").font(.caption).foregroundStyle(.secondary)
                         }
-                    }.buttonStyle(.plain)
+                        .buttonStyle(.plain)
 
-                    ForEach(Array(vm.stops.enumerated()), id: \.element.id) { index, stop in
+                        if vm.selectedOrigin != nil {
+                            Button {
+                                vm.setOrigin(nil)
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 16))
+                                    .foregroundStyle(.red.opacity(0.7))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    ForEach(vm.stops) { stop in
+                        let index = (vm.stops.firstIndex(where: { $0.id == stop.id }) ?? 0) + 1
                         HStack(spacing: 12) {
-                            Image(systemName: "\(index + 1).circle.fill").font(.system(size: 14)).foregroundStyle(.orange)
+                            Image(systemName: "\(index).circle.fill").font(.system(size: 14)).foregroundStyle(.orange)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Stop \(index + 1)").font(.caption).foregroundStyle(.secondary)
+                                Text("Stop \(index)").font(.caption).foregroundStyle(.secondary)
                                 Text(stop.shortName).font(.subheadline).foregroundStyle(.primary)
                             }
                             Spacer()
-                            Button { vm.stops.remove(at: index) } label: {
+                            Button { vm.removeStop(id: stop.id) } label: {
                                 Image(systemName: "xmark.circle.fill").font(.system(size: 16)).foregroundStyle(.red.opacity(0.7))
                             }.buttonStyle(.plain)
                         }
                     }
+                    .onMove(perform: vm.moveStops)
 
                     Button { vm.showStopSearch = true } label: {
                         Label("Add Stop", systemImage: "plus.circle").font(.subheadline).foregroundStyle(.orange)
                     }
 
-                    Button { vm.showDestinationSearch = true } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: "mappin.circle.fill").font(.system(size: 14)).foregroundStyle(.red)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Destination").font(.caption).foregroundStyle(.secondary)
-                                Text(vm.destination.isEmpty ? "Search destination address…" : vm.destination)
-                                    .font(.subheadline).foregroundStyle(vm.destination.isEmpty ? .tertiary : .primary).lineLimit(2)
+                    HStack(spacing: 10) {
+                        Button { vm.showDestinationSearch = true } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "mappin.circle.fill").font(.system(size: 14)).foregroundStyle(.red)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Destination").font(.caption).foregroundStyle(.secondary)
+                                    Text(vm.destination.isEmpty ? "Search destination address…" : vm.destination)
+                                        .font(.subheadline).foregroundStyle(vm.destination.isEmpty ? .tertiary : .primary).lineLimit(2)
+                                }
+                                Spacer()
+                                Image(systemName: "magnifyingglass").font(.caption).foregroundStyle(.secondary)
                             }
-                            Spacer()
-                            Image(systemName: "magnifyingglass").font(.caption).foregroundStyle(.secondary)
                         }
-                    }.buttonStyle(.plain)
+                        .buttonStyle(.plain)
+
+                        if vm.selectedDestination != nil {
+                            Button {
+                                vm.setDestination(nil)
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 16))
+                                    .foregroundStyle(.red.opacity(0.7))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    Button {
+                        showRoutePinEditor = true
+                    } label: {
+                        Label("Edit Route Pins on Map", systemImage: "hand.draw.fill")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.blue)
+                    }
                 }
 
                 if vm.selectedOrigin != nil || vm.selectedDestination != nil {
@@ -154,15 +204,31 @@ struct CreateTripView: View {
                 }
             }
             .scrollContentBackground(.hidden)
+            .environment(\.editMode, $stopEditMode)
             .onChange(of: vm.scheduledDate) { _, newDate in vm.scheduledEndDate = newDate.addingTimeInterval(3600 * 8) }
             .sheet(isPresented: $vm.showOriginSearch) {
-                AddressSearchSheet(placeholder: "Search origin address…") { result in vm.selectedOrigin = result; vm.origin = result.displayName }
+                AddressSearchSheet(placeholder: "Search origin address…") { result in
+                    vm.setOrigin(result)
+                }
             }
             .sheet(isPresented: $vm.showDestinationSearch) {
-                AddressSearchSheet(placeholder: "Search destination address…") { result in vm.selectedDestination = result; vm.destination = result.displayName }
+                AddressSearchSheet(placeholder: "Search destination address…") { result in
+                    vm.setDestination(result)
+                }
             }
             .sheet(isPresented: $vm.showStopSearch) {
-                AddressSearchSheet(placeholder: "Search stop address…") { result in vm.stops.append(result) }
+                AddressSearchSheet(placeholder: "Search stop address…") { result in
+                    vm.addStop(result)
+                }
+            }
+            .sheet(isPresented: $showRoutePinEditor) {
+                RoutePinEditorSheet(
+                    origin: vm.selectedOrigin,
+                    destination: vm.selectedDestination,
+                    stops: vm.stops
+                ) { origin, destination, stops in
+                    vm.applyRoutePins(origin: origin, destination: destination, stops: stops)
+                }
             }
 
             Button { withAnimation(.easeInOut) { vm.currentStep = 2 } } label: {
@@ -378,7 +444,7 @@ struct CreateTripView: View {
             HStack(spacing: 10) {
                 geofenceTypeIcon(gf.wrappedValue.geofenceType)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(gf.wrappedValue.name).font(.subheadline.weight(.medium)).foregroundStyle(.primary)
+                    Text(gf.wrappedValue.name).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
                     Text("\(Int(gf.wrappedValue.radiusMeters))m • \(gf.wrappedValue.geofenceType.rawValue)")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
@@ -412,22 +478,65 @@ struct CreateTripView: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("Zone Type").font(.caption).foregroundStyle(.secondary)
-                Picker("", selection: gf.geofenceType) {
-                    ForEach(GeofenceType.allCases, id: \.self) { type in
-                        HStack { Image(systemName: geofenceTypeIconName(type)); Text(type.rawValue) }.tag(type)
-                    }
-                }.pickerStyle(.segmented)
+                geofenceTypeSelector(gf: gf)
             }.padding(.top, 8)
 
-            HStack(spacing: 16) {
-                Toggle(isOn: gf.alertOnEntry) {
-                    Label("Entry Alert", systemImage: "arrow.down.circle").font(.caption)
-                }.toggleStyle(.switch).tint(.orange)
-                Toggle(isOn: gf.alertOnExit) {
-                    Label("Exit Alert", systemImage: "arrow.up.circle").font(.caption)
-                }.toggleStyle(.switch).tint(.orange)
-            }.padding(.top, 8).padding(.bottom, 4)
+            VStack(spacing: 10) {
+                alertToggleRow(title: "Entry Alert", icon: "arrow.down.circle", isOn: gf.alertOnEntry)
+                alertToggleRow(title: "Exit Alert", icon: "arrow.up.circle", isOn: gf.alertOnExit)
+            }
+            .padding(.top, 10)
+            .padding(.bottom, 4)
         }
+    }
+
+    @ViewBuilder
+    private func geofenceTypeSelector(gf: Binding<GeofenceCandidate>) -> some View {
+        Menu {
+            ForEach(GeofenceType.allCases, id: \.self) { type in
+                Button {
+                    gf.wrappedValue.geofenceType = type
+                } label: {
+                    Label(type.rawValue, systemImage: geofenceTypeIconName(type))
+                }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: geofenceTypeIconName(gf.wrappedValue.geofenceType))
+                    .font(.caption.weight(.semibold))
+                Text(gf.wrappedValue.geofenceType.rawValue)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                Spacer()
+                Image(systemName: "chevron.down")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Color(.separator).opacity(0.35), lineWidth: 0.8)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func alertToggleRow(title: String, icon: String, isOn: Binding<Bool>) -> some View {
+        HStack(spacing: 10) {
+            Label(title, systemImage: icon)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.primary)
+            Spacer(minLength: 12)
+            Toggle("", isOn: isOn)
+                .labelsHidden()
+                .tint(.orange)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     @ViewBuilder
@@ -506,6 +615,469 @@ struct CreateTripView: View {
             Text(value).font(.subheadline).foregroundStyle(.primary)
             Spacer()
         }
+    }
+}
+
+// MARK: - Route Pin Editor
+
+private struct RoutePinEditorSheet: View {
+    let onApply: (GeocodedAddress?, GeocodedAddress?, [GeocodedAddress]) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var draftOrigin: GeocodedAddress?
+    @State private var draftDestination: GeocodedAddress?
+    @State private var draftStops: [GeocodedAddress]
+    @State private var selectedStopId: UUID?
+    @State private var mapCenterCoordinate = CLLocationCoordinate2D(latitude: 20.5937, longitude: 78.9629)
+
+    init(
+        origin: GeocodedAddress?,
+        destination: GeocodedAddress?,
+        stops: [GeocodedAddress],
+        onApply: @escaping (GeocodedAddress?, GeocodedAddress?, [GeocodedAddress]) -> Void
+    ) {
+        self.onApply = onApply
+        _draftOrigin = State(initialValue: origin)
+        _draftDestination = State(initialValue: destination)
+        _draftStops = State(initialValue: stops)
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 12) {
+                RoutePinEditorMapView(
+                    origin: draftOrigin,
+                    destination: draftDestination,
+                    stops: draftStops,
+                    centerCoordinate: $mapCenterCoordinate,
+                    onMoveOrigin: { coordinate in
+                        draftOrigin = movedAddress(
+                            from: draftOrigin,
+                            fallbackShortName: "Origin Pin",
+                            coordinate: coordinate
+                        )
+                    },
+                    onMoveDestination: { coordinate in
+                        draftDestination = movedAddress(
+                            from: draftDestination,
+                            fallbackShortName: "Destination Pin",
+                            coordinate: coordinate
+                        )
+                    },
+                    onMoveStop: { stopId, coordinate in
+                        guard let index = draftStops.firstIndex(where: { $0.id == stopId }) else { return }
+                        draftStops[index] = movedAddress(
+                            from: draftStops[index],
+                            fallbackShortName: draftStops[index].shortName,
+                            coordinate: coordinate
+                        )
+                    },
+                    onSelectStop: { stopId in
+                        selectedStopId = stopId
+                    }
+                )
+                .frame(height: 350)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                )
+                .overlay(alignment: .center) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.blue.opacity(0.85))
+                        .padding(6)
+                        .background(.ultraThinMaterial, in: Circle())
+                }
+
+                VStack(spacing: 10) {
+                    HStack(spacing: 8) {
+                        mapActionButton("Set Origin Here", icon: "circle.fill", tint: .green) {
+                            draftOrigin = movedAddress(
+                                from: draftOrigin,
+                                fallbackShortName: "Origin Pin",
+                                coordinate: mapCenterCoordinate
+                            )
+                        }
+                        mapActionButton("Set Destination Here", icon: "mappin.circle.fill", tint: .red) {
+                            draftDestination = movedAddress(
+                                from: draftDestination,
+                                fallbackShortName: "Destination Pin",
+                                coordinate: mapCenterCoordinate
+                            )
+                        }
+                    }
+
+                    HStack(spacing: 8) {
+                        mapActionButton("Add Stop Here", icon: "plus.circle.fill", tint: .orange) {
+                            let next = draftStops.count + 1
+                            let stop = GeocodedAddress(
+                                displayName: "Stop \(next) (\(formatCoordinate(mapCenterCoordinate.latitude)), \(formatCoordinate(mapCenterCoordinate.longitude)))",
+                                shortName: "Stop \(next)",
+                                latitude: mapCenterCoordinate.latitude,
+                                longitude: mapCenterCoordinate.longitude
+                            )
+                            draftStops.append(stop)
+                            selectedStopId = stop.id
+                        }
+
+                        if let selectedStopId {
+                            mapActionButton("Remove Selected Stop", icon: "minus.circle.fill", tint: .red) {
+                                draftStops.removeAll { $0.id == selectedStopId }
+                                self.selectedStopId = nil
+                            }
+                        } else {
+                            mapActionButton("Remove Selected Stop", icon: "minus.circle.fill", tint: .gray) {}
+                                .disabled(true)
+                        }
+                    }
+
+                    HStack(spacing: 8) {
+                        mapActionButton("Clear Origin", icon: "xmark.circle.fill", tint: .green) {
+                            draftOrigin = nil
+                        }
+                        mapActionButton("Clear Destination", icon: "xmark.circle.fill", tint: .red) {
+                            draftDestination = nil
+                        }
+                    }
+                }
+
+                if !draftStops.isEmpty {
+                    stopOrderList
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(16)
+            .navigationTitle("Edit Route Pins")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Apply") {
+                        onApply(draftOrigin, draftDestination, draftStops)
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+
+    private var stopOrderList: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Stop Order")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            ForEach(Array(draftStops.enumerated()), id: \.element.id) { index, stop in
+                HStack(spacing: 10) {
+                    Text("\(index + 1)")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 20, height: 20)
+                        .background(Color.orange, in: Circle())
+
+                    Text(stop.shortName)
+                        .font(.subheadline)
+                        .lineLimit(1)
+
+                    Spacer()
+
+                    Button {
+                        guard index > 0 else { return }
+                        draftStops.swapAt(index, index - 1)
+                    } label: {
+                        Image(systemName: "arrow.up")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    .buttonStyle(.borderless)
+
+                    Button {
+                        guard index < draftStops.count - 1 else { return }
+                        draftStops.swapAt(index, index + 1)
+                    } label: {
+                        Image(systemName: "arrow.down")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    .buttonStyle(.borderless)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+        }
+    }
+
+    private func mapActionButton(
+        _ title: String,
+        icon: String,
+        tint: Color,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .semibold))
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .foregroundStyle(tint)
+            .frame(maxWidth: .infinity)
+            .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(tint.opacity(0.3), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func movedAddress(
+        from existing: GeocodedAddress?,
+        fallbackShortName: String,
+        coordinate: CLLocationCoordinate2D
+    ) -> GeocodedAddress {
+        let short: String
+        if let existing,
+           !existing.shortName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            short = existing.shortName
+        } else {
+            short = fallbackShortName
+        }
+        return GeocodedAddress(
+            displayName: "\(short) (\(formatCoordinate(coordinate.latitude)), \(formatCoordinate(coordinate.longitude)))",
+            shortName: short,
+            latitude: coordinate.latitude,
+            longitude: coordinate.longitude
+        )
+    }
+
+    private func formatCoordinate(_ value: Double) -> String {
+        String(format: "%.5f", value)
+    }
+}
+
+private struct RoutePinEditorMapView: UIViewRepresentable {
+    var origin: GeocodedAddress?
+    var destination: GeocodedAddress?
+    var stops: [GeocodedAddress]
+    @Binding var centerCoordinate: CLLocationCoordinate2D
+    var onMoveOrigin: (CLLocationCoordinate2D) -> Void
+    var onMoveDestination: (CLLocationCoordinate2D) -> Void
+    var onMoveStop: (UUID, CLLocationCoordinate2D) -> Void
+    var onSelectStop: (UUID?) -> Void
+
+    func makeUIView(context: Context) -> MKMapView {
+        let mapView = MKMapView(frame: .zero)
+        mapView.delegate = context.coordinator
+        mapView.showsCompass = true
+        mapView.showsScale = false
+        mapView.pointOfInterestFilter = .includingAll
+        mapView.setRegion(
+            MKCoordinateRegion(
+                center: CLLocationCoordinate2D(latitude: 20.5937, longitude: 78.9629),
+                latitudinalMeters: 2_600_000,
+                longitudinalMeters: 2_600_000
+            ),
+            animated: false
+        )
+        context.coordinator.renderAnnotations(on: mapView)
+        return mapView
+    }
+
+    func updateUIView(_ mapView: MKMapView, context: Context) {
+        context.coordinator.parent = self
+        context.coordinator.renderAnnotations(on: mapView)
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    final class Coordinator: NSObject, MKMapViewDelegate {
+        var parent: RoutePinEditorMapView
+        private var hasAppliedInitialFit = false
+
+        init(parent: RoutePinEditorMapView) {
+            self.parent = parent
+        }
+
+        func renderAnnotations(on mapView: MKMapView) {
+            let existingPins = mapView.annotations.compactMap { $0 as? RoutePinAnnotation }
+            mapView.removeAnnotations(existingPins)
+
+            var pins: [RoutePinAnnotation] = []
+
+            if let origin = parent.origin {
+                pins.append(
+                    RoutePinAnnotation(
+                        role: .origin,
+                        stopId: nil,
+                        stopIndex: nil,
+                        title: "Origin",
+                        coordinate: origin.coordinate
+                    )
+                )
+            }
+            for (index, stop) in parent.stops.enumerated() {
+                pins.append(
+                    RoutePinAnnotation(
+                        role: .stop,
+                        stopId: stop.id,
+                        stopIndex: index + 1,
+                        title: "Stop \(index + 1)",
+                        coordinate: stop.coordinate
+                    )
+                )
+            }
+            if let destination = parent.destination {
+                pins.append(
+                    RoutePinAnnotation(
+                        role: .destination,
+                        stopId: nil,
+                        stopIndex: nil,
+                        title: "Destination",
+                        coordinate: destination.coordinate
+                    )
+                )
+            }
+
+            mapView.addAnnotations(pins)
+
+            if !hasAppliedInitialFit {
+                hasAppliedInitialFit = true
+                fitToAnnotations(on: mapView, pins: pins)
+            }
+        }
+
+        private func fitToAnnotations(on mapView: MKMapView, pins: [RoutePinAnnotation]) {
+            guard !pins.isEmpty else { return }
+            let coords = pins.map(\.coordinate)
+            let lats = coords.map(\.latitude)
+            let lngs = coords.map(\.longitude)
+            guard let minLat = lats.min(),
+                  let maxLat = lats.max(),
+                  let minLng = lngs.min(),
+                  let maxLng = lngs.max() else { return }
+
+            let center = CLLocationCoordinate2D(
+                latitude: (minLat + maxLat) / 2,
+                longitude: (minLng + maxLng) / 2
+            )
+            let span = MKCoordinateSpan(
+                latitudeDelta: max((maxLat - minLat) * 1.8, 0.04),
+                longitudeDelta: max((maxLng - minLng) * 1.8, 0.04)
+            )
+            mapView.setRegion(MKCoordinateRegion(center: center, span: span), animated: false)
+            parent.centerCoordinate = center
+        }
+
+        func mapView(_ mapView: MKMapView, viewFor annotation: any MKAnnotation) -> MKAnnotationView? {
+            guard let pin = annotation as? RoutePinAnnotation else { return nil }
+
+            let identifier = "route-pin"
+            let marker = (mapView.dequeueReusableAnnotationView(withIdentifier: identifier) as? MKMarkerAnnotationView)
+                ?? MKMarkerAnnotationView(annotation: pin, reuseIdentifier: identifier)
+
+            marker.annotation = pin
+            marker.canShowCallout = false
+            marker.isDraggable = true
+            marker.displayPriority = .required
+            marker.glyphText = nil
+            marker.glyphImage = nil
+
+            switch pin.role {
+            case .origin:
+                marker.markerTintColor = .systemGreen
+                marker.glyphImage = UIImage(systemName: "circle.fill")
+            case .destination:
+                marker.markerTintColor = .systemRed
+                marker.glyphImage = UIImage(systemName: "mappin.circle.fill")
+            case .stop:
+                marker.markerTintColor = .systemOrange
+                if let stopIndex = pin.stopIndex {
+                    marker.glyphText = "\(stopIndex)"
+                } else {
+                    marker.glyphImage = UIImage(systemName: "circle.fill")
+                }
+            }
+
+            return marker
+        }
+
+        func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
+            parent.centerCoordinate = mapView.centerCoordinate
+        }
+
+        func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
+            guard let pin = view.annotation as? RoutePinAnnotation else {
+                parent.onSelectStop(nil)
+                return
+            }
+            if pin.role == .stop, let stopId = pin.stopId {
+                parent.onSelectStop(stopId)
+            } else {
+                parent.onSelectStop(nil)
+            }
+        }
+
+        func mapView(
+            _ mapView: MKMapView,
+            annotationView view: MKAnnotationView,
+            didChange newState: MKAnnotationView.DragState,
+            fromOldState oldState: MKAnnotationView.DragState
+        ) {
+            guard let pin = view.annotation as? RoutePinAnnotation else { return }
+            guard newState == .ending || newState == .canceling else { return }
+
+            let coordinate = pin.coordinate
+            switch pin.role {
+            case .origin:
+                parent.onMoveOrigin(coordinate)
+            case .destination:
+                parent.onMoveDestination(coordinate)
+            case .stop:
+                if let stopId = pin.stopId {
+                    parent.onMoveStop(stopId, coordinate)
+                    parent.onSelectStop(stopId)
+                }
+            }
+            view.setDragState(.none, animated: false)
+        }
+    }
+}
+
+private final class RoutePinAnnotation: NSObject, MKAnnotation {
+    enum Role {
+        case origin
+        case destination
+        case stop
+    }
+
+    let role: Role
+    let stopId: UUID?
+    let stopIndex: Int?
+    let title: String?
+    dynamic var coordinate: CLLocationCoordinate2D
+
+    init(
+        role: Role,
+        stopId: UUID?,
+        stopIndex: Int?,
+        title: String,
+        coordinate: CLLocationCoordinate2D
+    ) {
+        self.role = role
+        self.stopId = stopId
+        self.stopIndex = stopIndex
+        self.title = title
+        self.coordinate = coordinate
     }
 }
 

@@ -6,17 +6,8 @@ struct VehicleListView: View {
     @State private var showAddSheet = false
     @State private var editingVehicle: Vehicle?
     @State private var deleteTarget: Vehicle?
-    @State private var showFilterSheet = false
     @State private var navigationTarget: UUID?
     @State private var segmentMode = 0  // 0 = My Vehicles, 1 = Maintenance
-
-    private var filterBinding: Binding<String?> {
-        Binding(get: { selectedFilter?.rawValue }, set: { newVal in selectedFilter = newVal.flatMap { VehicleStatus(rawValue: $0) } })
-    }
-
-    private var vehicleFilterOptions: [FilterOption] {
-        VehicleStatus.allCases.map { FilterOption(id: $0.rawValue, label: $0.rawValue, icon: vehicleStatusIcon($0), color: vehicleStatusColor($0)) }
-    }
 
     private var filteredVehicles: [Vehicle] {
         store.vehicles.filter { v in
@@ -28,24 +19,21 @@ struct VehicleListView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Segment picker
-                Picker("Mode", selection: $segmentMode) {
-                    Text("My Vehicles").tag(0)
-                    Text("Maintenance").tag(1)
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-
                 if segmentMode == 0 {
-                    // ── My Vehicles ──
                     headerRow
                         .padding(.horizontal, 16)
-                        .padding(.top, 8)
-                        .padding(.bottom, 4)
+                        .padding(.top, 12)
 
+                    modePicker
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
+                        .padding(.bottom, 8)
+
+                    // ── My Vehicles ──
                     Group {
-                        if filteredVehicles.isEmpty {
+                        if store.isLoading && store.vehicles.isEmpty {
+                            vehiclesLoadingSkeleton
+                        } else if filteredVehicles.isEmpty {
                             SierraEmptyState(icon: "car.fill", title: "No vehicles found", message: selectedFilter == nil ? "Add your first vehicle to get started." : "No vehicles match this filter.")
                         } else {
                             vehicleList
@@ -53,7 +41,13 @@ struct VehicleListView: View {
                     }
                 } else {
                     // ── Maintenance Hub ──
-                    MaintenanceHubView()
+                    MaintenanceHubView(
+                        showInlineHeader: true,
+                        topAccessory: AnyView(
+                            modePicker
+                                .padding(.horizontal, 16)
+                        )
+                    )
                 }
             }
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
@@ -61,9 +55,6 @@ struct VehicleListView: View {
             .navigationDestination(for: UUID.self) { VehicleDetailView(vehicleId: $0) }
             .navigationDestination(item: $navigationTarget) { VehicleDetailView(vehicleId: $0) }
             .task { if store.vehicles.isEmpty { await store.loadAll() } }
-            .sheet(isPresented: $showFilterSheet) {
-                FilterSheetView(title: "Filter Vehicles", options: vehicleFilterOptions, selectedId: filterBinding)
-            }
             .sheet(isPresented: $showAddSheet) { AddVehicleView() }
             .sheet(item: $editingVehicle) { AddVehicleView(editingVehicle: $0) }
             .confirmationDialog("Delete Vehicle?", isPresented: .init(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } }), titleVisibility: .visible) {
@@ -75,6 +66,14 @@ struct VehicleListView: View {
         }
     }
 
+    private var modePicker: some View {
+        Picker("Mode", selection: $segmentMode) {
+            Text("My Vehicles").tag(0)
+            Text("Maintenance").tag(1)
+        }
+        .pickerStyle(.segmented)
+    }
+
     private var headerRow: some View {
         HStack(spacing: 10) {
             Text("Vehicles")
@@ -82,25 +81,50 @@ struct VehicleListView: View {
 
             Spacer()
 
-            Button {
-                showAddSheet = true
-            } label: {
-                Image(systemName: "plus")
-                    .font(.title3.weight(.semibold))
-            }
-            .buttonStyle(.glass)
-            .buttonBorderShape(.circle)
+            if segmentMode == 0 {
+                Button {
+                    showAddSheet = true
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.title3.weight(.semibold))
+                }
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
 
-            Button {
-                showFilterSheet = true
-            } label: {
-                Image(systemName: selectedFilter == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
-                    .font(.title3.weight(.semibold))
+                Menu {
+                    Button {
+                        selectedFilter = nil
+                    } label: {
+                        Text("All")
+                    }
+                    Divider()
+                    ForEach(VehicleStatus.allCases, id: \.self) { status in
+                        Button {
+                            selectedFilter = status
+                        } label: {
+                            Text(status.rawValue)
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "line.3.horizontal.decrease.circle")
+                            .font(.system(size: 14, weight: .semibold))
+                        Text(vehicleFilterTitle)
+                            .font(.system(size: 13, weight: .semibold))
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                }
+                .buttonStyle(.glass)
+                .buttonBorderShape(.capsule)
             }
-            .buttonStyle(.glass)
-            .buttonBorderShape(.circle)
-            .tint(selectedFilter == nil ? .secondary : .orange)
         }
+    }
+
+    private var vehicleFilterTitle: String {
+        selectedFilter?.rawValue ?? "All"
     }
 
     private var vehicleList: some View {
@@ -120,7 +144,31 @@ struct VehicleListView: View {
             .padding(.top, 8)
             .padding(.bottom, 32)
         }
-        .refreshable { await store.loadAll() }
+        .refreshable { await store.loadAll(force: true) }
+    }
+
+    private var vehiclesLoadingSkeleton: some View {
+        ScrollView {
+            LazyVStack(spacing: 10) {
+                ForEach(0..<6, id: \.self) { _ in
+                    HStack(spacing: 14) {
+                        SierraSkeletonView(width: 44, height: 44, cornerRadius: 12)
+                        VStack(alignment: .leading, spacing: 8) {
+                            SierraSkeletonView(width: 160, height: 14)
+                            SierraSkeletonView(width: 170, height: 10)
+                            SierraSkeletonView(width: 120, height: 10)
+                        }
+                        Spacer()
+                        SierraSkeletonView(width: 74, height: 20, cornerRadius: 10)
+                    }
+                    .padding(16)
+                    .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 32)
+        }
     }
 
     private func vehicleCard(_ vehicle: Vehicle) -> some View {
@@ -151,26 +199,6 @@ struct VehicleListView: View {
         .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
     }
 
-    private func vehicleStatusIcon(_ status: VehicleStatus) -> String {
-        switch status {
-        case .active: return "checkmark.circle.fill"
-        case .idle: return "moon.zzz.fill"
-        case .busy: return "arrow.right.circle.fill"
-        case .inMaintenance: return "wrench.fill"
-        case .outOfService: return "xmark.circle.fill"
-        case .decommissioned: return "archivebox.fill"
-        }
-    }
-    private func vehicleStatusColor(_ status: VehicleStatus) -> Color {
-        switch status {
-        case .active: return .green
-        case .idle: return .blue
-        case .busy: return .orange
-        case .inMaintenance: return .purple
-        case .outOfService: return .red
-        case .decommissioned: return .gray
-        }
-    }
     private func availabilityColor(_ a: StaffAvailability) -> Color {
         switch a { case .available: return .green; case .busy: return .orange; case .unavailable: return .red }
     }

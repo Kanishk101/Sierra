@@ -41,19 +41,19 @@ struct MaintenanceHomeView: View {
     }
 
     private var activeTasks: [MaintenanceTask] { myTasks.filter { $0.status == .inProgress } }
-    private var assignedTasks: [MaintenanceTask] { myTasks.filter { $0.status == .assigned } }
+    private var assignedTasks: [MaintenanceTask] { myTasks.filter { $0.isEffectivelyAssigned } }
     private var completedTasks: [MaintenanceTask] { myTasks.filter { $0.status == .completed } }
 
     private var urgentTasks: [MaintenanceTask] {
         myTasks.filter {
             $0.priority == .urgent &&
-            ($0.status == .assigned || $0.status == .inProgress)
+            ($0.isEffectivelyAssigned || $0.status == .inProgress)
         }
     }
 
     private var activePendingTasks: [MaintenanceTask] {
         Array(myTasks.filter {
-            $0.status == .assigned || $0.status == .inProgress
+            $0.isEffectivelyAssigned || $0.status == .inProgress
         }.prefix(3))
     }
 
@@ -321,7 +321,7 @@ struct MaintenanceHomeView: View {
                     .font(.system(size: 20, weight: .bold, design: .rounded))
                     .foregroundColor(.appTextPrimary)
                 Spacer()
-                let allActive = myTasks.filter { $0.status == .assigned || $0.status == .inProgress }
+                let allActive = myTasks.filter { $0.isEffectivelyAssigned || $0.status == .inProgress }
                 if allActive.count > 3 {
                     Text("\(allActive.count - 3) more")
                         .font(.system(size: 13, weight: .semibold, design: .rounded))

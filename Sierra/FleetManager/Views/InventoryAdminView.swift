@@ -62,7 +62,9 @@ struct InventoryAdminView: View {
                 filterChips
                     .padding(.bottom, 8)
 
-                if filtered.isEmpty {
+                if store.isLoading && store.inventoryParts.isEmpty {
+                    loadingSkeleton
+                } else if filtered.isEmpty {
                     emptyState
                 } else {
                     ScrollView {
@@ -90,6 +92,8 @@ struct InventoryAdminView: View {
             }
             .background(Color.appSurface.ignoresSafeArea())
             .navigationTitle("Parts Inventory")
+            .toolbarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Close") { dismiss() }
@@ -108,7 +112,7 @@ struct InventoryAdminView: View {
                 }
             }
             .refreshable {
-                await store.loadAll()
+                await store.loadAll(force: true)
             }
             .sheet(isPresented: $showCreate) {
                 InventoryPartEditorSheet(part: nil)
@@ -158,9 +162,36 @@ struct InventoryAdminView: View {
 
     private var summaryRow: some View {
         HStack(spacing: 10) {
-            quickMetricChip(title: "Low Stock", value: lowStockCount, tint: .red)
-            quickMetricChip(title: "On Order", value: onOrderCount, tint: .blue)
-            quickMetricChip(title: "Overdue", value: overdueDeliveryCount, tint: .orange)
+            quickMetricChip(title: "Low Stock", value: lowStockCount, tint: .red, icon: "exclamationmark.triangle.fill")
+            quickMetricChip(title: "On Order", value: onOrderCount, tint: .blue, icon: "shippingbox.fill")
+            quickMetricChip(title: "Overdue", value: overdueDeliveryCount, tint: .orange, icon: "clock.badge.exclamationmark.fill")
+        }
+    }
+
+    private var loadingSkeleton: some View {
+        ScrollView {
+            LazyVStack(spacing: 12) {
+                ForEach(0..<6, id: \.self) { _ in
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            SierraSkeletonView(width: 160, height: 14)
+                            Spacer()
+                            SierraSkeletonView(width: 64, height: 18, cornerRadius: 9)
+                        }
+                        SierraSkeletonView(width: 220, height: 11)
+                        HStack(spacing: 8) {
+                            SierraSkeletonView(width: 72, height: 18, cornerRadius: 9)
+                            SierraSkeletonView(width: 88, height: 18, cornerRadius: 9)
+                            SierraSkeletonView(width: 78, height: 18, cornerRadius: 9)
+                        }
+                    }
+                    .padding(14)
+                    .background(Color.appCardBg, in: RoundedRectangle(cornerRadius: 14))
+                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.appDivider.opacity(0.35), lineWidth: 1))
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 24)
         }
     }
 
@@ -174,14 +205,14 @@ struct InventoryAdminView: View {
                         Text(filter.rawValue)
                             .font(.system(size: 12, weight: .semibold, design: .rounded))
                             .foregroundStyle(stockFilter == filter ? Color.appOrange : Color.appTextSecondary)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 9)
                             .background(
-                                Capsule().fill(stockFilter == filter ? Color.appOrange.opacity(0.13) : Color.appCardBg)
+                                Capsule().fill(stockFilter == filter ? Color.appOrange.opacity(0.14) : Color.appCardBg)
                             )
                             .overlay(
                                 Capsule().stroke(
-                                    stockFilter == filter ? Color.appOrange.opacity(0.35) : Color.appDivider.opacity(0.45),
+                                    stockFilter == filter ? Color.appOrange.opacity(0.40) : Color.appDivider.opacity(0.45),
                                     lineWidth: 1
                                 )
                             )
@@ -193,16 +224,25 @@ struct InventoryAdminView: View {
         }
     }
 
-    private func quickMetricChip(title: String, value: Int, tint: Color) -> some View {
-        VStack(spacing: 2) {
-            Text("\(value)")
-                .font(.system(size: 16, weight: .bold, design: .rounded))
-                .foregroundStyle(tint)
+    private func quickMetricChip(title: String, value: Int, tint: Color, icon: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(tint)
+                    .padding(7)
+                    .background(tint.opacity(0.14), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                Spacer()
+                Text("\(value)")
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .foregroundStyle(tint)
+            }
             Text(title)
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
-                .foregroundStyle(.secondary)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(Color.appTextSecondary)
         }
         .frame(maxWidth: .infinity)
+        .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .background(tint.opacity(0.09), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
@@ -213,53 +253,66 @@ struct InventoryAdminView: View {
 
     private func partRowCard(_ part: InventoryPart) -> some View {
         let lowStock = part.currentQuantity <= part.reorderLevel
+        let statusText = !part.isActive ? "Inactive" : (lowStock ? "Low Stock" : "In Stock")
+        let statusColor: Color = !part.isActive ? .secondary : (lowStock ? .red : .green)
+        let subtitle = (part.partNumber?.isEmpty == false ? part.partNumber! : "No part number") + " · " + (part.supplier ?? "No supplier")
+
         return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(part.partName)
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .font(.system(size: 17, weight: .bold, design: .rounded))
                         .foregroundStyle(Color.appTextPrimary)
-                        .lineLimit(2)
-                    Text((part.partNumber?.isEmpty == false ? part.partNumber! : "No part number") + " · " + (part.supplier ?? "No supplier"))
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .lineLimit(1)
+                    Text(subtitle)
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
                         .foregroundStyle(Color.appTextSecondary)
                         .lineLimit(1)
                 }
                 Spacer()
-                Text(lowStock ? "Low Stock" : "In Stock")
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
-                    .foregroundStyle(lowStock ? Color.red : Color.green)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 6)
-                    .background((lowStock ? Color.red : Color.green).opacity(0.12), in: Capsule())
+                Text(statusText)
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundStyle(statusColor)
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 7)
+                    .background(statusColor.opacity(0.12), in: Capsule())
             }
 
-            HStack(spacing: 14) {
+            HStack(spacing: 10) {
                 metricText("Current", value: part.currentQuantity, tint: lowStock ? .red : .green)
                 metricText("Reorder", value: part.reorderLevel, tint: .orange)
                 metricText("On Order", value: part.onOrderQuantity, tint: .blue)
             }
+            .padding(.top, 2)
 
-            if let eta = part.expectedArrivalAt, part.onOrderQuantity > 0 {
-                HStack(spacing: 6) {
-                    Image(systemName: "clock.badge.fill")
-                        .font(.system(size: 11, weight: .semibold))
-                    Text("ETA \(eta.formatted(.dateTime.day().month(.abbreviated).hour().minute()))")
+            HStack(spacing: 8) {
+                if let category = part.category, !category.isEmpty {
+                    Text(category)
                         .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(Color.appDivider.opacity(0.45), in: Capsule())
                 }
-                .foregroundStyle(Color.blue.opacity(0.9))
-            }
-
-            if !part.isActive {
-                Text("Inactive Part")
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.appTextSecondary)
+                Text(part.unit.uppercased())
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundStyle(.secondary)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 5)
-                    .background(Color.appDivider.opacity(0.7), in: Capsule())
+                    .background(Color.appDivider.opacity(0.45), in: Capsule())
+                Spacer()
+                if let eta = part.expectedArrivalAt, part.onOrderQuantity > 0 {
+                    HStack(spacing: 6) {
+                        Image(systemName: "clock.badge.fill")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text("ETA \(eta.formatted(.dateTime.day().month(.abbreviated).hour().minute()))")
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    }
+                    .foregroundStyle(Color.blue.opacity(0.92))
+                }
             }
         }
-        .padding(16)
+        .padding(18)
         .background(
             RoundedRectangle(cornerRadius: 18)
                 .fill(Color.appCardBg)
@@ -272,14 +325,18 @@ struct InventoryAdminView: View {
     }
 
     private func metricText(_ label: String, value: Int, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 4) {
             Text("\(value)")
                 .font(.system(size: 16, weight: .bold, design: .rounded))
                 .foregroundStyle(tint)
             Text(label)
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .foregroundStyle(Color.appTextSecondary)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(tint.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private var emptyState: some View {
@@ -392,6 +449,8 @@ private struct InventoryPartEditorSheet: View {
                 }
             }
             .navigationTitle(part == nil ? "Add Part" : "Edit Part")
+            .toolbarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") { dismiss() }

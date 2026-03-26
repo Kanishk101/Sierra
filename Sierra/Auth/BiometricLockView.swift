@@ -91,11 +91,6 @@ struct BiometricLockView: View {
             withAnimation(.spring(duration: 0.5, bounce: 0.25)) {
                 appeared = true
             }
-            // Auto-trigger after 0.4s delay
-            Task {
-                try? await Task.sleep(for: .milliseconds(400))
-                await attemptBiometric()
-            }
         }
     }
 

@@ -20,7 +20,13 @@ struct ServiceTaskListView: View {
 
     private var filteredTasks: [MaintenanceTask] {
         serviceTasks.filter { task in
-            if let f = selectedFilter, task.status != f { return false }
+            if let f = selectedFilter {
+                if f == .assigned {
+                    if !task.isEffectivelyAssigned { return false }
+                } else if task.status != f {
+                    return false
+                }
+            }
             let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             if q.isEmpty { return true }
             let vehicle = store.vehicle(for: task.vehicleId)
@@ -32,7 +38,7 @@ struct ServiceTaskListView: View {
 
     private var isFilterActive: Bool { selectedFilter != nil }
     private var totalCount: Int     { serviceTasks.count }
-    private var activeCount: Int    { serviceTasks.filter { $0.status == .assigned || $0.status == .inProgress }.count }
+    private var activeCount: Int    { serviceTasks.filter { $0.isEffectivelyAssigned || $0.status == .inProgress }.count }
     private var completedCount: Int { serviceTasks.filter { $0.status == .completed }.count }
 
     var body: some View {

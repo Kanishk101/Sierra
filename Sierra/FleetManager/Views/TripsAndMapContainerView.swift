@@ -5,73 +5,178 @@ import SwiftUI
 /// the search tab to vehicle search or trip search based on which
 /// segment is currently active.
 struct TripsAndMapContainerView: View {
+    @Environment(AppDataStore.self) private var store
     let mapViewModel: FleetLiveMapViewModel
     /// Bound to AdminDashboardView so the search tab knows the active mode.
     @Binding var mapSegment: Int
     @State private var showCreateTrip = false
+    @State private var tripsCreateTick = 0
+    @State private var tripsSelectedStatus: TripStatus? = nil
+    @State private var liveRefreshTask: Task<Void, Never>?
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                if mapSegment == 0 {
-                    headerRowForMap
-                        .padding(.horizontal, 16)
-                        .padding(.top, 8)
-                        .padding(.bottom, 4)
-                }
-
-                Picker("", selection: $mapSegment) {
-                    Text("Live Map").tag(0)
-                    Text("Trips").tag(1)
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(Color(.systemGroupedBackground))
-
+            Group {
                 if mapSegment == 0 {
                     FleetLiveMapView(viewModel: mapViewModel)
                 } else {
-                    TripsListView()
+                    TripsListView(
+                        embeddedInContainer: true,
+                        externalCreateTick: tripsCreateTick,
+                        externalSelectedStatus: $tripsSelectedStatus
+                    )
                 }
             }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                topHeader
+            }
+            .toolbarBackground(.hidden, for: .navigationBar)
         }
         .animation(.none, value: mapSegment)
+        .task {
+            await refreshAdminTripSurface()
+            startLiveRefreshLoop()
+        }
+        .onDisappear {
+            liveRefreshTask?.cancel()
+            liveRefreshTask = nil
+        }
+        .onChange(of: mapSegment) { _, _ in
+            Task { await refreshAdminTripSurface() }
+        }
         .refreshable {
-            await AppDataStore.shared.loadAll()
-            if mapSegment == 0 {
-                await mapViewModel.refreshFallbackCoordinates(for: AppDataStore.shared.vehicles)
-            }
+            await refreshAdminTripSurface()
         }
         .sheet(isPresented: $showCreateTrip) {
             CreateTripView()
         }
     }
 
-    private var headerRowForMap: some View {
-        HStack(spacing: 10) {
-            Text("Fleet Map")
-                .font(.largeTitle.bold())
+    private var topHeader: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Text("Trip")
+                    .font(.largeTitle.bold())
 
-            Spacer()
+                Spacer()
 
-            Button {
-                showCreateTrip = true
-            } label: {
-                Image(systemName: "plus")
-                    .font(.title3.weight(.semibold))
+                if mapSegment == 0 {
+                    Button {
+                        showCreateTrip = true
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.title3.weight(.semibold))
+                    }
+                    .buttonStyle(.glass)
+                    .buttonBorderShape(.circle)
+
+                    Menu {
+                        ForEach(FleetLiveMapViewModel.VehicleFilter.allCases, id: \.self) { filter in
+                            Button {
+                                mapViewModel.selectedFilter = filter
+                            } label: {
+                                HStack {
+                                    Text(filter.rawValue)
+                                    if mapViewModel.selectedFilter == filter {
+                                        Spacer()
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        Image(systemName: mapViewModel.selectedFilter == .all ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
+                            .font(.title3.weight(.semibold))
+                    }
+                    .buttonStyle(.glass)
+                    .buttonBorderShape(.circle)
+                } else {
+                    Button {
+                        tripsCreateTick += 1
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.title3.weight(.semibold))
+                    }
+                    .buttonStyle(.glass)
+                    .buttonBorderShape(.circle)
+
+                    Menu {
+                        Button {
+                            tripsSelectedStatus = nil
+                        } label: {
+                            Text("All")
+                        }
+                        Divider()
+                        ForEach([TripStatus.pendingAcceptance, .scheduled, .active, .completed, .cancelled], id: \.self) { status in
+                            Button {
+                                tripsSelectedStatus = status
+                            } label: {
+                                Text(menuTripStatusLabel(status))
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "line.3.horizontal.decrease.circle")
+                                .font(.system(size: 14, weight: .semibold))
+                            Text(tripFilterTitle)
+                                .font(.system(size: 13, weight: .semibold))
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                    }
+                    .buttonStyle(.glass)
+                    .buttonBorderShape(.capsule)
+                }
             }
-            .buttonStyle(.glass)
-            .buttonBorderShape(.circle)
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
 
-            Button {
-                mapViewModel.showFilterPicker = true
-            } label: {
-                Image(systemName: "line.3.horizontal.decrease.circle")
-                    .font(.title3.weight(.semibold))
+            Picker("Trips Mode", selection: $mapSegment) {
+                Text("Live Map").tag(0)
+                Text("Trips").tag(1)
             }
-            .buttonStyle(.glass)
-            .buttonBorderShape(.circle)
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
+        }
+        .background(Color(.systemGroupedBackground))
+    }
+
+    private func startLiveRefreshLoop() {
+        liveRefreshTask?.cancel()
+        liveRefreshTask = Task {
+            while !Task.isCancelled {
+                await refreshAdminTripSurface()
+                try? await Task.sleep(nanoseconds: 7_000_000_000)
+            }
+        }
+    }
+
+    @MainActor
+    private func refreshAdminTripSurface() async {
+        await store.refreshAdminTripsLiveData()
+        if mapSegment == 0 {
+            await mapViewModel.refreshFallbackCoordinates(for: store.vehicles)
+        }
+    }
+
+    private var tripFilterTitle: String {
+        guard let status = tripsSelectedStatus else { return "All" }
+        return menuTripStatusLabel(status)
+    }
+
+    private func menuTripStatusLabel(_ status: TripStatus) -> String {
+        switch status {
+        case .pendingAcceptance: return "PendingAcceptance"
+        case .scheduled: return "Scheduled"
+        case .active: return "Active"
+        case .completed: return "Completed"
+        case .cancelled: return "Cancelled"
+        case .accepted: return "Accepted"
+        case .rejected: return "Rejected"
         }
     }
 }

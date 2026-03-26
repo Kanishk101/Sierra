@@ -32,7 +32,7 @@ final class MaintenanceDashboardViewModel {
 
         switch selectedFilter {
         case .all: break
-        case .pending: tasks = tasks.filter { $0.status == .pending || $0.status == .assigned }
+        case .pending: tasks = tasks.filter { $0.status == .pending || $0.isEffectivelyAssigned }
         case .inProgress: tasks = tasks.filter { $0.status == .inProgress }
         case .completed: tasks = tasks.filter { $0.status == .completed }
         }

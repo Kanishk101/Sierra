@@ -28,6 +28,7 @@ struct TripDetailDriverView: View {
     @State private var showNavigation           = false
     @State private var showProofOfDelivery      = false
     @State private var showPostInspection       = false
+    @State private var showFuelLog              = false
 
     // Accept
     @State private var isAccepting              = false
@@ -140,6 +141,11 @@ struct TripDetailDriverView: View {
                     )
                     .environment(store)
                 }
+            }
+        }
+        .sheet(isPresented: $showFuelLog) {
+            if let trip, let vehicle, let userId = user?.id {
+                FuelLogView(vehicleId: vehicle.id, driverId: userId, tripId: trip.id)
             }
         }
         .fullScreenCover(isPresented: $showNavigation) {
@@ -843,15 +849,20 @@ struct TripDetailDriverView: View {
                         showPostInspection = true
                     }
                 } else if !endRecorded {
-                    secondaryActionButton(
-                        "End Trip from Navigation",
-                        icon: "xmark.circle.fill",
-                        color: .red
-                    ) { }
+                    HStack(spacing: 10) {
+                        secondaryActionButton(
+                            "Log Fuel",
+                            icon: "fuelpump.fill",
+                            color: .appOrange
+                        ) { showFuelLog = true }
+
+                        secondaryActionButton(
+                            "End Trip from Navigation",
+                            icon: "xmark.circle.fill",
+                            color: .red
+                        ) { }
+                    }
                 }
-                // NOTE: Log Fuel and Report Issue are accessed from within
-                // Pre-Trip Inspection and Post-Trip Inspection views respectively.
-                // They are NOT standalone actions in trip detail.
 
             // ── Completed ──────────────────────────────────────────────────
             case .completed:
@@ -1080,34 +1091,7 @@ struct TripDetailDriverView: View {
     // MARK: - Trip Progress
 
     private func tripProgress(_ trip: Trip) -> Double {
-        if let navProgress = TripNavigationCoordinator.sessionProgress(for: trip.id) {
-            return max(navProgress, trip.isDriverWorkflowCompleted ? 1.0 : navProgress)
-        }
-
-        if trip.hasEndedNavigationPhase || trip.isDriverWorkflowCompleted {
-            return 1.0
-        }
-
-        if trip.status.normalized == .active {
-            // Keep this tied to route traversal only; avoid checklist-based pseudo progress.
-            return 0.0
-        }
-
-        switch trip.status.normalized {
-        case .scheduled:
-            // Post-acceptance: accepted but awaiting time window
-            if trip.acceptedAt != nil {
-                return trip.preInspectionId != nil ? 0.30 : 0.20
-            }
-            return 0.0
-        case .pendingAcceptance: return 0.10
-        case .active:            return 0.0
-        case .completed:         return 1.0
-        case .cancelled:         return 0.0
-        case .rejected:          return 0.0
-        case .accepted:          return trip.preInspectionId != nil ? 0.30 : 0.20
-        @unknown default:        return 0.0
-        }
+        TripNavigationCoordinator.unifiedProgress(for: trip)
     }
 
     private func tripProgressBar(_ trip: Trip) -> some View {

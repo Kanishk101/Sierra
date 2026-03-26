@@ -35,6 +35,7 @@ struct VehicleReassignmentSheet: View {
                 .searchable(text: $searchText, prompt: "Search vehicles")
                 .navigationTitle("Reassign Vehicle")
                 .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
                 .toolbar { toolbarContent }
                 .overlay { emptyOverlay }
                 .alert("Error", isPresented: .constant(errorText != nil)) {
@@ -122,7 +123,40 @@ struct VehicleReassignmentSheet: View {
         isSubmitting = true
         defer { isSubmitting = false }
         do {
+            let trip = store.trips.first(where: { $0.id == tripId })
+            let newVehicle = store.vehicle(for: vehicleId)
             try await TripService.reassignVehicle(tripId: tripId, newVehicleId: vehicleId)
+
+            // Resolve active pre-trip defect alerts for this trip so driver card
+            // unblocks from "Waiting for Vehicle" as soon as reassignment completes.
+            let alertsToResolve = store.emergencyAlerts.filter { alert in
+                alert.tripId == tripId
+                && alert.alertType == .defect
+                && (alert.status == .active || alert.status == .acknowledged)
+                && (alert.description?.lowercased().contains("pre-trip fail") ?? false)
+            }
+            for alert in alertsToResolve {
+                try? await EmergencyAlertService.resolveAlert(id: alert.id)
+            }
+
+            if
+                let trip,
+                let driverIdText = trip.driverId,
+                let driverUUID = UUID(uuidString: driverIdText)
+            {
+                let plate = newVehicle?.licensePlate ?? "new vehicle"
+                let title = "Vehicle Reassigned: \(trip.taskId)"
+                let body = "A new vehicle (\(plate)) is assigned to your trip \(trip.origin) → \(trip.destination). Open trip details to continue pre-trip inspection."
+                try? await NotificationService.insertNotification(
+                    recipientId: driverUUID,
+                    type: .vehicleAssigned,
+                    title: title,
+                    body: body,
+                    entityType: "trip",
+                    entityId: trip.id
+                )
+            }
+
             await store.loadAll()
             dismiss()
         } catch {

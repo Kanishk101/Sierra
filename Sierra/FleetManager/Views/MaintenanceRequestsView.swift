@@ -6,6 +6,7 @@ struct MaintenanceRequestsView: View {
     var body: some View {
         MaintenanceHubView()
             .navigationTitle("Maintenance")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
     }
 }

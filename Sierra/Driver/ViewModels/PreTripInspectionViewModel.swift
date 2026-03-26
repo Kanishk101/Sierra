@@ -624,11 +624,10 @@ final class PreTripInspectionViewModel {
             // 4. Resolve vehicle license plate for maintenance request title
             let vehiclePlate = store.vehicle(for: vehicleId)?.licensePlate ?? vehicleId.uuidString.prefix(8).description
 
-            // 5. Auto-create maintenance task only for PRE-TRIP FAIL.
-            // Pre-trip warnings should notify only (no maintenance task).
-            // Post-trip flow uses explicit "Log Maintenance and Continue" UI.
-            if overallResult == .failed && inspectionType == .preTripInspection {
-                let issueItemNames = (failedItems + warningItems).map(\.name).joined(separator: ", ")
+            // 5. Auto-create repair request for inspection failure (pre-trip or post-trip).
+            // Warnings alone notify but do not auto-create.
+            if overallResult == .failed {
+                let issueItemNames = failedItems.map(\.name).joined(separator: ", ")
                 let typeLabel = inspectionType == .preTripInspection ? "Pre-trip" : "Post-trip"
                 let autoDescription = maintenanceDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     ? "\(typeLabel) inspection issues: \(issueItemNames)"

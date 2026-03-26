@@ -605,10 +605,18 @@ struct TripService {
     }
 
     static func reassignVehicle(tripId: UUID, newVehicleId: UUID) async throws {
-        struct Payload: Encodable { let vehicle_id: String }
+        struct Payload: Encodable {
+            let vehicle_id: String
+            let pre_inspection_id: String?
+            let status: String
+        }
         struct Row: Decodable { let id: UUID; let vehicle_id: UUID? }
         let rows: [Row] = try await supabase.from("trips")
-            .update(Payload(vehicle_id: newVehicleId.uuidString))
+            .update(Payload(
+                vehicle_id: newVehicleId.uuidString,
+                pre_inspection_id: nil,
+                status: TripStatus.scheduled.rawValue
+            ))
             .eq("id", value: tripId.uuidString)
             .select("id, vehicle_id").execute().value
         guard !rows.isEmpty else { throw TripServiceError.tripNotFound(tripId) }

@@ -192,6 +192,9 @@ struct DriverTripsListView: View {
                         inspectionType: .preTripInspection,
                         onComplete: {
                             inspectionLaunch = nil
+                        },
+                        onBlockedForVehicle: {
+                            inspectionLaunch = nil
                         }
                     )
                     .environment(store)
@@ -518,11 +521,13 @@ struct DriverTripsListView: View {
             guard let idStr = trip.vehicleId, let uuid = UUID(uuidString: idStr) else { return nil }
             return store.vehicle(for: uuid)
         }()
+        let isWaitingForVehicle = store.isTripWaitingForVehicleReassignment(trip)
 
         return AnyView(
             DriverTripCard(
                 trip: trip,
                 vehicle: vehicle,
+                isWaitingForVehicleReassignment: isWaitingForVehicle,
                 isJustAccepted: isJustAccepted,
                 isAccepting: isAccepting,
                 onAccept: { acceptTrip(trip) },
@@ -870,9 +875,13 @@ struct RouteArrow: View {
             Image(systemName: "arrowtriangle.right.fill").font(.system(size: 9)).foregroundColor(Color.appOrange)
         }
         .onAppear {
+            dashOffset = 0
             withAnimation(.linear(duration: 1.5).repeatForever(autoreverses: false)) {
                 dashOffset = -18
             }
+        }
+        .onDisappear {
+            dashOffset = 0
         }
     }
 }

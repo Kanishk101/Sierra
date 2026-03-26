@@ -93,6 +93,7 @@ struct StaffDetailSheet: View {
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
             .navigationTitle(member.displayName)
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }

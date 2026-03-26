@@ -56,11 +56,12 @@ struct ProofOfDeliveryPayload: Encodable {
 
 struct ProofOfDeliveryService {
 
-    static func fetchAllProofsOfDelivery() async throws -> [ProofOfDelivery] {
+    static func fetchAllProofsOfDelivery(limit: Int = 500) async throws -> [ProofOfDelivery] {
         return try await supabase
             .from("proof_of_deliveries")
             .select()
             .order("captured_at", ascending: false)
+            .limit(limit)
             .execute()
             .value
     }
@@ -84,12 +85,12 @@ struct ProofOfDeliveryService {
             .upsert(payload, onConflict: "trip_id")
             .execute()
 
-        if let saved = try await fetchProofOfDelivery(tripId: pod.tripId) {
+        if let saved = try? await fetchProofOfDelivery(tripId: pod.tripId) {
             return saved
         }
 
-        throw NSError(domain: "ProofOfDeliveryService", code: -1,
-                      userInfo: [NSLocalizedDescriptionKey: "Proof of Delivery insert did not return a row"])
+        // Insert/upsert already succeeded; avoid failing the flow on a post-write read timeout.
+        return pod
     }
 
     static func updateProofOfDelivery(_ pod: ProofOfDelivery) async throws {

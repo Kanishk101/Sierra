@@ -36,6 +36,7 @@ struct GeofenceListView: View {
         .listStyle(.insetGrouped)
         .navigationTitle("Geofences")
         .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
         // No + button — create geofence is only in trip creation flow
         .task { await vm.loadGeofences() }
         .refreshable { await vm.loadGeofences() }

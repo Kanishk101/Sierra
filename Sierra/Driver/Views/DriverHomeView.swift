@@ -214,6 +214,10 @@ struct DriverHomeView: View {
                     inspectionType: .preTripInspection,
                     onComplete: {
                         inspectionLaunch = nil
+                    },
+                    onBlockedForVehicle: {
+                        inspectionLaunch = nil
+                        tabSelection = .trips
                     }
                 )
                 .environment(store)
@@ -470,10 +474,12 @@ struct DriverHomeView: View {
             guard let vIdStr = trip.vehicleId, let vUUID = UUID(uuidString: vIdStr) else { return nil }
             return store.vehicle(for: vUUID)
         }()
+        let isWaitingForVehicle = store.isTripWaitingForVehicleReassignment(trip)
 
         return DriverTripCard(
             trip: trip,
             vehicle: vehicle,
+            isWaitingForVehicleReassignment: isWaitingForVehicle,
             isJustAccepted: isJustAccepted,
             isAccepting: isAccepting,
             onAccept: { acceptTrip(trip) },

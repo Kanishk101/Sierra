@@ -107,6 +107,7 @@ struct ReportsView: View {
         .background(Color(.systemGroupedBackground).ignoresSafeArea())
         .navigationTitle("Reports")
         .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { currentPage = 4 } label: {

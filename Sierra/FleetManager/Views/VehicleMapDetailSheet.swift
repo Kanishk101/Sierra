@@ -58,6 +58,7 @@ struct VehicleMapDetailSheet: View {
             }
             .navigationTitle("Vehicle Details")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .navigationDestination(for: UUID.self) { tripId in
                 TripDetailView(tripId: tripId)
             }

@@ -5,6 +5,29 @@ import MapboxDirections
 import MapboxMaps
 import MapboxNavigationCore
 
+private struct PersistedCoordinate: Codable {
+    let latitude: Double
+    let longitude: Double
+
+    init(_ coordinate: CLLocationCoordinate2D) {
+        self.latitude = coordinate.latitude
+        self.longitude = coordinate.longitude
+    }
+
+    var coordinate: CLLocationCoordinate2D {
+        CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+    }
+}
+
+private struct NavigationSessionSnapshot: Codable {
+    let routeCursorIndex: Int
+    let maxRouteProgressFraction: Double
+    let breadcrumbCoordinates: [PersistedCoordinate]
+    let lastLocation: PersistedCoordinate?
+    let routeSignature: String
+    let updatedAt: Date
+}
+
 // MARK: - TripNavigationCoordinator
 // Orchestrator — delegates to RouteEngine, DeviationDetector, GeofenceMonitor.
 
@@ -13,6 +36,7 @@ import MapboxNavigationCore
 final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     private static var cachedSessions: [UUID: TripNavigationCoordinator] = [:]
     private static let persistedProgressDefaultsKey = "trip_navigation_progress_v2"
+    private static let persistedSnapshotsDefaultsKey = "trip_navigation_snapshots_v1"
 
     private static var persistedProgressByTrip: [String: Double] {
         get {
@@ -23,7 +47,23 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         }
     }
 
+    private static var persistedSnapshotsByTrip: [String: String] {
+        get {
+            UserDefaults.standard.dictionary(forKey: persistedSnapshotsDefaultsKey) as? [String: String] ?? [:]
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: persistedSnapshotsDefaultsKey)
+        }
+    }
+
     static func session(for trip: Trip) -> TripNavigationCoordinator {
+        let status = trip.effectiveStatusForDriver
+        if status == .completed || status == .cancelled {
+            cachedSessions[trip.id]?.stopLocationPublishing()
+            cachedSessions[trip.id]?.stopSimulation()
+            cachedSessions[trip.id] = nil
+            clearPersistedState(for: trip.id)
+        }
         if let existing = cachedSessions[trip.id] { return existing }
         let created = TripNavigationCoordinator(trip: trip)
         cachedSessions[trip.id] = created
@@ -32,10 +72,45 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
 
     static func sessionProgress(for tripId: UUID) -> Double? {
         if let session = cachedSessions[tripId], session.hasRenderableRoute {
-            return max(session.routeProgressFraction, persistedProgress(for: tripId))
+            return max(session.routeProgressFraction, persistedProgress(for: tripId), persistedSnapshotProgress(for: tripId))
         }
-        let persisted = persistedProgress(for: tripId)
+        let persisted = max(persistedProgress(for: tripId), persistedSnapshotProgress(for: tripId))
         return persisted > 0 ? persisted : nil
+    }
+
+    static func unifiedProgress(for trip: Trip) -> Double {
+        if let navProgress = sessionProgress(for: trip.id) {
+            if trip.hasEndedNavigationPhase || trip.isDriverWorkflowCompleted {
+                return 1.0
+            }
+            return navProgress
+        }
+
+        if trip.hasEndedNavigationPhase || trip.isDriverWorkflowCompleted {
+            return 1.0
+        }
+
+        switch trip.status.normalized {
+        case .scheduled:
+            if trip.acceptedAt != nil {
+                return trip.preInspectionId != nil ? 0.30 : 0.20
+            }
+            return 0.0
+        case .pendingAcceptance:
+            return 0.10
+        case .active:
+            return 0.0
+        case .completed:
+            return 1.0
+        case .cancelled:
+            return 0.0
+        case .rejected:
+            return 0.0
+        case .accepted:
+            return trip.preInspectionId != nil ? 0.30 : 0.20
+        @unknown default:
+            return 0.0
+        }
     }
 
     static func sessionRouteCoordinates(for tripId: UUID) -> [CLLocationCoordinate2D]? {
@@ -48,6 +123,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         cachedSessions[tripId]?.stopLocationPublishing()
         cachedSessions[tripId]?.stopSimulation()
         cachedSessions[tripId] = nil
+        clearPersistedState(for: tripId)
     }
 
     private static func persistedProgress(for tripId: UUID) -> Double {
@@ -61,6 +137,37 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         var updated = persistedProgressByTrip
         updated[key] = min(max(progress, 0), 1)
         persistedProgressByTrip = updated
+    }
+
+    private static func persistedSnapshotProgress(for tripId: UUID) -> Double {
+        persistedSnapshot(for: tripId)?.maxRouteProgressFraction ?? 0
+    }
+
+    private static func persistedSnapshot(for tripId: UUID) -> NavigationSessionSnapshot? {
+        guard let encoded = persistedSnapshotsByTrip[tripId.uuidString.lowercased()],
+              let data = Data(base64Encoded: encoded) else {
+            return nil
+        }
+        return try? JSONDecoder().decode(NavigationSessionSnapshot.self, from: data)
+    }
+
+    private static func savePersistedSnapshot(_ snapshot: NavigationSessionSnapshot, for tripId: UUID) {
+        guard let data = try? JSONEncoder().encode(snapshot) else { return }
+        var updated = persistedSnapshotsByTrip
+        updated[tripId.uuidString.lowercased()] = data.base64EncodedString()
+        persistedSnapshotsByTrip = updated
+    }
+
+    private static func clearPersistedState(for tripId: UUID) {
+        let key = tripId.uuidString.lowercased()
+
+        var progress = persistedProgressByTrip
+        progress.removeValue(forKey: key)
+        persistedProgressByTrip = progress
+
+        var snapshots = persistedSnapshotsByTrip
+        snapshots.removeValue(forKey: key)
+        persistedSnapshotsByTrip = snapshots
     }
 
     private static let navigationProvider: MapboxNavigationProvider? = {
@@ -83,6 +190,8 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     // MARK: - Forwarded Public State (from RouteEngine)
     var currentRoute: MapboxDirections.Route?   { routeEngine.currentRoute }
     var alternativeRoute: MapboxDirections.Route? { routeEngine.alternativeRoute }
+    var routeChoices: [RouteEngine.RouteChoice] { routeEngine.routeChoices }
+    var selectedRouteChoiceIndex: Int { routeEngine.selectedChoiceIndex }
     var currentStepInstruction: String          { routeEngine.currentStepInstruction }
     var displayedRouteCoordinates: [CLLocationCoordinate2D] { routeEngine.decodedRouteCoordinates }
     var remainingRouteCoordinates: [CLLocationCoordinate2D] {
@@ -92,31 +201,71 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         return Array(coords.dropFirst(idx))
     }
     var routeDisplayCoordinates: [CLLocationCoordinate2D] {
-        let remaining = remainingRouteCoordinates
-        guard let live = currentLocation?.coordinate else { return remaining }
-        guard let first = remaining.first else { return [live] }
+        let routeCoords = routeEngine.decodedRouteCoordinates
+        guard !routeCoords.isEmpty else { return [] }
+        guard let live = currentLocation?.coordinate else { return remainingRouteCoordinates }
+
+        let fallbackTail = remainingRouteCoordinates
+        guard let attachment = routeAttachmentPoint(for: live, routeCoordinates: routeCoords) else {
+            if fallbackTail.isEmpty { return [live] }
+            return [live] + fallbackTail
+        }
+
+        let nextIndex = min(max(attachment.segmentIndex + 1, 0), routeCoords.count - 1)
+        var tail = Array(routeCoords.dropFirst(nextIndex))
+        if tail.isEmpty {
+            tail = [attachment.coordinate]
+        } else {
+            let head = CLLocation(latitude: tail[0].latitude, longitude: tail[0].longitude)
+            let anchor = CLLocation(latitude: attachment.coordinate.latitude, longitude: attachment.coordinate.longitude)
+            if anchor.distance(from: head) > 1.5 {
+                tail.insert(attachment.coordinate, at: 0)
+            }
+        }
 
         let livePoint = CLLocation(latitude: live.latitude, longitude: live.longitude)
-        let firstPoint = CLLocation(latitude: first.latitude, longitude: first.longitude)
-        let gap = livePoint.distance(from: firstPoint)
-
-        // Keep the line visually attached to the puck when clipping starts ahead.
-        if gap > 3, gap < 2000 {
-            return [live] + remaining
+        let anchorPoint = CLLocation(latitude: attachment.coordinate.latitude, longitude: attachment.coordinate.longitude)
+        if livePoint.distance(from: anchorPoint) <= 1.5 {
+            return tail
         }
-        return remaining
+        return [live] + tail
+    }
+    var displayedCongestionLevels: [MapboxDirections.CongestionLevel]? {
+        guard let allLevels = routeEngine.currentRoute?.legs.first?.segmentCongestionLevels,
+              !allLevels.isEmpty else {
+            return nil
+        }
+
+        let remaining = remainingRouteCoordinates
+        let display = routeDisplayCoordinates
+        guard display.count >= 2 else { return nil }
+
+        let startIndex = min(max(routeCursorIndex, 0), max(0, allLevels.count - 1))
+        var levels = Array(allLevels.dropFirst(startIndex))
+        levels = normalizedCongestionLevels(levels, desiredCount: max(1, remaining.count - 1))
+
+        // If route display prepends a live connector segment, prepend a level too.
+        if display.count == remaining.count + 1 {
+            levels.insert(levels.first ?? .unknown, at: 0)
+        }
+
+        return normalizedCongestionLevels(levels, desiredCount: max(1, display.count - 1))
     }
     var hasRenderableRoute: Bool                { routeEngine.decodedRouteCoordinates.count >= 2 }
     var isUsingStoredRouteFallback: Bool        { routeEngine.isUsingStoredRouteFallback }
     var routeEngineError: String?               { routeEngine.lastBuildError }
     var activeIncidents: [TrafficIncident]      { trafficService.activeIncidents }
-    // Cached geofences — recomputed only when the trip's stops change.
+    // Cached geofences — recomputed when route anchors or geofence dataset changes.
     private var _cachedGeofences: [Geofence]?
-    private var _geofenceAnchorCount: Int = -1
+    private var _geofenceAnchorSignature: Int = 0
+    private var _geofenceDatasetSignature: Int = 0
     var activeGeofences: [Geofence] {
         let stops = trip.routeStops ?? []
-        let anchorCount = stops.count + 2  // origin + stops + destination
-        if let cached = _cachedGeofences, anchorCount == _geofenceAnchorCount {
+        let anchorSignature = geofenceAnchorSignature(stops: stops)
+        let datasetSignature = geofenceDatasetSignature()
+        if let cached = _cachedGeofences,
+           anchorSignature == _geofenceAnchorSignature,
+           datasetSignature == _geofenceDatasetSignature {
             return cached
         }
         var anchors: [CLLocationCoordinate2D] = []
@@ -131,23 +280,89 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         }
         guard !anchors.isEmpty else {
             _cachedGeofences = []
-            _geofenceAnchorCount = anchorCount
+            _geofenceAnchorSignature = anchorSignature
+            _geofenceDatasetSignature = datasetSignature
             return []
         }
 
-        let result = AppDataStore.shared.geofences
-            .filter(\.isActive)
-            .filter { geofence in
-                anchors.contains { anchor in
-                    let a = CLLocation(latitude: anchor.latitude, longitude: anchor.longitude)
-                    let g = CLLocation(latitude: geofence.latitude, longitude: geofence.longitude)
-                    return a.distance(from: g) <= max(geofence.radiusMeters, 80)
-                }
-            }
+        let allActive = AppDataStore.shared.geofences.filter(\.isActive)
+        let routeScoped = geofencesScopedToCurrentTrip(from: allActive)
+        var candidates = routeScoped
+        if candidates.isEmpty {
+            candidates = geofencesNearAnchors(allActive, anchors: anchors)
+        }
+        if candidates.isEmpty {
+            candidates = geofencesNearCurrentRoute(allActive)
+        }
+        let result = deduplicatedGeofences(candidates)
+
         _cachedGeofences = result
-        _geofenceAnchorCount = anchorCount
+        _geofenceAnchorSignature = anchorSignature
+        _geofenceDatasetSignature = datasetSignature
         return result
     }
+
+    private func geofenceAnchorSignature(stops: [RouteStop]) -> Int {
+        var hasher = Hasher()
+        if let lat = trip.originLatitude, let lng = trip.originLongitude {
+            hasher.combine(Int((lat * 100_000).rounded()))
+            hasher.combine(Int((lng * 100_000).rounded()))
+        }
+        for stop in stops.sorted(by: { $0.order < $1.order }) {
+            hasher.combine(Int((stop.latitude * 100_000).rounded()))
+            hasher.combine(Int((stop.longitude * 100_000).rounded()))
+            hasher.combine(stop.order)
+        }
+        if let lat = trip.destinationLatitude, let lng = trip.destinationLongitude {
+            hasher.combine(Int((lat * 100_000).rounded()))
+            hasher.combine(Int((lng * 100_000).rounded()))
+        }
+        return hasher.finalize()
+    }
+
+    private func geofenceDatasetSignature() -> Int {
+        var hasher = Hasher()
+        let all = AppDataStore.shared.geofences
+        hasher.combine(all.count)
+        for geofence in all {
+            hasher.combine(geofence.id)
+            hasher.combine(geofence.isActive)
+            hasher.combine(Int((geofence.latitude * 100_000).rounded()))
+            hasher.combine(Int((geofence.longitude * 100_000).rounded()))
+            hasher.combine(Int(geofence.radiusMeters.rounded()))
+            hasher.combine(geofence.alertOnEntry)
+            hasher.combine(geofence.alertOnExit)
+        }
+        return hasher.finalize()
+    }
+
+    private func geofencesScopedToCurrentTrip(from geofences: [Geofence]) -> [Geofence] {
+        geofences.filter { GeofenceScopeService.matchesTrip($0, taskId: trip.taskId) }
+    }
+
+    private func geofencesNearAnchors(_ geofences: [Geofence], anchors: [CLLocationCoordinate2D]) -> [Geofence] {
+        GeofenceScopeService.geofencesNearAnchors(geofences, anchors: anchors)
+    }
+
+    private func geofencesNearCurrentRoute(_ geofences: [Geofence]) -> [Geofence] {
+        let route = routeEngine.decodedRouteCoordinates
+        guard route.count >= 2 else { return [] }
+        let sampledRoute = stride(from: 0, to: route.count, by: 8).map { route[$0] } + [route.last!]
+
+        return geofences.filter { geofence in
+            let geofenceCenter = CLLocation(latitude: geofence.latitude, longitude: geofence.longitude)
+            let threshold = max(geofence.radiusMeters, 120)
+            return sampledRoute.contains { routePoint in
+                let point = CLLocation(latitude: routePoint.latitude, longitude: routePoint.longitude)
+                return geofenceCenter.distance(from: point) <= threshold
+            }
+        }
+    }
+
+    private func deduplicatedGeofences(_ geofences: [Geofence]) -> [Geofence] {
+        GeofenceScopeService.collapseOverlappingCenters(geofences)
+    }
+
     var currentRouteCoordinate: CLLocationCoordinate2D? {
         guard routeEngine.decodedRouteCoordinates.indices.contains(routeCursorIndex) else { return currentLocation?.coordinate }
         return routeEngine.decodedRouteCoordinates[routeCursorIndex]
@@ -245,6 +460,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     var currentSpeedLimit: Int?
     var currentStepManeuver: String = ""
     var nextStepInstruction: String = ""
+    var locationAuthorizationStatus: CLAuthorizationStatus = .notDetermined
     var requestRecenter: Bool = false
     var requestOverview: Bool = false
     var isOverviewMode: Bool = false
@@ -256,6 +472,33 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         let distanceTraveled = routeEngine.totalRouteDistanceMetres - distanceRemainingMetres
         let raw = max(0, min(1, distanceTraveled / routeEngine.totalRouteDistanceMetres))
         return max(maxRouteProgressFraction, raw)
+    }
+    var hasReliableLocationFix: Bool {
+        guard let location = currentLocation else { return false }
+        let age = Date().timeIntervalSince(location.timestamp)
+        let accuracy = location.horizontalAccuracy
+        if age > 8 { return false }
+        if accuracy <= 0 || accuracy > 35 { return false }
+        return CLLocationCoordinate2DIsValid(location.coordinate)
+    }
+    var locationReadinessIssue: String? {
+        switch locationAuthorizationStatus {
+        case .denied, .restricted:
+            return "Location permission is disabled. Enable location access and try again."
+        default:
+            break
+        }
+        guard let location = currentLocation else {
+            return "Waiting for GPS fix… move to an open area and keep Sierra in foreground."
+        }
+        let age = Date().timeIntervalSince(location.timestamp)
+        if age > 8 {
+            return "GPS fix is stale. Waiting for a fresh location update."
+        }
+        if location.horizontalAccuracy <= 0 || location.horizontalAccuracy > 35 {
+            return "GPS accuracy is low (\(Int(location.horizontalAccuracy))m). Waiting for a stronger fix."
+        }
+        return nil
     }
     var simulated: Bool = false
     var hasConfirmedRouteSelection: Bool = false
@@ -282,12 +525,36 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     private var isUsingMapboxNavigationCore = false
     private var lastSpokenInstructionText: String = ""
     private var lastBreadcrumbAppendAt: Date = .distantPast
+    private var lastSnapshotPersistAt: Date = .distantPast
+    private var restoredSessionSnapshot: NavigationSessionSnapshot?
+    private var lastSmoothedBreadcrumbCoordinate: CLLocationCoordinate2D?
+    private var lastAcceptedRawLocation: CLLocation?
+    private var isRerouteInFlight = false
+    private var rerouteQueued = false
+    private var rerouteDeferredTask: Task<Void, Never>?
+    private var lastDeviationRecoveryNotifiedAt: Date = .distantPast
+    private let maxReasonableJumpSpeedMetresPerSecond: Double = 75
     private let maxBreadcrumbPoints = 6000
 
     // MARK: - Init / deinit
     init(trip: Trip) {
         self.trip = trip
         super.init()
+        restoredSessionSnapshot = Self.persistedSnapshot(for: trip.id)
+        if let restoredSessionSnapshot {
+            maxRouteProgressFraction = restoredSessionSnapshot.maxRouteProgressFraction
+            breadcrumbCoordinates = restoredSessionSnapshot.breadcrumbCoordinates.map(\.coordinate)
+            lastSmoothedBreadcrumbCoordinate = breadcrumbCoordinates.last
+            if let lastLocation = restoredSessionSnapshot.lastLocation {
+                currentLocation = CLLocation(
+                    coordinate: lastLocation.coordinate,
+                    altitude: 0,
+                    horizontalAccuracy: 20,
+                    verticalAccuracy: 20,
+                    timestamp: restoredSessionSnapshot.updatedAt
+                )
+            }
+        }
     }
 
     deinit {
@@ -299,6 +566,9 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
             mapboxNavigationCancellables.removeAll()
             Self.navigationProvider?.mapboxNavigation.tripSession().setToIdle()
             trafficService.stopPolling()
+            rerouteDeferredTask?.cancel()
+            rerouteDeferredTask = nil
+            persistSessionSnapshotIfNeeded(force: true)
         }
     }
 
@@ -311,6 +581,13 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     func swapAlternativeRoute() {
         routeEngine.swapAlternativeRoute()
         currentStepIndex = 0
+        hasConfirmedRouteSelection = true
+    }
+    func selectRouteChoice(at index: Int) {
+        routeEngine.selectRouteChoice(at: index)
+        currentStepIndex = 0
+    }
+    func confirmRouteSelection() {
         hasConfirmedRouteSelection = true
     }
     func rebuildRoutes() async {
@@ -346,6 +623,11 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
 
     // MARK: - Mapbox Navigation Core
     private func startMapboxActiveGuidanceIfPossible() async {
+        guard routeEngine.selectedChoiceIndex == 0 else {
+            // Respect non-primary route selection; custom guidance remains active.
+            isUsingMapboxNavigationCore = false
+            return
+        }
         guard let provider = Self.navigationProvider,
               let routeOptions = buildNavigationRouteOptions() else {
             isUsingMapboxNavigationCore = false
@@ -365,6 +647,10 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
 
             mapboxSessionRouteId = navigationRoutes.mainRoute.routeId
             isUsingMapboxNavigationCore = true
+            rerouteDeferredTask?.cancel()
+            rerouteDeferredTask = nil
+            isRerouteInFlight = false
+            rerouteQueued = false
         } catch {
             isUsingMapboxNavigationCore = false
             announceInitialInstructionIfNeeded()
@@ -375,14 +661,10 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     }
 
     private func buildNavigationRouteOptions() -> RouteOptions? {
-        let originCoord: CLLocationCoordinate2D
-        if let location = currentLocation {
-            originCoord = location.coordinate
-        } else if let lat = trip.originLatitude, let lng = trip.originLongitude {
-            originCoord = CLLocationCoordinate2D(latitude: lat, longitude: lng)
-        } else {
+        guard let location = currentLocation else {
             return nil
         }
+        let originCoord = location.coordinate
 
         guard let destLat = trip.destinationLatitude,
               let destLng = trip.destinationLongitude else {
@@ -468,7 +750,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     }
 
     private func handleMapMatchingUpdate(_ state: MapMatchingState) {
-        let enhancedLocation = state.enhancedLocation
+        guard let enhancedLocation = acceptLocationIfValid(state.enhancedLocation) else { return }
         currentLocation = enhancedLocation
         appendBreadcrumbCoordinateIfNeeded(enhancedLocation.coordinate)
         advanceRouteCursorUsingLocation(enhancedLocation)
@@ -521,6 +803,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
 
         maxRouteProgressFraction = max(maxRouteProgressFraction, progress.fractionTraveled)
         Self.savePersistedProgress(maxRouteProgressFraction, for: trip.id)
+        persistSessionSnapshotIfNeeded()
 
         if let location = currentLocation, !routeCoords.isEmpty {
             advanceRouteCursorUsingLocation(location)
@@ -535,6 +818,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
                 routeCursorIndex = max(0, routeCoords.count - 1)
                 maxRouteProgressFraction = 1.0
                 Self.savePersistedProgress(1.0, for: trip.id)
+                persistSessionSnapshotIfNeeded(force: true)
                 NotificationCenter.default.post(name: .tripArrivedAtDestination, object: nil)
             }
         }
@@ -565,6 +849,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         manager.distanceFilter = 5
 
         let status = manager.authorizationStatus
+        locationAuthorizationStatus = status
         if status == .notDetermined || status == .authorizedWhenInUse {
             manager.requestWhenInUseAuthorization()
         }
@@ -584,6 +869,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         manager.distanceFilter = 5
 
         let status = manager.authorizationStatus
+        locationAuthorizationStatus = status
         switch status {
         case .denied, .restricted:
             NotificationCenter.default.post(name: .locationPermissionDenied, object: nil)
@@ -605,22 +891,23 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
 
         // GAP-1: Start traffic incident polling
         trafficService.startPolling(routeCoordinates: routeEngine.decodedRouteCoordinates)
-        geofenceMonitor.register(AppDataStore.shared.geofences,
-                                  locationManager: manager,
-                                  currentLocation: currentLocation)
+        geofenceMonitor.register(
+            activeGeofences,
+            locationManager: manager,
+            currentLocation: currentLocation
+        )
         Task { await startMapboxActiveGuidanceIfPossible() }
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard let location = locations.last else { return }
+        guard let rawLocation = locations.last else { return }
         Task { @MainActor in
+            guard let location = self.acceptLocationIfValid(rawLocation) else { return }
             if self.isUsingMapboxNavigationCore {
                 // Preserve high-frequency breadcrumb updates while SDK drives guidance.
                 self.appendBreadcrumbCoordinateIfNeeded(location.coordinate)
                 self.advanceRouteCursorUsingLocation(location)
-                if self.currentLocation == nil {
-                    self.currentLocation = location
-                }
+                self.currentLocation = location
             } else {
                 self.updateLocation(location)
             }
@@ -650,11 +937,12 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         Task { @MainActor [weak self] in
             guard let self else { return }
+            self.locationAuthorizationStatus = manager.authorizationStatus
             switch manager.authorizationStatus {
             case .authorizedAlways:
                 // Re-register geofences now that we have full permission
                 self.geofenceMonitor.register(
-                    AppDataStore.shared.geofences,
+                    self.activeGeofences,
                     locationManager: manager,
                     currentLocation: self.currentLocation
                 )
@@ -666,7 +954,27 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
             default:
                 break
             }
+            self.persistSessionSnapshotIfNeeded(force: true)
         }
+    }
+
+    private func acceptLocationIfValid(_ location: CLLocation) -> CLLocation? {
+        guard CLLocationCoordinate2DIsValid(location.coordinate) else { return nil }
+        guard location.horizontalAccuracy > 0, location.horizontalAccuracy <= 120 else { return nil }
+        let age = abs(location.timestamp.timeIntervalSinceNow)
+        guard age <= 10 else { return nil }
+
+        if let last = lastAcceptedRawLocation {
+            let dt = max(0.2, location.timestamp.timeIntervalSince(last.timestamp))
+            let dist = location.distance(from: last)
+            let impliedSpeed = dist / dt
+            if dist > 120, impliedSpeed > maxReasonableJumpSpeedMetresPerSecond {
+                return nil
+            }
+        }
+
+        lastAcceptedRawLocation = location
+        return location
     }
 
     // MARK: - Location Publishing
@@ -695,6 +1003,11 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     }
 
     func stopLocationPublishing() {
+        persistSessionSnapshotIfNeeded(force: true)
+        rerouteDeferredTask?.cancel()
+        rerouteDeferredTask = nil
+        isRerouteInFlight = false
+        rerouteQueued = false
         locationPublishTimer?.invalidate()
         locationPublishTimer = nil
         if let manager = locationManager { geofenceMonitor.stopMonitoring(locationManager: manager) }
@@ -720,10 +1033,8 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
 
         // GAP-1: Auto-reroute on severe incident nearby
         if !isUsingMapboxNavigationCore,
-           trafficService.hasSevereIncidentNearby(),
-           Date().timeIntervalSince(lastRerouteRequestedAt) > TripConstants.rerouteCooldownSeconds {
-            lastRerouteRequestedAt = Date()
-            Task { await rebuildRoutes() }
+           trafficService.hasSevereIncidentNearby() {
+            requestReroute(reason: "severe_incident")
         }
     }
 
@@ -792,6 +1103,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         routeEngine.distanceRemainingMetres = max(0, remaining)
         maxRouteProgressFraction = max(maxRouteProgressFraction, routeProgressFraction)
         Self.savePersistedProgress(maxRouteProgressFraction, for: trip.id)
+        persistSessionSnapshotIfNeeded()
 
         updateStopArrivalState(using: location, routeCoordinates: routeCoords)
 
@@ -810,6 +1122,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
             routeEngine.distanceRemainingMetres = 0
             maxRouteProgressFraction = 1.0
             Self.savePersistedProgress(1.0, for: trip.id)
+            persistSessionSnapshotIfNeeded(force: true)
             routeCursorIndex = routeCoords.count - 1
             NotificationCenter.default.post(name: .tripArrivedAtDestination, object: nil)
         }
@@ -868,46 +1181,158 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         let deviationMetres = deviationDetector.distanceFromRoute(
             location: location.coordinate, routeCoords: routeCoords
         )
-        guard deviationMetres > deviationDetector.deviationThresholdMetres else {
-            if routeEngine.hasDeviated { routeEngine.hasDeviated = false }
+        let transition = deviationDetector.transition(for: deviationMetres)
+
+        switch transition {
+        case .enteredDeviation:
+            routeEngine.hasDeviated = true
+            persistDeviationSample(
+                location: location,
+                deviationMetres: deviationMetres,
+                emitActivityLog: true,
+                notifyFleetManagers: true
+            )
+            guard !isUsingMapboxNavigationCore else { return }
+            requestReroute(reason: "deviation_entered")
+
+        case .stayingOffRoute:
+            routeEngine.hasDeviated = true
+            if deviationDetector.shouldRecordFollowupSample(
+                at: location.coordinate,
+                deviationMetres: deviationMetres
+            ) {
+                persistDeviationSample(
+                    location: location,
+                    deviationMetres: deviationMetres,
+                    emitActivityLog: false,
+                    notifyFleetManagers: false
+                )
+            }
+            guard !isUsingMapboxNavigationCore else { return }
+            requestReroute(reason: "deviation_ongoing")
+
+        case .exitedDeviation:
+            routeEngine.hasDeviated = false
+            notifyFleetManagersDeviationRecoveredIfNeeded()
+
+        case .stayingOnRoute:
+            if routeEngine.hasDeviated {
+                routeEngine.hasDeviated = false
+            }
+        }
+    }
+
+    private func requestReroute(reason: String) {
+        guard !isUsingMapboxNavigationCore else { return }
+
+        if isRerouteInFlight {
+            rerouteQueued = true
             return
         }
-        routeEngine.hasDeviated = true
-        guard deviationDetector.shouldRecordDeviation() else { return }
-        deviationDetector.markDeviationRecorded()
+
+        let elapsed = Date().timeIntervalSince(lastRerouteRequestedAt)
+        if elapsed < TripConstants.rerouteCooldownSeconds {
+            scheduleDeferredReroute(after: TripConstants.rerouteCooldownSeconds - elapsed, reason: reason)
+            return
+        }
+
+        isRerouteInFlight = true
+        lastRerouteRequestedAt = Date()
+        routeEngine.triggerRerouteFromCurrentLocation()
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.rebuildRoutes()
+            self.isRerouteInFlight = false
+            if self.rerouteQueued {
+                self.rerouteQueued = false
+                self.requestReroute(reason: "queued_\(reason)")
+            }
+        }
+    }
+
+    private func scheduleDeferredReroute(after delay: TimeInterval, reason: String) {
+        guard rerouteDeferredTask == nil else { return }
+        let safeDelay = max(0.5, delay)
+        rerouteDeferredTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            try? await Task.sleep(nanoseconds: UInt64(safeDelay * 1_000_000_000))
+            self.rerouteDeferredTask = nil
+            self.requestReroute(reason: "deferred_\(reason)")
+        }
+    }
+
+    private func persistDeviationSample(
+        location: CLLocation,
+        deviationMetres: Double,
+        emitActivityLog: Bool,
+        notifyFleetManagers: Bool
+    ) {
         // BUG-10 FIX: Don't generate random UUIDs for safety-critical records
         guard let driverId = AuthManager.shared.currentUser?.id else {
             print("[NavCoordinator] No auth user — skipping deviation record")
             return
         }
         guard let vehicleIdStr = trip.vehicleId, let vehicleId = UUID(uuidString: vehicleIdStr) else { return }
+
+        deviationDetector.markDeviationRecorded(
+            at: location.coordinate,
+            deviationMetres: deviationMetres
+        )
+
         Task {
             try? await RouteDeviationService.recordDeviation(
-                tripId: trip.id, driverId: driverId, vehicleId: vehicleId,
-                latitude: location.coordinate.latitude, longitude: location.coordinate.longitude,
-                deviationMetres: deviationMetres
+                tripId: trip.id,
+                driverId: driverId,
+                vehicleId: vehicleId,
+                latitude: location.coordinate.latitude,
+                longitude: location.coordinate.longitude,
+                deviationMetres: deviationMetres,
+                emitActivityLog: emitActivityLog,
+                notifyFleetManagers: notifyFleetManagers
             )
         }
-        guard !isUsingMapboxNavigationCore else { return }
+    }
 
-        // Fix 9: Cooldown — don't reroute more than once every 30 seconds
-        guard Date().timeIntervalSince(lastRerouteRequestedAt) > TripConstants.rerouteCooldownSeconds else {
-            return
+    private func notifyFleetManagersDeviationRecoveredIfNeeded() {
+        let now = Date()
+        guard now.timeIntervalSince(lastDeviationRecoveryNotifiedAt) >= 90 else { return }
+        lastDeviationRecoveryNotifiedAt = now
+
+        let tripId = trip.id
+        let fmIds = AppDataStore.shared.staff
+            .filter { $0.role == .fleetManager && $0.status == .active }
+            .map(\.id)
+
+        Task {
+            for fmId in fmIds {
+                try? await NotificationService.insertNotification(
+                    recipientId: fmId,
+                    type: .routeDeviation,
+                    title: "Route Back On Track",
+                    body: "Driver returned to the planned route for trip \(tripId.uuidString.prefix(8)).",
+                    entityType: "trip",
+                    entityId: tripId
+                )
+            }
         }
-        lastRerouteRequestedAt = Date()
-        routeEngine.triggerRerouteFromCurrentLocation()
-        Task { await rebuildRoutes() }
     }
 
     private func refreshStateAfterRouteBuild() {
         _cumulativeRouteCount = 0  // invalidate distance cache
         recomputeStopRouteAnchors()
         routeCursorIndex = min(max(routeCursorIndex, 0), max(0, routeEngine.decodedRouteCoordinates.count - 1))
-        maxRouteProgressFraction = max(maxRouteProgressFraction, Self.persistedProgress(for: trip.id))
+        maxRouteProgressFraction = max(
+            maxRouteProgressFraction,
+            Self.persistedProgress(for: trip.id),
+            Self.persistedSnapshotProgress(for: trip.id)
+        )
+        applyRestoredSnapshotIfNeeded()
         trafficService.updateRoute(routeEngine.decodedRouteCoordinates)
         if let location = currentLocation {
             updateNavigationProgress(location: location)
         }
+        persistSessionSnapshotIfNeeded(force: true)
     }
 
     // MARK: - Geofence Delegates
@@ -931,29 +1356,41 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     private func appendBreadcrumbCoordinateIfNeeded(_ coordinate: CLLocationCoordinate2D, force: Bool = false) {
         guard let last = breadcrumbCoordinates.last else {
             breadcrumbCoordinates = [coordinate]
+            lastSmoothedBreadcrumbCoordinate = coordinate
             lastBreadcrumbAppendAt = Date()
+            persistSessionSnapshotIfNeeded()
             return
         }
 
+        var adjustedCoordinate = coordinate
+        if let smoothed = smoothedBreadcrumbCoordinate(for: coordinate) {
+            adjustedCoordinate = smoothed
+        }
+
         if force {
-            breadcrumbCoordinates.append(coordinate)
+            breadcrumbCoordinates.append(adjustedCoordinate)
             trimBreadcrumbsIfNeeded()
+            lastSmoothedBreadcrumbCoordinate = adjustedCoordinate
             lastBreadcrumbAppendAt = Date()
+            persistSessionSnapshotIfNeeded()
             return
         }
 
         let previous = CLLocation(latitude: last.latitude, longitude: last.longitude)
-        let current = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        let current = CLLocation(latitude: adjustedCoordinate.latitude, longitude: adjustedCoordinate.longitude)
         let distance = current.distance(from: previous)
         let now = Date()
         let elapsed = now.timeIntervalSince(lastBreadcrumbAppendAt)
         // Keep breadcrumbs responsive at low speeds (walking/testing).
-        if distance < 1, elapsed < 2.0 { return }
+        if distance < 0.45, elapsed < 0.35 { return }
         // Reject obvious GPS spikes that draw unrealistic breadcrumb jumps.
-        if distance > 80, currentSpeedKmh < 15 { return }
-        breadcrumbCoordinates.append(coordinate)
+        let speedAwareSpikeThreshold = max(35.0, currentSpeedKmh * 3.0)
+        if distance > speedAwareSpikeThreshold, elapsed < 1.8 { return }
+        breadcrumbCoordinates.append(adjustedCoordinate)
         trimBreadcrumbsIfNeeded()
+        lastSmoothedBreadcrumbCoordinate = adjustedCoordinate
         lastBreadcrumbAppendAt = now
+        persistSessionSnapshotIfNeeded()
     }
 
     private func advanceRouteCursorUsingLocation(_ location: CLLocation) {
@@ -962,8 +1399,8 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
 
         let lastSegmentIndex = routeCoords.count - 2
         let currentIndex = min(max(routeCursorIndex, 0), lastSegmentIndex)
-        let forwardStart = min(max(currentIndex - 12, 0), lastSegmentIndex)
-        let forwardEnd = min(currentIndex + 60, lastSegmentIndex)
+        let forwardStart = min(max(currentIndex - 24, 0), lastSegmentIndex)
+        let forwardEnd = min(currentIndex + 90, lastSegmentIndex)
 
         let lat = location.coordinate.latitude
         let lon = location.coordinate.longitude
@@ -984,7 +1421,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         }
 
         // Recovery when local window misses the actual segment.
-        if bestDistance > 110 {
+        if bestDistance > 75 {
             for i in 0...lastSegmentIndex {
                 let dist = fastSegmentDistance(
                     pLat: lat, pLon: lon,
@@ -1000,7 +1437,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
 
         if bestIndex >= routeCursorIndex {
             routeCursorIndex = min(bestIndex, routeCursorIndex + maxCursorAdvancePerTick)
-        } else if routeCursorIndex - bestIndex > 20 {
+        } else if routeCursorIndex - bestIndex > 14 {
             routeCursorIndex = bestIndex
         }
     }
@@ -1062,6 +1499,196 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
                 routeCursorIndex = max(routeCursorIndex, min(stopRouteIndices[idx], max(0, routeCoordinates.count - 1)))
             }
         }
+    }
+
+    private func smoothedBreadcrumbCoordinate(for raw: CLLocationCoordinate2D) -> CLLocationCoordinate2D? {
+        guard let previous = lastSmoothedBreadcrumbCoordinate else { return raw }
+
+        let alpha: Double
+        switch currentSpeedKmh {
+        case ..<6:
+            alpha = 0.42
+        case ..<25:
+            alpha = 0.50
+        default:
+            alpha = 0.62
+        }
+
+        let latitude = previous.latitude + (raw.latitude - previous.latitude) * alpha
+        let longitude = previous.longitude + (raw.longitude - previous.longitude) * alpha
+        return CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+    }
+
+    private func applyRestoredSnapshotIfNeeded() {
+        guard let snapshot = restoredSessionSnapshot else { return }
+
+        if breadcrumbCoordinates.isEmpty, !snapshot.breadcrumbCoordinates.isEmpty {
+            breadcrumbCoordinates = snapshot.breadcrumbCoordinates.map(\.coordinate)
+            lastSmoothedBreadcrumbCoordinate = breadcrumbCoordinates.last
+        }
+
+        if let lastLocation = snapshot.lastLocation, currentLocation == nil {
+            currentLocation = CLLocation(
+                coordinate: lastLocation.coordinate,
+                altitude: 0,
+                horizontalAccuracy: 20,
+                verticalAccuracy: 20,
+                timestamp: snapshot.updatedAt
+            )
+        }
+
+        let signature = routeSignature(for: routeEngine.decodedRouteCoordinates)
+        if !signature.isEmpty, snapshot.routeSignature == signature {
+            routeCursorIndex = min(max(snapshot.routeCursorIndex, 0), max(0, routeEngine.decodedRouteCoordinates.count - 1))
+            maxRouteProgressFraction = max(maxRouteProgressFraction, snapshot.maxRouteProgressFraction)
+        }
+
+        restoredSessionSnapshot = nil
+    }
+
+    private func persistSessionSnapshotIfNeeded(force: Bool = false) {
+        let status = trip.effectiveStatusForDriver
+        if status == .completed || status == .cancelled {
+            Self.clearPersistedState(for: trip.id)
+            return
+        }
+
+        let now = Date()
+        if !force, now.timeIntervalSince(lastSnapshotPersistAt) < 2.0 { return }
+
+        let coords = routeEngine.decodedRouteCoordinates
+        let snapshot = NavigationSessionSnapshot(
+            routeCursorIndex: min(max(routeCursorIndex, 0), max(0, coords.count - 1)),
+            maxRouteProgressFraction: max(maxRouteProgressFraction, routeProgressFraction),
+            breadcrumbCoordinates: Array(breadcrumbCoordinates.suffix(2_000)).map(PersistedCoordinate.init),
+            lastLocation: currentLocation.map { PersistedCoordinate($0.coordinate) },
+            routeSignature: routeSignature(for: coords),
+            updatedAt: now
+        )
+
+        Self.savePersistedSnapshot(snapshot, for: trip.id)
+        Self.savePersistedProgress(snapshot.maxRouteProgressFraction, for: trip.id)
+        lastSnapshotPersistAt = now
+    }
+
+    private func routeSignature(for coordinates: [CLLocationCoordinate2D]) -> String {
+        guard coordinates.count >= 2 else { return "" }
+        var hasher = Hasher()
+        hasher.combine(coordinates.count)
+        if let first = coordinates.first {
+            hasher.combine(Int(first.latitude * 100_000))
+            hasher.combine(Int(first.longitude * 100_000))
+        }
+        if let last = coordinates.last {
+            hasher.combine(Int(last.latitude * 100_000))
+            hasher.combine(Int(last.longitude * 100_000))
+        }
+        return String(hasher.finalize())
+    }
+
+    private func routeAttachmentPoint(
+        for liveCoordinate: CLLocationCoordinate2D,
+        routeCoordinates: [CLLocationCoordinate2D]
+    ) -> (coordinate: CLLocationCoordinate2D, segmentIndex: Int)? {
+        guard routeCoordinates.count >= 2 else { return nil }
+
+        let lastSegmentIndex = routeCoordinates.count - 2
+        let currentIndex = min(max(routeCursorIndex, 0), lastSegmentIndex)
+        let start = min(max(currentIndex - 30, 0), lastSegmentIndex)
+        let end = min(currentIndex + 120, lastSegmentIndex)
+
+        var bestSegment = currentIndex
+        var bestDistance = Double.greatestFiniteMagnitude
+        var bestProjection = routeCoordinates[currentIndex]
+
+        for i in start...end {
+            let projection = projectedCoordinateOnSegment(
+                point: liveCoordinate,
+                a: routeCoordinates[i],
+                b: routeCoordinates[i + 1]
+            )
+            let distance = CLLocation(
+                latitude: liveCoordinate.latitude,
+                longitude: liveCoordinate.longitude
+            ).distance(from: CLLocation(
+                latitude: projection.latitude,
+                longitude: projection.longitude
+            ))
+
+            if distance < bestDistance {
+                bestDistance = distance
+                bestSegment = i
+                bestProjection = projection
+            }
+        }
+
+        if bestDistance > 120 {
+            for i in 0...lastSegmentIndex {
+                let projection = projectedCoordinateOnSegment(
+                    point: liveCoordinate,
+                    a: routeCoordinates[i],
+                    b: routeCoordinates[i + 1]
+                )
+                let distance = CLLocation(
+                    latitude: liveCoordinate.latitude,
+                    longitude: liveCoordinate.longitude
+                ).distance(from: CLLocation(
+                    latitude: projection.latitude,
+                    longitude: projection.longitude
+                ))
+
+                if distance < bestDistance {
+                    bestDistance = distance
+                    bestSegment = i
+                    bestProjection = projection
+                }
+            }
+        }
+
+        return (bestProjection, bestSegment)
+    }
+
+    private func normalizedCongestionLevels(
+        _ levels: [MapboxDirections.CongestionLevel],
+        desiredCount: Int
+    ) -> [MapboxDirections.CongestionLevel] {
+        guard desiredCount > 0 else { return [] }
+        guard !levels.isEmpty else {
+            return Array(repeating: .unknown, count: desiredCount)
+        }
+        if levels.count == desiredCount { return levels }
+        if levels.count > desiredCount {
+            return Array(levels.prefix(desiredCount))
+        }
+        let padding = Array(repeating: levels.last ?? .unknown, count: desiredCount - levels.count)
+        return levels + padding
+    }
+
+    private func projectedCoordinateOnSegment(
+        point: CLLocationCoordinate2D,
+        a: CLLocationCoordinate2D,
+        b: CLLocationCoordinate2D
+    ) -> CLLocationCoordinate2D {
+        let ax = a.longitude
+        let ay = a.latitude
+        let bx = b.longitude
+        let by = b.latitude
+        let px = point.longitude
+        let py = point.latitude
+
+        let abx = bx - ax
+        let aby = by - ay
+        let ab2 = abx * abx + aby * aby
+        guard ab2 > 0 else { return a }
+
+        let apx = px - ax
+        let apy = py - ay
+        let t = min(1.0, max(0.0, (apx * abx + apy * aby) / ab2))
+
+        return CLLocationCoordinate2D(
+            latitude: ay + aby * t,
+            longitude: ax + abx * t
+        )
     }
 
     // MARK: - Fast Geometry Helpers (avoid CLLocation allocation on every tick)
@@ -1161,8 +1788,10 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
                     self.simulated = false
                     self.maxRouteProgressFraction = 1.0
                     Self.savePersistedProgress(1.0, for: self.trip.id)
+                    self.persistSessionSnapshotIfNeeded(force: true)
                     return
                 }
+                self.persistSessionSnapshotIfNeeded()
                 self.simulationIndex += 1
             }
         }
@@ -1194,6 +1823,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         routeCursorIndex = simulationIndex
         breadcrumbCoordinates = Array(coords.prefix(simulationIndex + 1))
         applySimulatedCoordinate(coords[simulationIndex])
+        persistSessionSnapshotIfNeeded(force: true)
     }
 
     private func applySimulatedCoordinate(_ coordinate: CLLocationCoordinate2D) {

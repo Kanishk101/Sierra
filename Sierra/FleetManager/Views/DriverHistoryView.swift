@@ -56,6 +56,7 @@ struct DriverHistoryView: View {
         .background(Color(.systemGroupedBackground))
         .navigationTitle("Driver History")
         .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
         .task {
             await loadDriverTrips()
         }
@@ -239,6 +240,7 @@ struct DriverHistoryView: View {
             .padding(.top, 20)
             .navigationTitle("Rate Trip")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { showRateSheet = false }

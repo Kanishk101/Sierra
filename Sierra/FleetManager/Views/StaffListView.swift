@@ -36,7 +36,7 @@ struct StaffListView: View {
                     if let error = store.loadError {
                         Spacer()
                         SierraErrorView(message: error) {
-                            await store.loadAll()
+                            await store.loadAll(force: true)
                         }
                         Spacer()
                     } else if filteredStaff.isEmpty {
@@ -88,7 +88,7 @@ struct StaffListView: View {
                         }
                         .listStyle(.plain)
                         .scrollContentBackground(.hidden)
-                        .refreshable { await store.loadAll() }
+                        .refreshable { await store.loadAll(force: true) }
                     }
                 }
                 .background(Color(.systemGroupedBackground).ignoresSafeArea())
@@ -98,7 +98,7 @@ struct StaffListView: View {
                     .padding(.bottom, 24)
             }
             .navigationTitle("Staff")
-            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarTitleDisplayMode(.inline)
             .toolbarBackground(.hidden, for: .navigationBar)
             .searchable(text: $searchText, prompt: "Search by name or email\u{2026}")
             .animation(.easeInOut(duration: 0.25), value: selectedSegment)

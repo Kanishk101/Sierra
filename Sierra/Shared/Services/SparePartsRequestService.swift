@@ -18,6 +18,7 @@ struct SparePartsRequestService {
     static func submitRequest(
         maintenanceTaskId: UUID,
         workOrderId: UUID?,
+        workOrderPhaseId: UUID?,
         requestedById: UUID,
         partName: String,
         partNumber: String?,
@@ -29,6 +30,7 @@ struct SparePartsRequestService {
         struct Payload: Encodable {
             let maintenance_task_id: String
             let work_order_id: String?
+            let work_order_phase_id: String?
             let requested_by_id: String
             let part_name: String
             let part_number: String?
@@ -43,6 +45,7 @@ struct SparePartsRequestService {
             .insert(Payload(
                 maintenance_task_id: maintenanceTaskId.uuidString,
                 work_order_id: workOrderId?.uuidString,
+                work_order_phase_id: workOrderPhaseId?.uuidString,
                 requested_by_id: requestedById.uuidString,
                 part_name: partName,
                 part_number: partNumber,
@@ -52,6 +55,69 @@ struct SparePartsRequestService {
                 reason: reason,
                 status: SparePartsRequestStatus.pending.rawValue
             ))
+            .execute()
+    }
+
+    // MARK: Admin Review / Allocation
+
+    static func applyAdminDecision(
+        id: UUID,
+        reviewedBy: UUID,
+        quantityAllocated: Int,
+        quantityOnOrder: Int,
+        expectedArrivalAt: Date?,
+        orderReference: String?
+    ) async throws {
+        struct Payload: Encodable {
+            let status: String
+            let reviewed_by: String
+            let reviewed_at: String
+            let quantity_allocated: Int
+            let quantity_on_order: Int
+            let expected_arrival_at: String?
+            let admin_ordered_at: String?
+            let order_reference: String?
+        }
+
+        let normalizedAllocated = max(0, quantityAllocated)
+        let normalizedOnOrder = max(0, quantityOnOrder)
+        let status: SparePartsRequestStatus = (normalizedOnOrder == 0 && normalizedAllocated > 0) ? .approved : .pending
+
+        try await supabase
+            .from("spare_parts_requests")
+            .update(Payload(
+                status: status.rawValue,
+                reviewed_by: reviewedBy.uuidString,
+                reviewed_at: iso.string(from: Date()),
+                quantity_allocated: normalizedAllocated,
+                quantity_on_order: normalizedOnOrder,
+                expected_arrival_at: expectedArrivalAt.map { iso.string(from: $0) },
+                admin_ordered_at: normalizedOnOrder > 0 ? iso.string(from: Date()) : nil,
+                order_reference: orderReference
+            ))
+            .eq("id", value: id.uuidString)
+            .execute()
+    }
+
+    static func markReadyFromDelivery(id: UUID, reviewedBy: UUID) async throws {
+        struct Payload: Encodable {
+            let status: String
+            let reviewed_by: String
+            let reviewed_at: String
+            let fulfilled_at: String
+            let quantity_on_order: Int
+        }
+
+        try await supabase
+            .from("spare_parts_requests")
+            .update(Payload(
+                status: SparePartsRequestStatus.fulfilled.rawValue,
+                reviewed_by: reviewedBy.uuidString,
+                reviewed_at: iso.string(from: Date()),
+                fulfilled_at: iso.string(from: Date()),
+                quantity_on_order: 0
+            ))
+            .eq("id", value: id.uuidString)
             .execute()
     }
 

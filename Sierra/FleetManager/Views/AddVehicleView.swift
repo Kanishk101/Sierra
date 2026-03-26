@@ -58,6 +58,7 @@ struct AddVehicleView: View {
             }
             .navigationTitle(vm.isEditing ? "Edit Vehicle" : "Add Vehicle")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

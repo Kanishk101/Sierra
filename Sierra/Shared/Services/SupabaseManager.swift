@@ -90,12 +90,13 @@ extension SupabaseManager {
     // MARK: - Session Preflight
 
     /// Ensures there is a valid, server-verifiable auth session.
-    /// If validation fails, refreshes once and retries verification.
+    /// If validation fails, refreshes once and then attempts secure-store recovery.
     @discardableResult
-    static func ensureValidSession() async throws -> Session {
+    static func ensureValidSession(expectedUserId: UUID? = nil) async throws -> Session {
         do {
             let session = try await supabase.auth.session
             _ = try await supabase.auth.user(jwt: session.accessToken)
+            await persistCurrentSessionSnapshot()
             return session
         } catch {
             if isLikelyConnectivityError(error) { throw error }
@@ -103,10 +104,17 @@ extension SupabaseManager {
                 _ = try await supabase.auth.refreshSession()
                 let refreshed = try await supabase.auth.session
                 _ = try await supabase.auth.user(jwt: refreshed.accessToken)
+                await persistCurrentSessionSnapshot()
                 return refreshed
             } catch let refreshError {
                 if isLikelyConnectivityError(refreshError) { throw refreshError }
-                throw SessionRecoveryError.unableToValidateSession
+                do {
+                    let restored = try await restoreSessionFromSecureStore(expectedUserId: expectedUserId)
+                    return restored
+                } catch let restoreError {
+                    if isLikelyConnectivityError(restoreError) { throw restoreError }
+                    throw SessionRecoveryError.unableToValidateSession
+                }
             }
         }
     }
@@ -135,6 +143,56 @@ extension SupabaseManager {
             || description.contains("timed out")
             || description.contains("tls")
             || description.contains("network")
+    }
+
+    // MARK: - Secure Session Snapshot
+
+    static func persistCurrentSessionSnapshot() async {
+        do {
+            let session = try await supabase.auth.session
+            guard !session.accessToken.isEmpty, !session.refreshToken.isEmpty else { return }
+            SecureSessionStore.shared.saveSupabaseSession(
+                accessToken: session.accessToken,
+                refreshToken: session.refreshToken,
+                userId: session.user.id
+            )
+        } catch {
+            // Best-effort persistence only.
+        }
+    }
+
+    static func restoreSessionFromSecureStore(expectedUserId: UUID? = nil) async throws -> Session {
+        guard let snapshot = SecureSessionStore.shared.loadSupabaseSession() else {
+            throw SessionRecoveryError.unableToValidateSession
+        }
+
+        if let expectedUserId, snapshot.userId != expectedUserId {
+            SecureSessionStore.shared.clearSupabaseSession()
+            throw SessionRecoveryError.unableToValidateSession
+        }
+
+        do {
+            try await supabase.auth.setSession(
+                accessToken: snapshot.accessToken,
+                refreshToken: snapshot.refreshToken
+            )
+            _ = try? await supabase.auth.refreshSession()
+            let restored = try await supabase.auth.session
+            _ = try await supabase.auth.user(jwt: restored.accessToken)
+
+            if let expectedUserId, restored.user.id != expectedUserId {
+                SecureSessionStore.shared.clearSupabaseSession()
+                throw SessionRecoveryError.unableToValidateSession
+            }
+
+            await persistCurrentSessionSnapshot()
+            return restored
+        } catch {
+            if !isLikelyConnectivityError(error) {
+                SecureSessionStore.shared.clearSupabaseSession()
+            }
+            throw error
+        }
     }
 
     // MARK: - functionOptions

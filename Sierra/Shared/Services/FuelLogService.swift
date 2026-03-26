@@ -50,11 +50,12 @@ struct FuelLogPayload: Encodable {
 
 struct FuelLogService {
 
-    static func fetchAllFuelLogs() async throws -> [FuelLog] {
+    static func fetchAllFuelLogs(limit: Int = 500) async throws -> [FuelLog] {
         return try await supabase
             .from("fuel_logs")
             .select()
             .order("logged_at", ascending: false)
+            .limit(limit)
             .execute()
             .value
     }

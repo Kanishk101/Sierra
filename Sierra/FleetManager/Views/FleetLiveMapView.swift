@@ -16,26 +16,19 @@ struct FleetLiveMapView: View {
         ZStack(alignment: .topTrailing) {
             mapContent
 
-            VStack(spacing: 10) {
+            VStack(spacing: 8) {
                 mapToolButton(icon: "plus") { zoom(by: 0.6) }
                 mapToolButton(icon: "minus") { zoom(by: 1.7) }
-                Capsule()
-                    .fill(Color.white.opacity(0.22))
-                    .frame(width: 30, height: 1)
-                mapToolButton(icon: "arrow.up.left.and.arrow.down.right") { fitAllVehicles() }
-                mapToolButton(icon: "line.3.horizontal.decrease") { viewModel.showFilterPicker = true }
             }
-            .frame(width: 60)
-            .padding(.vertical, 10)
-            .padding(.horizontal, 8)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .padding(6)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
             )
-            .shadow(color: .black.opacity(0.2), radius: 8, y: 2)
-            .padding(.top, 60)
-            .padding(.trailing, 16)
+            .shadow(color: .black.opacity(0.1), radius: 6, y: 2)
+            .padding(.top, 16)
+            .padding(.trailing, 12)
         }
         .onAppear {
             if !hasSetInitialRegion {
@@ -67,7 +60,7 @@ struct FleetLiveMapView: View {
                     ))
                 }
             } else {
-                // No GPS — show vehicle detail sheet even without map movement
+                // No GPS - show vehicle detail sheet even without map movement
                 viewModel.showVehicleDetail = true
             }
             startBreadcrumbPollingIfNeeded()
@@ -94,8 +87,8 @@ struct FleetLiveMapView: View {
             cameraPosition = .region(MKCoordinateRegion(center: active[0], latitudinalMeters: 5000, longitudinalMeters: 5000))
             return
         }
-        let lats = active.map(\.latitude)
-        let lngs = active.map(\.longitude)
+        let lats = active.map(\ .latitude)
+        let lngs = active.map(\ .longitude)
         let center = CLLocationCoordinate2D(latitude: (lats.min()! + lats.max()!) / 2, longitude: (lngs.min()! + lngs.max()!) / 2)
         let span = MKCoordinateSpan(latitudeDelta: (lats.max()! - lats.min()!) * 1.4 + 0.01, longitudeDelta: (lngs.max()! - lngs.min()!) * 1.4 + 0.01)
         cameraPosition = .region(MKCoordinateRegion(center: center, span: span))
@@ -106,6 +99,12 @@ struct FleetLiveMapView: View {
     @ViewBuilder
     private var mapContent: some View {
         let displayedVehicles = viewModel.filteredVehicles(from: store.vehicles)
+        let displayedGeofences = viewModel.displayedGeofences(
+            allGeofences: store.geofences,
+            trips: store.trips,
+            vehicles: displayedVehicles,
+            visibleRegion: visibleRegion
+        )
 
         Map(position: $cameraPosition) {
             ForEach(displayedVehicles) { vehicle in
@@ -120,10 +119,10 @@ struct FleetLiveMapView: View {
                 }
             }
 
-            ForEach(store.geofences.filter { $0.isActive }) { geofence in
+            ForEach(displayedGeofences) { geofence in
                 MapCircle(
                     center: CLLocationCoordinate2D(latitude: geofence.latitude, longitude: geofence.longitude),
-                    radius: geofence.radiusMeters
+                    radius: GeofenceScopeService.normalizedRadiusMeters(geofence.radiusMeters)
                 )
                 .foregroundStyle(geofenceColor(geofence.geofenceType).opacity(0.18))
                 .stroke(geofenceColor(geofence.geofenceType).opacity(0.8), lineWidth: 1.5)
@@ -134,12 +133,19 @@ struct FleetLiveMapView: View {
                 MapPolyline(coordinates: breadcrumb)
                     .stroke(.orange, lineWidth: 3)
             }
+
+            UserAnnotation()
         }
         .onMapCameraChange(frequency: .continuous) { context in
             visibleRegion = context.region
         }
         .mapStyle(.standard)
-        .mapControls { MapCompass() }
+        .mapControlVisibility(.visible)
+        .mapControls {
+            MapCompass()
+            MapPitchToggle()
+            MapUserLocationButton()
+        }
     }
 
     // MARK: - Vehicle Annotation
@@ -186,12 +192,12 @@ struct FleetLiveMapView: View {
     private func mapToolButton(icon: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
-                .font(.system(size: 18, weight: .bold))
-                .foregroundStyle(.white)
-                .frame(width: 44, height: 44)
-                .background(Color.black.opacity(0.22), in: Circle())
-                .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 1))
+                .font(.system(size: 17, weight: .semibold))
+                .frame(width: 34, height: 34)
         }
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.circle)
+        .tint(.primary)
     }
 
     private func zoom(by factor: Double) {
@@ -229,6 +235,7 @@ struct FleetLiveMapView: View {
                 }
             }
             .navigationTitle("Filter Vehicles").navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
         }
         .presentationDetents([.medium])
     }

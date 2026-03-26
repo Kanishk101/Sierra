@@ -17,7 +17,7 @@ struct TripNavigationFallbackMapView: View {
                     .stroke(.orange, lineWidth: 7)
             }
 
-            ForEach(coordinator.activeGeofences) { geofence in
+            ForEach(deduplicatedGeofences(coordinator.activeGeofences)) { geofence in
                 MapCircle(center: CLLocationCoordinate2D(latitude: geofence.latitude, longitude: geofence.longitude), radius: geofence.radiusMeters)
                     .foregroundStyle(.teal.opacity(0.18))
                     .stroke(.teal.opacity(0.65), lineWidth: 2)
@@ -119,5 +119,20 @@ struct TripNavigationFallbackMapView: View {
             longitudeDelta: max((maxLng - minLng) * 1.5, 0.02)
         )
         position = .region(MKCoordinateRegion(center: center, span: span))
+    }
+
+    private func deduplicatedGeofences(_ geofences: [Geofence]) -> [Geofence] {
+        var seen: Set<String> = []
+        var deduped: [Geofence] = []
+        for geofence in geofences {
+            let latBucket = Int((geofence.latitude * 100_000).rounded())
+            let lngBucket = Int((geofence.longitude * 100_000).rounded())
+            let radiusBucket = Int(geofence.radiusMeters.rounded())
+            let key = "\(latBucket)|\(lngBucket)|\(radiusBucket)"
+            if seen.insert(key).inserted {
+                deduped.append(geofence)
+            }
+        }
+        return deduped
     }
 }

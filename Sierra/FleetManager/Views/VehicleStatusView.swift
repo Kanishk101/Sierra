@@ -45,7 +45,8 @@ struct VehicleStatusView: View {
         }
         .background(Color(.systemGroupedBackground))
         .navigationTitle("Vehicle Status")
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
     }
 
     // MARK: - Status Bar Chart (Safeguard 5: SwiftUI only)

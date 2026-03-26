@@ -16,35 +16,47 @@ struct WorkOrderInsertPayload: Encodable {
     let maintenanceTaskId: String
     let vehicleId: String
     let assignedToId: String
+    let workOrderType: String
+    let partsSubStatus: String
     let status: String
     let repairDescription: String
     let labourCostTotal: Double
     let partsCostTotal: Double
     let technicianNotes: String?
     let vinScanned: Bool
+    let repairImageUrls: [String]
+    let estimatedCompletionAt: String?
 
     enum CodingKeys: String, CodingKey {
         case maintenanceTaskId = "maintenance_task_id"
         case vehicleId         = "vehicle_id"
         case assignedToId      = "assigned_to_id"
+        case workOrderType     = "work_order_type"
+        case partsSubStatus    = "parts_sub_status"
         case status
         case repairDescription = "repair_description"
         case labourCostTotal   = "labour_cost_total"
         case partsCostTotal    = "parts_cost_total"
         case technicianNotes   = "technician_notes"
         case vinScanned        = "vin_scanned"
+        case repairImageUrls   = "repair_image_urls"
+        case estimatedCompletionAt = "estimated_completion_at"
     }
 
     init(from o: WorkOrder) {
         maintenanceTaskId = o.maintenanceTaskId.uuidString
         vehicleId         = o.vehicleId.uuidString
         assignedToId      = o.assignedToId.uuidString
+        workOrderType     = o.workOrderType.rawValue
+        partsSubStatus    = o.partsSubStatus.rawValue
         status            = o.status.rawValue
         repairDescription = o.repairDescription
         labourCostTotal   = o.labourCostTotal
         partsCostTotal    = o.partsCostTotal
         technicianNotes   = o.technicianNotes
         vinScanned        = o.vinScanned
+        repairImageUrls   = o.repairImageUrls
+        estimatedCompletionAt = o.estimatedCompletionAt.map { iso.string(from: $0) }
     }
 }
 
@@ -55,6 +67,8 @@ struct WorkOrderUpdatePayload: Encodable {
     let maintenanceTaskId: String
     let vehicleId: String
     let assignedToId: String
+    let workOrderType: String
+    let partsSubStatus: String
     let status: String
     let repairDescription: String
     let labourCostTotal: Double
@@ -63,11 +77,15 @@ struct WorkOrderUpdatePayload: Encodable {
     let completedAt: String?
     let technicianNotes: String?
     let vinScanned: Bool
+    let repairImageUrls: [String]
+    let estimatedCompletionAt: String?
 
     enum CodingKeys: String, CodingKey {
         case maintenanceTaskId = "maintenance_task_id"
         case vehicleId         = "vehicle_id"
         case assignedToId      = "assigned_to_id"
+        case workOrderType     = "work_order_type"
+        case partsSubStatus    = "parts_sub_status"
         case status
         case repairDescription = "repair_description"
         case labourCostTotal   = "labour_cost_total"
@@ -76,12 +94,16 @@ struct WorkOrderUpdatePayload: Encodable {
         case completedAt       = "completed_at"
         case technicianNotes   = "technician_notes"
         case vinScanned        = "vin_scanned"
+        case repairImageUrls   = "repair_image_urls"
+        case estimatedCompletionAt = "estimated_completion_at"
     }
 
     init(from o: WorkOrder) {
         maintenanceTaskId = o.maintenanceTaskId.uuidString
         vehicleId         = o.vehicleId.uuidString
         assignedToId      = o.assignedToId.uuidString
+        workOrderType     = o.workOrderType.rawValue
+        partsSubStatus    = o.partsSubStatus.rawValue
         status            = o.status.rawValue
         repairDescription = o.repairDescription
         labourCostTotal   = o.labourCostTotal
@@ -90,6 +112,8 @@ struct WorkOrderUpdatePayload: Encodable {
         completedAt       = o.completedAt.map { iso.string(from: $0) }
         technicianNotes   = o.technicianNotes
         vinScanned        = o.vinScanned
+        repairImageUrls   = o.repairImageUrls
+        estimatedCompletionAt = o.estimatedCompletionAt.map { iso.string(from: $0) }
     }
 }
 
@@ -97,11 +121,12 @@ struct WorkOrderUpdatePayload: Encodable {
 
 struct WorkOrderService {
 
-    static func fetchAllWorkOrders() async throws -> [WorkOrder] {
+    static func fetchAllWorkOrders(limit: Int = 500) async throws -> [WorkOrder] {
         try await supabase
             .from("work_orders")
             .select()
             .order("created_at", ascending: false)
+            .limit(limit)
             .execute()
             .value
     }

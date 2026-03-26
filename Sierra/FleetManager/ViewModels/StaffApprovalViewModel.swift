@@ -34,7 +34,7 @@ final class StaffApprovalViewModel {
         errorMessage  = nil
         do {
             try await store.approveStaffApplication(id: applicationId, reviewedBy: adminId)
-            await store.loadAll()
+            await store.loadAll(force: true)
             if let updated = store.staffApplications.first(where: { $0.id == applicationId }),
                updated.status != .approved {
                 errorMessage = "Approval did not persist. Please retry."

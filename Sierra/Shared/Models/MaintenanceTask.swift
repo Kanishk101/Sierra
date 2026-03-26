@@ -90,3 +90,16 @@ struct MaintenanceTask: Identifiable, Codable, Hashable {
         case updatedAt           = "updated_at"
     }
 }
+
+extension MaintenanceTask {
+    /// Admin-approved + technician-selected tasks can still be persisted as Pending
+    /// (frontend-safe path that avoids backend enum-cast trigger issues).
+    /// Treat those rows as effectively Assigned in UI/workflows.
+    var isEffectivelyAssigned: Bool {
+        status == .assigned || (status == .pending && approvedById != nil && assignedToId != nil)
+    }
+
+    var isApprovedAwaitingAssignment: Bool {
+        status == .pending && approvedById != nil && assignedToId == nil
+    }
+}

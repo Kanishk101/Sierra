@@ -5,7 +5,6 @@ struct StaffTabView: View {
     @State private var segment: StaffSegment = .drivers
     @State private var selectedStaffMember: StaffMember?
     @State private var showCreateStaff = false
-    @State private var showFilterSheet = false
     @State private var selectedStatus: StaffStatus? = nil
 
     enum StaffSegment: String, CaseIterable {
@@ -24,19 +23,6 @@ struct StaffTabView: View {
     }
 
     private var visibleStaff: [StaffMember] { staffFor(segment) }
-    private var statusFilterBinding: Binding<String?> {
-        Binding(
-            get: { selectedStatus?.rawValue },
-            set: { newValue in selectedStatus = newValue.flatMap { StaffStatus(rawValue: $0) } }
-        )
-    }
-    private var statusFilterOptions: [FilterOption] {
-        [
-            FilterOption(id: StaffStatus.active.rawValue, label: "Active", icon: "checkmark.circle.fill", color: .green),
-            FilterOption(id: StaffStatus.suspended.rawValue, label: "Suspended", icon: "person.slash.fill", color: .red)
-        ]
-    }
-
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -64,9 +50,6 @@ struct StaffTabView: View {
             .toolbarBackground(.hidden, for: .navigationBar)
             .animation(.easeInOut(duration: 0.2), value: segment)
             .sheet(isPresented: $showCreateStaff) { NavigationStack { CreateStaffView() } }
-            .sheet(isPresented: $showFilterSheet) {
-                FilterSheetView(title: "Filter Staff", options: statusFilterOptions, selectedId: statusFilterBinding)
-            }
             .sheet(item: $selectedStaffMember) { member in
                 StaffDetailSheet(member: member)
                     .environment(AppDataStore.shared)
@@ -92,21 +75,46 @@ struct StaffTabView: View {
             .buttonStyle(.glass)
             .buttonBorderShape(.circle)
 
-            Button {
-                showFilterSheet = true
+            Menu {
+                Button {
+                    selectedStatus = nil
+                } label: {
+                    Text("All")
+                }
+                Divider()
+                ForEach([StaffStatus.active, .suspended], id: \.self) { status in
+                    Button {
+                        selectedStatus = status
+                    } label: {
+                        Text(status.rawValue)
+                    }
+                }
             } label: {
-                Image(systemName: selectedStatus == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
-                    .font(.title3.weight(.semibold))
+                HStack(spacing: 6) {
+                    Image(systemName: "line.3.horizontal.decrease.circle")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text(staffFilterTitle)
+                        .font(.system(size: 13, weight: .semibold))
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
             }
             .buttonStyle(.glass)
-            .buttonBorderShape(.circle)
-            .tint(selectedStatus == nil ? .secondary : .orange)
+            .buttonBorderShape(.capsule)
         }
+    }
+
+    private var staffFilterTitle: String {
+        selectedStatus?.rawValue ?? "All"
     }
 
     private var staffListContent: some View {
         Group {
-            if visibleStaff.isEmpty {
+            if store.isLoading && store.staff.isEmpty {
+                staffLoadingSkeleton
+            } else if visibleStaff.isEmpty {
                 VStack(spacing: 16) {
                     Spacer(minLength: 60)
                     Image(systemName: "person.2.slash").font(.system(size: 44, weight: .light)).foregroundStyle(.secondary)
@@ -135,7 +143,28 @@ struct StaffTabView: View {
             }
         }
         .task { if store.staff.isEmpty { await store.loadAll() } }
-        .refreshable { await store.loadAll() }
+        .refreshable { await store.loadAll(force: true) }
+    }
+
+    private var staffLoadingSkeleton: some View {
+        ScrollView {
+            LazyVStack(spacing: 10) {
+                ForEach(0..<7, id: \.self) { _ in
+                    HStack(spacing: 14) {
+                        SierraSkeletonView(width: 44, height: 44, cornerRadius: 22)
+                        VStack(alignment: .leading, spacing: 8) {
+                            SierraSkeletonView(width: 150, height: 14)
+                            SierraSkeletonView(width: 190, height: 10)
+                        }
+                        Spacer()
+                        SierraSkeletonView(width: 78, height: 20, cornerRadius: 10)
+                    }
+                    .padding(16)
+                    .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+            }
+            .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 32)
+        }
     }
 
     private func staffCard(_ member: StaffMember) -> some View {
@@ -196,12 +225,33 @@ private struct ApplicationsListView: View {
             .padding(.vertical, 8)
 
             if viewModel.filteredApplications.isEmpty {
-                VStack(spacing: 16) {
-                    Spacer()
-                    Image(systemName: "person.crop.circle.badge.checkmark").font(.system(size: 44, weight: .light)).foregroundStyle(.secondary)
-                    Text("No \(viewModel.selectedFilter.rawValue.lowercased()) applications").font(.body).foregroundStyle(.secondary)
-                    Spacer()
-                }.frame(maxWidth: .infinity)
+                if store.isLoading && store.staffApplications.isEmpty {
+                    ScrollView {
+                        LazyVStack(spacing: 8) {
+                            ForEach(0..<4, id: \.self) { _ in
+                                HStack(spacing: 14) {
+                                    SierraSkeletonView(width: 48, height: 48, cornerRadius: 24)
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        SierraSkeletonView(width: 160, height: 14)
+                                        SierraSkeletonView(width: 120, height: 10)
+                                    }
+                                    Spacer()
+                                    SierraSkeletonView(width: 70, height: 20, cornerRadius: 10)
+                                }
+                                .padding(16)
+                                .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            }
+                        }
+                        .padding(.horizontal, 20).padding(.bottom, 32)
+                    }
+                } else {
+                    VStack(spacing: 16) {
+                        Spacer()
+                        Image(systemName: "person.crop.circle.badge.checkmark").font(.system(size: 44, weight: .light)).foregroundStyle(.secondary)
+                        Text("No \(viewModel.selectedFilter.rawValue.lowercased()) applications").font(.body).foregroundStyle(.secondary)
+                        Spacer()
+                    }.frame(maxWidth: .infinity)
+                }
             } else {
                 ScrollView {
                     LazyVStack(spacing: 8) {
@@ -218,7 +268,7 @@ private struct ApplicationsListView: View {
                 await store.loadAll()
             }
         }
-        .refreshable { await store.loadAll() }
+        .refreshable { await store.loadAll(force: true) }
         .animation(.easeInOut(duration: 0.2), value: viewModel.selectedFilter)
         .sheet(item: $selectedApplication) { StaffReviewSheet(application: $0, viewModel: viewModel).presentationDetents([.large]) }
     }

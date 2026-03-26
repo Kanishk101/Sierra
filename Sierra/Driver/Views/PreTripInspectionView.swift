@@ -15,6 +15,7 @@ struct PreTripInspectionView: View {
     let driverId: UUID
     let inspectionType: InspectionType
     var onComplete: () -> Void
+    var onBlockedForVehicle: (() -> Void)?
 
     @Environment(AppDataStore.self) private var store
     @Environment(\.dismiss) private var dismiss
@@ -26,13 +27,15 @@ struct PreTripInspectionView: View {
         vehicleId: UUID,
         driverId: UUID,
         inspectionType: InspectionType = .preTripInspection,
-        onComplete: @escaping () -> Void
+        onComplete: @escaping () -> Void,
+        onBlockedForVehicle: (() -> Void)? = nil
     ) {
         self.tripId         = tripId
         self.vehicleId      = vehicleId
         self.driverId       = driverId
         self.inspectionType = inspectionType
         self.onComplete     = onComplete
+        self.onBlockedForVehicle = onBlockedForVehicle
         _viewModel = State(initialValue: PreTripInspectionViewModel(
             tripId: tripId,
             vehicleId: vehicleId,
@@ -201,13 +204,15 @@ struct PreTripInspectionView: View {
 
     // MARK: - Step 1: Checklist
     @State private var showWarnAlert = false
-    @State private var showFailAlert = false
     @State private var isSendingNotification = false
-    @State private var showMaintenanceRequestSheet = false
-    @State private var maintenanceDraftTitle = ""
-    @State private var maintenanceDraftDescription = ""
-    @State private var maintenanceIssueSummary = ""
-    @State private var preTripFailRaised = false
+    @State private var maintenanceDraft: MaintenanceDraft?
+
+    private struct MaintenanceDraft: Identifiable {
+        let id = UUID()
+        let title: String
+        let description: String
+        let issueSummary: String
+    }
 
     private var checklistStep: some View {
         VStack(spacing: 0) {
@@ -258,25 +263,31 @@ struct PreTripInspectionView: View {
             let hasWarnings = !viewModel.warningItems.isEmpty
             let hasFails    = !viewModel.failedItems.isEmpty
             let isPostTrip  = inspectionType == .postTripInspection
-            let maintenanceContinueLabel = "Log Maintenance and Continue"
+            let maintenanceContinueLabel = "Continue Inspection"
             let warnContinueLabel = isPostTrip ? "Log Maintenance and Continue" : "Notify Fleet Manager & Continue"
             Button {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 if hasFails {
                     if isPostTrip {
-                        maintenanceDraftTitle = "Post-Trip Defect"
-                        maintenanceDraftDescription = ""
-                        maintenanceIssueSummary = viewModel.failedItems.map(\.name).joined(separator: ", ")
-                        showMaintenanceRequestSheet = true
+                        maintenanceDraft = MaintenanceDraft(
+                            title: "Post-Trip Defect",
+                            description: "",
+                            issueSummary: viewModel.failedItems.map(\.name).joined(separator: ", ")
+                        )
                     } else {
-                        Task { await submitPreTripFailAndAlert() }
+                        maintenanceDraft = MaintenanceDraft(
+                            title: "Pre-Trip Defect",
+                            description: "",
+                            issueSummary: viewModel.failedItems.map(\.name).joined(separator: ", ")
+                        )
                     }
                 } else if hasWarnings {
                     if isPostTrip {
-                        maintenanceDraftTitle = "Post-Trip Warning"
-                        maintenanceDraftDescription = ""
-                        maintenanceIssueSummary = viewModel.warningItems.map(\.name).joined(separator: ", ")
-                        showMaintenanceRequestSheet = true
+                        maintenanceDraft = MaintenanceDraft(
+                            title: "Post-Trip Warning",
+                            description: "",
+                            issueSummary: viewModel.warningItems.map(\.name).joined(separator: ", ")
+                        )
                     } else {
                         showWarnAlert = true
                     }
@@ -318,13 +329,6 @@ struct PreTripInspectionView: View {
             .buttonStyle(.plain)
             .padding(.horizontal, 20)
             .padding(.bottom, 16)
-            // ── Fail alert: blocks until vehicle is changed ──────────
-            .alert("Vehicle Change Required", isPresented: $showFailAlert) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                let names = viewModel.failedItems.map(\.name).joined(separator: ", ")
-                Text("One or more items have FAILED inspection: \(names).\n\nA maintenance request will be submitted automatically. Please contact your fleet manager to arrange a vehicle change before proceeding.")
-            }
             // ── Warn alert: sends notification then advances ──────────
             .alert("Warnings Found", isPresented: $showWarnAlert) {
                 Button(warnContinueLabel) {
@@ -342,21 +346,32 @@ struct PreTripInspectionView: View {
                 let names = viewModel.warningItems.map(\.name).joined(separator: ", ")
                 Text("Some items have warnings: \(names).\n\nYour fleet manager will be notified. You may continue the inspection.")
             }
-            .sheet(isPresented: $showMaintenanceRequestSheet) {
+            .sheet(item: $maintenanceDraft) { draft in
                 DriverMaintenanceRequestView(
                     vehicleId: vehicleId,
                     driverId: driverId,
                     tripId: tripId,
                     sourceInspectionId: nil,
-                    initialTitle: maintenanceDraftTitle,
-                    initialDescription: maintenanceDraftDescription,
+                    initialTitle: draft.title,
+                    initialDescription: draft.description,
                     lockCoreFields: true,
                     fixedTripDisplayId: store.trips.first(where: { $0.id == tripId })?.taskId ?? tripId.uuidString.prefix(8).uppercased(),
-                    fixedIssueSummary: maintenanceIssueSummary,
+                    fixedIssueSummary: draft.issueSummary,
                     showsSeverityPicker: false,
                     onSubmitted: {
-                        withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
-                            viewModel.currentStep = 2
+                        if inspectionType == .postTripInspection {
+                            hasLoggedMaintenanceForPostTripIssues = true
+                            Task {
+                                await raisePostTripMaintenanceAlertForFleetManager(
+                                    issueSummary: draft.issueSummary,
+                                    draftTitle: draft.title
+                                )
+                                withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+                                    viewModel.currentStep = 2
+                                }
+                            }
+                        } else {
+                            Task { await raisePreTripDefectAlertForFleetManager(issueSummary: draft.issueSummary) }
                         }
                     }
                 )
@@ -380,84 +395,120 @@ struct PreTripInspectionView: View {
         )
     }
 
-    private func submitPreTripFailAndAlert() async {
-        if preTripFailRaised {
-            showFailAlert = true
-            return
-        }
-        guard !isSendingNotification else { return }
-        isSendingNotification = true
-        defer { isSendingNotification = false }
-
-        let failedNames = viewModel.failedItems.map(\.name)
-        let issueSummary = failedNames.joined(separator: ", ")
+    private func raisePreTripDefectAlertForFleetManager(issueSummary: String) async {
+        let issueSummary = issueSummary.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !issueSummary.isEmpty else {
-            showFailAlert = true
+            viewModel.submitError = "Issue summary is required."
             return
         }
 
         let trip = store.trips.first(where: { $0.id == tripId })
         let fleetManagerId = trip.flatMap { UUID(uuidString: $0.createdByAdminId) }
-        let vehiclePlate = store.vehicle(for: vehicleId)?.licensePlate ?? vehicleId.uuidString.prefix(8).description
         let driverName = store.staffMember(for: driverId)?.displayName ?? "Driver"
         let taskCode = trip?.taskId ?? tripId.uuidString.prefix(8).uppercased()
+        let vehiclePlate = store.vehicle(for: vehicleId)?.licensePlate ?? vehicleId.uuidString.prefix(8).description
 
-        let description = "Pre-trip inspection failed for trip \(taskCode). Issue(s): \(issueSummary). Vehicle change required before trip start."
+        let lat = trip?.originLatitude ?? trip?.destinationLatitude ?? 0
+        let lon = trip?.originLongitude ?? trip?.destinationLongitude ?? 0
+        let defectAlert = EmergencyAlert(
+            id: UUID(),
+            driverId: driverId,
+            tripId: tripId,
+            vehicleId: vehicleId,
+            latitude: lat,
+            longitude: lon,
+            alertType: .defect,
+            status: .active,
+            description: "Pre-trip fail: \(issueSummary)",
+            acknowledgedBy: nil,
+            acknowledgedAt: nil,
+            resolvedAt: nil,
+            triggeredAt: Date(),
+            createdAt: Date()
+        )
+        try? await EmergencyAlertService.addEmergencyAlert(defectAlert)
+        store.emergencyAlerts.insert(defectAlert, at: 0)
 
-        do {
-            try await MaintenanceTaskService.createDriverRequest(
-                vehicleId: vehicleId,
-                createdById: driverId,
-                title: "Pre-Trip Defect \u{2013} \(vehiclePlate)",
-                description: description,
-                priority: .urgent,
-                sourceInspectionId: nil
+        if let fleetManagerId {
+            try? await NotificationService.insertNotification(
+                recipientId: fleetManagerId,
+                type: .defectAlert,
+                title: "Pre-Trip Inspection Failed: \(taskCode)",
+                body: "\(driverName) submitted maintenance request for \(vehiclePlate) (\(issueSummary)). Reassign vehicle required.",
+                entityType: "pre_trip_defect",
+                entityId: tripId
             )
-
-            let lat = trip?.originLatitude ?? trip?.destinationLatitude ?? 0
-            let lon = trip?.originLongitude ?? trip?.destinationLongitude ?? 0
-            let defectAlert = EmergencyAlert(
-                id: UUID(),
-                driverId: driverId,
-                tripId: tripId,
-                vehicleId: vehicleId,
-                latitude: lat,
-                longitude: lon,
-                alertType: .defect,
-                status: .active,
-                description: "Pre-trip fail: \(issueSummary)",
-                acknowledgedBy: nil,
-                acknowledgedAt: nil,
-                resolvedAt: nil,
-                triggeredAt: Date(),
-                createdAt: Date()
+        } else {
+            await NotificationService.sendToAdmins(
+                type: .defectAlert,
+                title: "Pre-Trip Inspection Failed: \(taskCode)",
+                body: "\(driverName) submitted maintenance request for \(vehiclePlate) (\(issueSummary)). Reassign vehicle required.",
+                entityType: "pre_trip_defect",
+                entityId: tripId
             )
-            try? await EmergencyAlertService.addEmergencyAlert(defectAlert)
+        }
 
-            if let fleetManagerId {
-                try? await NotificationService.insertNotification(
-                    recipientId: fleetManagerId,
-                    type: .defectAlert,
-                    title: "Pre-Trip Inspection Failed: \(taskCode)",
-                    body: "\(driverName) reported pre-trip fail (\(issueSummary)). Reassign vehicle required.",
-                    entityType: "pre_trip_defect",
-                    entityId: tripId
-                )
-            } else {
-                await NotificationService.sendToAdmins(
-                    type: .defectAlert,
-                    title: "Pre-Trip Inspection Failed: \(taskCode)",
-                    body: "\(driverName) reported pre-trip fail (\(issueSummary)). Reassign vehicle required.",
-                    entityType: "pre_trip_defect",
-                    entityId: tripId
-                )
-            }
+        onBlockedForVehicle?()
+        onComplete()
+        dismiss()
+    }
 
-            preTripFailRaised = true
-            viewModel.maintenanceBannerText = "Maintenance request submitted for \(vehiclePlate)"
-            showFailAlert = true
-        } catch {
-            viewModel.submitError = error.localizedDescription
+    private func raisePostTripMaintenanceAlertForFleetManager(issueSummary: String, draftTitle: String) async {
+        let issueSummary = issueSummary.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !issueSummary.isEmpty else { return }
+
+        let trip = store.trips.first(where: { $0.id == tripId })
+        let fleetManagerId = trip.flatMap { UUID(uuidString: $0.createdByAdminId) }
+        let driverName = store.staffMember(for: driverId)?.displayName ?? "Driver"
+        let taskCode = trip?.taskId ?? tripId.uuidString.prefix(8).uppercased()
+        let vehiclePlate = store.vehicle(for: vehicleId)?.licensePlate ?? vehicleId.uuidString.prefix(8).description
+        let isWarning = draftTitle.lowercased().contains("warning")
+
+        let lat = trip?.destinationLatitude ?? trip?.originLatitude ?? 0
+        let lon = trip?.destinationLongitude ?? trip?.originLongitude ?? 0
+        let descriptor = isWarning ? "Post-trip warning" : "Post-trip defect"
+        let postTripAlert = EmergencyAlert(
+            id: UUID(),
+            driverId: driverId,
+            tripId: tripId,
+            vehicleId: vehicleId,
+            latitude: lat,
+            longitude: lon,
+            alertType: .defect,
+            status: .active,
+            description: "\(descriptor): \(issueSummary)",
+            acknowledgedBy: nil,
+            acknowledgedAt: nil,
+            resolvedAt: nil,
+            triggeredAt: Date(),
+            createdAt: Date()
+        )
+        try? await EmergencyAlertService.addEmergencyAlert(postTripAlert)
+        store.emergencyAlerts.insert(postTripAlert, at: 0)
+
+        let title = isWarning
+            ? "Post-Trip Inspection Warning: \(taskCode)"
+            : "Post-Trip Inspection Failed: \(taskCode)"
+        let body = "\(driverName) submitted maintenance request for \(vehiclePlate) (\(issueSummary)). No vehicle reassignment required."
+        let entityType = isWarning ? "post_trip_warning" : "post_trip_defect"
+
+        if let fleetManagerId {
+            try? await NotificationService.insertNotification(
+                recipientId: fleetManagerId,
+                type: .defectAlert,
+                title: title,
+                body: body,
+                entityType: entityType,
+                entityId: tripId
+            )
+        } else {
+            await NotificationService.sendToAdmins(
+                type: .defectAlert,
+                title: title,
+                body: body,
+                entityType: entityType,
+                entityId: tripId
+            )
         }
     }
 
@@ -588,6 +639,7 @@ struct PreTripInspectionView: View {
     @State private var fuelPhoto: UIImage?
     @State private var fuelPhotoData: Data?
     @State private var showFuelCamera = false
+    @State private var hasLoggedMaintenanceForPostTripIssues = false
 
     private var mediaStep: some View {
         VStack(spacing: 0) {
@@ -616,7 +668,7 @@ struct PreTripInspectionView: View {
                     odometerCaptureCard
 
                     // ── Failed items still need per-item photos ──────────────
-                    if !viewModel.itemsNeedingPhotos.isEmpty {
+                    if shouldShowIssueDocumentationSection {
                         VStack(alignment: .leading, spacing: 12) {
                             Label("Issue Documentation", systemImage: "exclamationmark.triangle.fill")
                                 .font(.caption.weight(.bold))
@@ -672,6 +724,15 @@ struct PreTripInspectionView: View {
             .disabled(!viewModel.canAdvanceToSummary)
             .padding(16)
         }
+    }
+
+    private var shouldShowIssueDocumentationSection: Bool {
+        guard !viewModel.itemsNeedingPhotos.isEmpty else { return false }
+        let isPostTrip = inspectionType == .postTripInspection
+        if isPostTrip && hasLoggedMaintenanceForPostTripIssues {
+            return false
+        }
+        return true
     }
 
     private var fuelGaugeCaptureCard: some View {

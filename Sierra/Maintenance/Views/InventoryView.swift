@@ -423,13 +423,13 @@ struct InventoryView: View {
                 .buttonStyle(.plain)
 
                 Button {
-                    partDetailMode = .placeOrder
+                    partDetailMode = .orderRequest
                     selectedPart = part
                 } label: {
                     HStack(spacing: 6) {
-                        Image(systemName: "cart.badge.plus")
+                        Image(systemName: "cart.badge.questionmark")
                             .font(.system(size: 12, weight: .semibold))
-                        Text("Place Order")
+                        Text("Order Request")
                             .font(.system(size: 13, weight: .bold, design: .rounded))
                     }
                     .foregroundStyle(.white)
@@ -649,7 +649,7 @@ struct InventoryView: View {
 private struct InventoryPartDetailSheet: View {
     enum ActionMode: String, CaseIterable {
         case request = "Request For"
-        case placeOrder = "Place Order"
+        case orderRequest = "Order Request"
     }
 
     let part: InventoryView.PartInventorySnapshot
@@ -667,10 +667,9 @@ private struct InventoryPartDetailSheet: View {
     private var currentUserId: UUID { AuthManager.shared.currentUser?.id ?? UUID() }
     private var myOpenTask: MaintenanceTask? {
         store.maintenanceTasks.first {
-            $0.assignedToId == currentUserId && ($0.status == .assigned || $0.status == .inProgress)
+            $0.assignedToId == currentUserId && ($0.isEffectivelyAssigned || $0.status == .inProgress)
         }
     }
-    private var userRole: UserRole? { AuthManager.shared.currentUser?.role }
     private var inStock: Int { max(0, part.availableSnapshot - part.allocatedQty - part.usedQty) }
     private var recentRequests: [SparePartsRequest] {
         store.sparePartsRequests
@@ -681,7 +680,6 @@ private struct InventoryPartDetailSheet: View {
             }
             .sorted { $0.createdAt > $1.createdAt }
     }
-    private var canPlaceDirectOrder: Bool { userRole == .fleetManager }
 
     var body: some View {
         ScrollView {
@@ -784,15 +782,15 @@ private struct InventoryPartDetailSheet: View {
                     .disabled(isSubmitting || myOpenTask == nil)
 
                     Button {
-                        actionMode = .placeOrder
+                        actionMode = .orderRequest
                         Task { await submitPartRequest(orderRequest: true) }
                     } label: {
-                        Text("Place Order")
+                        Text("Order Request")
                             .font(.system(size: 14, weight: .bold, design: .rounded))
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
-                            .background(Capsule().fill(canPlaceDirectOrder ? Color.blue : Color.appOrange))
+                            .background(Capsule().fill(Color.blue))
                     }
                     .buttonStyle(.plain)
                     .disabled(isSubmitting || myOpenTask == nil)
@@ -856,26 +854,6 @@ private struct InventoryPartDetailSheet: View {
             updatedAt: Date()
         )
         try? await store.addSparePartsRequest(request)
-        if canPlaceDirectOrder, orderRequest,
-           let inv = store.inventoryParts.first(where: {
-               $0.partName.caseInsensitiveCompare(part.name) == .orderedSame &&
-               (($0.partNumber ?? "").lowercased() == (part.partNumber ?? "").lowercased())
-           }) {
-            try? await store.updateInventoryPart(
-                id: inv.id,
-                partName: inv.partName,
-                partNumber: inv.partNumber,
-                supplier: inv.supplier,
-                category: inv.category,
-                unit: inv.unit,
-                currentQuantity: inv.currentQuantity,
-                reorderLevel: inv.reorderLevel,
-                onOrderQuantity: inv.onOrderQuantity + quantity,
-                expectedArrivalAt: etaDate,
-                compatibleVehicleIds: inv.compatibleVehicleIds,
-                isActive: inv.isActive
-            )
-        }
         dismiss()
     }
 

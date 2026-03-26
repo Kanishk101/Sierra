@@ -138,6 +138,8 @@ final class FuelLogViewModel {
 
     @MainActor
     func processReceiptWithOCR(_ image: UIImage) async {
+        submitError = nil
+        ocrAutoFilled = false
         isUploadingReceipt = true
         defer { isUploadingReceipt = false }
 
@@ -177,24 +179,33 @@ final class FuelLogViewModel {
         // Pattern match for per-litre price: "₹XX/L" or "Rate: XX"
         let ratePattern = /(?:Rate|Per\s*[Ll]itre?)[:\s]*(\d+\.?\d*)/
 
-        var didAutoFill = false
+        var extractedQuantity: String?
+        var extractedTotalCost: String?
+        var extractedRate: String?
 
         for line in lines {
-            if quantity.isEmpty, let match = line.firstMatch(of: litresPattern) {
-                quantity = String(match.1)
-                didAutoFill = true
+            if extractedQuantity == nil, let match = line.firstMatch(of: litresPattern) {
+                extractedQuantity = String(match.1)
             }
-            if totalCost.isEmpty, let match = line.firstMatch(of: amountPattern) {
-                totalCost = String(match.1)
-                didAutoFill = true
+            if extractedTotalCost == nil, let match = line.firstMatch(of: amountPattern) {
+                extractedTotalCost = String(match.1)
             }
-            if costPerLitre.isEmpty, let match = line.firstMatch(of: ratePattern) {
-                costPerLitre = String(match.1)
-                didAutoFill = true
+            if extractedRate == nil, let match = line.firstMatch(of: ratePattern) {
+                extractedRate = String(match.1)
             }
         }
 
-        if didAutoFill {
+        if let extractedQuantity {
+            quantity = extractedQuantity
+        }
+        if let extractedTotalCost {
+            totalCost = extractedTotalCost
+        }
+        if let extractedRate {
+            costPerLitre = extractedRate
+        }
+
+        if extractedQuantity != nil || extractedTotalCost != nil || extractedRate != nil {
             ocrAutoFilled = true
         }
         recalculateTotalCost()

@@ -11,6 +11,9 @@ struct WorkOrderDetailSheet: View {
     @State private var rejectingPartId: UUID?
     @State private var rejectReason = ""
     @State private var showStaffSheet = false
+    @State private var orderingPartTarget: SparePartsRequest?
+    @State private var orderArrivalAt: Date = Date().addingTimeInterval(48 * 3600)
+    @State private var orderReference: String = ""
 
     private var currentUserId: UUID { AuthManager.shared.currentUser?.id ?? UUID() }
     private var workOrder: WorkOrder? { store.workOrder(forMaintenanceTask: task.id) }
@@ -52,6 +55,7 @@ struct WorkOrderDetailSheet: View {
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
             .navigationTitle("Work Order")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }.foregroundStyle(Color.appOrange)
@@ -62,6 +66,56 @@ struct WorkOrderDetailSheet: View {
                     StaffDetailSheet(member: staff)
                         .environment(store)
                 }
+            }
+            .sheet(item: $orderingPartTarget) { part in
+                NavigationStack {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Place order for \(part.partName)")
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                        DatePicker(
+                            "Expected Arrival",
+                            selection: $orderArrivalAt,
+                            in: Date()...,
+                            displayedComponents: [.date, .hourAndMinute]
+                        )
+                        .datePickerStyle(.compact)
+                        TextField("Order reference (optional)", text: $orderReference)
+                            .textFieldStyle(.roundedBorder)
+                        Button {
+                            Task {
+                                try? await store.placeOrderForPartRequest(
+                                    id: part.id,
+                                    reviewedBy: currentUserId,
+                                    expectedArrivalAt: orderArrivalAt,
+                                    orderReference: orderReference.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                        ? nil
+                                        : orderReference.trimmingCharacters(in: .whitespacesAndNewlines)
+                                )
+                                orderingPartTarget = nil
+                            }
+                        } label: {
+                            Text("Confirm Place Order")
+                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                                .foregroundStyle(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(Color.appTextPrimary, in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        Spacer()
+                    }
+                    .padding(20)
+                    .background(Color.appSurface.ignoresSafeArea())
+                    .navigationTitle("Place Order")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Cancel") { orderingPartTarget = nil }
+                                .foregroundStyle(Color.appOrange)
+                        }
+                    }
+                }
+                .presentationDetents([.medium])
             }
             .task {
                 if let wo = workOrder {
@@ -232,6 +286,11 @@ struct WorkOrderDetailSheet: View {
                 if let desc = phase.description, !desc.isEmpty {
                     Text(desc).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 }
+                if let target = phase.plannedCompletionAt {
+                    Text("Target \(target.formatted(.dateTime.month(.abbreviated).day().hour().minute()))")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color.appOrange)
+                }
                 if phase.isCompleted, let at = phase.completedAt {
                     Text("Completed \(at.formatted(.dateTime.month(.abbreviated).day().hour().minute()))")
                         .font(.system(size: 10)).foregroundStyle(.green)
@@ -280,6 +339,8 @@ struct WorkOrderDetailSheet: View {
             HStack(spacing: 16) {
                 Label("Qty: \(part.quantity)", systemImage: "number")
                     .font(.caption).foregroundStyle(.secondary)
+                Label("Inventory: \(availableInventoryQuantity(for: part))", systemImage: "shippingbox")
+                    .font(.caption).foregroundStyle(.green)
                 if let cost = part.estimatedUnitCost {
                     Label("₹\(cost, specifier: "%.0f")/unit", systemImage: "indianrupeesign.circle")
                         .font(.caption).foregroundStyle(.secondary)
@@ -308,17 +369,33 @@ struct WorkOrderDetailSheet: View {
     }
 
     private func partActionButtons(_ part: SparePartsRequest) -> some View {
-        HStack(spacing: 10) {
+        let remainingToOrder = max(0, part.quantity - max(0, part.quantityAllocated))
+        return HStack(spacing: 10) {
             Button {
-                Task { await approvePart(part) }
+                Task { try? await store.approvePartRequestFromInventory(id: part.id, reviewedBy: currentUserId) }
             } label: {
-                Label("Approve", systemImage: "checkmark")
+                Label("Approve Inventory", systemImage: "checkmark")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 14).padding(.vertical, 7)
                     .background(Color.green, in: Capsule())
             }
             .buttonStyle(.plain)
+
+            if remainingToOrder > 0 {
+                Button {
+                    orderArrivalAt = part.expectedArrivalAt ?? Date().addingTimeInterval(48 * 3600)
+                    orderReference = part.orderReference ?? ""
+                    orderingPartTarget = part
+                } label: {
+                    Label("Place Order", systemImage: "cart.badge.plus")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14).padding(.vertical, 7)
+                        .background(Color.blue, in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
 
             Button {
                 withAnimation { rejectingPartId = part.id; rejectReason = "" }
@@ -535,19 +612,6 @@ struct WorkOrderDetailSheet: View {
 
     // MARK: - Actions
 
-    private func approvePart(_ part: SparePartsRequest) async {
-        try? await store.approveSparePartsRequest(id: part.id, reviewedBy: currentUserId)
-        // Update parts_sub_status to approved if all pending parts are now approved
-        if let wo = workOrder {
-            let remaining = parts.filter { $0.status == .pending && $0.id != part.id }
-            let newStatus: PartsSubStatus = remaining.isEmpty ? .approved : .partiallyReady
-            try? await WorkOrderService.updatePartsSubStatus(workOrderId: wo.id, status: newStatus)
-            if let idx = store.workOrders.firstIndex(where: { $0.id == wo.id }) {
-                store.workOrders[idx].partsSubStatus = newStatus
-            }
-        }
-    }
-
     private func rejectPart(_ part: SparePartsRequest) async {
         let reason = rejectReason.trimmingCharacters(in: .whitespaces)
         try? await store.rejectSparePartsRequest(id: part.id, reviewedBy: currentUserId, reason: reason)
@@ -603,5 +667,13 @@ struct WorkOrderDetailSheet: View {
         case .rejected:  return .red
         case .fulfilled: return .blue
         }
+    }
+
+    private func availableInventoryQuantity(for part: SparePartsRequest) -> Int {
+        let match = store.inventoryParts.first {
+            $0.partName.caseInsensitiveCompare(part.partName) == .orderedSame
+            && (($0.partNumber ?? "").caseInsensitiveCompare(part.partNumber ?? "") == .orderedSame)
+        }
+        return max(0, match?.currentQuantity ?? part.quantityAvailable)
     }
 }

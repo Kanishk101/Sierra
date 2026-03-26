@@ -10,12 +10,25 @@ final class DeviationDetector {
 
     // MARK: - Configuration
 
-    let deviationThresholdMetres: Double = 200
-    let deviationCooldownSeconds: TimeInterval = 60
+    let deviationThresholdMetres: Double = 120
+    let recoveryThresholdMetres: Double = 80
+    let deviationRecordIntervalSeconds: TimeInterval = 20
+    let minMovementForFollowupRecordMetres: Double = 18
+    let minDistanceDeltaForFollowupRecordMetres: Double = 14
+
+    enum Transition {
+        case enteredDeviation
+        case exitedDeviation
+        case stayingOffRoute
+        case stayingOnRoute
+    }
 
     // MARK: - State
 
+    private(set) var isDeviationActive: Bool = false
     private(set) var lastDeviationRecordedAt: Date = .distantPast
+    private(set) var lastDeviationRecordedCoordinate: CLLocationCoordinate2D?
+    private(set) var lastDeviationRecordedDistanceMetres: Double = 0
 
     // MARK: - Distance from Route
 
@@ -40,14 +53,49 @@ final class DeviationDetector {
 
     // MARK: - Cooldown
 
-    /// Returns `true` if the cooldown has elapsed and a new deviation should be recorded.
-    func shouldRecordDeviation() -> Bool {
-        Date().timeIntervalSince(lastDeviationRecordedAt) > deviationCooldownSeconds
+    func transition(for deviationMetres: Double) -> Transition {
+        if isDeviationActive {
+            if deviationMetres <= recoveryThresholdMetres {
+                isDeviationActive = false
+                return .exitedDeviation
+            }
+            return .stayingOffRoute
+        }
+
+        if deviationMetres > deviationThresholdMetres {
+            isDeviationActive = true
+            return .enteredDeviation
+        }
+        return .stayingOnRoute
     }
 
-    /// Call after recording a deviation event to reset the cooldown timer.
-    func markDeviationRecorded() {
-        lastDeviationRecordedAt = Date()
+    func shouldRecordFollowupSample(
+        at coordinate: CLLocationCoordinate2D,
+        deviationMetres: Double,
+        now: Date = Date()
+    ) -> Bool {
+        guard isDeviationActive else { return false }
+        guard now.timeIntervalSince(lastDeviationRecordedAt) >= deviationRecordIntervalSeconds else { return false }
+
+        guard let lastCoordinate = lastDeviationRecordedCoordinate else { return true }
+
+        let moved = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+            .distance(from: CLLocation(latitude: lastCoordinate.latitude, longitude: lastCoordinate.longitude))
+        let deviationDelta = abs(deviationMetres - lastDeviationRecordedDistanceMetres)
+
+        return moved >= minMovementForFollowupRecordMetres
+            || deviationDelta >= minDistanceDeltaForFollowupRecordMetres
+    }
+
+    /// Call after recording a deviation event sample.
+    func markDeviationRecorded(
+        at coordinate: CLLocationCoordinate2D,
+        deviationMetres: Double,
+        now: Date = Date()
+    ) {
+        lastDeviationRecordedAt = now
+        lastDeviationRecordedCoordinate = coordinate
+        lastDeviationRecordedDistanceMetres = deviationMetres
     }
 
     // MARK: - Private

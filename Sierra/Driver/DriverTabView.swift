@@ -103,7 +103,7 @@ struct DriverTabView: View {
         }
         .task {
             guard let driverId = AuthManager.shared.currentUser?.id else { return }
-            await store.refreshDriverData(driverId: driverId)
+            await store.refreshDriverData(driverId: driverId, force: true)
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: UInt64(store.driverRefreshInterval * 1_000_000_000))
                 guard let currentDriverId = AuthManager.shared.currentUser?.id else { continue }

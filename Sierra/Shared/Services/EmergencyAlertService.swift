@@ -50,11 +50,12 @@ struct EmergencyAlertInsertPayload: Encodable {
 
 struct EmergencyAlertService {
 
-    static func fetchAllEmergencyAlerts() async throws -> [EmergencyAlert] {
+    static func fetchAllEmergencyAlerts(limit: Int = 500) async throws -> [EmergencyAlert] {
         try await supabase
             .from("emergency_alerts")
             .select()
             .order("triggered_at", ascending: false)
+            .limit(limit)
             .execute()
             .value
     }
@@ -74,6 +75,34 @@ struct EmergencyAlertService {
             .from("emergency_alerts")
             .select()
             .eq("driver_id", value: driverId.uuidString)
+            .order("triggered_at", ascending: false)
+            .execute()
+            .value
+    }
+
+    static func fetchActiveDefectAlerts(
+        vehicleId: UUID,
+        tripId: UUID? = nil
+    ) async throws -> [EmergencyAlert] {
+        if let tripId {
+            return try await supabase
+                .from("emergency_alerts")
+                .select()
+                .eq("status", value: EmergencyAlertStatus.active.rawValue)
+                .eq("alert_type", value: EmergencyAlertType.defect.rawValue)
+                .eq("vehicle_id", value: vehicleId.uuidString)
+                .eq("trip_id", value: tripId.uuidString)
+                .order("triggered_at", ascending: false)
+                .execute()
+                .value
+        }
+
+        return try await supabase
+            .from("emergency_alerts")
+            .select()
+            .eq("status", value: EmergencyAlertStatus.active.rawValue)
+            .eq("alert_type", value: EmergencyAlertType.defect.rawValue)
+            .eq("vehicle_id", value: vehicleId.uuidString)
             .order("triggered_at", ascending: false)
             .execute()
             .value

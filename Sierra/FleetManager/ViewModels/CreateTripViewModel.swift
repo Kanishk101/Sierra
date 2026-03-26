@@ -114,6 +114,56 @@ final class CreateTripViewModel {
         tripGeofences.remove(at: index)
     }
 
+    // MARK: - Route Point Editing
+
+    func setOrigin(_ originAddress: GeocodedAddress?) {
+        selectedOrigin = originAddress
+        origin = originAddress?.displayName ?? ""
+    }
+
+    func setDestination(_ destinationAddress: GeocodedAddress?) {
+        selectedDestination = destinationAddress
+        destination = destinationAddress?.displayName ?? ""
+    }
+
+    func addStop(_ stop: GeocodedAddress) {
+        stops.append(stop)
+    }
+
+    func removeStop(id: UUID) {
+        guard let index = stops.firstIndex(where: { $0.id == id }) else { return }
+        stops.remove(at: index)
+    }
+
+    func moveStops(fromOffsets: IndexSet, toOffset: Int) {
+        guard !fromOffsets.isEmpty else { return }
+        var reordered = stops
+        let movingIndices = fromOffsets.sorted()
+        let movedItems = movingIndices.map { reordered[$0] }
+
+        for index in movingIndices.reversed() {
+            reordered.remove(at: index)
+        }
+
+        var destination = toOffset
+        let removedBeforeDestination = movingIndices.filter { $0 < toOffset }.count
+        destination -= removedBeforeDestination
+        destination = max(0, min(destination, reordered.count))
+
+        reordered.insert(contentsOf: movedItems, at: destination)
+        stops = reordered
+    }
+
+    func applyRoutePins(
+        origin: GeocodedAddress?,
+        destination: GeocodedAddress?,
+        stops: [GeocodedAddress]
+    ) {
+        setOrigin(origin)
+        setDestination(destination)
+        self.stops = stops
+    }
+
     // MARK: - Geocoding
 
     func geocodeAddress(_ address: String) async -> (Double, Double)? {

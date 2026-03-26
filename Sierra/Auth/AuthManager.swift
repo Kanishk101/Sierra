@@ -84,6 +84,7 @@ final class AuthManager {
 
         do {
             try await supabase.auth.signIn(email: email, password: password)
+            await SupabaseManager.persistCurrentSessionSnapshot()
         } catch {
             #if DEBUG
             let step1ms = Int(Date().timeIntervalSince(step1Start) * 1000)
@@ -267,6 +268,7 @@ final class AuthManager {
         saveSessionToken()
         guard let user = currentUser else { return }
         Task {
+            await SupabaseManager.persistCurrentSessionSnapshot()
             switch user.role {
             case .fleetManager:          await AppDataStore.shared.loadAll()
             case .driver:                await AppDataStore.shared.refreshDriverData(driverId: user.id)
@@ -311,6 +313,7 @@ final class AuthManager {
         KeychainService.delete(key: Keys.hashedCred)
         KeychainService.delete(key: Keys.sessionToken)
         KeychainService.delete(key: Keys.backgroundTS)
+        SecureSessionStore.shared.clearSupabaseSession()
         // Biometric preference is intentionally NOT cleared on signOut —
         // keeping it enables the biometric button to reappear on next login.
         // See BiometricPreference.clearSessionData() for rationale.
@@ -369,7 +372,10 @@ final class AuthManager {
         } else {
             setFullAuthState(false, for: nil)
         }
-        Task { _ = try? await supabase.auth.session }
+        let expectedUserId = currentUser?.id
+        Task {
+            _ = try? await SupabaseManager.ensureValidSession(expectedUserId: expectedUserId)
+        }
     }
 
     private func setFullAuthState(_ enabled: Bool, for userId: UUID?) {

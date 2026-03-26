@@ -12,6 +12,7 @@ struct SixDigitInputView: View {
     var onComplete: () -> Void
 
     @State private var code: String = ""
+    @State private var lastAutoSubmittedCode: String?
 
     private var isKeyboardActive: Binding<Bool> {
         Binding(
@@ -24,47 +25,50 @@ struct SixDigitInputView: View {
 
     var body: some View {
         ZStack {
-            VStack(spacing: 10) {
-                OTPHiddenTextField(
-                    text: $code,
-                    cursorIndex: Binding(
-                        get: { focusedIndex ?? max(0, min(code.count, 6)) },
-                        set: { focusedIndex = max(0, min($0, 6)) }
-                    ),
-                    isFirstResponder: isKeyboardActive
-                )
-                .frame(width: 1, height: 1)
-                .opacity(0.01)
-                .accessibilityHidden(true)
+            OTPHiddenTextField(
+                text: $code,
+                cursorIndex: Binding(
+                    get: { focusedIndex ?? max(0, min(code.count, 6)) },
+                    set: { focusedIndex = max(0, min($0, 6)) }
+                ),
+                isFirstResponder: isKeyboardActive
+            )
+            .frame(maxWidth: .infinity, minHeight: 64, maxHeight: 64)
+            .opacity(0.015)
 
-                HStack(spacing: 12) {
-                    ForEach(0..<6, id: \.self) { index in
-                        otpBox(at: index)
-                            .onTapGesture {
-                                focusAt(index)
-                            }
-                            .accessibilityLabel("Digit \(index + 1)")
-                            .accessibilityValue(character(at: index).isEmpty ? "Empty" : character(at: index))
-                    }
-                }
-                .padding(.horizontal, 4)
-                .frame(maxWidth: .infinity)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    if focusedIndex == nil {
-                        focusedIndex = max(0, min(code.count, 5))
-                    }
+            // Keep boxes visual-only so native UITextField interactions
+            // (OTP autofill/paste/select) work reliably.
+            HStack(spacing: 12) {
+                ForEach(0..<6, id: \.self) { index in
+                    otpBox(at: index)
+                        .accessibilityLabel("Digit \(index + 1)")
+                        .accessibilityValue(character(at: index).isEmpty ? "Empty" : character(at: index))
                 }
             }
+            .padding(.horizontal, 4)
+            .frame(maxWidth: .infinity)
+            .allowsHitTesting(false)
         }
+        .contentShape(Rectangle())
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                focusedIndex = max(0, min(code.count, 6))
+            }
+        )
         .onAppear {
-            syncCodeFromDigits()
+            code = sanitizedCode(from: digits.joined())
             if focusedIndex == nil {
-                focusedIndex = max(0, min(code.count, 5))
+                focusedIndex = max(0, min(code.count, 6))
+            }
+        }
+        .onChange(of: digits) { _, newDigits in
+            let fromDigits = sanitizedCode(from: newDigits.joined())
+            if fromDigits != code {
+                code = fromDigits
             }
         }
         .onChange(of: code) { _, newValue in
-            let sanitized = String(newValue.filter { $0.isNumber }.prefix(6))
+            let sanitized = sanitizedCode(from: newValue)
             if sanitized != newValue {
                 code = sanitized
                 return
@@ -75,7 +79,7 @@ struct SixDigitInputView: View {
 
     private func otpBox(at index: Int) -> some View {
         let char = character(at: index)
-        let activeIndex = focusedIndex ?? max(0, min(code.count, 5))
+        let activeIndex = focusedIndex.map { max(0, min($0, 5)) } ?? max(0, min(code.count, 5))
         let isActive = activeIndex == index
 
         return ZStack {
@@ -113,32 +117,31 @@ struct SixDigitInputView: View {
         focusedIndex = max(0, min(index, code.count))
     }
 
-    private func syncCodeFromDigits() {
-        if digits.count != 6 {
-            digits = Array(repeating: "", count: 6)
-        }
-        let joined = digits.joined().filter { $0.isNumber }
-        code = String(joined.prefix(6))
-        syncDigitsFromCode(code)
-    }
-
     private func syncDigitsFromCode(_ value: String) {
-        if digits.count != 6 {
-            digits = Array(repeating: "", count: 6)
-        }
-
         var next = Array(repeating: "", count: 6)
         for (i, c) in value.enumerated() where i < 6 {
             next[i] = String(c)
         }
-        digits = next
 
-        if value.count == 6 {
-            focusedIndex = 5
-            onComplete()
-        } else {
-            focusedIndex = max(0, min(value.count, 5))
+        let nextFocus = max(0, min(value.count, 6))
+
+        if digits != next {
+            digits = next
         }
+        if focusedIndex != nextFocus {
+            focusedIndex = nextFocus
+        }
+
+        if value.count == 6, lastAutoSubmittedCode != value {
+            lastAutoSubmittedCode = value
+            onComplete()
+        } else if value.count < 6 {
+            lastAutoSubmittedCode = nil
+        }
+    }
+
+    private func sanitizedCode(from raw: String) -> String {
+        String(raw.filter(\.isNumber).prefix(6))
     }
 }
 
@@ -194,14 +197,11 @@ private struct OTPHiddenTextField: UIViewRepresentable {
 
         private func commit(text: String, cursorIndex: Int) {
             let boundedCursor = max(0, min(cursorIndex, text.count))
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                if self.parent.text != text {
-                    self.parent.text = text
-                }
-                if self.parent.cursorIndex != boundedCursor {
-                    self.parent.cursorIndex = boundedCursor
-                }
+            if parent.text != text {
+                parent.text = text
+            }
+            if parent.cursorIndex != boundedCursor {
+                parent.cursorIndex = boundedCursor
             }
         }
 
@@ -214,18 +214,20 @@ private struct OTPHiddenTextField: UIViewRepresentable {
             }
 
             // Native paste / OTP autofill can provide multiple digits at once.
-            // Replace whole code with sanitized payload to avoid odd insert behavior.
+            // Apply at current cursor/range so edit behavior matches UITextField semantics.
             let pastedDigits = string.filter(\.isNumber)
             if pastedDigits.count > 1 {
-                let sanitized = String(pastedDigits.prefix(6))
-                commit(text: sanitized, cursorIndex: min(sanitized.count, 5))
+                let updated = current.replacingCharacters(in: swiftRange, with: pastedDigits)
+                let digitsOnly = String(updated.filter(\.isNumber).prefix(6))
+                let cursor = max(0, min(range.location + pastedDigits.count, digitsOnly.count))
+                commit(text: digitsOnly, cursorIndex: cursor)
                 return false
             }
 
-            // Number pad backspace on a hidden field can sometimes report a 0-length delete.
-            // Handle it explicitly to keep UX stable when deleting inside OTP boxes.
-            if string.isEmpty && range.length == 0 && range.location > 0 {
-                let deleteLocation = max(0, min(range.location - 1, current.count - 1))
+            // Number pad backspace on hidden fields can report 0-length deletes.
+            // Delete the character immediately before cursor in that case.
+            if string.isEmpty, range.length == 0, range.location > 0, !current.isEmpty {
+                let deleteLocation = max(0, min(range.location, current.count) - 1)
                 guard let deleteStart = current.index(current.startIndex, offsetBy: deleteLocation, limitedBy: current.endIndex),
                       let deleteEnd = current.index(deleteStart, offsetBy: 1, limitedBy: current.endIndex) else {
                     return false
@@ -249,9 +251,14 @@ private struct OTPHiddenTextField: UIViewRepresentable {
                 return false
             }
 
-            let updated = current.replacingCharacters(in: swiftRange, with: string)
+            // Ignore non-digit single-key input.
+            if !string.isEmpty && pastedDigits.isEmpty {
+                return false
+            }
+
+            let updated = current.replacingCharacters(in: swiftRange, with: pastedDigits)
             let digitsOnly = String(updated.filter { $0.isNumber }.prefix(6))
-            let newCursor = max(0, min(range.location + string.count, digitsOnly.count))
+            let newCursor = max(0, min(range.location + pastedDigits.count, digitsOnly.count))
             commit(text: digitsOnly, cursorIndex: newCursor)
             return false
         }

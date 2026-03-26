@@ -107,6 +107,7 @@ struct MaintenanceHistoryDetailView: View {
         .background(Color.appSurface.ignoresSafeArea())
         .navigationTitle("Service Record")
         .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
     }
 
     // MARK: - Status Badge

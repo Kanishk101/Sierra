@@ -62,10 +62,13 @@ struct NotificationCentreView: View {
                         }
                     }
                     .listStyle(.insetGrouped)
+                    .scrollContentBackground(.hidden)
                 }
             }
             .navigationTitle("Notifications")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .background(Color.clear)
             .task {
                 await store.loadAndSubscribeNotifications(for: currentUserId, forceRefresh: true)
             }

@@ -8,6 +8,11 @@ import Supabase
 final class WorkOrderPhaseService {
 
     private let client = SupabaseManager.shared.client
+    private let iso: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
 
     // MARK: - Fetch
 
@@ -28,14 +33,20 @@ final class WorkOrderPhaseService {
         phaseNumber: Int,
         title: String,
         description: String? = nil,
-        estimatedMinutes: Int? = nil
+        estimatedMinutes: Int? = nil,
+        plannedCompletionAt: Date? = nil,
+        isLocked: Bool = false
     ) async throws -> WorkOrderPhase {
+        let now = iso.string(from: Date())
         let payload: [String: AnyJSON] = [
             "work_order_id": .string(workOrderId.uuidString),
             "phase_number":  .double(Double(phaseNumber)),
             "title":         .string(title),
             "description":   description.map { .string($0) } ?? .null,
             "estimated_minutes": estimatedMinutes.map { .double(Double($0)) } ?? .null,
+            "planned_completion_at": plannedCompletionAt.map { .string(iso.string(from: $0)) } ?? .null,
+            "is_locked": .bool(isLocked),
+            "locked_at": isLocked ? .string(now) : .null,
             "is_completed":  .bool(false)
         ]
         return try await client
@@ -54,13 +65,19 @@ final class WorkOrderPhaseService {
         phaseNumber: Int,
         title: String,
         description: String?,
-        estimatedMinutes: Int?
+        estimatedMinutes: Int?,
+        plannedCompletionAt: Date?,
+        isLocked: Bool
     ) async throws {
+        let now = iso.string(from: Date())
         let payload: [String: AnyJSON] = [
             "phase_number": .double(Double(phaseNumber)),
             "title": .string(title),
             "description": description.map { .string($0) } ?? .null,
-            "estimated_minutes": estimatedMinutes.map { .double(Double($0)) } ?? .null
+            "estimated_minutes": estimatedMinutes.map { .double(Double($0)) } ?? .null,
+            "planned_completion_at": plannedCompletionAt.map { .string(iso.string(from: $0)) } ?? .null,
+            "is_locked": .bool(isLocked),
+            "locked_at": isLocked ? .string(now) : .null
         ]
         try await client
             .from("work_order_phases")

@@ -11,6 +11,7 @@ struct NavigationHUDOverlay: View {
     @State private var showEndTripConfirm = false
     @State private var showSOSAlert = false
     @State private var showIncidentReport = false
+    @State private var showFuelLog = false
     @State private var isVoiceMuted = false
     @State private var issueText = ""
     @State private var showIssueSentToast = false
@@ -18,6 +19,7 @@ struct NavigationHUDOverlay: View {
     @State private var isEndingTrip = false
     @State private var endTripError: String?
     #if DEBUG
+    // Debug simulation state kept for developer builds, but no in-UI trigger.
     @State private var showSimPanel = false
     @State private var simScrubValue: Double = 0
     #endif
@@ -28,24 +30,7 @@ struct NavigationHUDOverlay: View {
         ZStack {
             VStack(spacing: 0) {
                 if !coordinator.currentStepInstruction.isEmpty {
-                    HStack {
-                        turnIndicatorPill
-                        Spacer()
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 54)
-                    .padding(.bottom, 6)
-                }
-
-                // Top instruction banner
-                if !coordinator.currentStepInstruction.isEmpty {
                     instructionBanner
-                }
-
-                // GAP-1: Traffic incident banner
-                if showIncidentBanner, let incident = coordinator.trafficService.nearestIncident {
-                    incidentBanner(incident)
-                        .transition(.move(edge: .top).combined(with: .opacity))
                 }
 
                 Spacer()
@@ -55,13 +40,16 @@ struct NavigationHUDOverlay: View {
                     deviationBanner
                 }
 
-                // Speed badge + speed limit + compact progress
-                HStack {
+                // Speed + realtime issue + route progress (same row)
+                HStack(alignment: .center, spacing: 10) {
                     speedBadge
+                    if let incident = coordinator.trafficService.nearestIncident {
+                        compactRealtimeIssueBadge(incident)
+                    }
+                    Spacer(minLength: 0)
                     if coordinator.hasRenderableRoute {
                         routeProgressBadge
                     }
-                    Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 8)
@@ -78,6 +66,13 @@ struct NavigationHUDOverlay: View {
                     vehicleId: UUID(uuidString: coordinator.trip.vehicleId ?? ""),
                     currentLocation: coordinator.currentLocation  // BUG-03 FIX
                 )
+            }
+            .sheet(isPresented: $showFuelLog) {
+                if let vehicleIdStr = coordinator.trip.vehicleId,
+                   let vehicleId = UUID(uuidString: vehicleIdStr),
+                   let driverId = AuthManager.shared.currentUser?.id {
+                    FuelLogView(vehicleId: vehicleId, driverId: driverId, tripId: coordinator.trip.id)
+                }
             }
 
             // Dark overlay modals
@@ -99,13 +94,6 @@ struct NavigationHUDOverlay: View {
                     .zIndex(220)
             }
 
-            #if DEBUG
-            if showSimPanel {
-                debugSimPanel
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
-                    .zIndex(230)
-            }
-            #endif
         }
     }
 
@@ -178,8 +166,10 @@ struct NavigationHUDOverlay: View {
             RoundedRectangle(cornerRadius: 24)
                 .stroke(Color.white.opacity(0.06), lineWidth: 1)
         )
-        .padding(.horizontal, 16)
-        .padding(.top, 60)
+        // Leave room for close button (left) and overview/compass stack (right).
+        .padding(.leading, 64)
+        .padding(.trailing, 64)
+        .padding(.top, 44)
     }
 
     private func maneuverIcon(for instruction: String) -> String {
@@ -370,9 +360,6 @@ struct NavigationHUDOverlay: View {
     private var speedBadge: some View {
         ZStack {
             Circle()
-                .stroke(Color.appOrange.opacity(0.3), lineWidth: 4)
-                .frame(width: 80, height: 80)
-            Circle()
                 .fill(Color(red: 0.11, green: 0.12, blue: 0.16))
                 .frame(width: 68, height: 68)
             VStack(spacing: 1) {
@@ -385,11 +372,6 @@ struct NavigationHUDOverlay: View {
                     .foregroundColor(.white.opacity(0.6))
             }
         }
-        #if DEBUG
-        .onTapGesture(count: 3) {
-            withAnimation(.spring(response: 0.35)) { showSimPanel = true }
-        }
-        #endif
     }
 
     // MARK: - Action Bar
@@ -398,6 +380,9 @@ struct NavigationHUDOverlay: View {
         HStack(spacing: 10) {
             actionButton("SOS", icon: "sos", color: SierraTheme.Colors.danger) {
                 showSOSAlert = true
+            }
+            actionButton("Fuel", icon: "fuelpump.fill", color: .appOrange) {
+                showFuelLog = true
             }
             actionButton("Incident", icon: "exclamationmark.triangle.fill", color: .appOrange) {
                 showIncidentReport = true
@@ -446,11 +431,6 @@ struct NavigationHUDOverlay: View {
                     .textCase(.uppercase)
             }
 
-            Text(shortTurnInstruction(coordinator.currentStepInstruction))
-                .font(.system(size: 10, weight: .medium, design: .rounded))
-                .foregroundColor(.white.opacity(0.82))
-                .lineLimit(1)
-
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 5)
@@ -472,7 +452,7 @@ struct NavigationHUDOverlay: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .frame(width: 180)
+        .frame(width: 132)
         .background(
             RoundedRectangle(cornerRadius: 16)
                 .fill(Color(red: 0.11, green: 0.12, blue: 0.16))
@@ -481,6 +461,67 @@ struct NavigationHUDOverlay: View {
             RoundedRectangle(cornerRadius: 16)
                 .stroke(Color.white.opacity(0.06), lineWidth: 1)
         )
+    }
+
+    private func compactRealtimeIssueBadge(_ incident: TrafficIncident) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: incidentIcon(for: incident))
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(incidentColor(incident.severity))
+                .frame(width: 24, height: 24)
+                .background(incidentColor(incident.severity).opacity(0.16), in: Circle())
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(shortIssueTitle(incident.description))
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                if let dist = incident.distanceAheadMetres {
+                    Text("\(formatDistance(dist)) ahead")
+                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.62))
+                        .lineLimit(1)
+                } else {
+                    Text("Live incident")
+                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.62))
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: 180)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color(red: 0.11, green: 0.12, blue: 0.16))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(incidentColor(incident.severity).opacity(0.30), lineWidth: 1)
+        )
+    }
+
+    private func incidentIcon(for incident: TrafficIncident) -> String {
+        let text = incident.description.lowercased()
+        if text.contains("accident") || text.contains("collision") {
+            return "car.rear.and.collision.road.lane"
+        }
+        if text.contains("crowd") || text.contains("congestion") || text.contains("traffic jam") {
+            return "person.3.fill"
+        }
+        if text.contains("pothole") || text.contains("road damage") {
+            return "triangle.fill"
+        }
+        return incidentIcon(incident.severity)
+    }
+
+    private func shortIssueTitle(_ text: String) -> String {
+        let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { return "Road issue" }
+        if cleaned.count <= 26 { return cleaned }
+        let idx = cleaned.index(cleaned.startIndex, offsetBy: 26)
+        return "\(cleaned[..<idx])…"
     }
 
     private func actionButton(_ title: String, icon: String, color: Color, action: @escaping () -> Void) -> some View {

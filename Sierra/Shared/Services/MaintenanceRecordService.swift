@@ -61,11 +61,12 @@ struct MaintenanceRecordInsertPayload: Encodable {
 
 struct MaintenanceRecordService {
 
-    static func fetchAllMaintenanceRecords() async throws -> [MaintenanceRecord] {
+    static func fetchAllMaintenanceRecords(limit: Int = 500) async throws -> [MaintenanceRecord] {
         try await supabase
             .from("maintenance_records")
             .select()
             .order("service_date", ascending: false)
+            .limit(limit)
             .execute()
             .value
     }

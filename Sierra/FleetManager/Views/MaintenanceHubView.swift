@@ -7,6 +7,8 @@ import SwiftUI
 
 struct MaintenanceHubView: View {
     @Environment(AppDataStore.self) private var store
+    var showInlineHeader: Bool = true
+    var topAccessory: AnyView? = nil
 
     enum RequestTypeFilter: String, CaseIterable {
         case all = "All"; case repair = "Repair"; case service = "Service"
@@ -19,11 +21,17 @@ struct MaintenanceHubView: View {
     @State private var requestType: RequestTypeFilter = .all
     @State private var statusFilter: StatusFilter = .pending
     @State private var selectedTask: MaintenanceTask?
-    @State private var vehicleSheetVehicle: Vehicle?
     @State private var showInventoryAdmin = false
     @State private var rejectPartTarget: SparePartsRequest?
+    @State private var rejectTaskTarget: MaintenanceTask?
+    @State private var assignTaskTarget: MaintenanceTask?
+    @State private var recentlyRejectedTaskIds: Set<UUID> = []
     @State private var approvingTaskIds: Set<UUID> = []
-
+    @State private var rejectingTaskIds: Set<UUID> = []
+    @State private var assigningTaskIds: Set<UUID> = []
+    @State private var actionErrorMessage: String?
+    @State private var showActionError = false
+    
     private var adminId: UUID { AuthManager.shared.currentUser?.id ?? UUID() }
 
     private var allTasks: [MaintenanceTask] {
@@ -49,20 +57,34 @@ struct MaintenanceHubView: View {
         allTasks.filter { matchesRequestType($0) }
     }
     private var totalCount: Int     { statsSourceTasks.count }
-    private var urgentCount: Int    { statsSourceTasks.filter { $0.priority == .urgent && ($0.status == .pending || $0.status == .assigned || $0.status == .inProgress) }.count }
+    private var urgentCount: Int    { statsSourceTasks.filter { $0.priority == .urgent && ($0.status == .pending || $0.isEffectivelyAssigned || $0.status == .inProgress) }.count }
     private var completedCount: Int { statsSourceTasks.filter { $0.status == .completed }.count }
 
     var body: some View {
         VStack(spacing: 0) {
+            if showInlineHeader {
+                headerRow
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+            }
+
+            if let topAccessory {
+                topAccessory
+                    .padding(.top, showInlineHeader ? 8 : 12)
+                    .padding(.bottom, 8)
+            }
+
             filterChips
-                .padding(.top, 12)
+                .padding(.top, topAccessory == nil ? (showInlineHeader ? 8 : 12) : 0)
                 .padding(.bottom, 10)
                 .padding(.horizontal, 16)
 
             summaryRow
                 .padding(.horizontal, 16).padding(.bottom, 8)
 
-            if filteredTasks.isEmpty && pendingPartRequests.isEmpty {
+            if store.isLoading && store.maintenanceTasks.isEmpty && store.workOrders.isEmpty {
+                loadingSkeleton
+            } else if filteredTasks.isEmpty && pendingPartRequests.isEmpty {
                 emptyState
             } else {
                 ScrollView(.vertical, showsIndicators: false) {
@@ -70,28 +92,16 @@ struct MaintenanceHubView: View {
                         tasksSections
                         if !pendingPartRequests.isEmpty { partsApprovalSection }
                     }
-                    .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 28)
+                    .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 132)
                 }
-                .refreshable { await store.loadAll() }
+                .refreshable { await store.loadAll(force: true) }
             }
         }
         .background(Color.appSurface.ignoresSafeArea())
-        .navigationTitle("Maintenance")
-        .navigationBarTitleDisplayMode(.large)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { showInventoryAdmin = true } label: {
-                    Image(systemName: "shippingbox")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(Color.appOrange)
-                }
-            }
-            ToolbarItem(placement: .topBarTrailing) { filterMenu }
-        }
+        .toolbarBackground(.hidden, for: .navigationBar)
         .navigationDestination(item: $selectedTask) { task in
-            MaintenanceApprovalDetailView(task: task) { Task { await store.loadAll() } }
+            MaintenanceApprovalDetailView(task: task) { Task { await store.loadAll(force: true) } }
         }
-        .sheet(item: $vehicleSheetVehicle) { v in VehicleQuickStatusSheet(vehicle: v).environment(store) }
         .sheet(item: $rejectPartTarget) { part in
             RejectReasonSheet(
                 title: "Reject Part Request",
@@ -104,8 +114,54 @@ struct MaintenanceHubView: View {
                 Task { try? await store.rejectSparePartsRequest(id: part.id, reviewedBy: adminId, reason: reason) }
             }
         }
+        .sheet(item: $rejectTaskTarget) { task in
+            RejectReasonSheet(
+                title: "Reject Task",
+                subtitle: "Provide a reason for rejecting this maintenance task.",
+                placeholder: "Reason for rejection",
+                confirmTitle: "Reject Task",
+                confirmColor: .red
+            ) { reason in
+                Task { await rejectTaskFromList(task, reason: reason) }
+            }
+        }
+        .navigationDestination(item: $assignTaskTarget) { task in
+            AssignMaintenanceStaffScreen(
+                task: task,
+                candidates: availableMaintenanceStaff(for: task),
+                onAssign: { staffId in
+                    Task { await assignTaskFromList(task, to: staffId) }
+                }
+            )
+        }
         .sheet(isPresented: $showInventoryAdmin) { InventoryAdminView().environment(store) }
+        .alert("Error", isPresented: $showActionError) {
+            Button("OK") {}
+        } message: {
+            Text(actionErrorMessage ?? "Something went wrong")
+        }
         .task { if store.maintenanceTasks.isEmpty || store.workOrders.isEmpty { await store.loadAll() } }
+    }
+
+    private var headerRow: some View {
+        HStack(spacing: 10) {
+            Text("Maintenance")
+                .font(.largeTitle.bold())
+
+            Spacer()
+
+            Button { showInventoryAdmin = true } label: {
+                Image(systemName: "shippingbox")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Color.appOrange)
+            }
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
+
+            filterMenu
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+        }
     }
 
     // MARK: - Summary Row
@@ -223,9 +279,14 @@ struct MaintenanceHubView: View {
                     workOrder: store.workOrder(forMaintenanceTask: task.id),
                     phaseSummary: phaseSummary(for: task),
                     onOpenDetail: { selectedTask = task },
-                    onOpenVehicle: { if let v = store.vehicle(for: task.vehicleId) { vehicleSheetVehicle = v } },
                     onApprove: { Task { await approveTaskFromList(task) } },
-                    isApproving: approvingTaskIds.contains(task.id)
+                    onReject: { rejectTaskTarget = task },
+                    onAssign: { assignTaskTarget = task },
+                    isApproving: approvingTaskIds.contains(task.id),
+                    isRejecting: rejectingTaskIds.contains(task.id),
+                    isAssigning: assigningTaskIds.contains(task.id),
+                    isApprovedAwaitingAssignment: isApprovedAwaitingAssignment(task),
+                    isRejected: task.status == .cancelled || recentlyRejectedTaskIds.contains(task.id)
                 )
             }
         }
@@ -253,7 +314,7 @@ struct MaintenanceHubView: View {
                     task: relatedTask,
                     vehicle: relatedTask.flatMap { store.vehicle(for: $0.vehicleId) },
                     requester: store.staffMember(for: part.requestedById),
-                    onApprove: { Task { try? await store.approveSparePartsRequest(id: part.id, reviewedBy: adminId) } },
+                    onApprove: { Task { try? await store.approvePartRequestFromInventory(id: part.id, reviewedBy: adminId) } },
                     onReject: { rejectPartTarget = part },
                     onOpenTask: { if let t = relatedTask { selectedTask = t } }
                 )
@@ -280,6 +341,35 @@ struct MaintenanceHubView: View {
         .frame(maxWidth: .infinity)
     }
 
+    private var loadingSkeleton: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            LazyVStack(spacing: 14) {
+                ForEach(0..<5, id: \.self) { _ in
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            SierraSkeletonView(width: 120, height: 12)
+                            Spacer()
+                            SierraSkeletonView(width: 84, height: 20, cornerRadius: 10)
+                        }
+                        SierraSkeletonView(height: 18)
+                        SierraSkeletonView(width: 220, height: 12)
+                        SierraSkeletonView(width: 180, height: 12)
+                        HStack(spacing: 10) {
+                            SierraSkeletonView(height: 44, cornerRadius: 22)
+                            SierraSkeletonView(height: 44, cornerRadius: 22)
+                        }
+                    }
+                    .padding(14)
+                    .background(Color.appCardBg, in: RoundedRectangle(cornerRadius: 16))
+                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.appDivider.opacity(0.35), lineWidth: 1))
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 28)
+        }
+    }
+
     // MARK: - Helpers
 
     private func matchesRequestType(_ t: MaintenanceTask) -> Bool {
@@ -288,13 +378,14 @@ struct MaintenanceHubView: View {
     private func matchesStatus(_ t: MaintenanceTask) -> Bool {
         switch statusFilter {
         case .all: true
-        case .pending: t.status == .pending
-        case .active: t.status == .assigned || t.status == .inProgress
+        case .pending: t.status == .pending || recentlyRejectedTaskIds.contains(t.id)
+        case .active: t.isEffectivelyAssigned || t.status == .inProgress
         case .completed: t.status == .completed || t.status == .cancelled
         }
     }
     private func phaseSummary(for task: MaintenanceTask) -> String {
         guard let wo = store.workOrder(forMaintenanceTask: task.id) else {
+            if isApprovedAwaitingAssignment(task) { return "Approved · waiting for technician" }
             return task.status == .pending ? "Awaiting approval" : "No work order"
         }
         let phases = store.phases(forWorkOrder: wo.id)
@@ -305,26 +396,57 @@ struct MaintenanceHubView: View {
     private func approveTaskFromList(_ task: MaintenanceTask) async {
         guard task.status == .pending else { return }
         guard !approvingTaskIds.contains(task.id) else { return }
+        guard !isApprovedAwaitingAssignment(task) else { return }
         approvingTaskIds.insert(task.id)
         defer { approvingTaskIds.remove(task.id) }
 
-        // Prefer an already attached assignee; else pick first available maintenance staff.
-        let assigneeId: UUID? = task.assignedToId
-            ?? store.staff
-                .first(where: { $0.role == .maintenancePersonnel && $0.status == .active && $0.availability == .available })?
-                .id
-
-        guard let assigneeId else {
-            selectedTask = task
-            return
-        }
-
         do {
-            try await MaintenanceTaskService.approveTask(
+            try await MaintenanceTaskService.approveTaskWithoutAssignment(
                 taskId: task.id,
-                approvedById: adminId,
-                assignedToId: assigneeId
+                approvedById: adminId
             )
+            let sourceTripId = task.sourceInspectionId.flatMap { inspectionId in
+                store.vehicleInspections.first(where: { $0.id == inspectionId })?.tripId
+            }
+            await MaintenanceTaskService.resolveLinkedDefectAlertsOnApproval(
+                task: task,
+                tripId: sourceTripId
+            )
+            await store.loadAll()
+        } catch {
+            selectedTask = task
+        }
+    }
+
+    private func rejectTaskFromList(_ task: MaintenanceTask, reason: String) async {
+        guard task.status == .pending || task.isEffectivelyAssigned else { return }
+        guard !rejectingTaskIds.contains(task.id) else { return }
+        let cleanReason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanReason.isEmpty else { return }
+        rejectingTaskIds.insert(task.id)
+        defer { rejectingTaskIds.remove(task.id) }
+        recentlyRejectedTaskIds.insert(task.id)
+        do {
+            try await MaintenanceTaskService.rejectTask(taskId: task.id, approvedById: adminId, reason: cleanReason)
+
+            if let idx = store.maintenanceTasks.firstIndex(where: { $0.id == task.id }) {
+                store.maintenanceTasks[idx].status = .cancelled
+                store.maintenanceTasks[idx].rejectionReason = cleanReason
+            }
+            await store.loadAll()
+        } catch {
+            recentlyRejectedTaskIds.remove(task.id)
+            actionErrorMessage = "Failed to reject task: \(error.localizedDescription)"
+            showActionError = true
+        }
+    }
+
+    private func assignTaskFromList(_ task: MaintenanceTask, to assigneeId: UUID) async {
+        guard !assigningTaskIds.contains(task.id) else { return }
+        assigningTaskIds.insert(task.id)
+        defer { assigningTaskIds.remove(task.id) }
+        do {
+            try await MaintenanceTaskService.assignApprovedTask(taskId: task.id, assignedToId: assigneeId)
             try? await NotificationService.insertNotification(
                 recipientId: assigneeId,
                 type: .general,
@@ -338,6 +460,20 @@ struct MaintenanceHubView: View {
             selectedTask = task
         }
     }
+
+    private func availableMaintenanceStaff(for task: MaintenanceTask) -> [StaffMember] {
+        store.staff
+            .filter { $0.role == .maintenancePersonnel && $0.status == .active && $0.availability == .available }
+            .filter { member in
+                // Keep currently assigned person available in list if task already has one.
+                task.assignedToId == nil || task.assignedToId == member.id
+            }
+            .sorted { $0.displayName < $1.displayName }
+    }
+
+    private func isApprovedAwaitingAssignment(_ task: MaintenanceTask) -> Bool {
+        task.isApprovedAwaitingAssignment
+    }
 }
 
 // MARK: - Admin Task Card
@@ -348,102 +484,117 @@ private struct AdminMaintenanceTaskCard: View {
     let workOrder: WorkOrder?
     let phaseSummary: String
     var onOpenDetail: () -> Void
-    var onOpenVehicle: () -> Void
     var onApprove: () -> Void
+    var onReject: () -> Void
+    var onAssign: () -> Void
     var isApproving: Bool
-
+    var isRejecting: Bool
+    var isAssigning: Bool
+    var isApprovedAwaitingAssignment: Bool
+    var isRejected: Bool
     private var taskIdText: String { "MNT-\(task.id.uuidString.prefix(8).uppercased())" }
     private var isPending: Bool { task.status == .pending }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
+            Button(action: onOpenDetail) {
+                VStack(alignment: .leading, spacing: 14) {
+                    // Row 1: id + status
+                    HStack(alignment: .center, spacing: 6) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "number").font(.system(size: 10, weight: .bold))
+                            Text(taskIdText).font(.system(size: 11, weight: .bold, design: .monospaced))
+                        }
+                        .foregroundStyle(Color.appOrange)
 
-            // Row 1: id + status
-            HStack(alignment: .center, spacing: 6) {
-                HStack(spacing: 4) {
-                    Image(systemName: "number").font(.system(size: 10, weight: .bold))
-                    Text(taskIdText).font(.system(size: 11, weight: .bold, design: .monospaced))
-                }
-                .foregroundStyle(Color.appOrange)
-
-                Spacer()
-
-                statusBadge
-            }
-
-            // Row 2: Title
-            Text(task.title)
-                .font(.system(size: 16, weight: .bold, design: .rounded))
-                .foregroundStyle(Color.appTextPrimary)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-
-            // Row 3: Vehicle pill
-            if let v = vehicle {
-                Button(action: onOpenVehicle) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "car.fill").font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.appOrange)
-                        Text(v.licensePlate).font(.system(size: 11, weight: .bold, design: .monospaced)).foregroundStyle(Color.appOrange)
-                        Text(v.name).font(.system(size: 12, weight: .medium, design: .rounded)).foregroundStyle(Color.appTextSecondary).lineLimit(1)
                         Spacer()
-                        Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold)).foregroundStyle(Color.appTextSecondary)
-                    }
-                    .padding(.horizontal, 12).padding(.vertical, 9)
-                    .background(Color.appOrange.opacity(0.07), in: Capsule())
-                }
-                .buttonStyle(.plain)
-            }
 
-            // Row 4: date + phase summary
-            HStack(spacing: 10) {
-                if let eta = workOrder?.estimatedCompletionAt {
-                    HStack(spacing: 4) {
-                        Image(systemName: "clock").font(.system(size: 11))
-                        Text(eta.formatted(.dateTime.month(.abbreviated).day().hour().minute()))
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        statusBadge
                     }
-                    .foregroundStyle(Color.appTextSecondary)
-                } else {
-                    HStack(spacing: 4) {
-                        Image(systemName: "calendar").font(.system(size: 11))
-                        Text(task.dueDate.formatted(.dateTime.month(.abbreviated).day()))
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+
+                    // Row 2: Title
+                    Text(task.title)
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color.appTextPrimary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    // Row 3: Vehicle pill
+                    if let v = vehicle {
+                        HStack(spacing: 8) {
+                            Image(systemName: "car.fill").font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.appOrange)
+                            Text(v.licensePlate).font(.system(size: 11, weight: .bold, design: .monospaced)).foregroundStyle(Color.appOrange)
+                            Text(v.name).font(.system(size: 12, weight: .medium, design: .rounded)).foregroundStyle(Color.appTextSecondary).lineLimit(1)
+                            Spacer()
+                            Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold)).foregroundStyle(Color.appTextSecondary)
+                        }
+                        .padding(.horizontal, 12).padding(.vertical, 9)
+                        .background(Color.appOrange.opacity(0.07), in: Capsule())
                     }
-                    .foregroundStyle(Color.appTextSecondary)
+
+                    // Row 4: date + phase summary
+                    HStack(spacing: 10) {
+                        if let eta = workOrder?.estimatedCompletionAt {
+                            HStack(spacing: 4) {
+                                Image(systemName: "clock").font(.system(size: 11))
+                                Text(eta.formatted(.dateTime.month(.abbreviated).day().hour().minute()))
+                                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            }
+                            .foregroundStyle(Color.appTextSecondary)
+                        } else {
+                            HStack(spacing: 4) {
+                                Image(systemName: "calendar").font(.system(size: 11))
+                                Text(task.dueDate.formatted(.dateTime.month(.abbreviated).day()))
+                                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            }
+                            .foregroundStyle(Color.appTextSecondary)
+                        }
+                        Spacer()
+                        HStack(spacing: 5) {
+                            Image(systemName: "list.number").font(.system(size: 11))
+                            Text(phaseSummary).font(.system(size: 12, weight: .medium, design: .rounded))
+                        }
+                        .foregroundStyle(Color.appTextSecondary)
+                    }
                 }
-                Spacer()
-                HStack(spacing: 5) {
-                    Image(systemName: "list.number").font(.system(size: 11))
-                    Text(phaseSummary).font(.system(size: 12, weight: .medium, design: .rounded))
-                }
-                .foregroundStyle(Color.appTextSecondary)
             }
+            .buttonStyle(.plain)
 
             Rectangle().fill(Color.appDivider.opacity(0.6)).frame(height: 1)
 
-            // Dual-button row — exact driver flow pattern
-            HStack(spacing: 12) {
-                Button(action: onOpenDetail) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "doc.text.magnifyingglass").font(.system(size: 13, weight: .semibold))
-                        Text("View Details").font(.system(size: 14, weight: .bold, design: .rounded))
-                    }
-                    .foregroundStyle(Color.appOrange)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(Capsule().fill(Color.appOrange.opacity(0.08)))
-                    .overlay(Capsule().stroke(Color.appOrange.opacity(0.25), lineWidth: 1.5))
+            if isRejected {
+                HStack(spacing: 6) {
+                    Image(systemName: "xmark.octagon.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("Rejected")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
                 }
-                .buttonStyle(.plain)
+                .foregroundStyle(.red)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(Capsule().fill(Color.red.opacity(0.08)))
+                .overlay(Capsule().stroke(Color.red.opacity(0.24), lineWidth: 1.5))
+            } else if isPending && !isApprovedAwaitingAssignment && task.assignedToId == nil {
+                HStack(spacing: 12) {
+                    Button(action: onReject) {
+                        HStack(spacing: 6) {
+                            if isRejecting { ProgressView().tint(.red).scaleEffect(0.8) }
+                            Image(systemName: "xmark.circle").font(.system(size: 13, weight: .semibold))
+                            Text("Reject").font(.system(size: 14, weight: .bold, design: .rounded))
+                        }
+                        .foregroundStyle(.red)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Capsule().fill(Color.red.opacity(0.08)))
+                        .overlay(Capsule().stroke(Color.red.opacity(0.22), lineWidth: 1.5))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isRejecting || isApproving)
 
-                if isPending {
                     Button(action: onApprove) {
                         HStack(spacing: 6) {
-                            if isApproving {
-                                ProgressView().tint(.white).scaleEffect(0.8)
-                            } else {
-                                Image(systemName: "checkmark.seal.fill").font(.system(size: 13, weight: .semibold))
-                            }
+                            if isApproving { ProgressView().tint(.white).scaleEffect(0.8) }
+                            Image(systemName: "checkmark.seal.fill").font(.system(size: 13, weight: .semibold))
                             Text("Approve").font(.system(size: 14, weight: .bold, design: .rounded))
                         }
                         .foregroundStyle(.white)
@@ -452,20 +603,23 @@ private struct AdminMaintenanceTaskCard: View {
                         .background(Capsule().fill(Color.appTextPrimary))
                     }
                     .buttonStyle(.plain)
-                    .disabled(isApproving)
-                } else {
+                    .disabled(isApproving || isRejecting)
+                }
+            } else if isApprovedAwaitingAssignment {
+                Button(action: onAssign) {
                     HStack(spacing: 6) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 13, weight: .semibold))
-                        Text("Approved")
+                        if isAssigning { ProgressView().tint(.white).scaleEffect(0.8) }
+                        Image(systemName: "person.2.fill").font(.system(size: 13, weight: .semibold))
+                        Text("Assign Maintenance Personnel")
                             .font(.system(size: 14, weight: .bold, design: .rounded))
                     }
-                    .foregroundStyle(.green)
+                    .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
-                    .background(Capsule().fill(Color.green.opacity(0.12)))
-                    .overlay(Capsule().stroke(Color.green.opacity(0.28), lineWidth: 1.2))
+                    .background(Capsule().fill(Color.appTextPrimary))
                 }
+                .buttonStyle(.plain)
+                .disabled(isAssigning)
             }
         }
         .padding(18)
@@ -480,7 +634,8 @@ private struct AdminMaintenanceTaskCard: View {
     private var statusBadge: some View {
         HStack(spacing: 4) {
             Circle().fill(statusTint).frame(width: 6, height: 6)
-            Text(task.status.rawValue).font(.system(size: 10, weight: .bold, design: .rounded))
+            Text(task.isEffectivelyAssigned ? MaintenanceTaskStatus.assigned.rawValue : task.status.rawValue)
+                .font(.system(size: 10, weight: .bold, design: .rounded))
         }
         .foregroundStyle(statusTint)
         .padding(.horizontal, 10).padding(.vertical, 5)
@@ -489,9 +644,75 @@ private struct AdminMaintenanceTaskCard: View {
 
     private var statusTint: Color {
         switch task.status {
-        case .pending: Color.appOrange; case .assigned: .blue
+        case .pending: task.isEffectivelyAssigned ? .blue : Color.appOrange
+        case .assigned: .blue
         case .inProgress: .purple; case .completed: .green; case .cancelled: .gray
         }
+    }
+}
+
+private struct AssignMaintenanceStaffScreen: View {
+    let task: MaintenanceTask
+    let candidates: [StaffMember]
+    let onAssign: (UUID) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if candidates.isEmpty {
+                Text("No free maintenance personnel available right now.")
+                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                    .foregroundStyle(Color.appTextSecondary)
+                    .padding(.top, 8)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 10) {
+                        ForEach(candidates) { staff in
+                            Button {
+                                onAssign(staff.id)
+                                dismiss()
+                            } label: {
+                                HStack(spacing: 10) {
+                                    ZStack {
+                                        Circle().fill(Color.appOrange.opacity(0.12)).frame(width: 34, height: 34)
+                                        Text(staff.initials)
+                                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                                            .foregroundStyle(Color.appOrange)
+                                    }
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(staff.displayName)
+                                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                                            .foregroundStyle(Color.appTextPrimary)
+                                        Text(staff.availability.rawValue)
+                                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                            .foregroundStyle(Color.appTextSecondary)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundStyle(Color.appTextSecondary)
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 10)
+                                .background(Color.appCardBg, in: RoundedRectangle(cornerRadius: 12))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(Color.appDivider.opacity(0.45), lineWidth: 1)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+
+            Spacer()
+        }
+        .padding(16)
+        .background(Color.appSurface.ignoresSafeArea())
+        .navigationTitle("Assign Personnel")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
@@ -631,6 +852,7 @@ private struct RejectReasonSheet: View {
             .background(Color.appSurface.ignoresSafeArea())
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }.foregroundStyle(Color.appOrange)

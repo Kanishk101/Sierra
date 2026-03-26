@@ -15,10 +15,39 @@ import Turf
 @MainActor
 @Observable
 final class RouteEngine {
+    struct RouteChoice: Identifiable {
+        let id = UUID()
+        let route: MapboxDirections.Route
+        let sourceRouteIndex: Int
+        let isFastest: Bool
+        let isGreen: Bool
+    }
+
+    private struct RouteBuildSnapshot {
+        let currentRoute: MapboxDirections.Route?
+        let alternativeRoute: MapboxDirections.Route?
+        let routeChoices: [RouteChoice]
+        let selectedChoiceIndex: Int
+        let decodedRouteCoordinates: [CLLocationCoordinate2D]
+        let totalRouteDistanceMetres: Double
+        let latestRouteResponse: RouteResponse?
+        let selectedRouteIndex: Int?
+        let currentStepInstruction: String
+        let distanceRemainingMetres: Double
+        let estimatedArrivalTime: Date?
+        let hasDeviated: Bool
+        let isUsingStoredRouteFallback: Bool
+
+        var hasRenderableRoute: Bool {
+            currentRoute != nil || decodedRouteCoordinates.count >= 2
+        }
+    }
 
     // MARK: - Public State
     var currentRoute: MapboxDirections.Route?
     var alternativeRoute: MapboxDirections.Route?
+    var routeChoices: [RouteChoice] = []
+    var selectedChoiceIndex: Int = 0
     var currentStepInstruction: String = ""
     var distanceRemainingMetres: Double = 0
     var estimatedArrivalTime: Date?
@@ -40,8 +69,8 @@ final class RouteEngine {
     // MARK: - Route Building
     //
     // FIX 1: Removed `guard !hasBuiltRoutes` — now always retries if currentRoute is nil.
-    // FIX 2: Falls back to currentLocation as origin when trip coordinates are missing.
-    // FIX 3: Falls back to currentLocation as destination when destination coords missing.
+// FIX 2: Requires currentLocation as origin for driver navigation start.
+// FIX 3: Uses locked trip destination coordinates from admin-created trip.
 
     func buildRoutes(trip: Trip, currentLocation: CLLocation?) async {
         // Only skip if we already have a valid route AND we're not rerouting
@@ -54,22 +83,18 @@ final class RouteEngine {
         let isRerouting = rerouteFromCurrentLocation
         rerouteFromCurrentLocation = false
         _ = isRerouting  // consumed above; origin always uses currentLocation now
+        let snapshot = captureSnapshot()
         lastBuildError = nil
-        clearDerivedRouteState()
 
         // --- Determine origin ---
-        // Always prefer the driver's actual GPS position so the route starts
-        // from where they physically are, not the trip's stored origin.
-        let originCoord: CLLocationCoordinate2D
-        if let loc = currentLocation {
-            originCoord = loc.coordinate
-        } else if let lat = trip.originLatitude, let lng = trip.originLongitude {
-            originCoord = CLLocationCoordinate2D(latitude: lat, longitude: lng)
-        } else {
-            lastBuildError = "Trip has no location data and GPS is not yet available. Move to get a GPS fix and retry."
+        // Driver routes must start from live GPS (not stored trip origin).
+        guard let originLocation = currentLocation else {
+            lastBuildError = "Waiting for GPS fix. Move to an open area and retry navigation."
+            restoreSnapshotIfNeeded(snapshot)
             print("[RouteEngine] \(lastBuildError!)")
             return
         }
+        let originCoord = originLocation.coordinate
 
         // --- Determine destination ---
         let destCoord: CLLocationCoordinate2D
@@ -77,6 +102,7 @@ final class RouteEngine {
             destCoord = CLLocationCoordinate2D(latitude: lat, longitude: lng)
         } else {
             lastBuildError = "Trip destination coordinates are not set. Ask your fleet manager to update the trip."
+            restoreSnapshotIfNeeded(snapshot)
             print("[RouteEngine] \(lastBuildError!)")
             return
         }
@@ -110,6 +136,7 @@ final class RouteEngine {
                 lastBuildError = "Mapbox token missing. Showing the saved trip path only."
             } else {
                 lastBuildError = MapService.configurationErrorDescription
+                restoreSnapshotIfNeeded(snapshot)
             }
             print("[RouteEngine] \(lastBuildError!)")
             return
@@ -128,11 +155,33 @@ final class RouteEngine {
             let routes = response.routes ?? []
             guard !routes.isEmpty else {
                 lastBuildError = "No routes found between these locations."
+                restoreSnapshotIfNeeded(snapshot)
                 return
             }
 
             if let fastestIndex = routes.indices.min(by: { routes[$0].expectedTravelTime < routes[$1].expectedTravelTime }) {
-                let fastest = routes[fastestIndex]
+                let remaining = routes.indices.filter { $0 != fastestIndex }
+                let greenIndex = remaining.min(by: { routes[$0].distance < routes[$1].distance })
+                let extras = remaining
+                    .filter { $0 != greenIndex }
+                    .sorted { routes[$0].expectedTravelTime < routes[$1].expectedTravelTime }
+                var rankedIndices: [Int] = [fastestIndex]
+                if let greenIndex {
+                    rankedIndices.append(greenIndex)
+                }
+                rankedIndices.append(contentsOf: extras)
+                rankedIndices = Array(rankedIndices.prefix(3))
+
+                routeChoices = rankedIndices.enumerated().map { _, sourceIndex in
+                    RouteChoice(
+                        route: routes[sourceIndex],
+                        sourceRouteIndex: sourceIndex,
+                        isFastest: sourceIndex == fastestIndex,
+                        isGreen: sourceIndex == greenIndex
+                    )
+                }
+                selectedChoiceIndex = 0
+                let fastest = routeChoices.first?.route ?? routes[fastestIndex]
                 latestRouteResponse = response
                 selectedRouteIndex = fastestIndex
                 currentRoute = fastest
@@ -142,14 +191,7 @@ final class RouteEngine {
                 estimatedArrivalTime = Date().addingTimeInterval(fastest.expectedTravelTime)
                 if let firstStep = fastest.legs.first?.steps.first { currentStepInstruction = firstStep.instructions }
 
-                let alternativeIndices = routes.indices.filter { $0 != fastestIndex }
-                if let greenIndex = alternativeIndices.min(by: { routes[$0].distance < routes[$1].distance }) {
-                    alternativeRoute = routes[greenIndex]
-                } else if let fallbackIndex = alternativeIndices.first {
-                    alternativeRoute = routes[fallbackIndex]
-                } else {
-                    alternativeRoute = nil
-                }
+                alternativeRoute = routeChoices.dropFirst().first?.route
             }
             if let shape = currentRoute?.shape { decodedRouteCoordinates = shape.coordinates }
             if hasDeviated { hasDeviated = false }
@@ -163,6 +205,7 @@ final class RouteEngine {
                 lastBuildError = "Live route unavailable: \(error.localizedDescription). Showing the saved trip path."
             } else {
                 lastBuildError = "Route calculation failed: \(error.localizedDescription)"
+                restoreSnapshotIfNeeded(snapshot)
             }
             print("[RouteEngine] \(lastBuildError!)")
         }
@@ -170,39 +213,66 @@ final class RouteEngine {
 
     /// ISSUE-19 FIX: Renamed from selectGreenRoute — this swaps primary and alternative routes.
     func swapAlternativeRoute() {
-        guard let alt = alternativeRoute else { return }
-        let prev = currentRoute; currentRoute = alt; alternativeRoute = prev
-        selectedRouteIndex = nil
-        if let shape = currentRoute?.shape {
+        guard routeChoices.count >= 2 else { return }
+        let newIndex = selectedChoiceIndex == 0 ? 1 : 0
+        selectRouteChoice(at: newIndex)
+    }
+
+    func selectRouteChoice(at index: Int) {
+        guard routeChoices.indices.contains(index) else { return }
+        selectedChoiceIndex = index
+        let choice = routeChoices[index]
+        currentRoute = choice.route
+        alternativeRoute = routeChoices.enumerated()
+            .first(where: { $0.offset != index })?
+            .element.route
+        selectedRouteIndex = choice.sourceRouteIndex
+        if let shape = choice.route.shape {
             decodedRouteCoordinates = shape.coordinates
-            totalRouteDistanceMetres = currentRoute?.distance ?? routeLength(for: shape.coordinates)
+            totalRouteDistanceMetres = choice.route.distance
+        } else {
+            decodedRouteCoordinates = []
+            totalRouteDistanceMetres = choice.route.distance
         }
+        distanceRemainingMetres = choice.route.distance
+        estimatedArrivalTime = Date().addingTimeInterval(choice.route.expectedTravelTime)
+        currentStepInstruction = choice.route.legs.first?.steps.first?.instructions ?? "Follow the highlighted route"
         isUsingStoredRouteFallback = false
-        if let firstStep = currentRoute?.legs.first?.steps.first { currentStepInstruction = firstStep.instructions }
-        if let travel = currentRoute?.expectedTravelTime { estimatedArrivalTime = Date().addingTimeInterval(travel) }
-        if let dist = currentRoute?.distance { distanceRemainingMetres = dist }
+        hasDeviated = false
     }
 
     func rebuildRoutes(trip: Trip, currentLocation: CLLocation?) async {
-        clearDerivedRouteState()
+        rerouteFromCurrentLocation = true
         await buildRoutes(trip: trip, currentLocation: currentLocation)
     }
 
     func addStop(latitude: Double, longitude: Double, name: String, trip: Trip, currentLocation: CLLocation?) async {
         intermediateWaypoints.append((lat: latitude, lng: longitude, name: name))
-        clearDerivedRouteState()
+        rerouteFromCurrentLocation = true
         await buildRoutes(trip: trip, currentLocation: currentLocation)
     }
 
     func triggerRerouteFromCurrentLocation() {
         rerouteFromCurrentLocation = true
-        clearDerivedRouteState()
     }
 
     func applyNavigationRoutes(_ navigationRoutes: NavigationRoutes) {
         let mainRoute = navigationRoutes.mainRoute.route
+        let alternatives = navigationRoutes.alternativeRoutes.map(\.route)
+        let ranked = Array(([mainRoute] + alternatives).prefix(3))
+        routeChoices = ranked
+            .enumerated()
+            .map { offset, route in
+                RouteChoice(
+                    route: route,
+                    sourceRouteIndex: offset,
+                    isFastest: offset == 0,
+                    isGreen: false
+                )
+            }
+        selectedChoiceIndex = 0
         currentRoute = mainRoute
-        alternativeRoute = navigationRoutes.alternativeRoutes.first?.route
+        alternativeRoute = alternatives.first
         decodedRouteCoordinates = mainRoute.shape?.coordinates ?? []
         totalRouteDistanceMetres = mainRoute.distance
         distanceRemainingMetres = mainRoute.distance
@@ -215,6 +285,8 @@ final class RouteEngine {
     private func clearDerivedRouteState() {
         currentRoute = nil
         alternativeRoute = nil
+        routeChoices = []
+        selectedChoiceIndex = 0
         decodedRouteCoordinates = []
         totalRouteDistanceMetres = 0
         latestRouteResponse = nil
@@ -223,6 +295,41 @@ final class RouteEngine {
         distanceRemainingMetres = 0
         estimatedArrivalTime = nil
         isUsingStoredRouteFallback = false
+    }
+
+    private func captureSnapshot() -> RouteBuildSnapshot {
+        RouteBuildSnapshot(
+            currentRoute: currentRoute,
+            alternativeRoute: alternativeRoute,
+            routeChoices: routeChoices,
+            selectedChoiceIndex: selectedChoiceIndex,
+            decodedRouteCoordinates: decodedRouteCoordinates,
+            totalRouteDistanceMetres: totalRouteDistanceMetres,
+            latestRouteResponse: latestRouteResponse,
+            selectedRouteIndex: selectedRouteIndex,
+            currentStepInstruction: currentStepInstruction,
+            distanceRemainingMetres: distanceRemainingMetres,
+            estimatedArrivalTime: estimatedArrivalTime,
+            hasDeviated: hasDeviated,
+            isUsingStoredRouteFallback: isUsingStoredRouteFallback
+        )
+    }
+
+    private func restoreSnapshotIfNeeded(_ snapshot: RouteBuildSnapshot) {
+        guard snapshot.hasRenderableRoute else { return }
+        currentRoute = snapshot.currentRoute
+        alternativeRoute = snapshot.alternativeRoute
+        routeChoices = snapshot.routeChoices
+        selectedChoiceIndex = snapshot.selectedChoiceIndex
+        decodedRouteCoordinates = snapshot.decodedRouteCoordinates
+        totalRouteDistanceMetres = snapshot.totalRouteDistanceMetres
+        latestRouteResponse = snapshot.latestRouteResponse
+        selectedRouteIndex = snapshot.selectedRouteIndex
+        currentStepInstruction = snapshot.currentStepInstruction
+        distanceRemainingMetres = snapshot.distanceRemainingMetres
+        estimatedArrivalTime = snapshot.estimatedArrivalTime
+        hasDeviated = snapshot.hasDeviated
+        isUsingStoredRouteFallback = snapshot.isUsingStoredRouteFallback
     }
 
     private func applyStoredPolylineFallback(from trip: Trip) -> Bool {
@@ -242,6 +349,8 @@ final class RouteEngine {
         currentStepInstruction = "Follow the highlighted trip route"
         currentRoute = nil
         alternativeRoute = nil
+        routeChoices = []
+        selectedChoiceIndex = 0
         latestRouteResponse = nil
         selectedRouteIndex = nil
         hasDeviated = false
@@ -289,6 +398,8 @@ final class RouteEngine {
             currentStepInstruction = fastest.steps.first?.instruction ?? "Follow the highlighted route"
             currentRoute = nil
             alternativeRoute = nil
+            routeChoices = []
+            selectedChoiceIndex = 0
             latestRouteResponse = nil
             selectedRouteIndex = nil
             hasDeviated = false

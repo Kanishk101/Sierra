@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreLocation
 
 /// Full-screen navigation container.
 /// X button top-left to exit. Confirmation alert when navigation is active.
@@ -10,8 +11,11 @@ struct TripNavigationContainerView: View {
     @State private var isBuildingRoutes  = false
     @State private var routeBuildFailed  = false
     @State private var buildErrorMessage = "Could not calculate route. Check your connection and try again."
+    @State private var isWaitingForGPS = false
+    @State private var gpsWaitMessage = "Waiting for GPS fix…"
     @State private var showDismissAlert  = false
     @State private var showProofOfDelivery = false
+    @State private var showRouteSelection = false
     @Environment(AppDataStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -36,7 +40,7 @@ struct TripNavigationContainerView: View {
                     .zIndex(9)
             }
 
-            // Close button — top left
+            // Top-left close button
             VStack {
                 HStack {
                     Button {
@@ -51,21 +55,42 @@ struct TripNavigationContainerView: View {
                     }
                     .padding(.leading, 16)
                     .padding(.top, 60)
-
                     Spacer()
+                }
+                Spacer()
+            }
+            .ignoresSafeArea(edges: .top)
+            .zIndex(20)
 
-                    Button {
-                        coordinator.toggleCameraMode()
-                    } label: {
-                        Image(systemName: coordinator.isOverviewMode ? "location.north.line.fill" : "map.fill")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 36, height: 36)
-                            .background(.ultraThinMaterial, in: Circle())
-                            .shadow(color: .black.opacity(0.2), radius: 6, y: 2)
+            // Right-side camera controls (overview above, compass below)
+            VStack {
+                HStack {
+                    Spacer()
+                    VStack(spacing: 10) {
+                        Button {
+                            coordinator.toggleCameraMode()
+                        } label: {
+                            Image(systemName: coordinator.isOverviewMode ? "location.north.line.fill" : "map.fill")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 36, height: 36)
+                                .background(.ultraThinMaterial, in: Circle())
+                                .shadow(color: .black.opacity(0.2), radius: 6, y: 2)
+                        }
+
+                        Button {
+                            coordinator.switchToFollowMode()
+                        } label: {
+                            Image(systemName: "location.north.circle.fill")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 36, height: 36)
+                                .background(.ultraThinMaterial, in: Circle())
+                                .shadow(color: .black.opacity(0.2), radius: 6, y: 2)
+                        }
                     }
                     .padding(.trailing, 16)
-                    .padding(.top, 60)
+                    .padding(.top, 132)
                 }
                 Spacer()
             }
@@ -83,6 +108,26 @@ struct TripNavigationContainerView: View {
                     .padding(32)
                     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
                 }
+            }
+
+            if isWaitingForGPS {
+                ZStack {
+                    Color.black.opacity(0.4).ignoresSafeArea()
+                    VStack(spacing: 12) {
+                        ProgressView().scaleEffect(1.2).tint(.white)
+                        Text("Acquiring GPS")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.white)
+                        Text(gpsWaitMessage)
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.88))
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: 240)
+                    }
+                    .padding(24)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
+                }
+                .zIndex(15)
             }
 
             // Route build failure — informative, with retry
@@ -120,18 +165,12 @@ struct TripNavigationContainerView: View {
         .navigationBarHidden(true)
         .toolbar(.hidden, for: .tabBar)
         .task {
-            // Start GPS early so currentLocation is available for route origin
             coordinator.startEarlyLocationUpdates()
-            // Brief wait for a GPS fix (up to 2 seconds), then build routes
-            for _ in 0..<20 {
-                if coordinator.currentLocation != nil { break }
-                try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
-            }
             await buildAndShowRoutes()
         }
         .task {
             while !Task.isCancelled {
-                if canStartLiveNavigation, coordinator.hasRenderableRoute {
+                if canStartLiveNavigation, coordinator.hasRenderableRoute, coordinator.hasConfirmedRouteSelection {
                     startTracking()
                     break
                 }
@@ -174,6 +213,11 @@ struct TripNavigationContainerView: View {
                         .buttonStyle(.borderedProminent)
                 }
                 .padding(20)
+            }
+        }
+        .sheet(isPresented: $showRouteSelection) {
+            RouteSelectionSheet(coordinator: coordinator) {
+                startTracking()
             }
         }
     }
@@ -222,22 +266,66 @@ struct TripNavigationContainerView: View {
             return
         }
 
+        guard await waitForReliableGPSFix() else { return }
+
         isBuildingRoutes = true
         routeBuildFailed = false
         await coordinator.buildRoutes()
         isBuildingRoutes = false
 
         if coordinator.hasRenderableRoute {
-            startTracking()
+            if coordinator.routeChoices.isEmpty {
+                coordinator.confirmRouteSelection()
+                startTracking()
+            } else if !coordinator.hasConfirmedRouteSelection {
+                showRouteSelection = true
+            } else {
+                startTracking()
+            }
         } else {
             buildErrorMessage = coordinator.routeEngineError ?? "Could not calculate route. Check your network and try again."
             routeBuildFailed = true
         }
     }
 
+    private func waitForReliableGPSFix() async -> Bool {
+        if coordinator.hasReliableLocationFix {
+            isWaitingForGPS = false
+            return true
+        }
+
+        isWaitingForGPS = true
+        routeBuildFailed = false
+        let timeout = Date().addingTimeInterval(30)
+
+        while Date() < timeout {
+            if coordinator.hasReliableLocationFix {
+                isWaitingForGPS = false
+                return true
+            }
+
+            if let issue = coordinator.locationReadinessIssue {
+                gpsWaitMessage = issue
+            }
+
+            if coordinator.locationAuthorizationStatus == .denied
+                || coordinator.locationAuthorizationStatus == .restricted {
+                break
+            }
+
+            try? await Task.sleep(nanoseconds: 300_000_000)
+        }
+
+        isWaitingForGPS = false
+        buildErrorMessage = coordinator.locationReadinessIssue ?? "Unable to get a reliable GPS fix. Please retry."
+        routeBuildFailed = true
+        return false
+    }
+
     private func startTracking() {
         guard canNavigateTrip, !coordinator.trip.hasEndedNavigationPhase else { return }
         guard canStartLiveNavigation else { return }
+        guard coordinator.hasConfirmedRouteSelection else { return }
         guard !coordinator.isNavigating else { return }
         guard let vehicleIdStr = coordinator.trip.vehicleId,
               let vehicleId = UUID(uuidString: vehicleIdStr),

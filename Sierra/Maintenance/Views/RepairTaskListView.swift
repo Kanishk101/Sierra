@@ -26,7 +26,13 @@ struct RepairTaskListView: View {
 
     private var filteredTasks: [MaintenanceTask] {
         repairTasks.filter { task in
-            if let f = statusFilter, task.status != f { return false }
+            if let f = statusFilter {
+                if f == .assigned {
+                    if !task.isEffectivelyAssigned { return false }
+                } else if task.status != f {
+                    return false
+                }
+            }
             let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             if q.isEmpty { return true }
             let vehicle = store.vehicle(for: task.vehicleId)
@@ -38,7 +44,7 @@ struct RepairTaskListView: View {
 
     private var isFilterActive: Bool { statusFilter != nil }
     private var totalCount: Int { repairTasks.count }
-    private var activeCount: Int { repairTasks.filter { $0.status == .assigned || $0.status == .inProgress }.count }
+    private var activeCount: Int { repairTasks.filter { $0.isEffectivelyAssigned || $0.status == .inProgress }.count }
     private var completedCount: Int { repairTasks.filter { $0.status == .completed }.count }
 
     var body: some View {

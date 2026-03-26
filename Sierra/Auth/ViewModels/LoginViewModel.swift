@@ -196,11 +196,12 @@ final class LoginViewModel {
             }
 
             do {
-                _ = try await SupabaseManager.ensureValidSession()
+                _ = try await SupabaseManager.ensureValidSession(expectedUserId: user.id)
             } catch {
                 if SupabaseManager.isSessionRecoveryError(error) {
-                    AuthManager.shared.signOut()
-                    authState = .error("Session expired. Please sign in with email and password.")
+                    // Keep biometric enrollment state and cached identity intact.
+                    // Forcing signOut here hides the Face ID button after one failure.
+                    authState = .error("Secure session could not be restored. Please sign in with password once to refresh Face ID access.")
                 } else {
                     authState = .error("Network unavailable. Please reconnect and try again.")
                 }

@@ -53,9 +53,10 @@ struct DashboardHomeView: View {
     @State private var showProfile       = false
     @State private var showAnalytics     = false
     @State private var showNotifications = false
-    @State private var showReportsSheet   = false
-    @State private var showAlertsSheet    = false
+    @State private var showAskAI          = false
     @State private var quickModal: DashboardQuickModal?
+    @State private var selectedTripId: UUID?
+    @State private var selectedVehicleId: UUID?
 
     private enum DashboardQuickModal: String, Identifiable {
         case staff
@@ -71,55 +72,67 @@ struct DashboardHomeView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 24) {
-                    headerRow
-                        .padding(.horizontal, 20)
-                        .padding(.top, 12)
+            ZStack(alignment: .bottomTrailing) {
+                ScrollView {
+                    VStack(spacing: 24) {
+                        headerRow
+                            .padding(.horizontal, 20)
+                            .padding(.top, 12)
 
-                    kpiGrid
-                        .padding(.horizontal, 20)
+                        kpiGrid
+                            .padding(.horizontal, 20)
 
-                    if vm.isLoading {
-                        loadingSkeleton.padding(.horizontal, 20)
-                    } else {
-                        analyticsSnapshotCard.padding(.horizontal, 20)
+                        if vm.isLoading {
+                            loadingSkeleton.padding(.horizontal, 20)
+                        } else {
+                            analyticsSnapshotCard.padding(.horizontal, 20)
+                        }
+
+                        recentTripsSection
+                        expiringDocsSection
+                        Spacer(minLength: 90)
                     }
+                }
+                .refreshable { await store.loadAll(force: true) }
+                .background(Color(.systemGroupedBackground).ignoresSafeArea())
+                .toolbarBackground(.hidden, for: .navigationBar)
+                .sheet(isPresented: $showProfile) {
+                    AdminProfileView()
+                        .presentationDetents([.large])
+                        .presentationDragIndicator(.visible)
+                }
+                .sheet(isPresented: $showAnalytics) {
+                    AnalyticsDashboardView().environment(AppDataStore.shared)
+                }
+                .sheet(isPresented: $showNotifications) {
+                    NotificationCentreView()
+                }
+                .sheet(item: $quickModal) { modal in
+                    switch modal {
+                    case .staff:
+                        NavigationStack { StaffTabView().environment(AppDataStore.shared) }
+                    case .trips:
+                        NavigationStack { TripsListView().environment(AppDataStore.shared) }
+                    case .vehicles:
+                        NavigationStack { VehicleListView().environment(AppDataStore.shared) }
+                    case .alerts:
+                        NavigationStack { AlertsInboxView().environment(AppDataStore.shared) }
+                    }
+                }
+                .navigationDestination(item: $selectedTripId) { TripDetailView(tripId: $0) }
+                .navigationDestination(item: $selectedVehicleId) { VehicleDetailView(vehicleId: $0) }
+                .onAppear {
+                    if viewModel == nil { viewModel = DashboardViewModel(store: store) }
+                }
 
-                    recentTripsSection
-                    expiringDocsSection
-                    fleetManagementSection.padding(.horizontal, 20)
-                    Spacer(minLength: 40)
-                }
-            }
-            .refreshable { await store.loadAll() }
-            .background(Color(.systemGroupedBackground).ignoresSafeArea())
-            .toolbarBackground(.hidden, for: .navigationBar)
-            .sheet(isPresented: $showProfile) {
-                AdminProfileView()
-                    .presentationDetents([.large])
-                    .presentationDragIndicator(.visible)
-            }
-            .sheet(isPresented: $showAnalytics) {
-                AnalyticsDashboardView().environment(AppDataStore.shared)
-            }
-            .sheet(isPresented: $showNotifications) {
-                NotificationCentreView()
-            }
-            .sheet(item: $quickModal) { modal in
-                switch modal {
-                case .staff:
-                    NavigationStack { StaffTabView().environment(AppDataStore.shared) }
-                case .trips:
-                    NavigationStack { TripsListView().environment(AppDataStore.shared) }
-                case .vehicles:
-                    NavigationStack { VehicleListView().environment(AppDataStore.shared) }
-                case .alerts:
-                    NavigationStack { AlertsInboxView().environment(AppDataStore.shared) }
-                }
-            }
-            .onAppear {
-                if viewModel == nil { viewModel = DashboardViewModel(store: store) }
+                AskAIFAB(isPresented: $showAskAI)
+                    .padding(.trailing, 20)
+                    .padding(.bottom, 24)
+                    .sheet(isPresented: $showAskAI) {
+                        AskAIChatView()
+                            .presentationDetents([.large])
+                            .presentationDragIndicator(.visible)
+                    }
             }
         }
     }
@@ -254,10 +267,9 @@ struct DashboardHomeView: View {
         Button { UIImpactFeedbackGenerator(style: .light).impactOccurred(); showAnalytics = true } label: {
             VStack(alignment: .leading, spacing: 16) {
                 HStack {
-                    HStack(spacing: 6) {
-                        Image(systemName: "chart.pie.fill").font(.system(size: 13, weight: .semibold)).foregroundStyle(.orange)
-                        Text("Fleet Analytics").font(.headline).foregroundStyle(.primary)
-                    }
+                    Text("Fleet Analytics")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
                     Spacer()
                     HStack(spacing: 4) {
                         Text("View Report").font(.subheadline).foregroundStyle(.orange)
@@ -331,7 +343,7 @@ struct DashboardHomeView: View {
     // MARK: - Recent Trips
     private var recentTripsSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            sectionHeader("Recent Trips", icon: "clock").padding(.horizontal, 20).padding(.bottom, 8)
+            sectionHeader("Recent Trips").padding(.horizontal, 20).padding(.bottom, 8)
             let trips = vm.recentTrips
             if trips.isEmpty {
                 emptyPlaceholder("No trips yet", icon: "arrow.triangle.swap").padding(.horizontal, 20)
@@ -339,7 +351,7 @@ struct DashboardHomeView: View {
                 VStack(spacing: 0) {
                     ForEach(Array(trips.enumerated()), id: \.element.id) { index, trip in
                         tripRow(trip)
-                        if index < trips.count - 1 { Divider().padding(.leading, 56) }
+                        if index < trips.count - 1 { Divider().padding(.leading, 16) }
                     }
                 }
                 .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -349,34 +361,33 @@ struct DashboardHomeView: View {
     }
 
     private func tripRow(_ trip: Trip) -> some View {
-        HStack(spacing: 14) {
-            ZStack {
-                Circle().fill(tripStatusColor(trip.status).opacity(0.12)).frame(width: 36, height: 36)
-                Image(systemName: tripStatusIcon(trip.status)).font(.system(size: 14, weight: .medium)).foregroundStyle(tripStatusColor(trip.status))
-            }
+        let status = trip.status.normalized
+        return HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("\(trip.origin) \u{2192} \(trip.destination)").font(.system(size: 15, weight: .semibold)).foregroundStyle(.primary).lineLimit(1)
-                Text(trip.taskId).font(.system(size: 12, weight: .medium, design: .monospaced)).foregroundStyle(.tertiary)
+                Text("\(trip.origin) \u{2192} \(trip.destination)")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Text(trip.taskId)
+                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.secondary)
             }
             Spacer()
-            Text(trip.status.rawValue.capitalized)
-                .font(.system(size: 12, weight: .medium)).foregroundStyle(tripStatusColor(trip.status))
-                .padding(.horizontal, 8).padding(.vertical, 4).background(tripStatusColor(trip.status).opacity(0.1), in: Capsule())
+            Text(tripStatusLabel(status))
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(tripStatusColor(status))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(tripStatusColor(status).opacity(0.12), in: Capsule())
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: true)
         }
-        .padding(.horizontal, 16).padding(.vertical, 12)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .contentShape(Rectangle())
+        .onTapGesture { selectedTripId = trip.id }
     }
 
-    private func tripStatusIcon(_ status: TripStatus) -> String {
-        switch status {
-        case .active: return "arrow.triangle.swap"
-        case .scheduled: return "clock"
-        case .pendingAcceptance: return "hourglass"
-        case .accepted: return "checkmark.circle"
-        case .completed: return "checkmark"
-        case .rejected: return "xmark.circle"
-        case .cancelled: return "xmark"
-        }
-    }
     private func tripStatusColor(_ status: TripStatus) -> Color {
         switch status {
         case .active: return .green
@@ -388,10 +399,21 @@ struct DashboardHomeView: View {
         }
     }
 
+    private func tripStatusLabel(_ status: TripStatus) -> String {
+        switch status {
+        case .pendingAcceptance: return "Pending Acceptance"
+        case .scheduled: return "Scheduled"
+        case .active: return "Active"
+        case .completed: return "Completed"
+        case .accepted: return "Accepted"
+        case .rejected, .cancelled: return "Cancelled"
+        }
+    }
+
     // MARK: - Expiring Documents
     private var expiringDocsSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            sectionHeader("Expiring Documents", icon: "doc.badge.clock").padding(.horizontal, 20).padding(.bottom, 8)
+            sectionHeader("Expiring Documents").padding(.horizontal, 20).padding(.bottom, 8)
             let docs = vm.expiringDocs
             if docs.isEmpty {
                 emptyPlaceholder("All documents are up to date", icon: "checkmark.shield.fill").padding(.horizontal, 20)
@@ -430,57 +452,14 @@ struct DashboardHomeView: View {
                 .background((doc.isExpired ? Color.red : Color.orange).opacity(0.1), in: Capsule())
         }
         .padding(.horizontal, 16).padding(.vertical, 12)
+        .contentShape(Rectangle())
+        .onTapGesture { selectedVehicleId = doc.vehicleId }
     }
 
-    // MARK: - Fleet Management (no geofence create — view-only via list)
-    private var fleetManagementSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("FLEET MANAGEMENT").font(.caption.weight(.bold)).foregroundStyle(.secondary).kerning(1).padding(.horizontal, 2)
-
-            NavigationLink {
-                MaintenanceRequestsView().environment(AppDataStore.shared)
-            } label: {
-                managementCard(icon: "wrench.and.screwdriver.fill", title: "Maintenance", subtitle: "\(vm.pendingMaintenanceCount) pending tasks", color: .orange)
-            }
-
-            Button { showReportsSheet = true } label: {
-                managementCard(icon: "chart.bar.fill", title: "Reports & Analytics", subtitle: "Fleet performance and exports", color: .blue)
-            }
-
-            Button { showAlertsSheet = true } label: {
-                managementCard(icon: "bell.badge.fill", title: "Alerts Inbox", subtitle: "\(vm.activeAlertsCount) active alerts", color: .red)
-            }
-        }
-        .sheet(isPresented: $showReportsSheet) {
-            NavigationStack { ReportsView().environment(AppDataStore.shared) }.presentationDetents([.large])
-        }
-        .sheet(isPresented: $showAlertsSheet) {
-            NavigationStack { AlertsInboxView().environment(AppDataStore.shared) }.presentationDetents([.large])
-        }
-    }
-
-    private func managementCard(icon: String, title: String, subtitle: String, color: Color) -> some View {
-        HStack(spacing: 14) {
-            Image(systemName: icon)
-                .font(.system(size: 20, weight: .semibold)).foregroundStyle(color)
-                .frame(width: 44, height: 44)
-                .background(color.opacity(0.1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
-                Text(subtitle).font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer()
-        }
-        .padding(14)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(color: .black.opacity(0.04), radius: 6, y: 3)
-    }
-
-    private func sectionHeader(_ title: String, icon: String) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: icon).font(.system(size: 13, weight: .semibold)).foregroundStyle(.secondary)
-            Text(title).font(.system(size: 20, weight: .bold)).foregroundStyle(.primary)
-        }
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 20, weight: .bold))
+            .foregroundStyle(.primary)
     }
 
     private func emptyPlaceholder(_ message: String, icon: String) -> some View {

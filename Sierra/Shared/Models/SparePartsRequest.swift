@@ -20,6 +20,7 @@ struct SparePartsRequest: Identifiable, Codable, Equatable {
     // MARK: Foreign keys
     var maintenanceTaskId: UUID           // maintenance_task_id (FK → maintenance_tasks.id)
     var workOrderId: UUID?                // work_order_id (nullable — may not exist until work order is created)
+    var workOrderPhaseId: UUID? = nil     // work_order_phase_id (nullable — phase-scoped request)
     var requestedById: UUID              // requested_by_id (FK → staff_members.id)
 
     // MARK: Part details
@@ -55,6 +56,7 @@ struct SparePartsRequest: Identifiable, Codable, Equatable {
         case id
         case maintenanceTaskId  = "maintenance_task_id"
         case workOrderId        = "work_order_id"
+        case workOrderPhaseId   = "work_order_phase_id"
         case requestedById      = "requested_by_id"
         case partName           = "part_name"
         case partNumber         = "part_number"

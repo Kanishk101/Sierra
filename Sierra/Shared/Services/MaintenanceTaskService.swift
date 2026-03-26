@@ -106,11 +106,12 @@ struct MaintenanceTaskService {
 
     // MARK: Fetch
 
-    static func fetchAllMaintenanceTasks() async throws -> [MaintenanceTask] {
+    static func fetchAllMaintenanceTasks(limit: Int = 500) async throws -> [MaintenanceTask] {
         try await supabase
             .from("maintenance_tasks")
             .select()
             .order("due_date", ascending: true)
+            .limit(limit)
             .execute()
             .value
     }
@@ -205,6 +206,45 @@ struct MaintenanceTaskService {
             .execute()
     }
 
+    /// Step 1 approval: mark task as admin-approved but keep it unassigned.
+    /// Status intentionally remains Pending until a technician is assigned.
+    static func approveTaskWithoutAssignment(taskId: UUID, approvedById: UUID) async throws {
+        struct Payload: Encodable {
+            let approved_by_id: String
+            let approved_at: String
+            let rejection_reason: String?
+        }
+        try await supabase
+            .from("maintenance_tasks")
+            .update(Payload(
+                approved_by_id: approvedById.uuidString,
+                approved_at: iso.string(from: Date()),
+                rejection_reason: nil
+            ))
+            .eq("id", value: taskId.uuidString)
+            .execute()
+    }
+
+    /// Step 2 assignment after approval: assign technician.
+    ///
+    /// NOTE:
+    /// Avoid writing `status = Assigned` here. In current backend, that transition
+    /// can invoke work-order automation with enum-cast mismatch (`work_order_type`),
+    /// which makes assignment fail. We persist the assignee and keep status pending;
+    /// UI/workflows treat approved+assigned rows as effectively assigned.
+    static func assignApprovedTask(taskId: UUID, assignedToId: UUID) async throws {
+        struct Payload: Encodable {
+            let assigned_to_id: String
+        }
+        try await supabase
+            .from("maintenance_tasks")
+            .update(Payload(
+                assigned_to_id: assignedToId.uuidString
+            ))
+            .eq("id", value: taskId.uuidString)
+            .execute()
+    }
+
     /// Rejects a task: sets status, approved_by_id, approved_at, rejection_reason in one call.
     static func rejectTask(taskId: UUID, approvedById: UUID, reason: String) async throws {
         struct Payload: Encodable {
@@ -273,5 +313,35 @@ struct MaintenanceTaskService {
             "create-driver-maintenance-request",
             body: payload
         )
+    }
+
+    // MARK: - Alert linkage
+
+    /// On maintenance approval, linked active defect alerts should leave the Alerts inbox.
+    /// This resolves:
+    /// 1) explicit source_alert_id on the task, and
+    /// 2) active defect alerts for the same vehicle/trip (fallback for legacy rows).
+    static func resolveLinkedDefectAlertsOnApproval(
+        task: MaintenanceTask,
+        tripId: UUID?
+    ) async {
+        var idsToResolve: Set<UUID> = []
+
+        if let sourceAlertId = task.sourceAlertId {
+            idsToResolve.insert(sourceAlertId)
+        }
+
+        if let matched = try? await EmergencyAlertService.fetchActiveDefectAlerts(
+            vehicleId: task.vehicleId,
+            tripId: tripId
+        ) {
+            for alert in matched {
+                idsToResolve.insert(alert.id)
+            }
+        }
+
+        for id in idsToResolve {
+            try? await EmergencyAlertService.resolveAlert(id: id)
+        }
     }
 }

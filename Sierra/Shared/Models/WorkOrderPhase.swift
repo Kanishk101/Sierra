@@ -16,6 +16,9 @@ struct WorkOrderPhase: Identifiable, Codable, Equatable {
     var title: String                   // title — e.g. "Replace headlights"
     var description: String?            // description — optional detail
     var estimatedMinutes: Int?          // estimated_minutes — planned ETA for phase
+    var plannedCompletionAt: Date?      // planned_completion_at — target date/time picked by technician
+    var isLocked: Bool                  // is_locked — phase plan frozen by technician submit
+    var lockedAt: Date?                 // locked_at — when phase was submitted/locked
 
     // MARK: Completion
     var isCompleted: Bool               // is_completed (default false)
@@ -35,6 +38,9 @@ struct WorkOrderPhase: Identifiable, Codable, Equatable {
         case title
         case description
         case estimatedMinutes = "estimated_minutes"
+        case plannedCompletionAt = "planned_completion_at"
+        case isLocked = "is_locked"
+        case lockedAt = "locked_at"
         case isCompleted    = "is_completed"
         case completedAt    = "completed_at"
         case createdAt      = "created_at"

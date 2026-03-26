@@ -80,6 +80,7 @@ struct StaffReviewSheet: View {
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
             .navigationTitle("Review Application")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { dismiss() }
@@ -496,6 +497,7 @@ private struct StaffDocumentViewer: View {
             }
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { dismiss() }

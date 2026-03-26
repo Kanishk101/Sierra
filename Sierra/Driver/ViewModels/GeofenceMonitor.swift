@@ -7,6 +7,8 @@ import CoreLocation
 
 @MainActor
 final class GeofenceMonitor {
+    private let minGeofenceEventIntervalSeconds: TimeInterval = 20
+    private var lastEventAtByKey: [String: Date] = [:]
 
     // MARK: - Register
 
@@ -31,15 +33,21 @@ final class GeofenceMonitor {
                 CLLocation(latitude: $0.latitude, longitude: $0.longitude).distance(from: driverLoc)
                 < CLLocation(latitude: $1.latitude, longitude: $1.longitude).distance(from: driverLoc)
             }
+        let deduped = GeofenceScopeService.collapseOverlappingCenters(active)
+        let maxMonitorRadius = locationManager.maximumRegionMonitoringDistance > 0
+            ? locationManager.maximumRegionMonitoringDistance
+            : 100_000
 
-        for geofence in active.prefix(20) {
+        for geofence in deduped.prefix(20) {
             let center = CLLocationCoordinate2D(
                 latitude: geofence.latitude,
                 longitude: geofence.longitude
             )
+            let normalizedRadius = GeofenceScopeService.normalizedRadiusMeters(geofence.radiusMeters)
+            let radius = min(max(normalizedRadius, 25), maxMonitorRadius)
             let region = CLCircularRegion(
                 center: center,
-                radius: geofence.radiusMeters,
+                radius: radius,
                 identifier: geofence.id.uuidString
             )
             region.notifyOnEntry = geofence.alertOnEntry
@@ -54,6 +62,7 @@ final class GeofenceMonitor {
         for region in locationManager.monitoredRegions {
             locationManager.stopMonitoring(for: region)
         }
+        lastEventAtByKey.removeAll()
     }
 
     // MARK: - Handle Event
@@ -66,6 +75,13 @@ final class GeofenceMonitor {
         currentLocation: CLLocation?
     ) async {
         guard let vehicleId = UUID(uuidString: vehicleIdStr) else { return }
+        let eventKey = "\(geofenceId.uuidString.lowercased())|\(eventType.lowercased())"
+        let now = Date()
+        if let lastAt = lastEventAtByKey[eventKey],
+           now.timeIntervalSince(lastAt) < minGeofenceEventIntervalSeconds {
+            return
+        }
+        lastEventAtByKey[eventKey] = now
 
         // BUG-10 FIX: Never generate a random UUID for a driver ID
         guard let driverId = AuthManager.shared.currentUser?.id else {
@@ -90,8 +106,8 @@ final class GeofenceMonitor {
                 eventType: eventType == "Entry" ? .entry : .exit,
                 latitude: location.coordinate.latitude,
                 longitude: location.coordinate.longitude,
-                triggeredAt: Date(),
-                createdAt: Date()
+                triggeredAt: now,
+                createdAt: now
             ))
         } catch {
             print("[GeofenceMonitor] Event insert failed: \(error)")
@@ -112,4 +128,5 @@ final class GeofenceMonitor {
             )
         }
     }
+
 }

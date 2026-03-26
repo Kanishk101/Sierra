@@ -58,11 +58,12 @@ struct VehicleInspectionInsertPayload: Encodable {
 
 struct VehicleInspectionService {
 
-    static func fetchAllInspections() async throws -> [VehicleInspection] {
+    static func fetchAllInspections(limit: Int = 500) async throws -> [VehicleInspection] {
         try await supabase
             .from("vehicle_inspections")
             .select()
             .order("inspected_at", ascending: false)
+            .limit(limit)
             .execute()
             .value
     }

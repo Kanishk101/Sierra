@@ -11,13 +11,10 @@ struct AlertDetailView: View {
     @Environment(AppDataStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
-    @State private var isAcknowledging = false
-    @State private var isResolving = false
     @State private var showReassignment = false
+    @State private var showMaintenanceHub = false
     @State private var errorMessage: String?
     @State private var showError = false
-
-    private var currentUserId: UUID { AuthManager.shared.currentUser?.id ?? UUID() }
 
     private var driver: StaffMember? {
         store.staff.first(where: { $0.id == alert.driverId })
@@ -26,6 +23,12 @@ struct AlertDetailView: View {
     private var vehicle: Vehicle? {
         guard let vId = alert.vehicleId else { return nil }
         return store.vehicles.first(where: { $0.id == vId })
+    }
+
+    private var isPreTripDefectAlert: Bool {
+        guard alert.alertType == .defect else { return false }
+        let description = alert.description?.lowercased() ?? ""
+        return description.contains("pre-trip")
     }
 
     var body: some View {
@@ -57,6 +60,7 @@ struct AlertDetailView: View {
         .background(Color(.systemGroupedBackground))
         .navigationTitle("Alert Detail")
         .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
         .alert("Error", isPresented: $showError) {
             Button("OK") {}
         } message: {
@@ -66,6 +70,9 @@ struct AlertDetailView: View {
             if let tripId = alert.tripId {
                 VehicleReassignmentSheet(tripId: tripId)
             }
+        }
+        .navigationDestination(isPresented: $showMaintenanceHub) {
+            MaintenanceRequestsView()
         }
     }
 
@@ -174,53 +181,25 @@ struct AlertDetailView: View {
 
     private var actions: some View {
         VStack(spacing: 12) {
-            if alert.status == .active {
-                Button {
-                    Task { await acknowledge() }
-                } label: {
-                    HStack {
-                        if isAcknowledging { ProgressView().tint(.white) }
-                        Text("Acknowledge")
-                            .font(.subheadline.weight(.semibold))
-                    }
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity).frame(height: 46)
-                    .background(.orange, in: RoundedRectangle(cornerRadius: 12))
-                }
-                .disabled(isAcknowledging)
-            }
-
-            if alert.status == .active || alert.status == .acknowledged {
-                Button {
-                    Task { await resolve() }
-                } label: {
-                    HStack {
-                        if isResolving { ProgressView().tint(.white) }
-                        Text("Resolve")
-                            .font(.subheadline.weight(.semibold))
-                    }
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity).frame(height: 46)
-                    .background(.green, in: RoundedRectangle(cornerRadius: 12))
-                }
-                .disabled(isResolving)
-            }
-
             // Create Maintenance for Breakdown/Defect
             if alert.alertType == .breakdown || alert.alertType == .defect {
-                NavigationLink {
-                    Text("Create maintenance task from alert")  // Placeholder — already handled by FM workflow
+                Button {
+                    showMaintenanceHub = true
                 } label: {
-                    Text("Create Maintenance Task")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(SierraTheme.Colors.info)
-                        .frame(maxWidth: .infinity).frame(height: 46)
-                        .background(SierraTheme.Colors.info.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
+                    HStack {
+                        Image(systemName: "wrench.and.screwdriver")
+                        Text("Create Maintenance Task")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity).frame(height: 46)
+                    .background(SierraTheme.Colors.info, in: RoundedRectangle(cornerRadius: 12))
                 }
+                .buttonStyle(.plain)
             }
 
             // Vehicle reassignment for inspection failures
-            if alert.alertType == .defect, alert.tripId != nil {
+            if isPreTripDefectAlert, alert.tripId != nil {
                 Button {
                     showReassignment = true
                 } label: {
@@ -235,50 +214,5 @@ struct AlertDetailView: View {
                 }
             }
         }
-    }
-
-    // MARK: - Acknowledge
-
-    private func acknowledge() async {
-        isAcknowledging = true
-        do {
-            try await EmergencyAlertService.acknowledgeAlert(id: alert.id, acknowledgedBy: currentUserId)
-
-            // Notify driver (non-fatal)
-            do {
-                try await NotificationService.insertNotification(
-                    recipientId: alert.driverId,
-                    type: .general,
-                    title: "Alert Acknowledged",
-                    body: "Your \(alert.alertType.rawValue) alert has been received. Help is on the way.",
-                    entityType: "emergency_alert",
-                    entityId: alert.id
-                )
-            } catch {
-                print("[AlertDetail] Non-fatal: notification to driver failed")
-            }
-
-            onUpdate()
-            dismiss()
-        } catch {
-            errorMessage = "Failed: \(error.localizedDescription)"
-            showError = true
-        }
-        isAcknowledging = false
-    }
-
-    // MARK: - Resolve
-
-    private func resolve() async {
-        isResolving = true
-        do {
-            try await EmergencyAlertService.resolveAlert(id: alert.id)
-            onUpdate()
-            dismiss()
-        } catch {
-            errorMessage = "Failed: \(error.localizedDescription)"
-            showError = true
-        }
-        isResolving = false
     }
 }

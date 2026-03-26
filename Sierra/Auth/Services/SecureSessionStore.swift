@@ -11,6 +11,9 @@ final class SecureSessionStore {
     private let tokenKey   = "sierra.2fa.sessionToken"
     private let roleKey    = "sierra.2fa.userRole"
     private let profileKey = "sierra.lastProfile"
+    private let supabaseAccessTokenKey  = "sierra.supabase.accessToken"
+    private let supabaseRefreshTokenKey = "sierra.supabase.refreshToken"
+    private let supabaseUserIdKey       = "sierra.supabase.userId"
 
     // MARK: - Stored Profile
 
@@ -23,6 +26,12 @@ final class SecureSessionStore {
         let email: String
 
         var roleSubtitle: String { role.displayName }
+    }
+
+    struct SupabaseSessionSnapshot: Equatable {
+        let accessToken: String
+        let refreshToken: String
+        let userId: UUID
     }
 
     // MARK: - Save
@@ -42,6 +51,17 @@ final class SecureSessionStore {
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         ]
         SecItemAdd(query as CFDictionary, nil)
+    }
+
+    func saveSupabaseSession(
+        accessToken: String,
+        refreshToken: String,
+        userId: UUID
+    ) {
+        guard !accessToken.isEmpty, !refreshToken.isEmpty else { return }
+        saveString(accessToken, forKey: supabaseAccessTokenKey)
+        saveString(refreshToken, forKey: supabaseRefreshTokenKey)
+        saveString(userId.uuidString.lowercased(), forKey: supabaseUserIdKey)
     }
 
     // MARK: - Load
@@ -68,12 +88,29 @@ final class SecureSessionStore {
         return try? JSONDecoder().decode(StoredProfile.self, from: data)
     }
 
+    func loadSupabaseSession() -> SupabaseSessionSnapshot? {
+        guard
+            let accessToken = loadString(forKey: supabaseAccessTokenKey),
+            let refreshToken = loadString(forKey: supabaseRefreshTokenKey),
+            let userIdRaw = loadString(forKey: supabaseUserIdKey),
+            let userId = UUID(uuidString: userIdRaw)
+        else {
+            return nil
+        }
+        return SupabaseSessionSnapshot(
+            accessToken: accessToken,
+            refreshToken: refreshToken,
+            userId: userId
+        )
+    }
+
     // MARK: - Clear
 
     /// Clears session tokens but keeps the last profile for Face ID welcome screen.
     func clearSessionButKeepProfile() {
         deleteItem(forKey: tokenKey)
         deleteItem(forKey: roleKey)
+        clearSupabaseSession()
     }
 
     /// Clears everything including profile (explicit "forget me").
@@ -81,6 +118,13 @@ final class SecureSessionStore {
         deleteItem(forKey: tokenKey)
         deleteItem(forKey: roleKey)
         deleteItem(forKey: profileKey)
+        clearSupabaseSession()
+    }
+
+    func clearSupabaseSession() {
+        deleteItem(forKey: supabaseAccessTokenKey)
+        deleteItem(forKey: supabaseRefreshTokenKey)
+        deleteItem(forKey: supabaseUserIdKey)
     }
 
     // MARK: - Private Keychain Helpers

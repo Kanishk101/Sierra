@@ -1,5 +1,7 @@
 import SwiftUI
 import MapKit
+import CoreLocation
+import Combine
 
 struct GeocodedAddress: Identifiable, Hashable, Codable {
     let id: UUID
@@ -21,9 +23,73 @@ struct GeocodedAddress: Identifiable, Hashable, Codable {
     }
 }
 
+@MainActor
+final class AddressSearchLocationProvider: NSObject, ObservableObject, CLLocationManagerDelegate {
+    @Published var currentLocation: CLLocation?
+    @Published var authorizationStatus: CLAuthorizationStatus = .notDetermined
+
+    private let manager = CLLocationManager()
+
+    override init() {
+        super.init()
+        manager.delegate = self
+        manager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
+        manager.distanceFilter = 10
+    }
+
+    func start() {
+        authorizationStatus = manager.authorizationStatus
+        switch authorizationStatus {
+        case .authorizedAlways, .authorizedWhenInUse:
+            manager.startUpdatingLocation()
+        case .notDetermined:
+            manager.requestWhenInUseAuthorization()
+        default:
+            break
+        }
+    }
+
+    func requestSingleFix() {
+        authorizationStatus = manager.authorizationStatus
+        switch authorizationStatus {
+        case .authorizedAlways, .authorizedWhenInUse:
+            manager.requestLocation()
+            manager.startUpdatingLocation()
+        case .notDetermined:
+            manager.requestWhenInUseAuthorization()
+        default:
+            break
+        }
+    }
+
+    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard let location = locations.last else { return }
+        Task { @MainActor in
+            self.currentLocation = location
+        }
+    }
+
+    nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        #if DEBUG
+        print("[AddressSearchLocationProvider] Location error: \(error)")
+        #endif
+    }
+
+    nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        Task { @MainActor in
+            self.authorizationStatus = manager.authorizationStatus
+            if self.authorizationStatus == .authorizedAlways || self.authorizationStatus == .authorizedWhenInUse {
+                manager.startUpdatingLocation()
+                manager.requestLocation()
+            }
+        }
+    }
+}
+
 /// Reusable Mapbox Geocoding address search sheet.
 struct AddressSearchSheet: View {
     let placeholder: String
+    var showMyLocation: Bool = true
     let onSelect: (GeocodedAddress) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -31,10 +97,47 @@ struct AddressSearchSheet: View {
     @State private var results: [GeocodedAddress] = []
     @State private var isSearching = false
     @State private var debounceTask: Task<Void, Never>?
+    @StateObject private var locationProvider = AddressSearchLocationProvider()
 
     var body: some View {
         NavigationStack {
             List {
+                if showMyLocation {
+                    Button {
+                        selectMyLocation()
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "location.fill")
+                                .font(.title3)
+                                .foregroundStyle(.white)
+                                .frame(width: 34, height: 34)
+                                .background(Color.appOrange, in: Circle())
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("My Location")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.primary)
+                                if let location = locationProvider.currentLocation {
+                                    Text("Use exact coordinates (\(formatCoordinate(location.coordinate.latitude)), \(formatCoordinate(location.coordinate.longitude)))")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(2)
+                                } else if locationProvider.authorizationStatus == .denied || locationProvider.authorizationStatus == .restricted {
+                                    Text("Location permission is disabled")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                } else {
+                                    Text("Tap to fetch your current coordinates")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    .listRowSeparator(.visible)
+                }
+
                 if isSearching {
                     HStack {
                         Spacer()
@@ -92,15 +195,16 @@ struct AddressSearchSheet: View {
                     Button("Cancel") { dismiss() }
                 }
             }
+            .onAppear { locationProvider.start() }
             .onChange(of: query) { _, newValue in
                 debounceTask?.cancel()
                 let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard trimmed.count >= 3 else {
+                guard trimmed.count >= 2 else {
                     results = []
                     return
                 }
                 debounceTask = Task {
-                    try? await Task.sleep(for: .milliseconds(500))
+                    try? await Task.sleep(for: .milliseconds(300))
                     guard !Task.isCancelled else { return }
                     await search(trimmed)
                 }
@@ -120,8 +224,26 @@ struct AddressSearchSheet: View {
         }
 
         let encoded = text.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
-        let urlString = "https://api.mapbox.com/geocoding/v5/mapbox.places/\(encoded).json?access_token=\(token)&limit=8&country=IN&language=en&proximity=77.2090,28.6139"
-        guard let url = URL(string: urlString) else { return }
+        var components = URLComponents(string: "https://api.mapbox.com/geocoding/v5/mapbox.places/\(encoded).json")
+        var queryItems: [URLQueryItem] = [
+            URLQueryItem(name: "access_token", value: token),
+            URLQueryItem(name: "limit", value: "10"),
+            URLQueryItem(name: "autocomplete", value: "true"),
+            URLQueryItem(name: "country", value: "IN"),
+            URLQueryItem(name: "language", value: "en"),
+            URLQueryItem(name: "fuzzyMatch", value: "true"),
+            URLQueryItem(name: "types", value: "poi,address,place,locality,neighborhood,district,region,postcode")
+        ]
+        if let location = locationProvider.currentLocation {
+            queryItems.append(
+                URLQueryItem(
+                    name: "proximity",
+                    value: "\(location.coordinate.longitude),\(location.coordinate.latitude)"
+                )
+            )
+        }
+        components?.queryItems = queryItems
+        guard let url = components?.url else { return }
 
         isSearching = true
         defer { isSearching = false }
@@ -166,18 +288,46 @@ struct AddressSearchSheet: View {
         )
         let search = MKLocalSearch(request: request)
         if let response = try? await search.start() {
-            results = response.mapItems.map { item in
-                let coordinate = item.location.coordinate
-                return GeocodedAddress(
-                    displayName: item.name ?? "Unknown location",
-                    shortName: item.name ?? "",
-                    latitude: coordinate.latitude,
-                    longitude: coordinate.longitude
-                )
-            }
+            results = response.mapItems
+                .filter { item in
+                    let coordinate = item.location.coordinate
+                    return coordinate.latitude >= 6.0
+                        && coordinate.latitude <= 38.0
+                        && coordinate.longitude >= 68.0
+                        && coordinate.longitude <= 98.0
+                }
+                .map { item in
+                    let coordinate = item.location.coordinate
+                    return GeocodedAddress(
+                        displayName: item.name ?? "Unknown location",
+                        shortName: item.name ?? "Unknown",
+                        latitude: coordinate.latitude,
+                        longitude: coordinate.longitude
+                    )
+                }
         } else {
             results = []
         }
+    }
+
+    private func selectMyLocation() {
+        if let location = locationProvider.currentLocation {
+            onSelect(
+                GeocodedAddress(
+                    displayName: "My Location (\(formatCoordinate(location.coordinate.latitude)), \(formatCoordinate(location.coordinate.longitude)))",
+                    shortName: "My Location",
+                    latitude: location.coordinate.latitude,
+                    longitude: location.coordinate.longitude
+                )
+            )
+            dismiss()
+            return
+        }
+        locationProvider.requestSingleFix()
+    }
+
+    private func formatCoordinate(_ value: Double) -> String {
+        String(format: "%.6f", value)
     }
 }
 

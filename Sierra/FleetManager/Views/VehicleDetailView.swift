@@ -29,7 +29,7 @@ struct VehicleDetailView: View {
             }
         }
         .navigationTitle(vehicle?.name ?? "Vehicle")
-        .toolbarTitleDisplayMode(.inlineLarge)
+        .toolbarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

@@ -59,7 +59,7 @@ final class MaintenanceTaskDetailViewModel {
     }
 
     func startWork() async {
-        guard task.status == .assigned else {
+        guard task.isEffectivelyAssigned else {
             errorMessage = "This task cannot be started — it is \(task.status.rawValue)"
             return
         }

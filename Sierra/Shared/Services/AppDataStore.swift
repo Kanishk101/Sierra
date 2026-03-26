@@ -14,10 +14,12 @@ final class AppDataStore {
     private var emergencyAlertsChannel: RealtimeChannelV2?
     private var staffMembersChannel:   RealtimeChannelV2?
     private var vehiclesChannel:        RealtimeChannelV2?
+    private var vehicleLocationHistoryChannel: RealtimeChannelV2?
     private var tripsChannel:           RealtimeChannelV2?
     private var notificationsChannel:   RealtimeChannelV2?
     private var maintenanceTasksChannel: RealtimeChannelV2?
     private var workOrdersChannel:       RealtimeChannelV2?
+    private var workOrderPhasesChannel:  RealtimeChannelV2?
     private var sparePartsChannel:       RealtimeChannelV2?
     private var partsUsedChannel:        RealtimeChannelV2?
     private var inventoryPartsChannel:   RealtimeChannelV2?
@@ -54,20 +56,60 @@ final class AppDataStore {
     var isLoading: Bool = false
     var loadError: String?
     private var lastDriverRefreshAt: Date?
+    private var isDriverDataRefreshInFlight: Bool = false
+    private var lastFleetRefreshAt: Date?
     private var sentOverdueTripResponseAlerts: Set<UUID> = []
     private var deliveredRealtimeNotificationIds: Set<UUID> = []
 
     /// Shared refresh cadence for driver screens.
-    var driverRefreshInterval: TimeInterval { 10 }
+    var driverRefreshInterval: TimeInterval { 20 }
+    var fleetRefreshInterval: TimeInterval { 8 }
+
+    /// Ensures PostgREST/Realtime calls are issued only with a valid auth session.
+    /// This prevents anonymous fallback requests during auth transitions (e.g. pre-2FA).
+    private func ensureAuthenticatedSession(for scope: String) async -> Bool {
+        do {
+            _ = try await SupabaseManager.ensureValidSession()
+            return true
+        } catch {
+            if SupabaseManager.isLikelyConnectivityError(error) {
+                loadError = "Network unavailable. Please reconnect and try again."
+            } else if SupabaseManager.isSessionRecoveryError(error) {
+                loadError = "Session expired. Please sign in again."
+            } else {
+                loadError = "Unable to validate your session for \(scope)."
+            }
+            print("[AppDataStore.\(scope)] Session preflight failed: \(error.localizedDescription)")
+            return false
+        }
+    }
 
     private func sortTripsByAssignmentRecency() {
         trips.sort { Trip.isMoreRecentlyAssigned($0, than: $1) }
     }
 
+    private func normalizeLoadedGeofences(_ source: [Geofence]) -> [Geofence] {
+        source.map { geofence in
+            var normalized = geofence
+            normalized.latitude = GeofenceScopeService.normalizedLatitude(geofence.latitude)
+            normalized.longitude = GeofenceScopeService.normalizedLongitude(geofence.longitude)
+            normalized.radiusMeters = GeofenceScopeService.normalizedRadiusMeters(geofence.radiusMeters)
+            return normalized
+        }
+    }
+
     // MARK: - loadAll (Fleet Manager)
 
-    func loadAll() async {
+    func loadAll(force: Bool = false) async {
+        if !force,
+           let lastFleetRefreshAt,
+           Date().timeIntervalSince(lastFleetRefreshAt) < fleetRefreshInterval,
+           (!staff.isEmpty || !vehicles.isEmpty || !trips.isEmpty) {
+            return
+        }
         guard !isLoading else { return }
+        guard await ensureAuthenticatedSession(for: "loadAll") else { return }
+        self.lastFleetRefreshAt = Date()
         await tearDownRealtimeChannels()
         isLoading = true
         loadError = nil
@@ -110,7 +152,7 @@ final class AppDataStore {
         do { workOrders          = try await workOrdersTask }   catch { errors.append("workOrders: \(error.localizedDescription)") }
         do { maintenanceRecords  = try await maintRecsTask }    catch { errors.append("maintenanceRecords: \(error.localizedDescription)") }
         do { partsUsed           = try await partsTask }        catch { errors.append("partsUsed: \(error.localizedDescription)") }
-        do { geofences           = try await geofencesTask }    catch { errors.append("geofences: \(error.localizedDescription)") }
+        do { geofences           = normalizeLoadedGeofences(try await geofencesTask) }    catch { errors.append("geofences: \(error.localizedDescription)") }
         do { geofenceEvents      = try await geoEventsTask }    catch { errors.append("geofenceEvents: \(error.localizedDescription)") }
         do { activityLogs        = try await activityTask }     catch { errors.append("activityLogs: \(error.localizedDescription)") }
         do { routeDeviationEvents = try await routeDevsTask }   catch { errors.append("routeDeviationEvents: \(error.localizedDescription)") }
@@ -121,11 +163,13 @@ final class AppDataStore {
             loadError = "Partial load failure: \(errors.joined(separator: "; "))"
             print("[AppDataStore.loadAll] Partial errors: \(errors)")
         }
+        await refreshWorkOrderPhases()
         isLoading = false
 
         subscribeToEmergencyAlerts()
         subscribeToStaffMemberUpdates()
         subscribeToVehicleUpdates()
+        subscribeToVehicleLocationHistoryInserts()
         subscribeToTripUpdates()
         subscribeToMaintenanceRealtime(staffId: nil)
         if let userId = AuthManager.shared.currentUser?.id {
@@ -135,10 +179,20 @@ final class AppDataStore {
 
     // MARK: - loadDriverData
 
-    func loadDriverData(driverId: UUID, surfaceErrors: Bool = true) async {
+    func loadDriverData(
+        driverId: UUID,
+        surfaceErrors: Bool = true,
+        showLoadingIndicator: Bool = true
+    ) async {
         guard !isLoading else { return }
+        guard !isDriverDataRefreshInFlight else { return }
+        isDriverDataRefreshInFlight = true
+        defer { isDriverDataRefreshInFlight = false }
+        guard await ensureAuthenticatedSession(for: "loadDriverData") else { return }
         await tearDownRealtimeChannels()
-        isLoading = true
+        if showLoadingIndicator {
+            isLoading = true
+        }
         if surfaceErrors { loadError = nil }
 
         async let selfMemberTask  = StaffMemberService.fetchStaffMember(id: driverId)
@@ -147,6 +201,7 @@ final class AppDataStore {
         async let fuelLogsTask    = FuelLogService.fetchFuelLogs(driverId: driverId)
         async let inspectionsTask = VehicleInspectionService.fetchAllInspections()
         async let driverProfTask  = DriverProfileService.fetchDriverProfile(staffMemberId: driverId)
+        async let alertsTask      = EmergencyAlertService.fetchEmergencyAlerts(driverId: driverId)
 
         // H-01 FIX: Collect errors and set loadError (was print-only, never surfaced to UI)
         var errors: [String] = []
@@ -156,6 +211,7 @@ final class AppDataStore {
         do { trips = try await tripsTask; sortTripsByAssignmentRecency() }                 catch { errors.append("Trips: \(error.localizedDescription)") }
         do { fuelLogs = try await fuelLogsTask }           catch { errors.append("Fuel logs: \(error.localizedDescription)") }
         do { vehicleInspections = try await inspectionsTask } catch { errors.append("Inspections: \(error.localizedDescription)") }
+        do { emergencyAlerts = try await alertsTask }      catch { errors.append("Alerts: \(error.localizedDescription)") }
         do { if let p = try await driverProfTask { driverProfiles = [p] } }
             catch { errors.append("Profile: \(error.localizedDescription)") }
 
@@ -165,7 +221,9 @@ final class AppDataStore {
                 : "Some data failed to load: \(errors.joined(separator: "; "))"
         }
 
-        isLoading = false
+        if showLoadingIndicator {
+            isLoading = false
+        }
         subscribeToTripUpdates()
         await loadAndSubscribeNotifications(for: driverId)
         await TripReminderService.shared.requestAuthorizationIfNeeded()
@@ -183,13 +241,42 @@ final class AppDataStore {
         }
         guard !isLoading else { return }
         lastDriverRefreshAt = Date()
-        await loadDriverData(driverId: driverId, surfaceErrors: force)
+        await loadDriverData(
+            driverId: driverId,
+            surfaceErrors: force,
+            showLoadingIndicator: force
+        )
+    }
+
+    /// Lightweight live refresh for Admin Trips screen (Live Map + Trips list).
+    /// Keeps key operational datasets fresh even if a realtime event is missed.
+    func refreshAdminTripsLiveData() async {
+        async let vehiclesTask   = VehicleService.fetchAllVehicles()
+        async let tripsTask      = TripService.fetchAllTrips()
+        async let geofencesTask  = GeofenceService.fetchAllGeofences()
+        async let deviationsTask = RouteDeviationService.fetchAllDeviations()
+
+        var errors: [String] = []
+        do { vehicles = try await vehiclesTask } catch { errors.append("vehicles: \(error.localizedDescription)") }
+        do {
+            trips = try await tripsTask
+            sortTripsByAssignmentRecency()
+        } catch {
+            errors.append("trips: \(error.localizedDescription)")
+        }
+        do { geofences = try await geofencesTask } catch { errors.append("geofences: \(error.localizedDescription)") }
+        do { routeDeviationEvents = try await deviationsTask } catch { errors.append("deviations: \(error.localizedDescription)") }
+
+        if !errors.isEmpty {
+            print("[AppDataStore.refreshAdminTripsLiveData] Partial errors: \(errors)")
+        }
     }
 
     // MARK: - loadMaintenanceData
 
     func loadMaintenanceData(staffId: UUID) async {
         guard !isLoading else { return }
+        guard await ensureAuthenticatedSession(for: "loadMaintenanceData") else { return }
         await tearDownRealtimeChannels()
         isLoading = true
         loadError = nil
@@ -231,6 +318,7 @@ final class AppDataStore {
             print("[loadMaintenanceData] Partial errors: \(errors)")
         }
 
+        await refreshWorkOrderPhases()
         isLoading = false
         subscribeToMaintenanceRealtime(staffId: staffId)
         await loadAndSubscribeNotifications(for: staffId)
@@ -242,10 +330,12 @@ final class AppDataStore {
         if let ch = emergencyAlertsChannel { await ch.unsubscribe(); emergencyAlertsChannel = nil }
         if let ch = staffMembersChannel   { await ch.unsubscribe(); staffMembersChannel = nil }
         if let ch = vehiclesChannel        { await ch.unsubscribe(); vehiclesChannel = nil }
+        if let ch = vehicleLocationHistoryChannel { await ch.unsubscribe(); vehicleLocationHistoryChannel = nil }
         if let ch = tripsChannel           { await ch.unsubscribe(); tripsChannel = nil }
         if let ch = notificationsChannel   { await ch.unsubscribe(); notificationsChannel = nil }
         if let ch = maintenanceTasksChannel { await ch.unsubscribe(); maintenanceTasksChannel = nil }
         if let ch = workOrdersChannel       { await ch.unsubscribe(); workOrdersChannel = nil }
+        if let ch = workOrderPhasesChannel  { await ch.unsubscribe(); workOrderPhasesChannel = nil }
         if let ch = sparePartsChannel       { await ch.unsubscribe(); sparePartsChannel = nil }
         if let ch = partsUsedChannel        { await ch.unsubscribe(); partsUsedChannel = nil }
         if let ch = inventoryPartsChannel   { await ch.unsubscribe(); inventoryPartsChannel = nil }
@@ -257,7 +347,7 @@ final class AppDataStore {
 
     func addStaffMember(_ member: StaffMember) async throws {
         try await StaffMemberService.addStaffMember(member)
-        staff.append(member)
+        staff.insert(member, at: 0)
     }
     func updateStaffMember(_ member: StaffMember) async throws {
         try await StaffMemberService.updateStaffMember(member)
@@ -507,7 +597,7 @@ final class AppDataStore {
     // MARK: - Vehicle CRUD
 
     func addVehicle(_ vehicle: Vehicle) async throws {
-        try await VehicleService.addVehicle(vehicle); vehicles.append(vehicle)
+        try await VehicleService.addVehicle(vehicle); vehicles.insert(vehicle, at: 0)
     }
     func updateVehicle(_ vehicle: Vehicle) async throws {
         try await VehicleService.updateVehicle(vehicle)
@@ -615,7 +705,12 @@ final class AppDataStore {
         if let tripIdx = trips.firstIndex(where: { $0.id == saved.tripId }) {
             trips[tripIdx].proofOfDeliveryId = saved.id
             // Use targeted partial update to avoid trigger rejection
-            try await TripService.setProofOfDeliveryId(tripId: saved.tripId, podId: saved.id)
+            do {
+                try await TripService.setProofOfDeliveryId(tripId: saved.tripId, podId: saved.id)
+            } catch {
+                // Non-fatal: POD is saved; this link sync can be retried by refresh/retry flow.
+                print("[AppDataStore.addProofOfDelivery] Non-fatal trip POD link failure: \(error)")
+            }
         }
     }
 
@@ -663,6 +758,53 @@ final class AppDataStore {
     func updateMaintenanceTask(_ task: MaintenanceTask) async throws {
         try await MaintenanceTaskService.updateMaintenanceTask(task)
         if let idx = maintenanceTasks.firstIndex(where: { $0.id == task.id }) { maintenanceTasks[idx] = task }
+    }
+
+    func approveMaintenanceTaskAndCreateWorkOrder(
+        taskId: UUID,
+        approvedById: UUID,
+        assignedToId: UUID
+    ) async throws {
+        guard let taskIndex = maintenanceTasks.firstIndex(where: { $0.id == taskId }) else { return }
+        let task = maintenanceTasks[taskIndex]
+
+        try await MaintenanceTaskService.approveTask(
+            taskId: taskId,
+            approvedById: approvedById,
+            assignedToId: assignedToId
+        )
+
+        maintenanceTasks[taskIndex].status = .assigned
+        maintenanceTasks[taskIndex].approvedById = approvedById
+        maintenanceTasks[taskIndex].approvedAt = Date()
+        maintenanceTasks[taskIndex].assignedToId = assignedToId
+        maintenanceTasks[taskIndex].rejectionReason = nil
+
+        if workOrder(forMaintenanceTask: taskId) == nil {
+            let now = Date()
+            let created = WorkOrder(
+                id: UUID(),
+                maintenanceTaskId: taskId,
+                vehicleId: task.vehicleId,
+                assignedToId: assignedToId,
+                workOrderType: task.taskType == .scheduled ? .service : .repair,
+                partsSubStatus: .none,
+                status: .open,
+                repairDescription: "",
+                labourCostTotal: 0,
+                partsCostTotal: 0,
+                totalCost: 0,
+                startedAt: nil,
+                completedAt: nil,
+                technicianNotes: nil,
+                vinScanned: false,
+                repairImageUrls: [],
+                estimatedCompletionAt: nil,
+                createdAt: now,
+                updatedAt: now
+            )
+            try await addWorkOrder(created)
+        }
     }
 
     func completeMaintenanceTask(id: UUID) async throws {
@@ -766,6 +908,7 @@ final class AppDataStore {
         try await SparePartsRequestService.submitRequest(
             maintenanceTaskId: request.maintenanceTaskId,
             workOrderId: request.workOrderId,
+            workOrderPhaseId: request.workOrderPhaseId,
             requestedById: request.requestedById,
             partName: request.partName,
             partNumber: request.partNumber,
@@ -775,7 +918,77 @@ final class AppDataStore {
             reason: request.reason
         )
         sparePartsRequests.insert(request, at: 0)
+        await recomputePartsSubStatus(forTaskId: request.maintenanceTaskId)
     }
+
+    func approvePartRequestFromInventory(id: UUID, reviewedBy adminId: UUID) async throws {
+        guard let idx = sparePartsRequests.firstIndex(where: { $0.id == id }) else { return }
+        var req = sparePartsRequests[idx]
+
+        let requestedQty = max(0, req.quantity)
+        let inventoryApproval = min(requestedQty, availableInventoryQuantity(for: req))
+        let remainingToOrder = max(0, requestedQty - inventoryApproval)
+
+        try await SparePartsRequestService.applyAdminDecision(
+            id: id,
+            reviewedBy: adminId,
+            quantityAllocated: inventoryApproval,
+            quantityOnOrder: remainingToOrder,
+            expectedArrivalAt: req.expectedArrivalAt,
+            orderReference: req.orderReference
+        )
+
+        if inventoryApproval > 0 {
+            try await consumeInventory(for: req, quantity: inventoryApproval)
+        }
+
+        req.status = remainingToOrder == 0 ? .approved : .pending
+        req.reviewedBy = adminId
+        req.reviewedAt = Date()
+        req.quantityAllocated = inventoryApproval
+        req.quantityOnOrder = remainingToOrder
+        sparePartsRequests[idx] = req
+
+        await recomputePartsSubStatus(forTaskId: req.maintenanceTaskId)
+    }
+
+    func placeOrderForPartRequest(
+        id: UUID,
+        reviewedBy adminId: UUID,
+        expectedArrivalAt: Date,
+        orderReference: String?
+    ) async throws {
+        guard let idx = sparePartsRequests.firstIndex(where: { $0.id == id }) else { return }
+        var req = sparePartsRequests[idx]
+
+        let requestedQty = max(0, req.quantity)
+        let alreadyAllocated = max(0, req.quantityAllocated)
+        let remainingToOrder = max(0, requestedQty - alreadyAllocated)
+        guard remainingToOrder > 0 else { return }
+
+        try await SparePartsRequestService.applyAdminDecision(
+            id: id,
+            reviewedBy: adminId,
+            quantityAllocated: alreadyAllocated,
+            quantityOnOrder: remainingToOrder,
+            expectedArrivalAt: expectedArrivalAt,
+            orderReference: orderReference
+        )
+
+        try await incrementOnOrderInventory(for: req, quantity: remainingToOrder, expectedArrivalAt: expectedArrivalAt)
+
+        req.status = .pending
+        req.reviewedBy = adminId
+        req.reviewedAt = Date()
+        req.quantityOnOrder = remainingToOrder
+        req.expectedArrivalAt = expectedArrivalAt
+        req.orderReference = orderReference
+        req.adminOrderedAt = Date()
+        sparePartsRequests[idx] = req
+
+        await recomputePartsSubStatus(forTaskId: req.maintenanceTaskId)
+    }
+
     func approveSparePartsRequest(id: UUID, reviewedBy adminId: UUID) async throws {
         try await SparePartsRequestService.approveRequest(id: id, reviewedBy: adminId)
         if let idx = sparePartsRequests.firstIndex(where: { $0.id == id }) {
@@ -794,6 +1007,7 @@ final class AppDataStore {
                     entityId: req.id
                 )
             }
+            await recomputePartsSubStatus(forTaskId: req.maintenanceTaskId)
         }
     }
     func rejectSparePartsRequest(id: UUID, reviewedBy adminId: UUID, reason: String) async throws {
@@ -815,17 +1029,114 @@ final class AppDataStore {
                     entityId: req.id
                 )
             }
+            await recomputePartsSubStatus(forTaskId: req.maintenanceTaskId)
+        }
+    }
+
+    private func availableInventoryQuantity(for request: SparePartsRequest) -> Int {
+        guard let part = matchingInventoryPart(for: request) else {
+            return max(0, request.quantityAvailable)
+        }
+        return max(0, part.currentQuantity)
+    }
+
+    private func matchingInventoryPart(for request: SparePartsRequest) -> InventoryPart? {
+        inventoryParts.first {
+            $0.partName.caseInsensitiveCompare(request.partName) == .orderedSame
+            && (($0.partNumber ?? "").caseInsensitiveCompare(request.partNumber ?? "") == .orderedSame)
+        }
+    }
+
+    private func consumeInventory(for request: SparePartsRequest, quantity: Int) async throws {
+        guard quantity > 0, let part = matchingInventoryPart(for: request) else { return }
+        let newCurrent = max(0, part.currentQuantity - quantity)
+        try await updateInventoryPart(
+            id: part.id,
+            partName: part.partName,
+            partNumber: part.partNumber,
+            supplier: part.supplier,
+            category: part.category,
+            unit: part.unit,
+            currentQuantity: newCurrent,
+            reorderLevel: part.reorderLevel,
+            onOrderQuantity: part.onOrderQuantity,
+            expectedArrivalAt: part.expectedArrivalAt,
+            compatibleVehicleIds: part.compatibleVehicleIds,
+            isActive: part.isActive
+        )
+    }
+
+    private func incrementOnOrderInventory(
+        for request: SparePartsRequest,
+        quantity: Int,
+        expectedArrivalAt: Date
+    ) async throws {
+        guard quantity > 0, let part = matchingInventoryPart(for: request) else { return }
+        try await updateInventoryPart(
+            id: part.id,
+            partName: part.partName,
+            partNumber: part.partNumber,
+            supplier: part.supplier,
+            category: part.category,
+            unit: part.unit,
+            currentQuantity: part.currentQuantity,
+            reorderLevel: part.reorderLevel,
+            onOrderQuantity: max(0, part.onOrderQuantity + quantity),
+            expectedArrivalAt: expectedArrivalAt,
+            compatibleVehicleIds: part.compatibleVehicleIds,
+            isActive: part.isActive
+        )
+    }
+
+    func recomputePartsSubStatus(forTaskId taskId: UUID) async {
+        guard let wo = workOrder(forMaintenanceTask: taskId) else { return }
+        let requests = sparePartsRequests
+            .filter { $0.maintenanceTaskId == taskId }
+
+        let next: PartsSubStatus
+        if requests.isEmpty {
+            next = .none
+        } else if requests.allSatisfy({ $0.status == .fulfilled }) {
+            next = .ready
+        } else if requests.contains(where: { $0.status == .pending && $0.quantityOnOrder > 0 && $0.quantityAllocated > 0 }) {
+            next = .partiallyReady
+        } else if requests.contains(where: { $0.status == .pending && $0.quantityOnOrder > 0 }) {
+            next = .orderPlaced
+        } else if requests.contains(where: { $0.status == .pending }) {
+            next = .requested
+        } else if requests.contains(where: { $0.quantityOnOrder > 0 && $0.quantityAllocated > 0 }) {
+            next = .partiallyReady
+        } else if requests.contains(where: { $0.quantityOnOrder > 0 }) {
+            next = .orderPlaced
+        } else {
+            next = .approved
+        }
+
+        do {
+            try await WorkOrderService.updatePartsSubStatus(workOrderId: wo.id, status: next)
+            if let idx = workOrders.firstIndex(where: { $0.id == wo.id }) {
+                workOrders[idx].partsSubStatus = next
+            }
+        } catch {
+            print("[AppDataStore] Failed to recompute parts status: \(error)")
         }
     }
 
     // MARK: - Geofences
 
     func addGeofence(_ geofence: Geofence) async throws {
-        try await GeofenceService.addGeofence(geofence); geofences.append(geofence)
+        let persisted = try await GeofenceService.addGeofence(geofence)
+        if let idx = geofences.firstIndex(where: { $0.id == persisted.id }) {
+            geofences[idx] = persisted
+        } else {
+            geofences.append(persisted)
+        }
     }
     func updateGeofence(_ geofence: Geofence) async throws {
-        try await GeofenceService.updateGeofence(geofence)
-        if let idx = geofences.firstIndex(where: { $0.id == geofence.id }) { geofences[idx] = geofence }
+        let persisted = try await GeofenceService.updateGeofence(geofence)
+        if let idx = geofences.firstIndex(where: { $0.id == persisted.id }) {
+            geofences[idx] = persisted
+        }
     }
     func deleteGeofence(id: UUID) async throws {
         try await GeofenceService.deleteGeofence(id: id); geofences.removeAll { $0.id == id }
@@ -920,6 +1231,7 @@ final class AppDataStore {
     func workOrder(forMaintenanceTask taskId: UUID) -> WorkOrder? { workOrders.first { $0.maintenanceTaskId == taskId } }
     func sparePartsRequests(forTask taskId: UUID) -> [SparePartsRequest] { sparePartsRequests.filter { $0.maintenanceTaskId == taskId } }
     func sparePartsRequests(forWorkOrder woId: UUID) -> [SparePartsRequest] { sparePartsRequests.filter { $0.workOrderId == woId } }
+    func sparePartsRequests(forPhase phaseId: UUID) -> [SparePartsRequest] { sparePartsRequests.filter { $0.workOrderPhaseId == phaseId } }
     func pendingSparePartsRequests() -> [SparePartsRequest] { sparePartsRequests.filter { $0.status == .pending } }
     func phases(forWorkOrder woId: UUID) -> [WorkOrderPhase] { workOrderPhases.filter { $0.workOrderId == woId }.sorted { $0.phaseNumber < $1.phaseNumber } }
 
@@ -945,6 +1257,26 @@ final class AppDataStore {
                 workOrderPhases[idx].completedById = personnelId
             }
         }
+
+        let phaseSet = phases(forWorkOrder: phase.workOrderId)
+        if !phaseSet.isEmpty, phaseSet.allSatisfy(\.isCompleted),
+           let woIndex = workOrders.firstIndex(where: { $0.id == phase.workOrderId }) {
+            workOrders[woIndex].status = .completed
+            if workOrders[woIndex].completedAt == nil { workOrders[woIndex].completedAt = Date() }
+            try? await WorkOrderService.updateWorkOrder(workOrders[woIndex])
+        }
+
+        if let wo = workOrders.first(where: { $0.id == phase.workOrderId }),
+           let task = maintenanceTasks.first(where: { $0.id == wo.maintenanceTaskId }) {
+            try? await NotificationService.insertNotification(
+                recipientId: task.createdByAdminId,
+                type: .general,
+                title: "Maintenance Phase Completed",
+                body: "Phase '\(phase.title)' marked done for task '\(task.title)'.",
+                entityType: "work_order_phase",
+                entityId: phase.id
+            )
+        }
     }
 
     func createPhase(
@@ -952,16 +1284,21 @@ final class AppDataStore {
         phaseNumber: Int,
         title: String,
         description: String?,
-        estimatedMinutes: Int?
-    ) async throws {
+        estimatedMinutes: Int?,
+        plannedCompletionAt: Date?,
+        isLocked: Bool
+    ) async throws -> WorkOrderPhase {
         let created = try await WorkOrderPhaseService().createPhase(
             workOrderId: workOrderId,
             phaseNumber: phaseNumber,
             title: title,
             description: description,
-            estimatedMinutes: estimatedMinutes
+            estimatedMinutes: estimatedMinutes,
+            plannedCompletionAt: plannedCompletionAt,
+            isLocked: isLocked
         )
         workOrderPhases.append(created)
+        return created
     }
 
     func updatePhasePlan(
@@ -969,20 +1306,29 @@ final class AppDataStore {
         phaseNumber: Int,
         title: String,
         description: String?,
-        estimatedMinutes: Int?
+        estimatedMinutes: Int?,
+        plannedCompletionAt: Date?,
+        isLocked: Bool
     ) async throws {
         try await WorkOrderPhaseService().updatePhase(
             phaseId: phaseId,
             phaseNumber: phaseNumber,
             title: title,
             description: description,
-            estimatedMinutes: estimatedMinutes
+            estimatedMinutes: estimatedMinutes,
+            plannedCompletionAt: plannedCompletionAt,
+            isLocked: isLocked
         )
         if let idx = workOrderPhases.firstIndex(where: { $0.id == phaseId }) {
             workOrderPhases[idx].phaseNumber = phaseNumber
             workOrderPhases[idx].title = title
             workOrderPhases[idx].description = description
             workOrderPhases[idx].estimatedMinutes = estimatedMinutes
+            workOrderPhases[idx].plannedCompletionAt = plannedCompletionAt
+            workOrderPhases[idx].isLocked = isLocked
+            if isLocked, workOrderPhases[idx].lockedAt == nil {
+                workOrderPhases[idx].lockedAt = Date()
+            }
         }
     }
     func routeDeviations(forTrip tripId: UUID) -> [RouteDeviationEvent] { routeDeviationEvents.filter { $0.tripId == tripId } }
@@ -1029,6 +1375,18 @@ final class AppDataStore {
                 }
             }
         }
+        _ = channel.onPostgresChange(InsertAction.self, schema: "public", table: "staff_members") { [weak self] action in
+            guard let self else { return }
+            Task { @MainActor in
+                guard let idValue = action.record["id"],
+                      case let .string(idString) = idValue,
+                      let newId = UUID(uuidString: idString) else { return }
+                guard !self.staff.contains(where: { $0.id == newId }) else { return }
+                if let fresh = try? await StaffMemberService.fetchStaffMember(id: newId) {
+                    self.staff.insert(fresh, at: 0)
+                }
+            }
+        }
         Task {
             do { try await channel.subscribeWithError() } catch { print("[AppDataStore] Staff members channel: \(error)") }
             await MainActor.run { self.staffMembersChannel = channel }
@@ -1042,19 +1400,164 @@ final class AppDataStore {
         _ = channel.onPostgresChange(UpdateAction.self, schema: "public", table: "vehicles") { [weak self] action in
             guard let self else { return }
             Task { @MainActor in
-                guard let idValue = action.record["id"],
-                      case let .string(idString) = idValue,
-                      let updatedId = UUID(uuidString: idString) else { return }
-                if let fresh = try? await VehicleService.fetchVehicle(id: updatedId),
-                   let idx = self.vehicles.firstIndex(where: { $0.id == updatedId }) {
-                    self.vehicles[idx] = fresh
-                }
+                await self.applyVehicleRealtimeRecord(action.record)
+            }
+        }
+        _ = channel.onPostgresChange(InsertAction.self, schema: "public", table: "vehicles") { [weak self] action in
+            guard let self else { return }
+            Task { @MainActor in
+                await self.applyVehicleRealtimeRecord(action.record)
             }
         }
         Task {
             do { try await channel.subscribeWithError() } catch { print("[AppDataStore] Vehicles channel: \(error)") }
             await MainActor.run { self.vehiclesChannel = channel }
         }
+    }
+
+    private func subscribeToVehicleLocationHistoryInserts() {
+        let channel = supabase.channel("vehicle_location_history_inserts_channel")
+        _ = channel.onPostgresChange(InsertAction.self, schema: "public", table: "vehicle_location_history") { [weak self] action in
+            guard let self else { return }
+            Task { @MainActor in
+                await self.applyVehicleLocationRealtimeRecord(action.record)
+            }
+        }
+        Task {
+            do { try await channel.subscribeWithError() } catch { print("[AppDataStore] Vehicle history channel: \(error)") }
+            await MainActor.run { self.vehicleLocationHistoryChannel = channel }
+        }
+    }
+
+    private struct VehicleRealtimePatch: Decodable {
+        let id: UUID
+        let currentLatitude: Double?
+        let currentLongitude: Double?
+        let status: VehicleStatus?
+        let assignedDriverId: String?
+
+        enum CodingKeys: String, CodingKey {
+            case id
+            case currentLatitude = "current_latitude"
+            case currentLongitude = "current_longitude"
+            case status
+            case assignedDriverId = "assigned_driver_id"
+        }
+    }
+
+    private struct VehicleLocationRealtimePatch: Decodable {
+        let vehicleId: UUID
+        let tripId: UUID?
+        let driverId: UUID?
+        let latitude: Double
+        let longitude: Double
+        let speedKmh: Double?
+        let recordedAt: String?
+
+        enum CodingKeys: String, CodingKey {
+            case vehicleId = "vehicle_id"
+            case tripId = "trip_id"
+            case driverId = "driver_id"
+            case latitude
+            case longitude
+            case speedKmh = "speed_kmh"
+            case recordedAt = "recorded_at"
+        }
+    }
+
+    private func applyVehicleRealtimeRecord<Record: Encodable>(_ record: Record) async {
+        guard let patch = decodeVehicleRealtimePatch(from: record) else { return }
+
+        if let idx = vehicles.firstIndex(where: { $0.id == patch.id }) {
+            // Fast path: apply realtime fields immediately so admin map marker moves instantly.
+            if let lat = patch.currentLatitude { vehicles[idx].currentLatitude = lat }
+            if let lng = patch.currentLongitude { vehicles[idx].currentLongitude = lng }
+            if let status = patch.status { vehicles[idx].status = status }
+            if let assignedDriverId = patch.assignedDriverId { vehicles[idx].assignedDriverId = assignedDriverId }
+            return
+        }
+
+        // Newly inserted / first-seen vehicle should appear on admin map without manual refresh.
+        if let fresh = try? await VehicleService.fetchVehicle(id: patch.id) {
+            vehicles.insert(fresh, at: 0)
+            return
+        }
+
+        // Last fallback when full fetch fails but realtime patch has coordinates.
+        if let lat = patch.currentLatitude, let lng = patch.currentLongitude {
+            let now = Date()
+            let fallback = Vehicle(
+                id: patch.id,
+                name: "Vehicle",
+                manufacturer: "",
+                model: "",
+                year: 0,
+                vin: "",
+                licensePlate: patch.id.uuidString.prefix(8).uppercased(),
+                color: "",
+                fuelType: .diesel,
+                seatingCapacity: 0,
+                status: patch.status ?? .idle,
+                assignedDriverId: patch.assignedDriverId,
+                currentLatitude: lat,
+                currentLongitude: lng,
+                odometer: 0,
+                totalTrips: 0,
+                totalDistanceKm: 0,
+                createdAt: now,
+                updatedAt: now
+            )
+            vehicles.insert(fallback, at: 0)
+        }
+    }
+
+    private func applyVehicleLocationRealtimeRecord<Record: Encodable>(_ record: Record) async {
+        guard let patch = decodeVehicleLocationRealtimePatch(from: record) else { return }
+
+        if let idx = vehicles.firstIndex(where: { $0.id == patch.vehicleId }) {
+            vehicles[idx].currentLatitude = patch.latitude
+            vehicles[idx].currentLongitude = patch.longitude
+            return
+        }
+
+        if let fresh = try? await VehicleService.fetchVehicle(id: patch.vehicleId) {
+            vehicles.insert(fresh, at: 0)
+            return
+        }
+
+        let now = Date()
+        let fallback = Vehicle(
+            id: patch.vehicleId,
+            name: "Vehicle",
+            manufacturer: "",
+            model: "",
+            year: 0,
+            vin: "",
+            licensePlate: patch.vehicleId.uuidString.prefix(8).uppercased(),
+            color: "",
+            fuelType: .diesel,
+            seatingCapacity: 0,
+            status: .active,
+            assignedDriverId: patch.driverId?.uuidString,
+            currentLatitude: patch.latitude,
+            currentLongitude: patch.longitude,
+            odometer: 0,
+            totalTrips: 0,
+            totalDistanceKm: 0,
+            createdAt: now,
+            updatedAt: now
+        )
+        vehicles.insert(fallback, at: 0)
+    }
+
+    private func decodeVehicleRealtimePatch<Record: Encodable>(from record: Record) -> VehicleRealtimePatch? {
+        guard let data = try? JSONEncoder().encode(record) else { return nil }
+        return try? JSONDecoder().decode(VehicleRealtimePatch.self, from: data)
+    }
+
+    private func decodeVehicleLocationRealtimePatch<Record: Encodable>(from record: Record) -> VehicleLocationRealtimePatch? {
+        guard let data = try? JSONEncoder().encode(record) else { return nil }
+        return try? JSONDecoder().decode(VehicleLocationRealtimePatch.self, from: data)
     }
 
     // MARK: - Realtime — Trips (UPDATE + INSERT)
@@ -1098,6 +1601,7 @@ final class AppDataStore {
     private func subscribeToMaintenanceRealtime(staffId: UUID?) {
         subscribeToMaintenanceTaskUpdates(staffId: staffId)
         subscribeToWorkOrderUpdates(staffId: staffId)
+        subscribeToWorkOrderPhaseUpdates()
         subscribeToSparePartsUpdates(staffId: staffId)
         subscribeToPartsUsedUpdates()
         subscribeToInventoryPartsUpdates()
@@ -1136,6 +1640,24 @@ final class AppDataStore {
         Task {
             do { try await channel.subscribeWithError() } catch { print("[AppDataStore] Work orders channel: \(error)") }
             await MainActor.run { self.workOrdersChannel = channel }
+        }
+    }
+
+    private func subscribeToWorkOrderPhaseUpdates() {
+        let channel = supabase.channel("work_order_phases_updates_channel")
+
+        _ = channel.onPostgresChange(UpdateAction.self, schema: "public", table: "work_order_phases") { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in await self.refreshWorkOrderPhases() }
+        }
+        _ = channel.onPostgresChange(InsertAction.self, schema: "public", table: "work_order_phases") { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in await self.refreshWorkOrderPhases() }
+        }
+
+        Task {
+            do { try await channel.subscribeWithError() } catch { print("[AppDataStore] Work order phases channel: \(error)") }
+            await MainActor.run { self.workOrderPhasesChannel = channel }
         }
     }
 
@@ -1212,9 +1734,30 @@ final class AppDataStore {
             } else {
                 workOrders = try await WorkOrderService.fetchAllWorkOrders()
             }
+            await refreshWorkOrderPhases()
         } catch {
             print("[AppDataStore] Refresh work orders failed: \(error)")
         }
+    }
+
+    private func refreshWorkOrderPhases() async {
+        let workOrderIds = workOrders.map(\.id)
+        guard !workOrderIds.isEmpty else {
+            workOrderPhases = []
+            return
+        }
+
+        var merged: [WorkOrderPhase] = []
+        let service = WorkOrderPhaseService()
+        for workOrderId in workOrderIds {
+            do {
+                let phases = try await service.fetchPhases(workOrderId: workOrderId)
+                merged.append(contentsOf: phases)
+            } catch {
+                print("[AppDataStore] Refresh work order phases failed for \(workOrderId): \(error)")
+            }
+        }
+        workOrderPhases = merged
     }
 
     private func refreshSparePartsRequests(staffId: UUID?) async {
@@ -1274,6 +1817,15 @@ final class AppDataStore {
                         }
                     }
                     self.notifications.sort { $0.sentAt > $1.sentAt }
+
+                    // Driver UX: when FM reassigns vehicle, refresh trips immediately
+                    // so card state moves from "Waiting for Vehicle" to normal flow.
+                    if newNotification.type == .vehicleAssigned {
+                        let isDriverUser = AuthManager.shared.currentUser?.role == .driver
+                        if isDriverUser {
+                            await self.refreshDriverData(driverId: userId, force: true)
+                        }
+                    }
                 }
             }
         }
@@ -1286,6 +1838,17 @@ final class AppDataStore {
     func clearAllNotifications(userId: UUID) async throws {
         try await supabase.from("notifications").delete().eq("recipient_id", value: userId.uuidString).execute()
         notifications = []
+    }
+
+    /// Driver-side waiting state after pre-trip failure until FM reassigns vehicle.
+    /// Backed by "Defect" emergency alert rows raised from pre-trip fail flow.
+    func isTripWaitingForVehicleReassignment(_ trip: Trip) -> Bool {
+        emergencyAlerts.contains { alert in
+            alert.tripId == trip.id
+            && alert.alertType == .defect
+            && (alert.status == .active || alert.status == .acknowledged)
+            && (alert.description?.lowercased().contains("pre-trip fail") ?? false)
+        }
     }
 
     // MARK: - Location Publishing

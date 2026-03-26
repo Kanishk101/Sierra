@@ -48,11 +48,12 @@ struct GeofenceEventInsertPayload: Encodable {
 
 struct GeofenceEventService {
 
-    static func fetchAllGeofenceEvents() async throws -> [GeofenceEvent] {
+    static func fetchAllGeofenceEvents(limit: Int = 500) async throws -> [GeofenceEvent] {
         try await supabase
             .from("geofence_events")
             .select()
             .order("triggered_at", ascending: false)
+            .limit(limit)
             .execute()
             .value
     }

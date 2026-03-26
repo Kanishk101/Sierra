@@ -32,52 +32,74 @@ struct AlertsInboxView: View {
                 .padding(.horizontal, -4)
             }
 
-            // Emergency alerts
-            if !vm.activeAlerts.isEmpty {
+            if vm.isLoading && vm.activeAlerts.isEmpty && vm.unacknowledgedDeviations.isEmpty && overdueMaintenanceTasks.isEmpty {
                 Section {
-                    ForEach(vm.activeAlerts) { alert in
-                        NavigationLink(value: alert.id) {
-                            emergencyRow(alert)
+                    ForEach(0..<5, id: \.self) { _ in
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                SierraSkeletonView(width: 120, height: 12)
+                                Spacer()
+                                SierraSkeletonView(width: 60, height: 10)
+                            }
+                            SierraSkeletonView(width: 180, height: 12)
+                            SierraSkeletonView(width: 140, height: 10)
                         }
+                        .padding(12)
+                        .background(Color.appCardBg, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .stroke(Color.appDivider.opacity(0.45), lineWidth: 1)
+                        )
                     }
-                } header: {
-                    sectionHeader("Emergency Alerts", count: vm.activeAlerts.count, color: .red)
                 }
-            }
-
-            // Route deviations
-            if !vm.unacknowledgedDeviations.isEmpty {
-                Section {
-                    ForEach(vm.unacknowledgedDeviations) { dev in
-                        deviationRow(dev)
+            } else {
+                // Emergency alerts
+                if !vm.activeAlerts.isEmpty {
+                    Section {
+                        ForEach(vm.activeAlerts) { alert in
+                            NavigationLink(value: alert.id) {
+                                emergencyRow(alert)
+                            }
+                        }
+                    } header: {
+                        sectionHeader("Emergency Alerts", count: vm.activeAlerts.count, color: .red)
                     }
-                } header: {
-                    sectionHeader("Route Deviations", count: vm.unacknowledgedDeviations.count, color: .yellow)
                 }
-            }
 
-            // Overdue maintenance
-            if !overdueMaintenanceTasks.isEmpty {
-                Section {
-                    ForEach(overdueMaintenanceTasks) { task in
-                        overdueRow(task)
+                // Route deviations
+                if !vm.unacknowledgedDeviations.isEmpty {
+                    Section {
+                        ForEach(vm.unacknowledgedDeviations) { dev in
+                            deviationRow(dev)
+                        }
+                    } header: {
+                        sectionHeader("Route Deviations", count: vm.unacknowledgedDeviations.count, color: .yellow)
                     }
-                } header: {
-                    sectionHeader("Overdue Maintenance", count: overdueMaintenanceTasks.count, color: .orange)
                 }
-            }
 
-            if vm.activeAlerts.isEmpty && vm.unacknowledgedDeviations.isEmpty && overdueMaintenanceTasks.isEmpty {
-                Section {
-                    VStack(spacing: 12) {
-                        Image(systemName: "checkmark.shield.fill")
-                            .font(.system(size: 40, weight: .light))
-                            .foregroundStyle(.green.opacity(0.5))
-                        Text("All clear — no active alerts")
-                            .font(.subheadline).foregroundStyle(.secondary)
+                // Overdue maintenance
+                if !overdueMaintenanceTasks.isEmpty {
+                    Section {
+                        ForEach(overdueMaintenanceTasks) { task in
+                            overdueRow(task)
+                        }
+                    } header: {
+                        sectionHeader("Overdue Maintenance", count: overdueMaintenanceTasks.count, color: .orange)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 40)
+                }
+
+                if vm.activeAlerts.isEmpty && vm.unacknowledgedDeviations.isEmpty && overdueMaintenanceTasks.isEmpty {
+                    Section {
+                        VStack(spacing: 12) {
+                            Image(systemName: "checkmark.shield.fill")
+                                .font(.system(size: 40, weight: .light))
+                                .foregroundStyle(.green.opacity(0.5))
+                            Text("All clear — no active alerts")
+                                .font(.subheadline).foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 40)
+                    }
                 }
             }
         }
@@ -86,6 +108,7 @@ struct AlertsInboxView: View {
         .background(Color.appSurface.ignoresSafeArea())
         .navigationTitle("Alerts")
         .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
         .task {
             await vm.load()
         }

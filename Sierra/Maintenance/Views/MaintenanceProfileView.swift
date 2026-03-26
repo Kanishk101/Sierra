@@ -28,7 +28,7 @@ struct MaintenanceProfileView: View {
 
     private var completedTasks: Int { myTasks.filter { $0.status == .completed }.count }
     private var inProgressTasks: Int { myTasks.filter { $0.status == .inProgress }.count }
-    private var assignedTasks: Int { myTasks.filter { $0.status == .assigned }.count }
+    private var assignedTasks: Int { myTasks.filter { $0.isEffectivelyAssigned }.count }
 
     private var biometricLabel: String {
         let context = LAContext()

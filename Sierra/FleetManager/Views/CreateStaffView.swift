@@ -16,6 +16,7 @@ struct CreateStaffView: View {
             }
             .navigationTitle("Add Staff")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

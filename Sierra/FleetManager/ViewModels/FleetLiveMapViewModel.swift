@@ -106,6 +106,54 @@ final class FleetLiveMapViewModel {
         return fallbackCoordinates[vehicle.id]
     }
 
+    func displayedGeofences(
+        allGeofences: [Geofence],
+        trips: [Trip],
+        vehicles: [Vehicle],
+        visibleRegion: MKCoordinateRegion?
+    ) -> [Geofence] {
+        let active = allGeofences.filter(\.isActive)
+        guard !active.isEmpty else { return [] }
+
+        var scoped: [Geofence] = []
+
+        if let selectedVehicleId,
+           let selectedTrip = activeTrip(for: selectedVehicleId, trips: trips) {
+            scoped = geofences(for: selectedTrip, from: active)
+        }
+
+        if scoped.isEmpty {
+            let vehicleIds = Set(vehicles.map(\.id))
+            let relatedTrips = trips
+                .filter { $0.status.normalized == .active }
+                .filter { trip in
+                    guard let vehicleIdText = trip.vehicleId,
+                          let tripVehicleId = UUID(uuidString: vehicleIdText) else {
+                        return false
+                    }
+                    return vehicleIds.contains(tripVehicleId)
+                }
+
+            if !relatedTrips.isEmpty {
+                var merged: [Geofence] = []
+                for trip in relatedTrips {
+                    merged.append(contentsOf: geofences(for: trip, from: active))
+                }
+                scoped = dedupeById(merged)
+            }
+        }
+
+        if scoped.isEmpty, let region = visibleRegion {
+            scoped = geofences(in: region, from: active)
+        }
+
+        if scoped.isEmpty {
+            scoped = Array(active.prefix(8))
+        }
+
+        return GeofenceScopeService.collapseOverlappingCenters(scoped)
+    }
+
     func sanitizedBreadcrumbCoordinates(maxJumpKm: Double = 25) -> [CLLocationCoordinate2D] {
         guard !breadcrumbCoordinates.isEmpty else { return [] }
         let maxJumpMetres = maxJumpKm * 1000
@@ -221,5 +269,55 @@ final class FleetLiveMapViewModel {
         breadcrumbCoordinates = []
         breadcrumbHistory = []
         selectedVehicleId = nil
+    }
+
+    // MARK: - Geofence Scoping
+
+    private func activeTrip(for vehicleId: UUID, trips: [Trip]) -> Trip? {
+        let vehicleIdText = vehicleId.uuidString.lowercased()
+        return trips
+            .filter {
+                $0.status.normalized == .active &&
+                $0.vehicleId?.lowercased() == vehicleIdText
+            }
+            .sorted { ($0.actualStartDate ?? $0.scheduledDate) > ($1.actualStartDate ?? $1.scheduledDate) }
+            .first
+    }
+
+    private func geofences(for trip: Trip, from geofences: [Geofence]) -> [Geofence] {
+        let direct = geofences.filter { GeofenceScopeService.matchesTrip($0, taskId: trip.taskId) }
+        if !direct.isEmpty {
+            return GeofenceScopeService.collapseOverlappingCenters(direct)
+        }
+        let anchors = GeofenceScopeService.anchorCoordinates(for: trip)
+        let nearAnchors = GeofenceScopeService.geofencesNearAnchors(geofences, anchors: anchors)
+        return GeofenceScopeService.collapseOverlappingCenters(nearAnchors)
+    }
+
+    private func geofences(in region: MKCoordinateRegion, from geofences: [Geofence]) -> [Geofence] {
+        let latPadding = region.span.latitudeDelta * 0.35
+        let lngPadding = region.span.longitudeDelta * 0.35
+        let minLat = region.center.latitude - region.span.latitudeDelta / 2 - latPadding
+        let maxLat = region.center.latitude + region.span.latitudeDelta / 2 + latPadding
+        let minLng = region.center.longitude - region.span.longitudeDelta / 2 - lngPadding
+        let maxLng = region.center.longitude + region.span.longitudeDelta / 2 + lngPadding
+
+        return geofences.filter { geofence in
+            geofence.latitude >= minLat &&
+            geofence.latitude <= maxLat &&
+            geofence.longitude >= minLng &&
+            geofence.longitude <= maxLng
+        }
+    }
+
+    private func dedupeById(_ geofences: [Geofence]) -> [Geofence] {
+        var seen: Set<UUID> = []
+        var deduped: [Geofence] = []
+        for geofence in geofences {
+            if seen.insert(geofence.id).inserted {
+                deduped.append(geofence)
+            }
+        }
+        return deduped
     }
 }

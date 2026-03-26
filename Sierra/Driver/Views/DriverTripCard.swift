@@ -3,6 +3,7 @@ import SwiftUI
 struct DriverTripCard: View {
     let trip: Trip
     let vehicle: Vehicle?
+    let isWaitingForVehicleReassignment: Bool
     let isJustAccepted: Bool
     let isAccepting: Bool
     let onAccept: () -> Void
@@ -109,6 +110,19 @@ struct DriverTripCard: View {
                 action: onAccept,
                 isDisabled: isAccepting
             )
+        } else if isWaitingForVehicleReassignment {
+            HStack(spacing: 12) {
+                DriverTripCardActionButton(
+                    title: "Waiting for Vehicle",
+                    icon: "hourglass",
+                    style: .neutral
+                )
+                DriverTripCardActionButton(
+                    title: "Accepted",
+                    icon: "checkmark.seal.fill",
+                    style: .success
+                )
+            }
         } else if isAcceptedAwaitingInspection {
             HStack(spacing: 12) {
                 DriverTripCardActionButton(
