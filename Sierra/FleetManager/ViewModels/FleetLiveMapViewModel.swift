@@ -26,7 +26,14 @@ final class FleetLiveMapViewModel {
     var breadcrumbCoordinates: [CLLocationCoordinate2D] = []
     var breadcrumbHistory: [VehicleLocationHistory] = []
     var isFetchingBreadcrumb = false
-    var fallbackCoordinates: [UUID: CLLocationCoordinate2D] = [:]
+    var fallbackCoordinates: [UUID: FallbackLocation] = [:]
+    private let activeFallbackFreshnessSeconds: TimeInterval = 5 * 60
+    private let passiveFallbackFreshnessSeconds: TimeInterval = 24 * 60 * 60
+
+    struct FallbackLocation {
+        let coordinate: CLLocationCoordinate2D
+        let recordedAt: Date
+    }
 
     // MARK: - Speed Segments
 
@@ -90,20 +97,30 @@ final class FleetLiveMapViewModel {
 
     // MARK: - Filtered Vehicles (Safeguard 7: computed, never mutates source)
 
-    func filteredVehicles(from vehicles: [Vehicle]) -> [Vehicle] {
+    func filteredVehicles(from vehicles: [Vehicle], trips: [Trip] = []) -> [Vehicle] {
         switch selectedFilter {
-        case .all: return vehicles
-        case .active: return vehicles.filter { $0.status == .active || $0.status == .busy }
-        case .idle: return vehicles.filter { $0.status == .idle }
-        case .inMaintenance: return vehicles.filter { $0.status == .inMaintenance }
+        case .all:
+            return vehicles
+        case .active:
+            return vehicles.filter { isVehicleActiveOnMap($0, trips: trips) }
+        case .idle:
+            return vehicles.filter { $0.status == .idle }
+        case .inMaintenance:
+            return vehicles.filter { $0.status == .inMaintenance }
         }
     }
 
     func coordinate(for vehicle: Vehicle) -> CLLocationCoordinate2D? {
         if let lat = vehicle.currentLatitude, let lng = vehicle.currentLongitude {
-            return CLLocationCoordinate2D(latitude: lat, longitude: lng)
+            let coordinate = CLLocationCoordinate2D(latitude: lat, longitude: lng)
+            return isCoordinateValid(coordinate) ? coordinate : nil
         }
-        return fallbackCoordinates[vehicle.id]
+        guard let fallback = fallbackCoordinates[vehicle.id], isCoordinateValid(fallback.coordinate) else { return nil }
+        let age = Date().timeIntervalSince(fallback.recordedAt)
+        let isLiveVehicle = vehicle.status == .active || vehicle.status == .busy
+        let freshnessWindow = isLiveVehicle ? activeFallbackFreshnessSeconds : passiveFallbackFreshnessSeconds
+        guard age <= freshnessWindow else { return nil }
+        return fallback.coordinate
     }
 
     func displayedGeofences(
@@ -173,16 +190,29 @@ final class FleetLiveMapViewModel {
     }
 
     func refreshFallbackCoordinates(for vehicles: [Vehicle]) async {
-        let missingLive = vehicles.filter { $0.currentLatitude == nil || $0.currentLongitude == nil }
-        guard !missingLive.isEmpty else {
-            fallbackCoordinates = [:]
-            return
+        let validVehicleIds = Set(vehicles.map(\.id))
+        fallbackCoordinates = fallbackCoordinates.filter { validVehicleIds.contains($0.key) }
+
+        let missingLive = vehicles.filter { vehicle in
+            guard let lat = vehicle.currentLatitude, let lng = vehicle.currentLongitude else { return true }
+            return !isCoordinateValid(CLLocationCoordinate2D(latitude: lat, longitude: lng))
         }
+
+        guard !missingLive.isEmpty else { return }
+
         for vehicle in missingLive {
             do {
                 let history = try await VehicleLocationService.fetchRecentLocationHistory(vehicleId: vehicle.id, limit: 1)
                 if let last = history.last {
-                    fallbackCoordinates[vehicle.id] = CLLocationCoordinate2D(latitude: last.latitude, longitude: last.longitude)
+                    let coordinate = CLLocationCoordinate2D(latitude: last.latitude, longitude: last.longitude)
+                    if isCoordinateValid(coordinate) {
+                        fallbackCoordinates[vehicle.id] = FallbackLocation(
+                            coordinate: coordinate,
+                            recordedAt: last.recordedAt
+                        )
+                    } else {
+                        fallbackCoordinates.removeValue(forKey: vehicle.id)
+                    }
                 }
             } catch {
                 continue
@@ -193,22 +223,19 @@ final class FleetLiveMapViewModel {
     // MARK: - Fleet Centroid
 
     func fleetCentroid(vehicles: [Vehicle]) -> CLLocationCoordinate2D {
-        let located = vehicles.filter { $0.currentLatitude != nil && $0.currentLongitude != nil }
+        let located = vehicles.compactMap { coordinate(for: $0) }
         guard !located.isEmpty else {
             return CLLocationCoordinate2D(latitude: 20.5937, longitude: 78.9629) // India center
         }
-        let avgLat = located.compactMap(\.currentLatitude).reduce(0, +) / Double(located.count)
-        let avgLng = located.compactMap(\.currentLongitude).reduce(0, +) / Double(located.count)
+        let avgLat = located.map(\.latitude).reduce(0, +) / Double(located.count)
+        let avgLng = located.map(\.longitude).reduce(0, +) / Double(located.count)
         return CLLocationCoordinate2D(latitude: avgLat, longitude: avgLng)
     }
 
     // MARK: - Dynamic Camera Framing
 
     func fitAllActiveVehicles(vehicles: [Vehicle]) -> MapCameraPosition {
-        let active = vehicles.compactMap { v -> CLLocationCoordinate2D? in
-            guard let lat = v.currentLatitude, let lng = v.currentLongitude else { return nil }
-            return CLLocationCoordinate2D(latitude: lat, longitude: lng)
-        }
+        let active = vehicles.compactMap { coordinate(for: $0) }
         guard !active.isEmpty else {
             return .region(MKCoordinateRegion(
                 center: CLLocationCoordinate2D(latitude: 20.5937, longitude: 78.9629),
@@ -319,5 +346,19 @@ final class FleetLiveMapViewModel {
             }
         }
         return deduped
+    }
+
+    private func isVehicleActiveOnMap(_ vehicle: Vehicle, trips: [Trip]) -> Bool {
+        if vehicle.status == .active || vehicle.status == .busy { return true }
+        let vehicleIdText = vehicle.id.uuidString.lowercased()
+        return trips.contains {
+            $0.status.normalized == .active && $0.vehicleId?.lowercased() == vehicleIdText
+        }
+    }
+
+    private func isCoordinateValid(_ coordinate: CLLocationCoordinate2D) -> Bool {
+        CLLocationCoordinate2DIsValid(coordinate)
+        && (-90...90).contains(coordinate.latitude)
+        && (-180...180).contains(coordinate.longitude)
     }
 }

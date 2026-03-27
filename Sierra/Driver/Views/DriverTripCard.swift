@@ -15,10 +15,10 @@ struct DriverTripCard: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Image(systemName: "bus.fill")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(SierraFont.scaled(14, weight: .semibold))
                     .foregroundColor(.appTextSecondary)
                 Text(trip.taskId)
-                    .font(.system(size: 13, weight: .bold, design: .monospaced))
+                    .font(SierraFont.scaled(13, weight: .bold, design: .monospaced))
                     .foregroundColor(.appOrange)
                 Spacer()
                 PriorityBadge(priority: trip.priority)
@@ -33,13 +33,13 @@ struct DriverTripCard: View {
             if let vehicle {
                 HStack(spacing: 8) {
                     Text(vehicle.licensePlate)
-                        .font(.system(size: 12, weight: .bold, design: .monospaced))
+                        .font(SierraFont.scaled(12, weight: .bold, design: .monospaced))
                         .foregroundColor(.appOrange)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
                         .background(Capsule().fill(Color.appOrange.opacity(0.08)))
                     Text("\(vehicle.name) \(vehicle.model)")
-                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .font(SierraFont.scaled(13, weight: .medium, design: .rounded))
                         .foregroundColor(.appTextSecondary)
                         .lineLimit(1)
                 }
@@ -47,10 +47,10 @@ struct DriverTripCard: View {
 
             HStack(spacing: 6) {
                 Image(systemName: "calendar.badge.clock")
-                    .font(.system(size: 13))
+                    .font(SierraFont.scaled(13))
                     .foregroundColor(.appTextSecondary)
                 Text(trip.scheduledDate.formatted(.dateTime.day().month(.abbreviated).hour().minute()))
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .font(SierraFont.scaled(13, weight: .medium, design: .rounded))
                     .foregroundColor(.appTextSecondary)
             }
 
@@ -224,13 +224,13 @@ struct DriverTripCard: View {
 
         return VStack(alignment: .leading, spacing: 1) {
             Text(city.uppercased())
-                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .font(SierraFont.scaled(18, weight: .bold, design: .rounded))
                 .foregroundColor(.appTextPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
             if !rest.isEmpty {
                 Text(rest)
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .font(SierraFont.scaled(11, weight: .medium, design: .rounded))
                     .foregroundColor(.appTextSecondary)
                     .lineLimit(1)
             }
@@ -243,15 +243,15 @@ struct DriverTripCard: View {
 
         return HStack(spacing: 6) {
             Image(systemName: isOverdue ? "exclamationmark.triangle.fill" : "clock.badge.exclamationmark.fill")
-                .font(.system(size: 13, weight: .semibold))
+                .font(SierraFont.scaled(13, weight: .semibold))
                 .foregroundColor(isOverdue ? .red : .appOrange)
             Text(isOverdue ? "Response Overdue" : "Respond by \(deadline.formatted(.dateTime.hour().minute()))")
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .font(SierraFont.scaled(13, weight: .semibold, design: .rounded))
                 .foregroundColor(isOverdue ? .red : .appOrange)
             Spacer()
             if isUrgent {
                 Text("< 2h left")
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(11, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)

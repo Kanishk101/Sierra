@@ -29,6 +29,8 @@ struct VehicleInsertPayload: Encodable {
     let color: String
     let fuelType: String
     let seatingCapacity: Int
+    let fuelTankCapacityLiters: Double?
+    let mileageKmPerLitre: Double?
     let status: String
     let assignedDriverId: String?
     let currentLatitude: Double?
@@ -42,6 +44,8 @@ struct VehicleInsertPayload: Encodable {
         case licensePlate     = "license_plate"
         case fuelType         = "fuel_type"
         case seatingCapacity  = "seating_capacity"
+        case fuelTankCapacityLiters = "fuel_tank_capacity_liters"
+        case mileageKmPerLitre = "mileage_km_per_litre"
         case status
         case assignedDriverId = "assigned_driver_id"
         case currentLatitude  = "current_latitude"
@@ -62,6 +66,8 @@ struct VehicleInsertPayload: Encodable {
         color            = v.color
         fuelType         = v.fuelType.rawValue
         seatingCapacity  = v.seatingCapacity
+        fuelTankCapacityLiters = v.fuelTankCapacityLiters
+        mileageKmPerLitre = v.mileageKmPerLitre
         status           = v.status.rawValue
         assignedDriverId = v.assignedDriverId
         currentLatitude  = v.currentLatitude
@@ -84,6 +90,8 @@ struct VehicleUpdatePayload: Encodable {
     let color: String
     let fuelType: String
     let seatingCapacity: Int
+    let fuelTankCapacityLiters: Double?
+    let mileageKmPerLitre: Double?
     let status: String
     let assignedDriverId: String?
     let currentLatitude: Double?
@@ -97,6 +105,8 @@ struct VehicleUpdatePayload: Encodable {
         case licensePlate     = "license_plate"
         case fuelType         = "fuel_type"
         case seatingCapacity  = "seating_capacity"
+        case fuelTankCapacityLiters = "fuel_tank_capacity_liters"
+        case mileageKmPerLitre = "mileage_km_per_litre"
         case status
         case assignedDriverId = "assigned_driver_id"
         case currentLatitude  = "current_latitude"
@@ -116,6 +126,8 @@ struct VehicleUpdatePayload: Encodable {
         color            = v.color
         fuelType         = v.fuelType.rawValue
         seatingCapacity  = v.seatingCapacity
+        fuelTankCapacityLiters = v.fuelTankCapacityLiters
+        mileageKmPerLitre = v.mileageKmPerLitre
         status           = v.status.rawValue
         assignedDriverId = v.assignedDriverId
         currentLatitude  = v.currentLatitude

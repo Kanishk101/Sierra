@@ -24,6 +24,10 @@ final class AddVehicleViewModel {
     var selectedColorOption = ""
     var fuelType: FuelType = .diesel
     var seatingCapacity = 3
+    var fuelTankCapacityInput = ""
+    var mileageInput = ""
+    var fuelTankCapacityError: String?
+    var mileageError: String?
 
     // MARK: - Document Form State (add mode only)
 
@@ -32,12 +36,18 @@ final class AddVehicleViewModel {
     var regIssued = Date()
     var regExpiry = Date().addingTimeInterval(86400 * 365)
     var regAuthority = ""
+    var regDocumentData: Data?
+    var regDocumentExtension = "pdf"
+    var regDocumentName: String?
 
     var addInsurance = false
     var insNumber = ""
     var insIssued = Date()
     var insExpiry = Date().addingTimeInterval(86400 * 365)
     var insAuthority = ""
+    var insDocumentData: Data?
+    var insDocumentExtension = "pdf"
+    var insDocumentName: String?
 
     // MARK: - UI / Submission State
 
@@ -94,22 +104,13 @@ final class AddVehicleViewModel {
     // MARK: - Computed Options
 
     var colorOptions: [String] {
-        var options = defaultVehicleColors
-        let trimmedColor = color.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmedColor.isEmpty && !options.contains(where: { $0.caseInsensitiveCompare(trimmedColor) == .orderedSame }) {
-            options.append(trimmedColor)
-        }
-        return options
+        defaultVehicleColors
     }
 
     var manufacturerOptions: [String] {
         var ordered: [String] = []
         for preset in defaultVehiclePresets where !ordered.contains(preset.manufacturer) {
             ordered.append(preset.manufacturer)
-        }
-        let trimmedManufacturer = manufacturer.trimmingCharacters(in: .whitespaces)
-        if !trimmedManufacturer.isEmpty && !ordered.contains(trimmedManufacturer) {
-            ordered.append(trimmedManufacturer)
         }
         return ordered
     }
@@ -127,10 +128,6 @@ final class AddVehicleViewModel {
         for modelName in optionsFromManufacturer where !ordered.contains(modelName) {
             ordered.append(modelName)
         }
-        let trimmedModel = model.trimmingCharacters(in: .whitespaces)
-        if !trimmedModel.isEmpty && !ordered.contains(trimmedModel) {
-            ordered.append(trimmedModel)
-        }
         return ordered
     }
 
@@ -147,15 +144,19 @@ final class AddVehicleViewModel {
         for preset in filtered where !ordered.contains(preset.name) {
             ordered.append(preset.name)
         }
-        let trimmedName = name.trimmingCharacters(in: .whitespaces)
-        if !trimmedName.isEmpty && !ordered.contains(trimmedName) {
-            ordered.append(trimmedName)
-        }
         return ordered
     }
 
     var presetNames: Set<String> {
         Set(defaultVehiclePresets.map(\.name))
+    }
+
+    var presetManufacturers: Set<String> {
+        Set(defaultVehiclePresets.map(\.manufacturer))
+    }
+
+    var presetModels: Set<String> {
+        Set(defaultVehiclePresets.map(\.model))
     }
 
     // MARK: - Validation
@@ -166,6 +167,32 @@ final class AddVehicleViewModel {
         && vinValidationError(for: vin) == nil
         && licensePlateValidationError(for: licensePlate) == nil
         && colorValidationError(for: color) == nil
+        && fuelTankCapacityValidationError(for: fuelTankCapacityInput) == nil
+        && mileageValidationError(for: mileageInput) == nil
+    }
+
+    func fuelTankCapacityValidationError(for rawValue: String) -> String? {
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        guard let value = Double(trimmed), value > 0 else {
+            return "Fuel tank capacity must be a positive number."
+        }
+        if value > 2000 {
+            return "Fuel tank capacity looks too high."
+        }
+        return nil
+    }
+
+    func mileageValidationError(for rawValue: String) -> String? {
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        guard let value = Double(trimmed), value > 0 else {
+            return "Mileage must be a positive number."
+        }
+        if value > 100 {
+            return "Mileage looks too high."
+        }
+        return nil
     }
 
     private var manufacturerWMIMap: [String: Set<String>] {
@@ -307,6 +334,12 @@ final class AddVehicleViewModel {
         if let clrErr = colorValidationError(for: color) {
             colorError = clrErr; return
         }
+        if let capErr = fuelTankCapacityValidationError(for: fuelTankCapacityInput) {
+            fuelTankCapacityError = capErr; return
+        }
+        if let mileageErr = mileageValidationError(for: mileageInput) {
+            mileageError = mileageErr; return
+        }
         if addRegistration {
             if let regErr = registrationNumberValidationError(for: regNumber) {
                 regNumberError = regErr; return
@@ -356,6 +389,8 @@ final class AddVehicleViewModel {
                 v.color        = color.trimmingCharacters(in: .whitespaces)
                 v.fuelType     = fuelType
                 v.seatingCapacity = seatingCapacity
+                v.fuelTankCapacityLiters = Double(fuelTankCapacityInput.trimmingCharacters(in: .whitespacesAndNewlines))
+                v.mileageKmPerLitre = Double(mileageInput.trimmingCharacters(in: .whitespacesAndNewlines))
                 try await store.updateVehicle(v)
             } else {
                 let now = Date()
@@ -370,6 +405,8 @@ final class AddVehicleViewModel {
                     color: color.trimmingCharacters(in: .whitespaces),
                     fuelType: fuelType,
                     seatingCapacity: seatingCapacity,
+                    fuelTankCapacityLiters: Double(fuelTankCapacityInput.trimmingCharacters(in: .whitespacesAndNewlines)),
+                    mileageKmPerLitre: Double(mileageInput.trimmingCharacters(in: .whitespacesAndNewlines)),
                     status: .idle,
                     assignedDriverId: nil,
                     currentLatitude: nil,
@@ -383,6 +420,15 @@ final class AddVehicleViewModel {
                 try await store.addVehicle(vehicle)
 
                 if addRegistration && !regNumber.trimmingCharacters(in: .whitespaces).isEmpty {
+                    var registrationDocumentUrl: String?
+                    if let regDocumentData {
+                        registrationDocumentUrl = try await VehicleDocumentService.uploadVehicleDocument(
+                            data: regDocumentData,
+                            fileExtension: regDocumentExtension,
+                            vehicleId: vehicle.id,
+                            documentType: .registration
+                        )
+                    }
                     let doc = VehicleDocument(
                         id: UUID(),
                         vehicleId: vehicle.id,
@@ -391,7 +437,7 @@ final class AddVehicleViewModel {
                         issuedDate: regIssued,
                         expiryDate: regExpiry,
                         issuingAuthority: regAuthority.trimmingCharacters(in: .whitespaces),
-                        documentUrl: nil,
+                        documentUrl: registrationDocumentUrl,
                         notes: nil,
                         createdAt: now,
                         updatedAt: now
@@ -400,6 +446,15 @@ final class AddVehicleViewModel {
                 }
 
                 if addInsurance && !insNumber.trimmingCharacters(in: .whitespaces).isEmpty {
+                    var insuranceDocumentUrl: String?
+                    if let insDocumentData {
+                        insuranceDocumentUrl = try await VehicleDocumentService.uploadVehicleDocument(
+                            data: insDocumentData,
+                            fileExtension: insDocumentExtension,
+                            vehicleId: vehicle.id,
+                            documentType: .insurance
+                        )
+                    }
                     let doc = VehicleDocument(
                         id: UUID(),
                         vehicleId: vehicle.id,
@@ -408,7 +463,7 @@ final class AddVehicleViewModel {
                         issuedDate: insIssued,
                         expiryDate: insExpiry,
                         issuingAuthority: insAuthority.trimmingCharacters(in: .whitespaces),
-                        documentUrl: nil,
+                        documentUrl: insuranceDocumentUrl,
                         notes: nil,
                         createdAt: now,
                         updatedAt: now
@@ -467,6 +522,8 @@ final class AddVehicleViewModel {
         }
         fuelType        = v.fuelType
         seatingCapacity = v.seatingCapacity
+        fuelTankCapacityInput = v.fuelTankCapacityLiters.map { String(format: "%.1f", $0) } ?? ""
+        mileageInput = v.mileageKmPerLitre.map { String(format: "%.1f", $0) } ?? ""
     }
 
     func applyPresetSelectionIfNeeded() {
@@ -521,5 +578,33 @@ final class AddVehicleViewModel {
             }
         }
         #endif
+    }
+
+    func attachRegistrationDocument(from url: URL) throws {
+        let isScoped = url.startAccessingSecurityScopedResource()
+        defer {
+            if isScoped {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+        let data = try Data(contentsOf: url)
+        guard !data.isEmpty else { throw NSError(domain: "AddVehicleViewModel", code: 0, userInfo: [NSLocalizedDescriptionKey: "Selected registration document is empty."]) }
+        regDocumentData = data
+        regDocumentName = url.lastPathComponent
+        regDocumentExtension = url.pathExtension.isEmpty ? "pdf" : url.pathExtension
+    }
+
+    func attachInsuranceDocument(from url: URL) throws {
+        let isScoped = url.startAccessingSecurityScopedResource()
+        defer {
+            if isScoped {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+        let data = try Data(contentsOf: url)
+        guard !data.isEmpty else { throw NSError(domain: "AddVehicleViewModel", code: 0, userInfo: [NSLocalizedDescriptionKey: "Selected insurance document is empty."]) }
+        insDocumentData = data
+        insDocumentName = url.lastPathComponent
+        insDocumentExtension = url.pathExtension.isEmpty ? "pdf" : url.pathExtension
     }
 }

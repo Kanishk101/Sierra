@@ -21,7 +21,7 @@ struct OnboardingView: View {
                             }
                         } label: {
                             Text("Skip")
-                                .font(.system(size: 17, weight: .regular))
+                                .font(SierraFont.scaled(17, weight: .regular))
                                 .foregroundStyle(Color(.tertiaryLabel))
                         }
                         .transition(.opacity)
@@ -79,7 +79,7 @@ struct OnboardingView: View {
                         HStack {
                             Spacer(minLength: 0)
                             Text(viewModel.isLastPage ? "Get Started" : "Continue")
-                                .font(.system(size: 17, weight: .semibold))
+                                .font(SierraFont.scaled(17, weight: .semibold))
                             Spacer(minLength: 0)
                         }
                         .foregroundStyle(.white)

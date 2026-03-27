@@ -3,6 +3,7 @@ import LocalAuthentication
 
 struct AdminProfileView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(AccessibilitySettings.self) private var accessibilitySettings
 
     private var authManager = AuthManager.shared
     private let biometric = BiometricManager.shared
@@ -24,7 +25,7 @@ struct AdminProfileView: View {
                             .frame(width: 64, height: 64)
                             .overlay(
                                 Text(initials)
-                                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                                    .font(SierraFont.title2)
                                     .foregroundStyle(.white)
                             )
 
@@ -39,6 +40,7 @@ struct AdminProfileView: View {
                         }
                     }
                     .padding(.vertical, 8)
+                    .accessibilityElement(children: .combine)
                 }
 
                 Section("Account") {
@@ -51,6 +53,7 @@ struct AdminProfileView: View {
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
+                        .accessibilityElement(children: .combine)
                     }
                     HStack {
                         Label("Role", systemImage: "person.crop.rectangle")
@@ -58,8 +61,9 @@ struct AdminProfileView: View {
                         Spacer()
                         Text("Fleet Manager")
                             .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.blue)
+                            .foregroundStyle(Color.appOrange)
                     }
+                    .accessibilityElement(children: .combine)
                 }
 
                 Section("Security") {
@@ -67,11 +71,13 @@ struct AdminProfileView: View {
                         Label(biometricName, systemImage: biometricIcon)
                             .font(.subheadline)
                     }
-                    .tint(.orange)
+                    .tint(Color.appOrange)
                     .disabled(!biometric.canUseBiometrics())
                     .onChange(of: isBiometricEnabled) { _, enabled in
                         BiometricPreference.isEnabled = enabled
                     }
+                    .accessibilityLabel("\(biometricName) login")
+                    .accessibilityHint("Enables biometric authentication for sign in")
 
                     NavigationLink {
                         ChangePasswordView()
@@ -79,6 +85,25 @@ struct AdminProfileView: View {
                         Label("Change Password", systemImage: "lock.rotation")
                             .font(.subheadline)
                     }
+                    .accessibilityLabel("Change password")
+                }
+
+                Section("Accessibility") {
+                    Toggle(isOn: Binding(
+                        get: { accessibilitySettings.isColorBlindModeEnabled },
+                        set: { accessibilitySettings.isColorBlindModeEnabled = $0 }
+                    )) {
+                        Label("Color Blind Mode", systemImage: "eyedropper.halffull")
+                            .font(.subheadline)
+                    }
+                    .tint(Color.appOrange)
+                    .accessibilityLabel("Color blind mode")
+                    .accessibilityHint("Switches to a high-contrast color palette")
+
+                    Text("Uses a high-contrast palette and non-color cues to improve readability.")
+                        .font(SierraFont.caption1)
+                        .foregroundStyle(.secondary)
+                        .accessibilityElement(children: .combine)
                 }
 
                 Section {
@@ -93,6 +118,7 @@ struct AdminProfileView: View {
                             Spacer()
                         }
                     }
+                    .accessibilityLabel("Sign out")
                 }
             }
             .navigationTitle("Profile")
@@ -103,6 +129,7 @@ struct AdminProfileView: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
+                        .accessibilityLabel("Close profile")
                 }
             }
         }
@@ -142,4 +169,5 @@ struct AdminProfileView: View {
 
 #Preview {
     AdminProfileView()
+        .environment(AccessibilitySettings.shared)
 }

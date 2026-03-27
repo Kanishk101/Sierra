@@ -12,7 +12,6 @@ struct InventoryView: View {
     @State private var searchText = ""
     @State private var selectedPart: PartInventorySnapshot?
     @State private var identifierCursorByPartKey: [String: Int] = [:]
-    @State private var partDetailMode: InventoryPartDetailSheet.ActionMode = .request
     @State private var categoryFilter: InventoryCategoryFilter = .all
 
     private var currentUserId: UUID { AuthManager.shared.currentUser?.id ?? UUID() }
@@ -216,7 +215,7 @@ struct InventoryView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showVINScanner = true } label: {
                     Image(systemName: "barcode.viewfinder")
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(SierraFont.scaled(17, weight: .semibold))
                         .foregroundStyle(Color.appOrange)
                 }
             }
@@ -228,7 +227,7 @@ struct InventoryView: View {
         }
         .sheet(item: $selectedPart) { part in
             NavigationStack {
-                InventoryPartDetailSheet(part: part, initialMode: partDetailMode)
+                InventoryPartDetailSheet(part: part)
                     .environment(store)
             }
         }
@@ -248,7 +247,7 @@ struct InventoryView: View {
             TextField("Search part name, number, supplier, vehicle", text: $searchText)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled(true)
-                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .font(SierraFont.scaled(14, weight: .medium, design: .rounded))
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
@@ -271,7 +270,7 @@ struct InventoryView: View {
                     categoryFilter = filter
                 } label: {
                     Text(filter.rawValue)
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .font(SierraFont.scaled(13, weight: .semibold, design: .rounded))
                         .foregroundStyle(categoryFilter == filter ? Color.appOrange : Color.appTextPrimary)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 9)
@@ -298,13 +297,13 @@ struct InventoryView: View {
         VStack(spacing: 4) {
             HStack(spacing: 4) {
                 Image(systemName: icon)
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(SierraFont.scaled(10, weight: .semibold))
                 Text("\(value)")
-                    .font(.system(size: 21, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(21, weight: .bold, design: .rounded))
             }
             .foregroundStyle(tint)
             Text(label)
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .font(SierraFont.scaled(11, weight: .semibold, design: .rounded))
                 .foregroundStyle(Color.appTextSecondary)
         }
         .frame(maxWidth: .infinity)
@@ -314,136 +313,43 @@ struct InventoryView: View {
     }
 
     private func inventoryCard(_ part: PartInventorySnapshot) -> some View {
-        let inStock = max(0, part.availableSnapshot - part.allocatedQty - part.usedQty)
+        let inStock = max(0, part.availableSnapshot - part.allocatedQty)
         let isLowStock = inStock <= 2
+        let stockTint: Color = isLowStock ? .red : .green
+        let vehicleNames = compatibleVehicleNames(for: part)
+        let hasPendingState = part.pendingApprovals > 0 || part.pendingDeliveryCount > 0
 
         return VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(part.name)
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
-                        .foregroundStyle(Color.appTextPrimary)
-                        .lineLimit(2)
-
-                    if let identifierText = currentIdentifierText(for: part) {
-                        Button {
-                            cycleIdentifier(for: part)
-                        } label: {
-                            HStack(spacing: 6) {
-                                Text(identifierText)
-                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(Color.appTextSecondary)
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.85)
-                                if identifierVariants(for: part).count > 1 {
-                                    Image(systemName: "arrow.triangle.2.circlepath")
-                                        .font(.system(size: 10, weight: .semibold))
-                                        .foregroundStyle(Color.appOrange.opacity(0.9))
-                                }
-                            }
-                        }
-                        .buttonStyle(.plain)
-                    }
-
-                    if let supplier = part.supplier, !supplier.isEmpty {
-                        Text("Supplier: \(supplier)")
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
-                            .foregroundStyle(Color.appTextSecondary)
-                    }
-                }
-
-                Spacer()
-
-                HStack(spacing: 6) {
-                    Circle().fill(isLowStock ? Color.red : Color.green).frame(width: 8, height: 8)
-                    Text(isLowStock ? "Low Stock" : "In Stock")
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
-                        .foregroundStyle(isLowStock ? Color.red : Color.green)
-                }
-                .padding(.horizontal, 9)
-                .padding(.vertical, 6)
-                .background((isLowStock ? Color.red : Color.green).opacity(0.12), in: Capsule())
-            }
+            inventoryCardHeader(part: part, isLowStock: isLowStock, stockTint: stockTint)
 
             HStack(spacing: 14) {
                 metricLine(value: inStock, label: "Current", tint: isLowStock ? .red : .green, icon: "shippingbox.fill")
-                metricLine(value: part.usedQty, label: "Used", tint: .orange, icon: "wrench.and.screwdriver.fill")
                 metricLine(value: part.onOrderQty, label: "On Order", tint: .blue, icon: "clock.badge.fill")
+                metricLine(value: part.pendingApprovals, label: "Pending", tint: .orange, icon: "clock.fill")
             }
 
-            let vehicleNames = compatibleVehicleNames(for: part)
             if !vehicleNames.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Compatible Vehicles")
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                        .foregroundStyle(Color.appTextSecondary)
-                    FlexibleTags(values: vehicleNames)
-                }
+                compatibleVehiclesSection(vehicleNames)
             }
 
-            if part.pendingApprovals > 0 || part.pendingDeliveryCount > 0 {
-                HStack(spacing: 10) {
-                    if part.pendingApprovals > 0 {
-                        Label("\(part.pendingApprovals) pending approval", systemImage: "clock.fill")
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
-                            .foregroundStyle(Color.orange)
-                    }
-                    if part.pendingDeliveryCount > 0 {
-                        Label("\(part.pendingDeliveryCount) awaiting delivery", systemImage: "shippingbox.fill")
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
-                            .foregroundStyle(Color.blue)
-                    }
-                    Spacer()
-                }
-
-                if let eta = part.expectedArrival {
-                    Text("Expected by \(eta.formatted(.dateTime.day().month(.abbreviated).hour().minute()))")
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .foregroundStyle(Color.appTextSecondary)
-                }
+            if hasPendingState {
+                pendingInventoryState(part: part)
             }
 
-            HStack(spacing: 10) {
-                Button {
-                    partDetailMode = .request
-                    selectedPart = part
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "paperplane.fill")
-                            .font(.system(size: 12, weight: .semibold))
-                        Text("Request For")
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
-                    }
-                    .foregroundStyle(Color.appOrange)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .background(Capsule().fill(Color.appOrange.opacity(0.10)))
-                    .overlay(Capsule().stroke(Color.appOrange.opacity(0.25), lineWidth: 1))
-                }
-                .buttonStyle(.plain)
-
-                Button {
-                    partDetailMode = .orderRequest
-                    selectedPart = part
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "cart.badge.questionmark")
-                            .font(.system(size: 12, weight: .semibold))
-                        Text("Order Request")
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
-                    }
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .background(Capsule().fill(Color.blue))
-                }
-                .buttonStyle(.plain)
-            }
+            Text("Read-only for maintenance personnel")
+                .font(SierraFont.scaled(12, weight: .semibold, design: .rounded))
+                .foregroundStyle(Color.appTextSecondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(Capsule().fill(Color.appDivider.opacity(0.3)))
         }
         .onTapGesture {
-            partDetailMode = .request
             selectedPart = part
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel("\(part.name), \(inStock) in stock")
+        .accessibilityHint("Opens part details")
         .padding(18)
         .background(
             RoundedRectangle(cornerRadius: 22)
@@ -456,14 +362,101 @@ struct InventoryView: View {
         )
     }
 
+    private func inventoryCardHeader(
+        part: PartInventorySnapshot,
+        isLowStock: Bool,
+        stockTint: Color
+    ) -> some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(part.name)
+                    .font(SierraFont.scaled(16, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.appTextPrimary)
+                    .lineLimit(2)
+
+                if let identifierText = currentIdentifierText(for: part) {
+                    Button {
+                        cycleIdentifier(for: part)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text(identifierText)
+                                .font(SierraFont.scaled(11, weight: .bold, design: .monospaced))
+                                .foregroundStyle(Color.appTextSecondary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.85)
+                            if identifierVariants(for: part).count > 1 {
+                                Image(systemName: "arrow.triangle.2.circlepath")
+                                    .font(SierraFont.scaled(10, weight: .semibold))
+                                    .foregroundStyle(Color.appOrange.opacity(0.9))
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Cycle part identifier")
+                }
+
+                if let supplier = part.supplier, !supplier.isEmpty {
+                    Text("Supplier: \(supplier)")
+                        .font(SierraFont.scaled(12, weight: .medium, design: .rounded))
+                        .foregroundStyle(Color.appTextSecondary)
+                }
+            }
+
+            Spacer()
+
+            HStack(spacing: 6) {
+                Circle().fill(stockTint).frame(width: 8, height: 8)
+                Text(isLowStock ? "Low Stock" : "In Stock")
+                    .font(SierraFont.scaled(10, weight: .bold, design: .rounded))
+                    .foregroundStyle(stockTint)
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 6)
+            .background(stockTint.opacity(0.12), in: Capsule())
+        }
+    }
+
+    private func compatibleVehiclesSection(_ vehicleNames: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Compatible Vehicles")
+                .font(SierraFont.scaled(11, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.appTextSecondary)
+            FlexibleTags(values: vehicleNames)
+        }
+    }
+
+    private func pendingInventoryState(part: PartInventorySnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+                if part.pendingApprovals > 0 {
+                    Label("\(part.pendingApprovals) pending approval", systemImage: "clock.fill")
+                        .font(SierraFont.scaled(12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Color.orange)
+                }
+                if part.pendingDeliveryCount > 0 {
+                    Label("\(part.pendingDeliveryCount) awaiting delivery", systemImage: "shippingbox.fill")
+                        .font(SierraFont.scaled(12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Color.blue)
+                }
+                Spacer()
+            }
+
+            if let eta = part.expectedArrival {
+                Text("Expected by \(eta.formatted(.dateTime.day().month(.abbreviated).hour().minute()))")
+                    .font(SierraFont.scaled(11, weight: .medium, design: .rounded))
+                    .foregroundStyle(Color.appTextSecondary)
+            }
+        }
+    }
+
     private func metricLine(value: Int, label: String, tint: Color, icon: String) -> some View {
         HStack(spacing: 4) {
             Image(systemName: icon)
-                .font(.system(size: 10, weight: .semibold))
+                .font(SierraFont.scaled(10, weight: .semibold))
             Text("\(max(0, value))")
-                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .font(SierraFont.scaled(13, weight: .bold, design: .rounded))
             Text(label)
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .font(SierraFont.scaled(11, weight: .semibold, design: .rounded))
         }
         .foregroundStyle(tint)
     }
@@ -471,13 +464,13 @@ struct InventoryView: View {
     private var emptyState: some View {
         VStack(spacing: 14) {
             Image(systemName: "shippingbox")
-                .font(.system(size: 48, weight: .light))
+                .font(SierraFont.scaled(48, weight: .light))
                 .foregroundStyle(Color.appOrange.opacity(0.3))
             Text("No Parts")
-                .font(.system(size: 20, weight: .bold, design: .rounded))
+                .font(SierraFont.scaled(20, weight: .bold, design: .rounded))
                 .foregroundStyle(Color.appTextPrimary)
             Text("Parts catalog for your assigned maintenance tasks\nwill appear here.")
-                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .font(SierraFont.scaled(14, weight: .medium, design: .rounded))
                 .foregroundStyle(Color.appTextSecondary)
                 .multilineTextAlignment(.center)
         }
@@ -647,29 +640,11 @@ struct InventoryView: View {
 }
 
 private struct InventoryPartDetailSheet: View {
-    enum ActionMode: String, CaseIterable {
-        case request = "Request For"
-        case orderRequest = "Order Request"
-    }
-
     let part: InventoryView.PartInventorySnapshot
-    let initialMode: ActionMode
     @Environment(AppDataStore.self) private var store
     @Environment(\.dismiss) private var dismiss
-
-    @State private var actionMode: ActionMode = .request
-    @State private var requestQty: Int = 1
-    @State private var orderQty: Int = 1
-    @State private var note: String = ""
-    @State private var isSubmitting = false
-    @State private var etaDate: Date = Date().addingTimeInterval(2 * 24 * 3600)
-
     private var currentUserId: UUID { AuthManager.shared.currentUser?.id ?? UUID() }
-    private var myOpenTask: MaintenanceTask? {
-        store.maintenanceTasks.first {
-            $0.assignedToId == currentUserId && ($0.isEffectivelyAssigned || $0.status == .inProgress)
-        }
-    }
+
     private var inStock: Int { max(0, part.availableSnapshot - part.allocatedQty - part.usedQty) }
     private var recentRequests: [SparePartsRequest] {
         store.sparePartsRequests
@@ -680,21 +655,54 @@ private struct InventoryPartDetailSheet: View {
             }
             .sorted { $0.createdAt > $1.createdAt }
     }
+    private var recentUsage: [PartUsed] {
+        store.partsUsed
+            .filter {
+                let partNoMatch = ($0.partNumber ?? "").caseInsensitiveCompare(part.partNumber ?? "") == .orderedSame
+                let nameMatch = $0.partName.caseInsensitiveCompare(part.name) == .orderedSame
+                return partNoMatch || nameMatch
+            }
+            .sorted { $0.createdAt > $1.createdAt }
+    }
+    private var recentActivity: [PartActivityItem] {
+        let requestItems: [PartActivityItem] = recentRequests.map { req in
+            let detail = "Qty \(req.quantity) • Alloc \(req.quantityAllocated) • On Order \(req.quantityOnOrder)"
+                + (req.workOrderId != nil ? " • Work Order" : "")
+            return PartActivityItem(
+                title: req.status.rawValue,
+                subtitle: detail,
+                timestamp: req.reviewedAt ?? req.adminOrderedAt ?? req.createdAt,
+                tint: statusTint(req.status)
+            )
+        }
+
+        let usageItems: [PartActivityItem] = recentUsage.map { used in
+            PartActivityItem(
+                title: "Consumed in Work Order",
+                subtitle: "Qty \(used.quantity)",
+                timestamp: used.createdAt,
+                tint: .blue
+            )
+        }
+
+        return (requestItems + usageItems)
+            .sorted { $0.timestamp > $1.timestamp }
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(part.name)
-                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(22, weight: .bold, design: .rounded))
                     if let pn = part.partNumber, !pn.isEmpty {
                         Text("Part Code: \(pn)")
-                            .font(.system(size: 12, weight: .bold, design: .monospaced))
+                            .font(SierraFont.scaled(12, weight: .bold, design: .monospaced))
                             .foregroundStyle(.secondary)
                     }
                     if let supplier = part.supplier, !supplier.isEmpty {
                         Text("Supplier: \(supplier)")
-                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .font(SierraFont.scaled(13, weight: .medium, design: .rounded))
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -715,28 +723,37 @@ private struct InventoryPartDetailSheet: View {
                 if !part.compatibleVehicleIds.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Compatible Vehicles")
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .font(SierraFont.scaled(13, weight: .bold, design: .rounded))
                             .foregroundStyle(Color.appTextSecondary)
                         FlexibleTags(values: part.compatibleVehicleIds.compactMap { id in
                             guard let v = store.vehicle(for: id) else { return nil }
                             return "\(v.name) (\(v.licensePlate))"
                         })
                     }
+                    .padding(14)
+                    .background(RoundedRectangle(cornerRadius: 16).fill(Color.appCardBg))
+                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.appDivider.opacity(0.5), lineWidth: 1))
                 }
 
-                if !recentRequests.isEmpty {
+                if !recentActivity.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Recent Order Activity")
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                        Text("Recent Activity")
+                            .font(SierraFont.scaled(13, weight: .bold, design: .rounded))
                             .foregroundStyle(Color.appTextSecondary)
-                        ForEach(Array(recentRequests.prefix(3))) { req in
+                        ForEach(Array(recentActivity.prefix(6))) { item in
                             HStack {
-                                Text(req.status.rawValue)
-                                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                                    .foregroundStyle(statusTint(req.status))
+                                Text(item.title)
+                                    .font(SierraFont.scaled(11, weight: .bold, design: .rounded))
+                                    .foregroundStyle(item.tint)
+                                if !item.subtitle.isEmpty {
+                                    Text(item.subtitle)
+                                        .font(SierraFont.scaled(11, weight: .medium, design: .rounded))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
                                 Spacer()
-                                Text(req.createdAt.formatted(.dateTime.day().month(.abbreviated).hour().minute()))
-                                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                                Text(item.timestamp.formatted(.dateTime.day().month(.abbreviated).hour().minute()))
+                                    .font(SierraFont.scaled(11, weight: .medium, design: .rounded))
                                     .foregroundStyle(.secondary)
                             }
                         }
@@ -746,55 +763,6 @@ private struct InventoryPartDetailSheet: View {
                     .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.appDivider.opacity(0.5), lineWidth: 1))
                 }
 
-                Picker("Action", selection: $actionMode) {
-                    ForEach(ActionMode.allCases, id: \.self) { mode in
-                        Text(mode.rawValue).tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
-
-                Stepper(
-                    actionMode == .request ? "Request Quantity: \(requestQty)" : "Order Quantity: \(orderQty)",
-                    value: actionMode == .request ? $requestQty : $orderQty,
-                    in: 1...500
-                )
-
-                TextField("Reason / notes", text: $note)
-                    .textFieldStyle(.roundedBorder)
-
-                DatePicker("Expected ETA", selection: $etaDate, in: Date()..., displayedComponents: [.date, .hourAndMinute])
-                    .datePickerStyle(.compact)
-
-                HStack(spacing: 10) {
-                    Button {
-                        actionMode = .request
-                        Task { await submitPartRequest(orderRequest: false) }
-                    } label: {
-                        Text("Request For")
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                            .foregroundStyle(Color.appOrange)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(Capsule().fill(Color.appOrange.opacity(0.1)))
-                            .overlay(Capsule().stroke(Color.appOrange.opacity(0.25), lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isSubmitting || myOpenTask == nil)
-
-                    Button {
-                        actionMode = .orderRequest
-                        Task { await submitPartRequest(orderRequest: true) }
-                    } label: {
-                        Text("Order Request")
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                            .foregroundStyle(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(Capsule().fill(Color.blue))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isSubmitting || myOpenTask == nil)
-                }
             }
             .padding(20)
         }
@@ -806,55 +774,21 @@ private struct InventoryPartDetailSheet: View {
                 Button("Close") { dismiss() }
             }
         }
-        .onAppear {
-            actionMode = initialMode
-            orderQty = max(1, max(0, requestQty))
+        .task {
+            await store.loadMaintenanceData(staffId: currentUserId)
         }
     }
 
     private func statLine(_ label: String, _ value: String, tint: Color) -> some View {
         HStack {
             Text(label)
-                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .font(SierraFont.scaled(13, weight: .medium, design: .rounded))
                 .foregroundStyle(.secondary)
             Spacer()
             Text(value)
-                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .font(SierraFont.scaled(13, weight: .bold, design: .rounded))
                 .foregroundStyle(tint)
         }
-    }
-
-    private func submitPartRequest(orderRequest: Bool) async {
-        guard let task = myOpenTask else { return }
-        isSubmitting = true
-        defer { isSubmitting = false }
-        let quantity = orderRequest ? orderQty : requestQty
-        let reasonPrefix = orderRequest
-            ? "Order request from inventory detail"
-            : "Requested from inventory detail"
-        let request = SparePartsRequest(
-            id: UUID(),
-            maintenanceTaskId: task.id,
-            workOrderId: store.workOrder(forMaintenanceTask: task.id)?.id,
-            requestedById: currentUserId,
-            partName: part.name,
-            partNumber: part.partNumber,
-            quantity: quantity,
-            estimatedUnitCost: nil,
-            supplier: part.supplier,
-            reason: note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                ? reasonPrefix
-                : "\(reasonPrefix): \(note)",
-            status: .pending,
-            quantityAvailable: inStock,
-            quantityAllocated: 0,
-            quantityOnOrder: orderRequest ? quantity : part.onOrderQty,
-            expectedArrivalAt: orderRequest ? etaDate : nil,
-            createdAt: Date(),
-            updatedAt: Date()
-        )
-        try? await store.addSparePartsRequest(request)
-        dismiss()
     }
 
     private func statusTint(_ status: SparePartsRequestStatus) -> Color {
@@ -865,6 +799,14 @@ private struct InventoryPartDetailSheet: View {
         case .fulfilled: return .blue
         }
     }
+
+    private struct PartActivityItem: Identifiable {
+        let id = UUID()
+        let title: String
+        let subtitle: String
+        let timestamp: Date
+        let tint: Color
+    }
 }
 
 private struct FlexibleTags: View {
@@ -874,7 +816,7 @@ private struct FlexibleTags: View {
         VStack(alignment: .leading, spacing: 6) {
             ForEach(Array(values.prefix(3).enumerated()), id: \.offset) { _, value in
                 Text(value)
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .font(SierraFont.scaled(11, weight: .semibold, design: .rounded))
                     .foregroundStyle(Color.appTextSecondary)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
@@ -882,7 +824,7 @@ private struct FlexibleTags: View {
             }
             if values.count > 3 {
                 Text("+\(values.count - 3) more")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .font(SierraFont.scaled(11, weight: .semibold, design: .rounded))
                     .foregroundStyle(Color.appOrange)
             }
         }

@@ -36,13 +36,13 @@ struct MaintenanceProfileSetupView: View {
         VStack(spacing: 12) {
             HStack {
                 Text("Maintenance Setup")
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(12, weight: .bold, design: .rounded))
                     .foregroundStyle(Color.appTextSecondary)
                     .textCase(.uppercase)
                     .tracking(1.0)
                 Spacer()
                 Text("Step \(viewModel.currentStep) of 2")
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .font(SierraFont.scaled(12, weight: .semibold, design: .rounded))
                     .foregroundStyle(Color.appOrange)
             }
 

@@ -22,7 +22,6 @@ interface CreateRequestPayload {
   vehicle_id: string;
   title: string;
   task_description: string;
-  priority: string;
   source_inspection_id?: string | null;
   due_date?: string | null;
 }
@@ -79,16 +78,12 @@ Deno.serve(async (req: Request) => {
     const vehicleId = body.vehicle_id?.trim().toLowerCase();
     const title = body.title?.trim();
     const description = body.task_description?.trim();
-    const priority = body.priority?.trim();
     const sourceInspectionId = body.source_inspection_id?.trim() || null;
     const dueDateRaw = body.due_date?.trim();
 
     if (!vehicleId || !title || !description) {
       return json(400, { error: "Missing required fields: vehicle_id, title, task_description." });
     }
-
-    const allowedPriorities = new Set(["Low", "Medium", "High", "Urgent"]);
-    const normalizedPriority = allowedPriorities.has(priority ?? "") ? priority! : "Medium";
 
     const dueDate = dueDateRaw && !isNaN(Date.parse(dueDateRaw))
       ? new Date(dueDateRaw)
@@ -99,9 +94,9 @@ Deno.serve(async (req: Request) => {
       created_by_admin_id: user.id.toLowerCase(),
       title,
       task_description: description,
-      priority: normalizedPriority,
       status: "Pending",
       task_type: "Inspection Defect",
+      request_origin: "inspection_report",
       source_inspection_id: sourceInspectionId,
       due_date: dueDate.toISOString(),
     };
@@ -141,4 +136,3 @@ function unauthorized(
     detail: detail ?? null,
   });
 }
-

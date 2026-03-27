@@ -101,7 +101,7 @@ struct CreateStaffView: View {
             VStack(spacing: 14) {
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: icon)
-                        .font(.system(size: 32, weight: .light))
+                        .font(SierraFont.scaled(32, weight: .light))
                         .foregroundStyle(isSelected ? .orange : .secondary)
                         .frame(width: 60, height: 60)
                         .background(
@@ -111,7 +111,7 @@ struct CreateStaffView: View {
 
                     if isSelected {
                         Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 20))
+                            .font(SierraFont.scaled(20))
                             .foregroundStyle(.orange)
                             .offset(x: 6, y: -6)
                             .transition(.scale.combined(with: .opacity))
@@ -119,7 +119,7 @@ struct CreateStaffView: View {
                 }
 
                 Text(title)
-                    .font(.system(size: 16, weight: .bold))
+                    .font(SierraFont.scaled(16, weight: .bold))
                     .foregroundStyle(.primary)
 
                 Text(description)
@@ -154,7 +154,7 @@ struct CreateStaffView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Text("Staff Details")
-                    .font(.system(size: 16, weight: .bold))
+                    .font(SierraFont.scaled(16, weight: .bold))
                     .foregroundStyle(.primary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -221,7 +221,7 @@ struct CreateStaffView: View {
     private var credentialPreviewCard: some View {
         HStack(spacing: 12) {
             Image(systemName: "envelope.badge.shield.half.filled.fill")
-                .font(.system(size: 24))
+                .font(SierraFont.scaled(24))
                 .foregroundStyle(.orange)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -248,7 +248,7 @@ struct CreateStaffView: View {
     private var continueButton: some View {
         Button {} label: {
             Text("Continue")
-                .font(.system(size: 17, weight: .semibold))
+                .font(SierraFont.scaled(17, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.5))
                 .frame(maxWidth: .infinity)
                 .frame(height: 54)
@@ -264,7 +264,7 @@ struct CreateStaffView: View {
             Task { await viewModel.createStaff() }
         } label: {
             Text("Create & Send Credentials")
-                .font(.system(size: 17, weight: .semibold))
+                .font(SierraFont.scaled(17, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
                 .frame(height: 54)
@@ -291,7 +291,7 @@ struct CreateStaffView: View {
                     .frame(width: 100, height: 100)
 
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 56))
+                    .font(SierraFont.scaled(56))
                     .foregroundStyle(.green)
                     .symbolRenderingMode(.hierarchical)
             }
@@ -306,7 +306,7 @@ struct CreateStaffView: View {
                     .foregroundStyle(.secondary)
 
                 Text(viewModel.createdStaffName)
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(SierraFont.scaled(17, weight: .semibold))
                     .foregroundStyle(.primary)
 
                 if let role = viewModel.selectedRole {
@@ -359,7 +359,7 @@ struct CreateStaffView: View {
                 dismiss()
             } label: {
                 Text("Done")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(SierraFont.scaled(17, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .frame(height: 54)

@@ -90,7 +90,7 @@ struct PasswordStrengthView: View {
                 
                 if met {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(SierraFont.scaled(10, weight: .bold))
                         .foregroundStyle(SierraTheme.Colors.alpineMint)
                 }
             }

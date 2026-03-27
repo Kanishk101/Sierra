@@ -34,5 +34,9 @@ struct SierraPickerRow: View {
                 in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
             )
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(label)
+        .accessibilityValue(value)
+        .accessibilityHint("Opens \(label) options")
     }
 }

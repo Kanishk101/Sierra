@@ -70,24 +70,20 @@ final class SOSAlertViewModel {
             )
 
             try await EmergencyAlertService.addEmergencyAlert(alert)
-
-            // Notify all fleet managers
-            let fms = store.staff.filter { $0.role == .fleetManager }
-            let notifType: NotificationType = (alertType == .defect) ? .defectAlert : .sosAlert
-            for fm in fms {
-                do {
-                    try await NotificationService.insertNotification(
-                        recipientId: fm.id,
-                        type: notifType,
-                        title: "\(alertType.rawValue) Alert",
-                        body: "Driver emergency: \(alertType.rawValue)\(descriptionText.isEmpty ? "" : " — \(descriptionText)")",
-                        entityType: "emergency_alert",
-                        entityId: alert.id
-                    )
-                } catch {
-                    print("[SOS] Non-fatal: notification to FM \(fm.id) failed")
+            await MainActor.run {
+                if !store.emergencyAlerts.contains(where: { $0.id == alert.id }) {
+                    store.emergencyAlerts.insert(alert, at: 0)
                 }
             }
+
+            let notifType: NotificationType = (alertType == .defect) ? .defectAlert : .sosAlert
+            await NotificationService.sendToAdmins(
+                type: notifType,
+                title: "\(alertType.rawValue) Alert",
+                body: "Driver emergency: \(alertType.rawValue)\(descriptionText.isEmpty ? "" : " — \(descriptionText)")",
+                entityType: "emergency_alert",
+                entityId: alert.id
+            )
 
             sentSuccessfully = true
         } catch {

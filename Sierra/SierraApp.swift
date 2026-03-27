@@ -56,6 +56,7 @@ struct SierraApp: App {
 
     @Environment(\.scenePhase) private var scenePhase
     private var lifecycle = AppLifecycleMonitor.shared
+    @State private var accessibilitySettings = AccessibilitySettings.shared
     @State private var foregroundTasks: [Task<Void, Never>] = []
 
     init() {
@@ -84,8 +85,10 @@ struct SierraApp: App {
                         .zIndex(999)
                 }
             }
+            .tint(accessibilitySettings.accentColor)
             .environment(AppDataStore.shared)
             .environment(AuthManager.shared)
+            .environment(accessibilitySettings)
             .animation(.easeInOut(duration: 0.25), value: lifecycle.showBiometricLock)
         }
         .onChange(of: scenePhase) { _, newPhase in

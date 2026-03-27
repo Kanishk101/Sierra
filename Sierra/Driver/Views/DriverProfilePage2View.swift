@@ -40,7 +40,7 @@ struct DriverProfilePage2View: View {
                             maxLength: 14, // 12 digits + 2 spaces
                             filterDigitsOnly: false // Formatting happens in VM
                         )
-                        .font(.system(size: 16, design: .monospaced))
+                        .font(SierraFont.scaled(16, design: .monospaced))
 
                         // Image uploads
                         VStack(alignment: .leading, spacing: 12) {
@@ -181,7 +181,7 @@ struct DriverProfilePage2View: View {
                         onImageSelected(nil)
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 24))
+                            .font(SierraFont.scaled(24))
                             .foregroundStyle(.white, SierraTheme.Colors.danger)
                             .shadow(radius: 4)
                     }
@@ -195,7 +195,7 @@ struct DriverProfilePage2View: View {
                                 .fill(SierraTheme.Colors.ember.opacity(0.1))
                                 .frame(width: 40, height: 40)
                             Image(systemName: "camera.fill")
-                                .font(.system(size: 18))
+                                .font(SierraFont.scaled(18))
                                 .foregroundStyle(SierraTheme.Colors.ember)
                         }
 
@@ -270,7 +270,7 @@ struct DriverProfilePage2View: View {
                         .fill(SierraTheme.Colors.ember.opacity(0.1))
                         .frame(width: 32, height: 32)
                     Image(systemName: icon)
-                        .font(.system(size: 14))
+                        .font(SierraFont.scaled(14))
                         .foregroundStyle(SierraTheme.Colors.ember)
                 }
                 

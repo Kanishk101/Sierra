@@ -43,7 +43,7 @@ struct StaffListView: View {
                         Spacer()
                         VStack(spacing: 16) {
                             Image(systemName: selectedSegment == .driver ? "person.fill" : "wrench.fill")
-                                .font(.system(size: 40, weight: .light))
+                                .font(SierraFont.scaled(40, weight: .light))
                                 .foregroundStyle(.secondary)
                             Text(
                                 searchText.isEmpty
@@ -128,13 +128,13 @@ struct StaffListView: View {
                 .frame(width: 44, height: 44)
                 .overlay(
                     Text(member.initials)
-                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(15, weight: .bold, design: .rounded))
                         .foregroundStyle(.primary)
                 )
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(member.displayName)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(SierraFont.scaled(15, weight: .semibold))
                     .foregroundStyle(.primary)
                 Text(member.email)
                     .font(.caption)
@@ -146,7 +146,7 @@ struct StaffListView: View {
             VStack(alignment: .trailing, spacing: 4) {
                 if member.status == .suspended {
                     Text("Suspended")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(SierraFont.scaled(9, weight: .bold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(.red, in: Capsule())
@@ -154,7 +154,7 @@ struct StaffListView: View {
                     availabilityBadge(member.availability)
                 }
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(SierraFont.scaled(11, weight: .semibold))
                     .foregroundStyle(.tertiary)
             }
         }

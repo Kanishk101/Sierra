@@ -61,6 +61,10 @@ struct NotificationBannerView: View {
         .padding(.horizontal, 16)
         .padding(.top, 8)
         .onTapGesture { onTap() }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel(title)
+        .accessibilityHint("Opens notification")
     }
 }
 

@@ -6,6 +6,7 @@ import CoreLocation
 struct DriverProfileSheet: View {
 
     @Environment(AppDataStore.self) private var store
+    @Environment(AccessibilitySettings.self) private var accessibilitySettings
     @Environment(\.dismiss) private var dismiss
 
     // FIX: initialise from the canonical single source of truth.
@@ -165,7 +166,7 @@ struct DriverProfileSheet: View {
                         Circle()
                             .fill(
                                 LinearGradient(
-                                    colors: [.orange, .orange.opacity(0.7)],
+                                    colors: [Color.appOrange, Color.appDeepOrange],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 )
@@ -173,7 +174,7 @@ struct DriverProfileSheet: View {
                             .frame(width: 64, height: 64)
                             .overlay(
                                 Text(driverMember?.initials ?? "D")
-                                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                                    .font(SierraFont.title2)
                                     .foregroundStyle(.white)
                             )
 
@@ -189,16 +190,18 @@ struct DriverProfileSheet: View {
                             if let member = driverMember {
                                 HStack(spacing: 6) {
                                     Circle()
-                                        .fill(member.availability == .available ? .green : .gray)
+                                        .fill(member.availability == .available ? Color.statusActive : .gray)
                                         .frame(width: 8, height: 8)
                                     Text(member.availability.rawValue.capitalized)
                                         .font(.caption.weight(.medium))
-                                        .foregroundStyle(member.availability == .available ? .green : .secondary)
+                                        .foregroundStyle(member.availability == .available ? Color.statusActive : .secondary)
                                 }
+                                .accessibilityLabel("Availability \(member.availability.rawValue.capitalized)")
                             }
                         }
                     }
                     .padding(.vertical, 8)
+                    .accessibilityElement(children: .combine)
                 }
 
                 // Stats
@@ -209,16 +212,18 @@ struct DriverProfileSheet: View {
                         Spacer()
                         Text("\(completedTrips)")
                             .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(Color.appOrange)
                     }
+                    .accessibilityElement(children: .combine)
                     HStack {
                         Label("Total Distance", systemImage: "road.lanes")
                             .font(.subheadline)
                         Spacer()
                         Text("\(totalDistanceKm) km")
                             .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(Color.appOrange)
                     }
+                    .accessibilityElement(children: .combine)
                 }
 
                 // Contact
@@ -232,6 +237,7 @@ struct DriverProfileSheet: View {
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
+                        .accessibilityElement(children: .combine)
                     }
                     if let email = user?.email {
                         HStack {
@@ -242,6 +248,7 @@ struct DriverProfileSheet: View {
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
+                        .accessibilityElement(children: .combine)
                     }
                 }
 
@@ -253,9 +260,10 @@ struct DriverProfileSheet: View {
                                 .font(.subheadline)
                             Spacer()
                             Text(profile.licenseNumber)
-                                .font(.system(size: 13, design: .monospaced).weight(.semibold))
-                                .foregroundStyle(.orange)
+                                .font(SierraFont.monoSM.weight(.semibold))
+                                .foregroundStyle(Color.appOrange)
                         }
+                        .accessibilityElement(children: .combine)
                         HStack {
                             Label("Class", systemImage: "creditcard.fill")
                                 .font(.subheadline)
@@ -264,6 +272,7 @@ struct DriverProfileSheet: View {
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
+                        .accessibilityElement(children: .combine)
                         HStack {
                             Label("Issuing State", systemImage: "mappin.and.ellipse")
                                 .font(.subheadline)
@@ -272,6 +281,7 @@ struct DriverProfileSheet: View {
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
+                        .accessibilityElement(children: .combine)
                         HStack {
                             Label("Expiry", systemImage: "calendar.badge.clock")
                                 .font(.subheadline)
@@ -280,6 +290,7 @@ struct DriverProfileSheet: View {
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
+                        .accessibilityElement(children: .combine)
                     }
 
                     Section("Documents") {
@@ -289,16 +300,18 @@ struct DriverProfileSheet: View {
                             Spacer()
                             Text(profile.licenseDocumentUrl != nil ? "Uploaded ✓" : "Not uploaded")
                                 .font(.caption.weight(.semibold))
-                                .foregroundStyle(profile.licenseDocumentUrl != nil ? .green : .secondary)
+                                .foregroundStyle(profile.licenseDocumentUrl != nil ? Color.statusActive : .secondary)
                         }
+                        .accessibilityElement(children: .combine)
                         HStack {
                             Label("Aadhaar Card", systemImage: "person.text.rectangle.fill")
                                 .font(.subheadline)
                             Spacer()
                             Text(profile.aadhaarDocumentUrl != nil ? "Uploaded ✓" : "Not uploaded")
                                 .font(.caption.weight(.semibold))
-                                .foregroundStyle(profile.aadhaarDocumentUrl != nil ? .green : .secondary)
+                                .foregroundStyle(profile.aadhaarDocumentUrl != nil ? Color.statusActive : .secondary)
                         }
+                        .accessibilityElement(children: .combine)
                     }
                 }
 
@@ -308,7 +321,7 @@ struct DriverProfileSheet: View {
                         Label(biometricLabel, systemImage: biometricIcon)
                             .font(.subheadline)
                     }
-                    .tint(.orange)
+                    .tint(Color.appOrange)
                     .disabled(!biometric.canUseBiometrics())
                     // FIX: do NOT trigger a biometric challenge just to SET the preference.
                     // The challenge happens at sign-in time, not at settings-change time.
@@ -318,6 +331,8 @@ struct DriverProfileSheet: View {
                     .onChange(of: isBiometricEnabled) { _, enabled in
                         BiometricPreference.isEnabled = enabled
                     }
+                    .accessibilityLabel("\(biometricLabel) login")
+                    .accessibilityHint("Enables biometric authentication for sign in")
 
                     NavigationLink {
                         ChangePasswordView()
@@ -325,6 +340,25 @@ struct DriverProfileSheet: View {
                         Label("Change Password", systemImage: "lock.rotation")
                             .font(.subheadline)
                     }
+                    .accessibilityLabel("Change password")
+                }
+
+                Section("Accessibility") {
+                    Toggle(isOn: Binding(
+                        get: { accessibilitySettings.isColorBlindModeEnabled },
+                        set: { accessibilitySettings.isColorBlindModeEnabled = $0 }
+                    )) {
+                        Label("Color Blind Mode", systemImage: "eyedropper.halffull")
+                            .font(.subheadline)
+                    }
+                    .tint(Color.appOrange)
+                    .accessibilityLabel("Color blind mode")
+                    .accessibilityHint("Switches to a high-contrast color palette")
+
+                    Text("High-contrast colors and stronger non-color cues are enabled when this is on.")
+                        .font(SierraFont.caption1)
+                        .foregroundStyle(.secondary)
+                        .accessibilityElement(children: .combine)
                 }
 
                 // Sign Out
@@ -340,6 +374,7 @@ struct DriverProfileSheet: View {
                             Spacer()
                         }
                     }
+                    .accessibilityLabel("Sign out")
                 }
             }
             .navigationTitle("Profile")
@@ -354,12 +389,14 @@ struct DriverProfileSheet: View {
                         populateEditDraft()
                         showEditProfile = true
                     }
-                    .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    .font(SierraFont.headline)
                     .disabled(driverMember == nil)
+                    .accessibilityLabel("Edit profile")
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
-                        .font(.system(size: 17, weight: .semibold, design: .rounded))
+                        .font(SierraFont.headline)
+                        .accessibilityLabel("Close profile")
                 }
             }
         }
@@ -407,7 +444,7 @@ struct DriverProfileSheet: View {
                         Section("Validation") {
                             ForEach(profileValidationErrors, id: \.self) { message in
                                 Text(message)
-                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                    .font(SierraFont.footnote.weight(.semibold))
                                     .foregroundColor(.red)
                             }
                         }
@@ -430,6 +467,7 @@ struct DriverProfileSheet: View {
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Cancel") { showEditProfile = false }
+                            .accessibilityLabel("Cancel editing profile")
                     }
                     ToolbarItem(placement: .confirmationAction) {
                         Button {
@@ -442,6 +480,7 @@ struct DriverProfileSheet: View {
                             }
                         }
                         .disabled(!canSaveProfile)
+                        .accessibilityLabel("Save profile changes")
                     }
                 }
             }
@@ -597,4 +636,5 @@ struct DriverProfileSheet: View {
 #Preview {
     DriverProfileSheet()
         .environment(AppDataStore.shared)
+        .environment(AccessibilitySettings.shared)
 }

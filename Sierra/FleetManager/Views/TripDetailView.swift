@@ -54,7 +54,7 @@ struct TripDetailView: View {
             Section {
                 VStack(alignment: .center, spacing: 8) {
                     Text(t.taskId)
-                        .font(.system(size: 20, weight: .bold, design: .monospaced))
+                        .font(SierraFont.scaled(20, weight: .bold, design: .monospaced))
                         .foregroundStyle(.primary)
                     statusBadge(t.status)
                 }
@@ -99,7 +99,7 @@ struct TripDetailView: View {
                             .frame(width: 40, height: 40)
                             .overlay(
                                 Text(driver.initials)
-                                    .font(.system(size: 14, weight: .bold))
+                                    .font(SierraFont.scaled(14, weight: .bold))
                                     .foregroundStyle(.blue)
                             )
                         VStack(alignment: .leading, spacing: 2) {
@@ -119,7 +119,7 @@ struct TripDetailView: View {
                    let vehicle = store.vehicle(for: vUUID) {
                     HStack(spacing: 12) {
                         Image(systemName: "car.fill")
-                            .font(.system(size: 18))
+                            .font(SierraFont.scaled(18))
                             .foregroundStyle(.secondary)
                             .frame(width: 40, height: 40)
                             .background(Color.blue.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
@@ -127,7 +127,7 @@ struct TripDetailView: View {
                             Text("\(vehicle.name) \(vehicle.model)").font(.subheadline.weight(.medium))
                             HStack(spacing: 6) {
                                 Text(vehicle.licensePlate)
-                                    .font(.system(size: 13, design: .monospaced))
+                                    .font(SierraFont.scaled(13, design: .monospaced))
                                     .foregroundStyle(.secondary)
                                 Text("· \(vehicle.fuelType.rawValue)")
                                     .font(.subheadline).foregroundStyle(.secondary)
@@ -219,7 +219,7 @@ struct TripDetailView: View {
                                 ProgressView().tint(.white)
                             } else {
                                 Label("Dispatch to Driver", systemImage: "paperplane.fill")
-                                    .font(.system(size: 16, weight: .semibold))
+                                    .font(SierraFont.scaled(16, weight: .semibold))
                             }
                             Spacer()
                         }
@@ -277,7 +277,7 @@ struct TripDetailView: View {
                         HStack {
                             Spacer()
                             Label("Cancel Trip", systemImage: "xmark.circle.fill")
-                                .font(.system(size: 16, weight: .semibold))
+                                .font(SierraFont.scaled(16, weight: .semibold))
                             Spacer()
                         }
                     }
@@ -299,7 +299,7 @@ struct TripDetailView: View {
         default:                 (normalized.rawValue,  .secondary)
         }
         return Text(text)
-            .font(.system(size: 13, weight: .semibold))
+            .font(SierraFont.scaled(13, weight: .semibold))
             .foregroundStyle(color)
             .padding(.horizontal, 12)
             .padding(.vertical, 5)
@@ -314,7 +314,7 @@ struct TripDetailView: View {
         case .urgent: .red
         }
         return Text(priority.rawValue)
-            .font(.system(size: 13, weight: .semibold))
+            .font(SierraFont.scaled(13, weight: .semibold))
             .foregroundStyle(color)
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
@@ -332,7 +332,7 @@ struct TripDetailView: View {
         case .none: .secondary
         }
         return Text(text)
-            .font(.system(size: 13, weight: .semibold))
+            .font(SierraFont.scaled(13, weight: .semibold))
             .foregroundStyle(color)
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
@@ -375,7 +375,7 @@ struct TripDetailView: View {
                 summaryBadgeRow("Proof of Delivery") {
                     let done = trip.proofOfDeliveryId != nil
                     Text(done ? "Submitted" : "Pending")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(SierraFont.scaled(13, weight: .semibold))
                         .foregroundStyle(done ? .green : .orange)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
@@ -437,7 +437,7 @@ struct TripDetailView: View {
 
     private func summaryBlockHeader(_ title: String) -> some View {
         Text(title)
-            .font(.system(size: 12, weight: .semibold))
+            .font(SierraFont.scaled(12, weight: .semibold))
             .foregroundStyle(.secondary)
             .textCase(.uppercase)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -456,11 +456,11 @@ struct TripDetailView: View {
     private func summaryValueRow(_ title: String, value: String) -> some View {
         HStack(alignment: .top, spacing: 12) {
             Text(title)
-                .font(.system(size: 15, weight: .medium))
+                .font(SierraFont.scaled(15, weight: .medium))
                 .foregroundStyle(Color.gray)
             Spacer(minLength: 8)
             Text(value)
-                .font(.system(size: 15, weight: .semibold))
+                .font(SierraFont.scaled(15, weight: .semibold))
                 .foregroundStyle(.primary)
                 .multilineTextAlignment(.trailing)
         }
@@ -470,7 +470,7 @@ struct TripDetailView: View {
 
     private func summaryBadgeRow<Content: View>(_ title: String, @ViewBuilder trailing: () -> Content) -> some View {
         HStack(spacing: 12) {
-            Text(title).font(.system(size: 15, weight: .medium)).foregroundStyle(Color.gray)
+            Text(title).font(SierraFont.scaled(15, weight: .medium)).foregroundStyle(Color.gray)
             Spacer(minLength: 8)
             trailing()
         }
@@ -484,11 +484,11 @@ struct TripDetailView: View {
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Label("Trip Tracking", systemImage: "location.viewfinder")
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(11, weight: .bold, design: .rounded))
                     .foregroundStyle(.primary)
                 Spacer(minLength: 8)
                 Text(trackingStatusText(for: trip, status: status))
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .font(SierraFont.scaled(12, weight: .semibold, design: .rounded))
                     .foregroundStyle(.primary)
             }
 
@@ -510,7 +510,7 @@ struct TripDetailView: View {
                 .fill(isActive ? Color.primary : Color.secondary.opacity(0.25))
                 .frame(width: 8, height: 8)
             Text(title)
-                .font(.system(size: 10, weight: .medium, design: .rounded))
+                .font(SierraFont.scaled(10, weight: .medium, design: .rounded))
                 .foregroundStyle(isActive ? .primary : .secondary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)

@@ -72,7 +72,7 @@ struct SierraTextField: View {
             HStack(spacing: Spacing.xs) {
                 if let leadingIcon {
                     Image(systemName: leadingIcon)
-                        .font(.system(size: 15))
+                        .font(SierraFont.scaled(15))
                         .foregroundStyle(isFocused ? SierraTheme.Colors.ember : SierraTheme.Colors.granite)
                 }
 
@@ -90,16 +90,18 @@ struct SierraTextField: View {
                 .disabled(isDisabled)
                 .textInputAutocapitalization(isSecure ? .none : .sentences)
                 .autocorrectionDisabled(isSecure)
+                .accessibilityLabel(label.isEmpty ? placeholder : label)
 
                 if isSecure {
                     Button {
                         isPasswordVisible.toggle()
                     } label: {
                         Image(systemName: isPasswordVisible ? "eye.slash.fill" : "eye.fill")
-                            .font(.system(size: 14, weight: .medium))
+                            .font(SierraFont.scaled(14, weight: .medium))
                             .foregroundStyle(SierraTheme.Colors.granite)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(isPasswordVisible ? "Hide password" : "Show password")
                 }
 
                 if let trailingContent {

@@ -117,6 +117,9 @@ final class RouteEngine {
             waypoints.append(Waypoint(coordinate: CLLocationCoordinate2D(latitude: stop.lat, longitude: stop.lng), name: stop.name))
         }
         waypoints.append(Waypoint(coordinate: destCoord))
+        let fallbackWaypoints: [CLLocationCoordinate2D] =
+            modelStops.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+            + intermediateWaypoints.map { CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lng) }
 
         let options = RouteOptions(waypoints: waypoints)
         options.includesAlternativeRoutes = true
@@ -197,7 +200,11 @@ final class RouteEngine {
             if hasDeviated { hasDeviated = false }
 
         } catch {
-            if await applyMapServiceFallbackRoute(origin: originCoord, destination: destCoord) {
+            if await applyMapServiceFallbackRoute(
+                origin: originCoord,
+                destination: destCoord,
+                waypoints: fallbackWaypoints
+            ) {
                 lastBuildError = nil
                 return
             }
@@ -375,7 +382,8 @@ final class RouteEngine {
 
     private func applyMapServiceFallbackRoute(
         origin: CLLocationCoordinate2D,
-        destination: CLLocationCoordinate2D
+        destination: CLLocationCoordinate2D,
+        waypoints: [CLLocationCoordinate2D]
     ) async -> Bool {
         do {
             let routes = try await MapService.fetchRoutes(
@@ -383,6 +391,7 @@ final class RouteEngine {
                 originLng: origin.longitude,
                 destLat: destination.latitude,
                 destLng: destination.longitude,
+                waypoints: waypoints,
                 avoidTolls: avoidTolls,
                 avoidHighways: avoidHighways
             )

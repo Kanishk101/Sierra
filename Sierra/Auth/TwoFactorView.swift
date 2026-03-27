@@ -19,6 +19,7 @@ struct TwoFactorView: View {
                         for: nil
                     )
                 }
+                .accessibilityHidden(true)
 
             ScrollView {
                 VStack(spacing: 0) {
@@ -64,7 +65,7 @@ struct TwoFactorView: View {
             ToolbarItem(placement: .topBarLeading) {
                 Button { viewModel.cancelAndGoBack() } label: {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(SierraFont.scaled(16, weight: .semibold))
                         .foregroundStyle(SierraTheme.Colors.ember)
                 }
             }
@@ -92,7 +93,7 @@ struct TwoFactorView: View {
     private var headerSection: some View {
         VStack(spacing: 16) {
             Image(systemName: "envelope.badge.shield.half.filled")
-                .font(.system(size: 50, weight: .light))
+                .font(SierraFont.scaled(50, weight: .light))
                 .foregroundStyle(SierraTheme.Colors.ember)
                 .symbolRenderingMode(.hierarchical)
 
@@ -198,7 +199,7 @@ struct TwoFactorView: View {
                         .fill(SierraTheme.Colors.danger.opacity(0.12))
                         .frame(width: 72, height: 72)
                     Image(systemName: "lock.fill")
-                        .font(.system(size: 28, weight: .semibold))
+                        .font(SierraFont.scaled(28, weight: .semibold))
                         .foregroundStyle(SierraTheme.Colors.danger)
                 }
                 Text("Account Temporarily Locked")

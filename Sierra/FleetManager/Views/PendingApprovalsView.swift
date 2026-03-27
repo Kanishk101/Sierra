@@ -36,6 +36,9 @@ struct PendingApprovalsView: View {
                                     .onTapGesture {
                                         selectedApplication = app
                                     }
+                                    .accessibilityAddTraits(.isButton)
+                                    .accessibilityLabel("Open \(app.role.displayName) application")
+                                    .accessibilityHint("Shows application details and actions")
                             }
                         }
                         .padding(.horizontal, 20)
@@ -71,7 +74,7 @@ struct PendingApprovalsView: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(applicantName(app))
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(SierraFont.scaled(16, weight: .semibold))
                     .foregroundStyle(.primary)
 
                 HStack(spacing: 8) {
@@ -110,7 +113,7 @@ struct PendingApprovalsView: View {
 
     private func roleBadge(_ role: UserRole) -> some View {
         Text(role.displayName)
-            .font(.system(size: 11, weight: .semibold))
+            .font(SierraFont.scaled(11, weight: .semibold))
             .foregroundStyle(.secondary)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
@@ -145,10 +148,10 @@ struct PendingApprovalsView: View {
         VStack(spacing: 16) {
             Spacer()
             Image(systemName: "person.crop.circle.badge.checkmark")
-                .font(.system(size: 48, weight: .light))
+                .font(SierraFont.scaled(48, weight: .light))
                 .foregroundStyle(.tertiary)
             Text("No \(viewModel.selectedFilter.rawValue.lowercased()) applications")
-                .font(.system(size: 16, weight: .medium))
+                .font(SierraFont.scaled(16, weight: .medium))
                 .foregroundStyle(.secondary)
             Spacer()
         }

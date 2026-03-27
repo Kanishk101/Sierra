@@ -9,6 +9,7 @@ import Supabase
 struct AlertsInboxView: View {
 
     @Environment(AppDataStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
     @State var vm = AlertsViewModel()
     @State private var reversedAddresses: [UUID: String] = [:]  // Safeguard 4: cache
 
@@ -53,16 +54,32 @@ struct AlertsInboxView: View {
                     }
                 }
             } else {
-                // Emergency alerts
-                if !vm.activeAlerts.isEmpty {
+                let activeSosAlerts = vm.activeAlerts.filter { !isPreTripReassignmentAlert($0) }
+                let reassignmentAlerts = vm.activeAlerts.filter(isPreTripReassignmentAlert)
+
+                // Priority / SOS alerts
+                if !activeSosAlerts.isEmpty {
                     Section {
-                        ForEach(vm.activeAlerts) { alert in
+                        ForEach(activeSosAlerts) { alert in
                             NavigationLink(value: alert.id) {
                                 emergencyRow(alert)
                             }
                         }
                     } header: {
-                        sectionHeader("Emergency Alerts", count: vm.activeAlerts.count, color: .red)
+                        sectionHeader("Emergency Alerts", count: activeSosAlerts.count, color: .red)
+                    }
+                }
+
+                // Pre-trip reassignment requests
+                if !reassignmentAlerts.isEmpty {
+                    Section {
+                        ForEach(reassignmentAlerts) { alert in
+                            NavigationLink(value: alert.id) {
+                                emergencyRow(alert)
+                            }
+                        }
+                    } header: {
+                        sectionHeader("Vehicle Reassignment", count: reassignmentAlerts.count, color: .orange)
                     }
                 }
 
@@ -88,11 +105,11 @@ struct AlertsInboxView: View {
                     }
                 }
 
-                if vm.activeAlerts.isEmpty && vm.unacknowledgedDeviations.isEmpty && overdueMaintenanceTasks.isEmpty {
+                if activeSosAlerts.isEmpty && reassignmentAlerts.isEmpty && vm.unacknowledgedDeviations.isEmpty && overdueMaintenanceTasks.isEmpty {
                     Section {
                         VStack(spacing: 12) {
                             Image(systemName: "checkmark.shield.fill")
-                                .font(.system(size: 40, weight: .light))
+                                .font(SierraFont.scaled(40, weight: .light))
                                 .foregroundStyle(.green.opacity(0.5))
                             Text("All clear — no active alerts")
                                 .font(.subheadline).foregroundStyle(.secondary)
@@ -119,6 +136,13 @@ struct AlertsInboxView: View {
             if let alert = vm.emergencyAlerts.first(where: { $0.id == alertId }) {
                 AlertDetailView(alert: alert) {
                     Task { await vm.load() }
+                } onOpenMaintenanceTask: { taskId in
+                    NotificationCenter.default.post(
+                        name: .sierraOpenVehicleMaintenance,
+                        object: nil,
+                        userInfo: ["taskId": taskId.uuidString]
+                    )
+                    dismiss()
                 }
             }
         }
@@ -212,7 +236,7 @@ struct AlertsInboxView: View {
         HStack(spacing: 6) {
             Text(title).font(.caption.weight(.bold))
             Text("\(count)")
-                .font(.system(size: 10, weight: .bold))
+                .font(SierraFont.scaled(10, weight: .bold))
                 .foregroundStyle(.white)
                 .padding(.horizontal, 6).padding(.vertical, 2)
                 .background(color, in: Capsule())
@@ -225,8 +249,14 @@ struct AlertsInboxView: View {
         case .accident: return "car.side.front.open"
         case .breakdown: return "exclamationmark.triangle.fill"
         case .medical: return "cross.case.fill"
-        case .defect: return "wrench.trianglebadge.exclamationmark"
+        case .defect: return "wrench.and.screwdriver.fill"
         }
+    }
+
+    private func isPreTripReassignmentAlert(_ alert: EmergencyAlert) -> Bool {
+        guard alert.alertType == .defect, let tripId = alert.tripId else { return false }
+        guard let preInspection = store.preInspection(forTrip: tripId) else { return false }
+        return preInspection.overallResult == .failed
     }
 
     private func timeAgo(_ date: Date) -> String {

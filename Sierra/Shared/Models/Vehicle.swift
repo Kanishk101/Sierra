@@ -36,6 +36,8 @@ struct Vehicle: Identifiable, Codable {
     // MARK: Specs
     var fuelType: FuelType
     var seatingCapacity: Int
+    var fuelTankCapacityLiters: Double? = nil
+    var mileageKmPerLitre: Double? = nil
 
     // MARK: Status & assignment
     var status: VehicleStatus
@@ -61,6 +63,8 @@ struct Vehicle: Identifiable, Codable {
         case licensePlate       = "license_plate"
         case fuelType           = "fuel_type"
         case seatingCapacity    = "seating_capacity"
+        case fuelTankCapacityLiters = "fuel_tank_capacity_liters"
+        case mileageKmPerLitre  = "mileage_km_per_litre"
         case status
         case assignedDriverId   = "assigned_driver_id"
         case currentLatitude    = "current_latitude"

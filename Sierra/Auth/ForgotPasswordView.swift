@@ -68,7 +68,7 @@ struct ForgotPasswordView: View {
             }
         } label: {
             Image(systemName: "chevron.left")
-                .font(.system(size: 16, weight: .semibold))
+                .font(SierraFont.scaled(16, weight: .semibold))
                 .foregroundStyle(SierraTheme.Colors.ember)
         }
     }
@@ -81,7 +81,7 @@ struct ForgotPasswordView: View {
                 Spacer(minLength: 60)
                 // Icon
                 Image(systemName: "envelope.badge.fill")
-                    .font(.system(size: 50, weight: .light))
+                    .font(SierraFont.scaled(50, weight: .light))
                     .foregroundStyle(SierraTheme.Colors.ember)
                     .symbolRenderingMode(.hierarchical)
                 VStack(spacing: 8) {
@@ -127,7 +127,7 @@ struct ForgotPasswordView: View {
             VStack(spacing: 24) {
                 Spacer(minLength: 60)
                 Image(systemName: "lock.shield.fill")
-                    .font(.system(size: 50, weight: .light))
+                    .font(SierraFont.scaled(50, weight: .light))
                     .foregroundStyle(SierraTheme.Colors.ember)
                     .symbolRenderingMode(.hierarchical)
                 VStack(spacing: 8) {
@@ -171,7 +171,7 @@ struct ForgotPasswordView: View {
             VStack(spacing: 20) {
                 Spacer(minLength: 60)
                 Image(systemName: "key.fill")
-                    .font(.system(size: 50, weight: .light))
+                    .font(SierraFont.scaled(50, weight: .light))
                     .foregroundStyle(SierraTheme.Colors.ember)
                     .symbolRenderingMode(.hierarchical)
                 VStack(spacing: 8) {

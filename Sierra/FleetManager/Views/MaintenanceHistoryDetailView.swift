@@ -120,7 +120,7 @@ struct MaintenanceHistoryDetailView: View {
         case .cancelled:  .gray
         }
         return Text(s.rawValue)
-            .font(.system(size: 10, weight: .bold))
+            .font(SierraFont.scaled(10, weight: .bold))
             .foregroundStyle(.white)
             .padding(.horizontal, 8).padding(.vertical, 3)
             .background(color, in: Capsule())

@@ -2,12 +2,18 @@ import SwiftUI
 
 struct VehicleListView: View {
     @Environment(AppDataStore.self) private var store
+    private let initialMaintenanceTaskId: UUID?
     @State private var selectedFilter: VehicleStatus? = nil
     @State private var showAddSheet = false
     @State private var editingVehicle: Vehicle?
     @State private var deleteTarget: Vehicle?
     @State private var navigationTarget: UUID?
     @State private var segmentMode = 0  // 0 = My Vehicles, 1 = Maintenance
+
+    init(initialSegmentMode: Int = 0, initialMaintenanceTaskId: UUID? = nil) {
+        self.initialMaintenanceTaskId = initialMaintenanceTaskId
+        _segmentMode = State(initialValue: initialSegmentMode)
+    }
 
     private var filteredVehicles: [Vehicle] {
         store.vehicles.filter { v in
@@ -46,7 +52,8 @@ struct VehicleListView: View {
                         topAccessory: AnyView(
                             modePicker
                                 .padding(.horizontal, 16)
-                        )
+                        ),
+                        openTaskId: initialMaintenanceTaskId
                     )
                 }
             }
@@ -108,11 +115,11 @@ struct VehicleListView: View {
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "line.3.horizontal.decrease.circle")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(SierraFont.scaled(14, weight: .semibold))
                         Text(vehicleFilterTitle)
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(SierraFont.scaled(13, weight: .semibold))
                         Image(systemName: "chevron.down")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(SierraFont.scaled(11, weight: .semibold))
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 8)
@@ -134,6 +141,9 @@ struct VehicleListView: View {
                     vehicleCard(vehicle)
                         .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                         .onTapGesture { navigationTarget = vehicle.id }
+                        .accessibilityAddTraits(.isButton)
+                        .accessibilityLabel("\(vehicle.name), \(vehicle.licensePlate)")
+                        .accessibilityHint("Opens vehicle details")
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                             Button(role: .destructive) { deleteTarget = vehicle } label: { Label("Delete", systemImage: "trash.fill") }
                             Button { editingVehicle = vehicle } label: { Label("Edit", systemImage: "pencil") }.tint(.orange)
@@ -175,20 +185,20 @@ struct VehicleListView: View {
         let driver: StaffMember? = vehicle.assignedDriverId.flatMap { UUID(uuidString: $0) }.flatMap { store.staffMember(for: $0) }
         return HStack(spacing: 14) {
             Image(systemName: "car.fill")
-                .font(.system(size: 20)).foregroundStyle(.blue)
+                .font(SierraFont.scaled(20)).foregroundStyle(.blue)
                 .frame(width: 44, height: 44)
                 .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             VStack(alignment: .leading, spacing: 3) {
-                Text(vehicle.name).font(.system(size: 15, weight: .semibold)).foregroundStyle(.primary)
+                Text(vehicle.name).font(SierraFont.scaled(15, weight: .semibold)).foregroundStyle(.primary)
                 Text("\(vehicle.model) \u{00B7} \(vehicle.licensePlate)")
-                    .font(.system(size: 12, weight: .medium, design: .monospaced)).foregroundStyle(.secondary)
+                    .font(SierraFont.scaled(12, weight: .medium, design: .monospaced)).foregroundStyle(.secondary)
                 if let d = driver {
                     HStack(spacing: 4) {
                         Circle().fill(availabilityColor(d.availability)).frame(width: 6, height: 6)
-                        Text(d.displayName).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
+                        Text(d.displayName).font(SierraFont.scaled(11, weight: .medium)).foregroundStyle(.secondary)
                     }
                 } else {
-                    Text("No driver assigned").font(.system(size: 11, weight: .medium)).foregroundStyle(.tertiary)
+                    Text("No driver assigned").font(SierraFont.scaled(11, weight: .medium)).foregroundStyle(.tertiary)
                 }
             }
             Spacer()
@@ -197,6 +207,7 @@ struct VehicleListView: View {
         .padding(16)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
+        .accessibilityElement(children: .combine)
     }
 
     private func availabilityColor(_ a: StaffAvailability) -> Color {

@@ -64,7 +64,7 @@ ALTER TABLE public.trips
 ALTER TABLE public.staff_members ENABLE ROW LEVEL SECURITY;
 
 -- Helper: reusable admin check expression
--- (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'Admin'
+-- LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'admin'
 -- NOTE: we cannot use a SQL function here because it would cause infinite
 -- recursion (policy on staff_members calling a function that queries
 -- staff_members). Instead we inline the sub-select everywhere.
@@ -90,7 +90,7 @@ CREATE POLICY staff_members_select_admin
     FOR SELECT
     TO authenticated
     USING (
-        (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'Admin'
+        LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'admin'
     );
 
 -- 3. Admins can insert new staff records
@@ -99,7 +99,7 @@ CREATE POLICY staff_members_insert_admin
     FOR INSERT
     TO authenticated
     WITH CHECK (
-        (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'Admin'
+        LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'admin'
     );
 
 -- 4. Admins can update any staff record
@@ -108,10 +108,10 @@ CREATE POLICY staff_members_update_admin
     FOR UPDATE
     TO authenticated
     USING (
-        (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'Admin'
+        LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'admin'
     )
     WITH CHECK (
-        (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'Admin'
+        LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'admin'
     );
 
 -- 5. Admins can delete staff records
@@ -120,7 +120,7 @@ CREATE POLICY staff_members_delete_admin
     FOR DELETE
     TO authenticated
     USING (
-        (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'Admin'
+        LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'admin'
     );
 
 -- 6. Staff can update their own row (availability toggle, profile fields)
@@ -167,7 +167,7 @@ CREATE POLICY vehicles_insert_admin
     FOR INSERT
     TO authenticated
     WITH CHECK (
-        (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'Admin'
+        LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'admin'
     );
 
 -- 3. Admins can update vehicles
@@ -176,10 +176,10 @@ CREATE POLICY vehicles_update_admin
     FOR UPDATE
     TO authenticated
     USING (
-        (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'Admin'
+        LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'admin'
     )
     WITH CHECK (
-        (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'Admin'
+        LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'admin'
     );
 
 -- 4. Admins can delete vehicles
@@ -188,7 +188,7 @@ CREATE POLICY vehicles_delete_admin
     FOR DELETE
     TO authenticated
     USING (
-        (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'Admin'
+        LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'admin'
     );
 
 
@@ -211,7 +211,7 @@ CREATE POLICY geofences_select_admin
     FOR SELECT
     TO authenticated
     USING (
-        (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'Admin'
+        LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'admin'
     );
 
 CREATE POLICY geofences_insert_admin
@@ -219,7 +219,7 @@ CREATE POLICY geofences_insert_admin
     FOR INSERT
     TO authenticated
     WITH CHECK (
-        (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'Admin'
+        LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'admin'
     );
 
 CREATE POLICY geofences_update_admin
@@ -227,10 +227,10 @@ CREATE POLICY geofences_update_admin
     FOR UPDATE
     TO authenticated
     USING (
-        (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'Admin'
+        LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'admin'
     )
     WITH CHECK (
-        (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'Admin'
+        LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'admin'
     );
 
 CREATE POLICY geofences_delete_admin
@@ -238,7 +238,7 @@ CREATE POLICY geofences_delete_admin
     FOR DELETE
     TO authenticated
     USING (
-        (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'Admin'
+        LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'admin'
     );
 
 
@@ -247,7 +247,7 @@ CREATE POLICY geofences_delete_admin
 --
 -- Policies:
 --   1. Admins: full CRUD
---   2. Drivers: SELECT their own trips (driver_id = auth.uid()::text)
+--   2. Drivers: SELECT their own trips (driver_id::text = auth.uid()::text)
 --   3. Drivers: UPDATE their own trips for acceptance flow only
 --      (status, accepted_at, rejected_reason)
 --   4. Maintenance personnel: SELECT trips (read-only context)
@@ -269,10 +269,10 @@ CREATE POLICY trips_all_admin
     FOR ALL
     TO authenticated
     USING (
-        (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'Admin'
+        LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'admin'
     )
     WITH CHECK (
-        (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'Admin'
+        LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'admin'
     );
 
 -- 2. Drivers: read their assigned trips
@@ -281,8 +281,8 @@ CREATE POLICY trips_select_driver
     FOR SELECT
     TO authenticated
     USING (
-        driver_id = auth.uid()::text
-        AND (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'Driver'
+        driver_id::text = auth.uid()::text
+        AND LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'driver'
     );
 
 -- 3. Drivers: update acceptance fields on their own trips
@@ -296,12 +296,12 @@ CREATE POLICY trips_update_driver
     FOR UPDATE
     TO authenticated
     USING (
-        driver_id = auth.uid()::text
-        AND (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'Driver'
+        driver_id::text = auth.uid()::text
+        AND LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'driver'
     )
     WITH CHECK (
-        driver_id = auth.uid()::text
-        AND (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'Driver'
+        driver_id::text = auth.uid()::text
+        AND LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'driver'
     );
 
 -- 4. Maintenance personnel: read-only trip context
@@ -310,7 +310,7 @@ CREATE POLICY trips_select_maintenance
     FOR SELECT
     TO authenticated
     USING (
-        (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'Maintenance'
+        LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'maintenance'
     );
 
 
@@ -340,7 +340,7 @@ CREATE POLICY notifications_select_own
     FOR SELECT
     TO authenticated
     USING (
-        recipient_id = auth.uid()::text
+        recipient_id::text = auth.uid()::text
     );
 
 -- 2. Mark notifications as read (is_read, read_at)
@@ -348,8 +348,8 @@ CREATE POLICY notifications_update_own
     ON public.notifications
     FOR UPDATE
     TO authenticated
-    USING  (recipient_id = auth.uid()::text)
-    WITH CHECK (recipient_id = auth.uid()::text);
+    USING  (recipient_id::text = auth.uid()::text)
+    WITH CHECK (recipient_id::text = auth.uid()::text);
 
 -- 3. Allow service_role to insert notifications (triggers + edge functions)
 --    Service role bypasses RLS by default in Supabase.
@@ -399,7 +399,7 @@ BEGIN
 
     -- Insert one notification per admin
     FOR v_admin_id IN
-        SELECT id FROM public.staff_members WHERE role = 'Admin'
+        SELECT id FROM public.staff_members WHERE LOWER(role::text) = 'admin'
     LOOP
         INSERT INTO public.notifications (
             id,
@@ -478,7 +478,7 @@ BEGIN
         sent_at
     ) VALUES (
         gen_random_uuid(),
-        NEW.driver_id,          -- already TEXT in trips table
+        NEW.driver_id::text,
         'trip_assigned',
         'New Trip Assigned: ' || NEW.task_id,
         'You have been assigned a trip from '
@@ -537,7 +537,7 @@ BEGIN
         sent_at
     ) VALUES (
         gen_random_uuid(),
-        NEW.driver_id,
+        NEW.driver_id::text,
         'trip_assigned',
         'New Trip Assigned: ' || NEW.task_id,
         'You have been assigned a trip from '

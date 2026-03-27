@@ -24,19 +24,19 @@ struct BiometricLockView: View {
 
                 // App logo
                 Image(systemName: "truck.box.fill")
-                    .font(.system(size: 44, weight: .light))
+                    .font(SierraFont.scaled(44, weight: .light))
                     .foregroundStyle(.orange)
                     .padding(.bottom, 6)
 
                 Text("Sierra")
-                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(24, weight: .bold, design: .rounded))
                     .foregroundStyle(.primary)
                     .padding(.bottom, 30)
 
                 // Welcome message
                 if let user = AuthManager.shared.currentUser {
                     Text("Welcome back, \(user.name ?? "User")")
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(SierraFont.scaled(18, weight: .semibold))
                         .foregroundStyle(.secondary)
                         .padding(.bottom, 40)
                 }
@@ -112,14 +112,14 @@ struct BiometricLockView: View {
                             .tint(.orange)
                     } else {
                         Image(systemName: biometric.biometricIconName)
-                            .font(.system(size: 60))
+                            .font(SierraFont.scaled(60))
                             .foregroundStyle(.orange)
                             .symbolEffect(.pulse, isActive: appeared && !showTryAgain)
                     }
                 }
 
                 Text("Sign in with \(biometric.biometricDisplayName)")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(SierraFont.scaled(16, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
         }

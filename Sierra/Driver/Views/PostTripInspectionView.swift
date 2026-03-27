@@ -52,7 +52,7 @@ struct PostTripInspectionView: View {
             Spacer()
 
             Image(systemName: "checkmark.seal.fill")
-                .font(.system(size: 64))
+                .font(SierraFont.scaled(64))
                 .foregroundStyle(SierraTheme.Colors.alpineMint)
 
             Text("Inspection Submitted!")

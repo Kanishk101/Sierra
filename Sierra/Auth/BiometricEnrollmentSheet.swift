@@ -24,7 +24,7 @@ struct BiometricEnrollmentSheet: View {
                     .frame(width: 120, height: 120)
                 
                 Image(systemName: biometric.biometricIconName)
-                    .font(.system(size: 52, weight: .light))
+                    .font(SierraFont.scaled(52, weight: .light))
                     .foregroundStyle(SierraTheme.Colors.ember)
                     .symbolRenderingMode(.hierarchical)
             }

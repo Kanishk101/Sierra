@@ -14,7 +14,7 @@ struct SierraErrorView: View {
             Spacer()
 
             Image(systemName: "wifi.exclamationmark")
-                .font(.system(size: 36, weight: .medium))
+                .font(SierraFont.scaled(36, weight: .medium))
                 .foregroundStyle(SierraTheme.Colors.granite)
                 .frame(width: 80, height: 80)
                 .background(

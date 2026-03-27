@@ -39,7 +39,7 @@ struct MaintenanceProfilePage2View: View {
                             errorMessage: viewModel.aadhaarError,
                             maxLength: 14 // 12 digits + 2 spaces
                         )
-                        .font(.system(size: 16, design: .monospaced))
+                        .font(SierraFont.scaled(16, design: .monospaced))
 
                         // Image uploads
                         VStack(alignment: .leading, spacing: 12) {
@@ -247,7 +247,7 @@ struct MaintenanceProfilePage2View: View {
             HStack(spacing: 6) {
                 if isSelected {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(SierraFont.scaled(10, weight: .bold))
                 }
                 Text(spec.rawValue)
                     .font(SierraFont.caption1.weight(isSelected ? .bold : .medium))
@@ -293,7 +293,7 @@ struct MaintenanceProfilePage2View: View {
                         onImageSelected(nil)
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 24))
+                            .font(SierraFont.scaled(24))
                             .foregroundStyle(.white, SierraTheme.Colors.danger)
                             .shadow(radius: 4)
                     }
@@ -307,7 +307,7 @@ struct MaintenanceProfilePage2View: View {
                                 .fill(SierraTheme.Colors.ember.opacity(0.1))
                                 .frame(width: 44, height: 44)
                             Image(systemName: "camera.fill")
-                                .font(.system(size: 20))
+                                .font(SierraFont.scaled(20))
                                 .foregroundStyle(SierraTheme.Colors.ember)
                         }
 
@@ -383,7 +383,7 @@ struct MaintenanceProfilePage2View: View {
                         .fill(SierraTheme.Colors.ember.opacity(0.1))
                         .frame(width: 36, height: 36)
                     Image(systemName: icon)
-                        .font(.system(size: 15))
+                        .font(SierraFont.scaled(15))
                         .foregroundStyle(SierraTheme.Colors.ember)
                 }
                 

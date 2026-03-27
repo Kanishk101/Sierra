@@ -62,7 +62,7 @@ struct PreTripInspectionView: View {
                         }
                     }) {
                         Image(systemName: viewModel.currentStep == 1 ? "xmark" : "chevron.left")
-                            .font(.system(size: 16, weight: .bold))
+                            .font(SierraFont.scaled(16, weight: .bold))
                             .foregroundColor(.appTextPrimary)
                             .frame(width: 38, height: 38)
                             .background(Circle().fill(Color.appCardBg))
@@ -70,7 +70,7 @@ struct PreTripInspectionView: View {
                     }
                     Spacer()
                     Text(inspectionTitle)
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(18, weight: .bold, design: .rounded))
                         .foregroundColor(.appTextPrimary)
                     Spacer()
                     Color.clear.frame(width: 38, height: 38)
@@ -165,6 +165,9 @@ struct PreTripInspectionView: View {
             }
         }
         .animation(.spring(response: 0.4), value: viewModel.maintenanceBannerText != nil)
+        .onChange(of: viewModel.tripBlockedByInspection) { _, blocked in
+            if blocked { onBlockedForVehicle?() }
+        }
         .onChange(of: viewModel.didSubmitSuccessfully) { _, success in
             if success && !viewModel.tripBlockedByInspection { onComplete() }
         }
@@ -185,7 +188,7 @@ struct PreTripInspectionView: View {
                         .frame(width: 16, height: 16)
                     if step < viewModel.currentStep {
                         Image(systemName: "checkmark")
-                            .font(.system(size: 8, weight: .black))
+                            .font(SierraFont.scaled(8, weight: .black))
                             .foregroundColor(.white)
                     }
                 }
@@ -302,12 +305,12 @@ struct PreTripInspectionView: View {
                         Image(systemName: hasFails
                               ? (isPostTrip ? "wrench.and.screwdriver.fill" : "exclamationmark.octagon.fill")
                               : hasWarnings ? (isPostTrip ? "wrench.and.screwdriver.fill" : "bell.badge.fill") : "checkmark.circle.fill")
-                            .font(.system(size: 15, weight: .bold))
+                            .font(SierraFont.scaled(15, weight: .bold))
                     }
                     Text(hasFails
                          ? (isPostTrip ? maintenanceContinueLabel : "Vehicle Issue — Cannot Proceed")
                          : hasWarnings ? warnContinueLabel : "All Clear → Next")
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(16, weight: .bold, design: .rounded))
                 }
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
@@ -371,7 +374,13 @@ struct PreTripInspectionView: View {
                                 }
                             }
                         } else {
-                            Task { await raisePreTripDefectAlertForFleetManager(issueSummary: draft.issueSummary) }
+                            let description = draft.description.trimmingCharacters(in: .whitespacesAndNewlines)
+                            viewModel.maintenanceDescription = description.isEmpty
+                                ? "Pre-trip inspection issues: \(draft.issueSummary)"
+                                : description
+                            withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+                                viewModel.currentStep = 2
+                            }
                         }
                     }
                 )
@@ -393,64 +402,6 @@ struct PreTripInspectionView: View {
             entityType: isPostTrip ? "post_trip_warning" : "pre_trip_warning",
             entityId: tripId
         )
-    }
-
-    private func raisePreTripDefectAlertForFleetManager(issueSummary: String) async {
-        let issueSummary = issueSummary.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !issueSummary.isEmpty else {
-            viewModel.submitError = "Issue summary is required."
-            return
-        }
-
-        let trip = store.trips.first(where: { $0.id == tripId })
-        let fleetManagerId = trip.flatMap { UUID(uuidString: $0.createdByAdminId) }
-        let driverName = store.staffMember(for: driverId)?.displayName ?? "Driver"
-        let taskCode = trip?.taskId ?? tripId.uuidString.prefix(8).uppercased()
-        let vehiclePlate = store.vehicle(for: vehicleId)?.licensePlate ?? vehicleId.uuidString.prefix(8).description
-
-        let lat = trip?.originLatitude ?? trip?.destinationLatitude ?? 0
-        let lon = trip?.originLongitude ?? trip?.destinationLongitude ?? 0
-        let defectAlert = EmergencyAlert(
-            id: UUID(),
-            driverId: driverId,
-            tripId: tripId,
-            vehicleId: vehicleId,
-            latitude: lat,
-            longitude: lon,
-            alertType: .defect,
-            status: .active,
-            description: "Pre-trip fail: \(issueSummary)",
-            acknowledgedBy: nil,
-            acknowledgedAt: nil,
-            resolvedAt: nil,
-            triggeredAt: Date(),
-            createdAt: Date()
-        )
-        try? await EmergencyAlertService.addEmergencyAlert(defectAlert)
-        store.emergencyAlerts.insert(defectAlert, at: 0)
-
-        if let fleetManagerId {
-            try? await NotificationService.insertNotification(
-                recipientId: fleetManagerId,
-                type: .defectAlert,
-                title: "Pre-Trip Inspection Failed: \(taskCode)",
-                body: "\(driverName) submitted maintenance request for \(vehiclePlate) (\(issueSummary)). Reassign vehicle required.",
-                entityType: "pre_trip_defect",
-                entityId: tripId
-            )
-        } else {
-            await NotificationService.sendToAdmins(
-                type: .defectAlert,
-                title: "Pre-Trip Inspection Failed: \(taskCode)",
-                body: "\(driverName) submitted maintenance request for \(vehiclePlate) (\(issueSummary)). Reassign vehicle required.",
-                entityType: "pre_trip_defect",
-                entityId: tripId
-            )
-        }
-
-        onBlockedForVehicle?()
-        onComplete()
-        dismiss()
     }
 
     private func raisePostTripMaintenanceAlertForFleetManager(issueSummary: String, draftTitle: String) async {
@@ -517,16 +468,16 @@ struct PreTripInspectionView: View {
             // Main toggle row
             HStack(spacing: 14) {
                 Image(systemName: item.wrappedValue.category.icon)
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(SierraFont.scaled(18, weight: .semibold))
                     .foregroundColor(.appOrange)
                     .frame(width: 28)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.wrappedValue.name)
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .font(SierraFont.scaled(15, weight: .semibold, design: .rounded))
                         .foregroundColor(.appTextPrimary)
                     Text(item.wrappedValue.category.rawValue)
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .font(SierraFont.scaled(11, weight: .medium, design: .rounded))
                         .foregroundColor(.appTextSecondary)
                 }
 
@@ -543,16 +494,19 @@ struct PreTripInspectionView: View {
                 ))
                 .toggleStyle(SwitchToggleStyle(tint: .green))
                 .labelsHidden()
+                .accessibilityLabel(item.wrappedValue.name)
+                .accessibilityHint("Marks this inspection item as pass or fail")
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 14)
             .background(Color.appCardBg)
+            .accessibilityElement(children: .combine)
 
             // Expanded issue details (when failed or warning)
             if item.wrappedValue.result == .failed || item.wrappedValue.result == .passedWithWarnings {
                 VStack(alignment: .leading, spacing: 14) {
                     Text("Status")
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(14, weight: .bold, design: .rounded))
                         .foregroundColor(.appTextPrimary)
 
                     HStack(spacing: 12) {
@@ -564,7 +518,7 @@ struct PreTripInspectionView: View {
                             UISelectionFeedbackGenerator().selectionChanged()
                         } label: {
                             Text("Warn")
-                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                                .font(SierraFont.scaled(14, weight: .bold, design: .rounded))
                                 .foregroundColor(item.wrappedValue.result == .passedWithWarnings ? .white : .appOrange)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 12)
@@ -588,7 +542,7 @@ struct PreTripInspectionView: View {
                             UISelectionFeedbackGenerator().selectionChanged()
                         } label: {
                             Text("Fail")
-                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                                .font(SierraFont.scaled(14, weight: .bold, design: .rounded))
                                 .foregroundColor(item.wrappedValue.result == .failed ? .white : Color(red: 0.90, green: 0.22, blue: 0.18))
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 12)
@@ -606,11 +560,11 @@ struct PreTripInspectionView: View {
                     }
 
                     Text("Issue Details")
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(14, weight: .bold, design: .rounded))
                         .foregroundColor(.appTextPrimary)
 
                     TextEditor(text: item.notes)
-                        .font(.system(size: 14, design: .rounded))
+                        .font(SierraFont.scaled(14, design: .rounded))
                         .frame(minHeight: 80)
                         .padding(12)
                         .scrollContentBackground(.hidden)
@@ -649,7 +603,7 @@ struct PreTripInspectionView: View {
                     // ── Header ──────────────────────────────────────────────
                     VStack(spacing: 6) {
                         Image(systemName: "camera.badge.ellipsis")
-                            .font(.system(size: 36))
+                            .font(SierraFont.scaled(36))
                             .foregroundStyle(SierraTheme.Colors.ember.opacity(0.7))
                         Text("Document Vehicle State")
                             .font(.headline)
@@ -708,9 +662,9 @@ struct PreTripInspectionView: View {
             } label: {
                 HStack(spacing: 8) {
                     Text("Next")
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(16, weight: .bold, design: .rounded))
                     Image(systemName: "arrow.right")
-                        .font(.system(size: 14, weight: .bold))
+                        .font(SierraFont.scaled(14, weight: .bold))
                 }
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
@@ -757,24 +711,24 @@ struct PreTripInspectionView: View {
                                 .clipShape(Circle())
                         } else {
                             Image(systemName: "camera.fill")
-                                .font(.system(size: 20, weight: .semibold))
+                                .font(SierraFont.scaled(20, weight: .semibold))
                                 .foregroundColor(SierraTheme.Colors.warning)
                         }
                     }
 
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Scan Fuel Gauge")
-                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                            .font(SierraFont.scaled(15, weight: .bold, design: .rounded))
                             .foregroundColor(.appTextPrimary)
                         Text(fuelPhoto == nil ? "OCR detects percentage from gauge display" : "✓ Photo captured — tap to retake")
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .font(SierraFont.scaled(12, weight: .medium, design: .rounded))
                             .foregroundColor(fuelPhoto == nil ? .appTextSecondary : Color(red: 0.20, green: 0.65, blue: 0.32))
                     }
 
                     Spacer()
 
                     Image(systemName: fuelPhoto == nil ? "camera.viewfinder" : "checkmark.circle.fill")
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(SierraFont.scaled(18, weight: .semibold))
                         .foregroundColor(fuelPhoto == nil ? SierraTheme.Colors.warning : Color(red: 0.20, green: 0.65, blue: 0.32))
                 }
                 .padding(14)
@@ -968,10 +922,10 @@ struct PreTripInspectionView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack(spacing: 8) {
                             Image(systemName: "signature")
-                                .font(.system(size: 14, weight: .semibold))
+                                .font(SierraFont.scaled(14, weight: .semibold))
                                 .foregroundColor(.appOrange)
                             Text("Driver Signature")
-                                .font(.system(size: 15, weight: .bold, design: .rounded))
+                                .font(SierraFont.scaled(15, weight: .bold, design: .rounded))
                                 .foregroundColor(.appTextPrimary)
                             Spacer()
                             if !signatureIsEmpty {
@@ -980,7 +934,7 @@ struct PreTripInspectionView: View {
                                     signatureIsEmpty = true
                                     viewModel.signatureImage = nil
                                 }
-                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                .font(SierraFont.scaled(13, weight: .semibold, design: .rounded))
                                 .foregroundColor(.appOrange)
                             }
                         }
@@ -993,7 +947,7 @@ struct PreTripInspectionView: View {
 
                             if signatureIsEmpty {
                                 Text("Sign here with your finger")
-                                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                                    .font(SierraFont.scaled(13, weight: .medium, design: .rounded))
                                     .foregroundColor(.appTextSecondary.opacity(0.5))
                             }
 
@@ -1007,7 +961,7 @@ struct PreTripInspectionView: View {
                         }
 
                         Text("I certify that this vehicle has been inspected and is roadworthy.")
-                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                            .font(SierraFont.scaled(11, weight: .medium, design: .rounded))
                             .foregroundColor(.appTextSecondary)
                             .multilineTextAlignment(.center)
                             .frame(maxWidth: .infinity)
@@ -1038,9 +992,9 @@ struct PreTripInspectionView: View {
             } label: {
                 HStack(spacing: 8) {
                     Text("Complete Inspection")
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(16, weight: .bold, design: .rounded))
                     Image(systemName: "checkmark.seal.fill")
-                        .font(.system(size: 14, weight: .bold))
+                        .font(SierraFont.scaled(14, weight: .bold))
                 }
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
@@ -1185,7 +1139,7 @@ struct PreTripInspectionView: View {
                 HStack(spacing: 10) {
                     VStack { Divider() }
                     Text("OR")
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(11, weight: .bold, design: .rounded))
                         .foregroundStyle(.secondary)
                     VStack { Divider() }
                 }
@@ -1226,7 +1180,7 @@ struct PreTripInspectionView: View {
                     HStack(spacing: 10) {
                         VStack { Divider() }
                         Text("OR")
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .font(SierraFont.scaled(11, weight: .bold, design: .rounded))
                             .foregroundStyle(.secondary)
                         VStack { Divider() }
                     }
@@ -1444,17 +1398,17 @@ struct InspectionCompleteOverlay: View {
                         .shadow(color: Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.4), radius: 20)
 
                     Image(systemName: "checkmark")
-                        .font(.system(size: 36, weight: .bold))
+                        .font(SierraFont.scaled(36, weight: .bold))
                         .foregroundColor(.white)
                         .opacity(contentOpacity)
                 }
 
                 VStack(spacing: 8) {
                     Text("Inspection Complete!")
-                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(22, weight: .bold, design: .rounded))
                         .foregroundColor(.appTextPrimary)
                     Text("You're all set to start your trip")
-                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .font(SierraFont.scaled(14, weight: .medium, design: .rounded))
                         .foregroundColor(.appTextSecondary)
                 }
                 .opacity(contentOpacity)
@@ -1464,7 +1418,7 @@ struct InspectionCompleteOverlay: View {
                     onDismiss()
                 }) {
                     Text("Done")
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(16, weight: .bold, design: .rounded))
                         .foregroundColor(.white)
                         .padding(.horizontal, 60)
                         .padding(.vertical, 15)
@@ -1509,16 +1463,16 @@ struct InspectionVehicleChangeOverlay: View {
                         .shadow(color: Color.appOrange.opacity(0.4), radius: 18)
 
                     Image(systemName: "bus.fill")
-                        .font(.system(size: 34, weight: .bold))
+                        .font(SierraFont.scaled(34, weight: .bold))
                         .foregroundColor(.white)
                 }
 
                 VStack(spacing: 8) {
                     Text("Vehicle Change Requested")
-                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(22, weight: .bold, design: .rounded))
                         .foregroundColor(.appTextPrimary)
                     Text("Proof images sent. Waiting for a new vehicle to be assigned.")
-                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .font(SierraFont.scaled(14, weight: .medium, design: .rounded))
                         .foregroundColor(.appTextSecondary)
                         .multilineTextAlignment(.center)
                 }
@@ -1529,7 +1483,7 @@ struct InspectionVehicleChangeOverlay: View {
                     onDismiss()
                 }) {
                     Text("Done")
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(16, weight: .bold, design: .rounded))
                         .foregroundColor(.white)
                         .padding(.horizontal, 60)
                         .padding(.vertical, 15)
@@ -1564,6 +1518,7 @@ struct InspectionMaintenanceModal: View {
             Color.black.opacity(0.62)
                 .ignoresSafeArea()
                 .onTapGesture { onCancel() }
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 10) {
@@ -1572,21 +1527,21 @@ struct InspectionMaintenanceModal: View {
                         .frame(width: 40, height: 40)
                         .overlay(
                             Image(systemName: "wrench.and.screwdriver.fill")
-                                .font(.system(size: 17, weight: .bold))
+                                .font(SierraFont.scaled(17, weight: .bold))
                                 .foregroundColor(.appOrange)
                         )
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Maintenance Request")
-                            .font(.system(size: 20, weight: .bold, design: .rounded))
+                            .font(SierraFont.scaled(20, weight: .bold, design: .rounded))
                             .foregroundColor(.white)
                         Text("Add notes for required maintenance")
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .font(SierraFont.scaled(12, weight: .medium, design: .rounded))
                             .foregroundColor(.gray)
                     }
                 }
 
                 TextEditor(text: $text)
-                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                    .font(SierraFont.scaled(14, weight: .medium, design: .rounded))
                     .foregroundColor(.white)
                     .scrollContentBackground(.hidden)
                     .frame(height: 110)
@@ -1610,23 +1565,23 @@ struct InspectionMaintenanceModal: View {
                                 .fill(Color.white.opacity(0.06))
                                 .frame(width: 44, height: 44)
                             Image(systemName: proofImageAttached ? "photo.fill" : "camera.fill")
-                                .font(.system(size: 16, weight: .semibold))
+                                .font(SierraFont.scaled(16, weight: .semibold))
                                 .foregroundColor(proofImageAttached ? .green : .appOrange)
                         }
 
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Upload Proof Image")
-                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                .font(SierraFont.scaled(14, weight: .semibold, design: .rounded))
                                 .foregroundColor(.white)
                             Text(proofImageAttached ? "1 image attached" : "Tap to attach")
-                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                                .font(SierraFont.scaled(12, weight: .medium, design: .rounded))
                                 .foregroundColor(.gray)
                         }
 
                         Spacer()
 
                         Image(systemName: proofImageAttached ? "checkmark.circle.fill" : "plus.circle")
-                            .font(.system(size: 18, weight: .semibold))
+                            .font(SierraFont.scaled(18, weight: .semibold))
                             .foregroundColor(proofImageAttached ? .green : .appOrange)
                     }
                     .padding(.horizontal, 12)
@@ -1645,7 +1600,7 @@ struct InspectionMaintenanceModal: View {
                 HStack(spacing: 10) {
                     Button(action: onCancel) {
                         Text("Cancel")
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .font(SierraFont.scaled(16, weight: .bold, design: .rounded))
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
@@ -1658,7 +1613,7 @@ struct InspectionMaintenanceModal: View {
 
                     Button(action: onSubmit) {
                         Text("Send")
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .font(SierraFont.scaled(16, weight: .bold, design: .rounded))
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)

@@ -7,9 +7,13 @@ import Vision
 /// Phase 14: Used by VINScannerView for VIN OCR.
 struct CameraPreviewView: UIViewControllerRepresentable {
     let onTextRecognised: ([String]) -> Void
+    var regionOfInterest: CGRect? = nil
 
     func makeUIViewController(context: Context) -> CameraPreviewViewController {
-        CameraPreviewViewController(onTextRecognised: onTextRecognised)
+        CameraPreviewViewController(
+            onTextRecognised: onTextRecognised,
+            regionOfInterest: regionOfInterest
+        )
     }
 
     func updateUIViewController(_ uiViewController: CameraPreviewViewController, context: Context) {}
@@ -27,6 +31,7 @@ final class CameraPreviewViewController: UIViewController,
     private let processingQueue = DispatchQueue(label: "com.sierra.vin-ocr", qos: .userInitiated)
     private var previewLayer: AVCaptureVideoPreviewLayer?
     private let onTextRecognised: ([String]) -> Void
+    private let regionOfInterest: CGRect?
 
     /// Throttle: at most one recognition per second to conserve battery.
     private var lastProcessTime = Date.distantPast
@@ -34,8 +39,9 @@ final class CameraPreviewViewController: UIViewController,
     private var lastEmittedToken: String = ""
     private var lastEmitTime = Date.distantPast
 
-    init(onTextRecognised: @escaping ([String]) -> Void) {
+    init(onTextRecognised: @escaping ([String]) -> Void, regionOfInterest: CGRect? = nil) {
         self.onTextRecognised = onTextRecognised
+        self.regionOfInterest = regionOfInterest
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -136,6 +142,9 @@ final class CameraPreviewViewController: UIViewController,
 
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = false // VINs are codes, not prose
+        if let roi = regionOfInterest {
+            request.regionOfInterest = roi
+        }
 
         let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .right, options: [:])
         try? handler.perform([request])

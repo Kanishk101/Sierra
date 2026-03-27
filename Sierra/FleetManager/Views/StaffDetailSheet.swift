@@ -6,6 +6,8 @@ struct StaffDetailSheet: View {
     let member: StaffMember
     @Environment(AppDataStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+    @State private var isUpdatingStatus = false
+    @State private var statusError: String?
 
     private var assignedVehicle: Vehicle? {
         store.vehicles.first { $0.assignedDriverId == member.id.uuidString }
@@ -87,6 +89,11 @@ struct StaffDetailSheet: View {
                     }
                     .padding(.horizontal, 20)
 
+                    if member.role != .fleetManager {
+                        statusActionCard
+                            .padding(.horizontal, 20)
+                    }
+
                     Spacer(minLength: 32)
                 }
             }
@@ -97,11 +104,50 @@ struct StaffDetailSheet: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(SierraFont.scaled(17, weight: .semibold))
                         .foregroundStyle(.orange)
                 }
             }
         }
+    }
+
+    private var statusActionCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Account Actions")
+                .font(.headline)
+                .foregroundStyle(.primary)
+
+            Button {
+                Task { await toggleActiveState() }
+            } label: {
+                HStack(spacing: 8) {
+                    if isUpdatingStatus {
+                        ProgressView()
+                            .tint(.white)
+                            .scaleEffect(0.8)
+                    }
+                    Image(systemName: member.status == .active ? "person.slash.fill" : "person.crop.circle.badge.checkmark")
+                        .font(SierraFont.scaled(13, weight: .semibold))
+                    Text(member.status == .active ? "Deactivate Staff" : "Reactivate Staff")
+                        .font(SierraFont.scaled(14, weight: .bold, design: .rounded))
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(member.status == .active ? Color.red : Color.green, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(isUpdatingStatus)
+
+            if let statusError {
+                Text(statusError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
     // MARK: - Hero
@@ -113,7 +159,7 @@ struct StaffDetailSheet: View {
                 .frame(width: 80, height: 80)
                 .overlay(
                     Text(member.initials)
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(28, weight: .bold, design: .rounded))
                         .foregroundStyle(.primary)
                 )
             Text(member.displayName)
@@ -143,7 +189,7 @@ struct StaffDetailSheet: View {
     private func miniStatusCard(_ label: String, _ value: String, _ color: Color) -> some View {
         VStack(spacing: 4) {
             Text(value)
-                .font(.system(size: 13, weight: .bold))
+                .font(SierraFont.scaled(13, weight: .bold))
                 .foregroundStyle(color)
             Text(label)
                 .font(.caption2)
@@ -181,7 +227,7 @@ struct StaffDetailSheet: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 130, alignment: .leading)
             Text(value)
-                .font(.system(size: 14, weight: .medium))
+                .font(SierraFont.scaled(14, weight: .medium))
                 .foregroundStyle(.primary)
             Spacer()
         }
@@ -194,6 +240,22 @@ struct StaffDetailSheet: View {
         case .available:   return .green
         case .unavailable: return .red
         case .busy:        return .orange
+        }
+    }
+
+    @MainActor
+    private func toggleActiveState() async {
+        guard !isUpdatingStatus else { return }
+        isUpdatingStatus = true
+        statusError = nil
+        defer { isUpdatingStatus = false }
+
+        do {
+            let newStatus: StaffStatus = member.status == .active ? .suspended : .active
+            try await store.setStaffStatus(staffId: member.id, status: newStatus)
+            dismiss()
+        } catch {
+            statusError = error.localizedDescription
         }
     }
 }

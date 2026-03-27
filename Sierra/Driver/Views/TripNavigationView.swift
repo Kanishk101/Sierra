@@ -126,10 +126,10 @@ struct TripNavigationView: UIViewRepresentable {
 
         // Change-detection: skip GeoJSON uploads when data hasn't changed
         private var lastRouteHash: Int = 0
-        private var lastBreadcrumbCount: Int = 0
+        private var lastBreadcrumbHash: Int = 0
         private var lastGeofenceHash: Int = 0
-        private var lastStopCount: Int = -1
-        private var lastEndpointHash: Int = 0
+        private var lastStopsHash: Int = 0
+        private var lastEndpointsHash: Int = 0
 
         // Cached geofence circle polygons keyed by (lat, lon, radius)
         private var geofenceCircleCache: [String: [CLLocationCoordinate2D]] = [:]
@@ -299,10 +299,22 @@ struct TripNavigationView: UIViewRepresentable {
                 hasher.combine(Int(first.latitude * 100_000))
                 hasher.combine(Int(first.longitude * 100_000))
             }
+            if let last = coordinates.last {
+                hasher.combine(Int(last.latitude * 100_000))
+                hasher.combine(Int(last.longitude * 100_000))
+            }
+            if coordinates.count > 2 {
+                let mid = coordinates[coordinates.count / 2]
+                hasher.combine(Int(mid.latitude * 100_000))
+                hasher.combine(Int(mid.longitude * 100_000))
+            }
             if let levels = congestionLevels {
                 hasher.combine(levels.count)
                 for level in levels.prefix(12) {
                     hasher.combine(level.rawValue)
+                }
+                if let lastLevel = levels.last {
+                    hasher.combine(lastLevel.rawValue)
                 }
             } else {
                 hasher.combine(0)
@@ -393,9 +405,19 @@ struct TripNavigationView: UIViewRepresentable {
         }
 
         private func updateBreadcrumbTrail(mapView: MapView, coordinates: [CLLocationCoordinate2D]) {
-            // Skip if breadcrumb count hasn't changed (grows monotonically during navigation)
-            guard coordinates.count != lastBreadcrumbCount else { return }
-            lastBreadcrumbCount = coordinates.count
+            var hasher = Hasher()
+            hasher.combine(coordinates.count)
+            if let first = coordinates.first {
+                hasher.combine(Int(first.latitude * 100_000))
+                hasher.combine(Int(first.longitude * 100_000))
+            }
+            if let last = coordinates.last {
+                hasher.combine(Int(last.latitude * 100_000))
+                hasher.combine(Int(last.longitude * 100_000))
+            }
+            let hash = hasher.finalize()
+            guard hash != lastBreadcrumbHash else { return }
+            lastBreadcrumbHash = hash
             updateLineSource(mapView: mapView, sourceId: "breadcrumb-source", coordinates: coordinates)
         }
 
@@ -483,9 +505,18 @@ struct TripNavigationView: UIViewRepresentable {
 
         private func renderStops(mapView: MapView, trip: Trip) {
             let stops = (trip.routeStops ?? []).sorted { $0.order < $1.order }
-            // Skip if stop count hasn't changed (stops are static during a trip)
-            guard stops.count != lastStopCount else { return }
-            lastStopCount = stops.count
+            var hashBuilder = Hasher()
+            hashBuilder.combine(stops.count)
+            for stop in stops {
+                hashBuilder.combine(stop.id)
+                hashBuilder.combine(stop.order)
+                hashBuilder.combine(stop.name)
+                hashBuilder.combine(Int((stop.latitude * 100_000).rounded()))
+                hashBuilder.combine(Int((stop.longitude * 100_000).rounded()))
+            }
+            let stopsHash = hashBuilder.finalize()
+            guard stopsHash != lastStopsHash else { return }
+            lastStopsHash = stopsHash
 
             if (try? mapView.mapboxMap.source(withId: "stops-source")) != nil {
                 try? mapView.mapboxMap.removeLayer(withId: "stops-labels")
@@ -531,10 +562,21 @@ struct TripNavigationView: UIViewRepresentable {
         // MARK: - Render Origin + Destination Markers
 
         private func renderEndpoints(mapView: MapView, trip: Trip) {
-            // Endpoints are static for a given trip — skip if already rendered
-            let hash = trip.id.hashValue
-            guard hash != lastEndpointHash else { return }
-            lastEndpointHash = hash
+            var hashBuilder = Hasher()
+            hashBuilder.combine(trip.id)
+            hashBuilder.combine(trip.origin)
+            hashBuilder.combine(trip.destination)
+            if let oLat = trip.originLatitude, let oLng = trip.originLongitude {
+                hashBuilder.combine(Int((oLat * 100_000).rounded()))
+                hashBuilder.combine(Int((oLng * 100_000).rounded()))
+            }
+            if let dLat = trip.destinationLatitude, let dLng = trip.destinationLongitude {
+                hashBuilder.combine(Int((dLat * 100_000).rounded()))
+                hashBuilder.combine(Int((dLng * 100_000).rounded()))
+            }
+            let endpointsHash = hashBuilder.finalize()
+            guard endpointsHash != lastEndpointsHash else { return }
+            lastEndpointsHash = endpointsHash
 
             if (try? mapView.mapboxMap.source(withId: "endpoints-source")) != nil {
                 try? mapView.mapboxMap.removeLayer(withId: "endpoints-labels")

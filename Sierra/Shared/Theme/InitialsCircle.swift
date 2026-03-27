@@ -6,7 +6,7 @@ import SwiftUI
 
 func initialsCircle(_ text: String, size: CGFloat, bg: Color) -> some View {
     Text(text)
-        .font(.system(size: size * 0.38, weight: .bold))
+        .font(SierraFont.scaled(size * 0.38, weight: .bold))
         .foregroundStyle(.white)
         .frame(width: size, height: size)
         .background(bg, in: Circle())

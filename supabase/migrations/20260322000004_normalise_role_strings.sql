@@ -44,22 +44,25 @@ $$;
 -- ------------------------------------------------------------
 UPDATE public.staff_members
     SET role = 'fleetManager'
-    WHERE role IN (
-        'Admin', 'admin', 'ADMIN',
-        'Fleet Manager', 'fleet_manager', 'FleetManager',
-        'Administrator', 'administrator'
+    WHERE LOWER(role::text) IN (
+        'admin',
+        'fleet manager',
+        'fleet_manager',
+        'fleetmanager',
+        'administrator'
     );
 
 UPDATE public.staff_members
     SET role = 'driver'
-    WHERE role IN ('Driver', 'DRIVER');
+    WHERE LOWER(role::text) = 'driver';
 
 UPDATE public.staff_members
     SET role = 'maintenancePersonnel'
-    WHERE role IN (
-        'Maintenance', 'maintenance', 'MAINTENANCE',
-        'MaintenancePersonnel', 'maintenance_personnel',
-        'Maintenance Personnel'
+    WHERE LOWER(role::text) IN (
+        'maintenance',
+        'maintenancepersonnel',
+        'maintenance_personnel',
+        'maintenance personnel'
     );
 
 -- ------------------------------------------------------------
@@ -74,7 +77,7 @@ BEGIN
         FROM public.staff_members GROUP BY role
     LOOP
         RAISE NOTICE '  role=% count=%', r.role, r.cnt;
-        IF r.role NOT IN ('fleetManager', 'driver', 'maintenancePersonnel') THEN
+        IF LOWER(r.role::text) NOT IN ('fleetmanager', 'driver', 'maintenancepersonnel') THEN
             RAISE WARNING '  UNEXPECTED role still present: % (count: %)', r.role, r.cnt;
             bad := bad + 1;
         END IF;
@@ -107,31 +110,31 @@ CREATE POLICY staff_members_select_own
 CREATE POLICY staff_members_select_admin
     ON public.staff_members FOR SELECT TO authenticated
     USING (
-        (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'fleetManager'
+        LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'fleetmanager'
     );
 
 -- Fleet managers can INSERT new staff rows
 CREATE POLICY staff_members_insert_admin
     ON public.staff_members FOR INSERT TO authenticated
     WITH CHECK (
-        (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'fleetManager'
+        LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'fleetmanager'
     );
 
 -- Fleet managers can UPDATE any staff row
 CREATE POLICY staff_members_update_admin
     ON public.staff_members FOR UPDATE TO authenticated
     USING (
-        (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'fleetManager'
+        LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'fleetmanager'
     )
     WITH CHECK (
-        (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'fleetManager'
+        LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'fleetmanager'
     );
 
 -- Fleet managers can DELETE any staff row
 CREATE POLICY staff_members_delete_admin
     ON public.staff_members FOR DELETE TO authenticated
     USING (
-        (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'fleetManager'
+        LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'fleetmanager'
     );
 
 -- Staff can update their own row (availability toggle + profile fields)
@@ -154,22 +157,22 @@ CREATE POLICY vehicles_select_authenticated
 CREATE POLICY vehicles_insert_admin
     ON public.vehicles FOR INSERT TO authenticated
     WITH CHECK (
-        (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'fleetManager'
+        LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'fleetmanager'
     );
 
 CREATE POLICY vehicles_update_admin
     ON public.vehicles FOR UPDATE TO authenticated
     USING (
-        (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'fleetManager'
+        LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'fleetmanager'
     )
     WITH CHECK (
-        (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'fleetManager'
+        LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'fleetmanager'
     );
 
 CREATE POLICY vehicles_delete_admin
     ON public.vehicles FOR DELETE TO authenticated
     USING (
-        (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'fleetManager'
+        LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'fleetmanager'
     );
 
 -- == geofences ==
@@ -181,28 +184,28 @@ DROP POLICY IF EXISTS geofences_delete_admin ON public.geofences;
 CREATE POLICY geofences_select_admin
     ON public.geofences FOR SELECT TO authenticated
     USING (
-        (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'fleetManager'
+        LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'fleetmanager'
     );
 
 CREATE POLICY geofences_insert_admin
     ON public.geofences FOR INSERT TO authenticated
     WITH CHECK (
-        (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'fleetManager'
+        LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'fleetmanager'
     );
 
 CREATE POLICY geofences_update_admin
     ON public.geofences FOR UPDATE TO authenticated
     USING (
-        (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'fleetManager'
+        LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'fleetmanager'
     )
     WITH CHECK (
-        (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'fleetManager'
+        LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'fleetmanager'
     );
 
 CREATE POLICY geofences_delete_admin
     ON public.geofences FOR DELETE TO authenticated
     USING (
-        (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'fleetManager'
+        LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'fleetmanager'
     );
 
 -- == trips ==
@@ -215,37 +218,37 @@ DROP POLICY IF EXISTS trips_select_maintenance ON public.trips;
 CREATE POLICY trips_all_admin
     ON public.trips FOR ALL TO authenticated
     USING (
-        (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'fleetManager'
+        LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'fleetmanager'
     )
     WITH CHECK (
-        (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'fleetManager'
+        LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'fleetmanager'
     );
 
 -- Drivers: read their own assigned trips (driver_id stored as TEXT)
 CREATE POLICY trips_select_driver
     ON public.trips FOR SELECT TO authenticated
     USING (
-        driver_id = auth.uid()::text
-        AND (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'driver'
+        driver_id::text = auth.uid()::text
+        AND LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'driver'
     );
 
 -- Drivers: update acceptance fields + inspection IDs on their own trips
 CREATE POLICY trips_update_driver
     ON public.trips FOR UPDATE TO authenticated
     USING (
-        driver_id = auth.uid()::text
-        AND (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'driver'
+        driver_id::text = auth.uid()::text
+        AND LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'driver'
     )
     WITH CHECK (
-        driver_id = auth.uid()::text
-        AND (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'driver'
+        driver_id::text = auth.uid()::text
+        AND LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'driver'
     );
 
 -- Maintenance personnel: read-only
 CREATE POLICY trips_select_maintenance
     ON public.trips FOR SELECT TO authenticated
     USING (
-        (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'maintenancePersonnel'
+        LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'maintenancepersonnel'
     );
 
 -- == notifications ==
@@ -254,12 +257,12 @@ DROP POLICY IF EXISTS notifications_update_own ON public.notifications;
 
 CREATE POLICY notifications_select_own
     ON public.notifications FOR SELECT TO authenticated
-    USING (recipient_id = auth.uid()::text);
+    USING (recipient_id::text = auth.uid()::text);
 
 CREATE POLICY notifications_update_own
     ON public.notifications FOR UPDATE TO authenticated
-    USING  (recipient_id = auth.uid()::text)
-    WITH CHECK (recipient_id = auth.uid()::text);
+    USING  (recipient_id::text = auth.uid()::text)
+    WITH CHECK (recipient_id::text = auth.uid()::text);
 
 GRANT INSERT ON public.notifications TO service_role;
 
@@ -293,7 +296,7 @@ BEGIN
 
     -- Use canonical role string
     FOR v_admin_id IN
-        SELECT id FROM public.staff_members WHERE role = 'fleetManager'
+        SELECT id FROM public.staff_members WHERE LOWER(role::text) = 'fleetmanager'
     LOOP
         INSERT INTO public.notifications
             (id, recipient_id, type, title, body, entity_type, entity_id, is_read, sent_at)
@@ -317,7 +320,7 @@ BEGIN
     INSERT INTO public.notifications
         (id, recipient_id, type, title, body, entity_type, entity_id, is_read, sent_at)
     VALUES (
-        gen_random_uuid(), NEW.driver_id,
+        gen_random_uuid(), NEW.driver_id::text,
         'Trip Assigned',   -- Swift NotificationType.tripAssigned.rawValue
         'New Trip Assigned: ' || NEW.task_id,
         'You have been assigned a trip from ' || NEW.origin
@@ -339,7 +342,7 @@ BEGIN
     INSERT INTO public.notifications
         (id, recipient_id, type, title, body, entity_type, entity_id, is_read, sent_at)
     VALUES (
-        gen_random_uuid(), NEW.driver_id,
+        gen_random_uuid(), NEW.driver_id::text,
         'Trip Assigned',   -- Swift NotificationType.tripAssigned.rawValue
         'New Trip Assigned: ' || NEW.task_id,
         'You have been assigned a trip from ' || NEW.origin

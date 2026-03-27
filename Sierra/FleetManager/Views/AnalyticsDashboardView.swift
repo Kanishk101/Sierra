@@ -83,6 +83,13 @@ struct AnalyticsDashboardView: View {
     @State private var selectedDays: Int = 30   // date range filter: 7, 30, 90
     @State private var selectedPage = 0
 
+    // MARK: - AI Summary State
+    @State private var fleetStatusSummaryState: AISummaryCard.SummaryState = .idle
+    @State private var staffSummaryState:       AISummaryCard.SummaryState = .idle
+    @State private var tripOverviewSummaryState: AISummaryCard.SummaryState = .idle
+    @State private var tripVolumeSummaryState:   AISummaryCard.SummaryState = .idle
+    @State private var completedTripsSummaryState: AISummaryCard.SummaryState = .idle
+
     private let pages = ["Fleet", "Trips", "Maintenance", "Drivers", "Fuel & Cost"]
 
     var body: some View {
@@ -94,7 +101,7 @@ struct AnalyticsDashboardView: View {
                         ForEach(Array(pages.enumerated()), id: \.offset) { i, label in
                             Button { withAnimation(.easeInOut(duration: 0.25)) { selectedPage = i } } label: {
                                 Text(label)
-                                    .font(.system(size: 13, weight: .semibold))
+                                    .font(SierraFont.scaled(13, weight: .semibold))
                                     .foregroundStyle(selectedPage == i ? .white : .primary)
                                     .padding(.horizontal, 14).padding(.vertical, 7)
                                     .background(
@@ -129,7 +136,7 @@ struct AnalyticsDashboardView: View {
                         dismiss()
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 22))
+                            .font(SierraFont.scaled(22))
                             .foregroundStyle(.secondary)
                             .symbolRenderingMode(.hierarchical)
                     }
@@ -139,7 +146,104 @@ struct AnalyticsDashboardView: View {
                 withAnimation(.spring(duration: 0.6, bounce: 0.1)) {
                     appeared = true
                 }
+                // Initial fetch
+                if case .idle = fleetStatusSummaryState { Task { await fetchFleetStatusSummary() } }
+                if case .idle = staffSummaryState       { Task { await fetchStaffSummary() } }
+                if case .idle = tripOverviewSummaryState { Task { await fetchTripOverviewSummary() } }
+                if case .idle = tripVolumeSummaryState   { Task { await fetchTripVolumeSummary() } }
+                if case .idle = completedTripsSummaryState { Task { await fetchCompletedTripsSummary() } }
             }
+            .onChange(of: selectedPage) { old, new in
+                if new == 0 {
+                    if case .idle = fleetStatusSummaryState { Task { await fetchFleetStatusSummary() } }
+                    if case .idle = staffSummaryState       { Task { await fetchStaffSummary() } }
+                }
+                if new == 1 {
+                    if case .idle = tripOverviewSummaryState { Task { await fetchTripOverviewSummary() } }
+                    if case .idle = tripVolumeSummaryState   { Task { await fetchTripVolumeSummary() } }
+                    if case .idle = completedTripsSummaryState { Task { await fetchCompletedTripsSummary() } }
+                }
+            }
+        }
+    }
+
+    // MARK: - AI Summary Fetchers
+
+    @MainActor
+    private func fetchFleetStatusSummary() async {
+        fleetStatusSummaryState = .loading
+        let fleetCounts = Dictionary(grouping: store.vehicles, by: \.status).mapValues { $0.count }
+        let snapshot: [String: Any] = [
+            "total_vehicles": store.vehicles.count,
+            "status_breakdown": Dictionary(uniqueKeysWithValues: fleetCounts.map { ($0.key.rawValue, $0.value) })
+        ]
+        do {
+            let text = try await GroqSummaryService.summarise(topic: "Fleet Status", data: snapshot)
+            withAnimation { fleetStatusSummaryState = .loaded(text) }
+        } catch {
+            fleetStatusSummaryState = .failed((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
+        }
+    }
+
+    @MainActor
+    private func fetchStaffSummary() async {
+        staffSummaryState = .loading
+        let staffCounts = Dictionary(grouping: store.staff, by: \.role).mapValues { $0.count }
+        let snapshot: [String: Any] = [
+            "total_staff": store.staff.count,
+            "role_breakdown": Dictionary(uniqueKeysWithValues: staffCounts.map { ($0.key.rawValue, $0.value) })
+        ]
+        do {
+            let text = try await GroqSummaryService.summarise(topic: "Staff Distribution", data: snapshot)
+            withAnimation { staffSummaryState = .loaded(text) }
+        } catch {
+            staffSummaryState = .failed((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
+        }
+    }
+
+    @MainActor
+    private func fetchTripOverviewSummary() async {
+        tripOverviewSummaryState = .loading
+        let statusCounts = Dictionary(grouping: store.trips, by: \.status).mapValues { $0.count }
+        let snapshot: [String: Any] = [
+            "total_trips": store.trips.count,
+            "status_breakdown": Dictionary(uniqueKeysWithValues: statusCounts.map { ($0.key.rawValue, $0.value) })
+        ]
+        do {
+            let text = try await GroqSummaryService.summarise(topic: "Trip Overview", data: snapshot)
+            withAnimation { tripOverviewSummaryState = .loaded(text) }
+        } catch {
+            tripOverviewSummaryState = .failed((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
+        }
+    }
+
+    @MainActor
+    private func fetchTripVolumeSummary() async {
+        tripVolumeSummaryState = .loading
+        let snapshot: [String: Any] = [
+            "monthly_volume_last_6_months": monthlyData.map { ["month": $0.month, "count": $0.count] }
+        ]
+        do {
+            let text = try await GroqSummaryService.summarise(topic: "Monthly Trip Volume", data: snapshot)
+            withAnimation { tripVolumeSummaryState = .loaded(text) }
+        } catch {
+            tripVolumeSummaryState = .failed((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
+        }
+    }
+
+    @MainActor
+    private func fetchCompletedTripsSummary() async {
+        completedTripsSummaryState = .loading
+        let snapshot: [String: Any] = [
+            "trips_in_range_count": tripsInRange.count,
+            "total_distance_km": totalDistanceKm,
+            "avg_duration_min": averageDurationMinutes ?? 0
+        ]
+        do {
+            let text = try await GroqSummaryService.summarise(topic: "Completed Trips Performance", data: snapshot)
+            withAnimation { completedTripsSummaryState = .loaded(text) }
+        } catch {
+            completedTripsSummaryState = .failed((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
         }
     }
 
@@ -150,11 +254,21 @@ struct AnalyticsDashboardView: View {
             VStack(spacing: 20) {
                 sectionCard(title: "Fleet Status",
                             subtitle: "Vehicle distribution by operational state") {
-                    fleetStatusChart
+                    VStack(spacing: 16) {
+                        fleetStatusChart
+                        AISummaryCard(state: fleetStatusSummaryState, isFlat: true) {
+                            Task { await fetchFleetStatusSummary() }
+                        }
+                    }
                 }
                 sectionCard(title: "Staff Distribution",
                             subtitle: "Team breakdown by role and status") {
-                    staffDistributionChart
+                    VStack(spacing: 16) {
+                        staffDistributionChart
+                        AISummaryCard(state: staffSummaryState, isFlat: true) {
+                            Task { await fetchStaffSummary() }
+                        }
+                    }
                 }
                 Spacer(minLength: 32)
             }
@@ -167,15 +281,30 @@ struct AnalyticsDashboardView: View {
             VStack(spacing: 20) {
                 sectionCard(title: "Trip Overview",
                             subtitle: "All trips by current status") {
-                    tripStatusChart
+                    VStack(spacing: 16) {
+                        tripStatusChart
+                        AISummaryCard(state: tripOverviewSummaryState, isFlat: true) {
+                            Task { await fetchTripOverviewSummary() }
+                        }
+                    }
                 }
                 sectionCard(title: "Monthly Trip Volume",
                             subtitle: "Trips scheduled over the past 6 months") {
-                    monthlyTripBarChart
+                    VStack(spacing: 16) {
+                        monthlyTripBarChart
+                        AISummaryCard(state: tripVolumeSummaryState, isFlat: true) {
+                            Task { await fetchTripVolumeSummary() }
+                        }
+                    }
                 }
                 sectionCard(title: "Completed Trips Summary",
                             subtitle: "Aggregated stats for completed trips — filtered client-side") {
-                    completedTripsSummarySection
+                    VStack(spacing: 16) {
+                        completedTripsSummarySection
+                        AISummaryCard(state: completedTripsSummaryState, isFlat: true) {
+                            Task { await fetchCompletedTripsSummary() }
+                        }
+                    }
                 }
                 Spacer(minLength: 32)
             }
@@ -215,7 +344,7 @@ struct AnalyticsDashboardView: View {
                 // Placeholder — extend with fuel/cost analytics as data becomes available
                 VStack(spacing: 12) {
                     Image(systemName: "fuelpump.fill")
-                        .font(.system(size: 40))
+                        .font(SierraFont.scaled(40))
                         .foregroundStyle(.orange.opacity(0.4))
                     Text("Fuel & Cost Analytics")
                         .font(.headline)
@@ -412,7 +541,7 @@ struct AnalyticsDashboardView: View {
                             let isLargest  = viewModel.selectedFleetStatus == nil && slice.count == fleetSlices.max(by: { $0.count < $1.count })?.count
                             if isSelected || isLargest {
                                 Text("\(slice.count)")
-                                    .font(.system(size: 13, weight: .bold))
+                                    .font(SierraFont.scaled(13, weight: .bold))
                                     .foregroundStyle(.white)
                             }
                         }
@@ -427,7 +556,7 @@ struct AnalyticsDashboardView: View {
                     VStack(spacing: 2) {
                         if let selected = viewModel.selectedFleetStatus {
                             Text("\(fleetSlices.first(where: { $0.status == selected })?.count ?? 0)")
-                                .font(.system(size: 28, weight: .bold))
+                                .font(SierraFont.scaled(28, weight: .bold))
                                 .foregroundStyle(.primary)
                             Text(selected.rawValue)
                                 .font(.caption2)
@@ -436,7 +565,7 @@ struct AnalyticsDashboardView: View {
                                 .frame(maxWidth: 80)
                         } else {
                             Text("\(store.vehicles.count)")
-                                .font(.system(size: 28, weight: .bold))
+                                .font(SierraFont.scaled(28, weight: .bold))
                                 .foregroundStyle(.primary)
                             Text("Vehicles")
                                 .font(.caption2)
@@ -450,15 +579,19 @@ struct AnalyticsDashboardView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
                         ForEach(fleetSlices) { slice in
-                            legendChip(color: slice.color,
-                                       label: slice.status.rawValue,
-                                       count: slice.count,
-                                       isSelected: viewModel.selectedFleetStatus == slice.status)
-                            .onTapGesture {
+                            Button {
                                 withAnimation(.spring(duration: 0.3, bounce: 0.2)) {
                                     viewModel.selectedFleetStatus = viewModel.selectedFleetStatus == slice.status ? nil : slice.status
                                 }
+                            } label: {
+                                legendChip(color: slice.color,
+                                           label: slice.status.rawValue,
+                                           count: slice.count,
+                                           isSelected: viewModel.selectedFleetStatus == slice.status)
                             }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("\(slice.status.rawValue), \(slice.count)")
+                            .accessibilityHint("Filters the fleet chart")
                         }
                     }
                     .padding(.horizontal, 2)
@@ -513,7 +646,7 @@ struct AnalyticsDashboardView: View {
                             let isLargest  = viewModel.selectedTripStatus == nil && slice.count == tripSlices.max(by: { $0.count < $1.count })?.count
                             if isSelected || isLargest {
                                 Text("\(slice.count)")
-                                    .font(.system(size: 13, weight: .bold))
+                                    .font(SierraFont.scaled(13, weight: .bold))
                                     .foregroundStyle(.white)
                             }
                         }
@@ -528,7 +661,7 @@ struct AnalyticsDashboardView: View {
                     VStack(spacing: 2) {
                         if let selected = viewModel.selectedTripStatus {
                             Text("\(tripSlices.first(where: { $0.status == selected })?.count ?? 0)")
-                                .font(.system(size: 28, weight: .bold))
+                                .font(SierraFont.scaled(28, weight: .bold))
                                 .foregroundStyle(.primary)
                             Text(selected.rawValue)
                                 .font(.caption2)
@@ -537,7 +670,7 @@ struct AnalyticsDashboardView: View {
                                 .frame(maxWidth: 80)
                         } else {
                             Text("\(store.trips.count)")
-                                .font(.system(size: 28, weight: .bold))
+                                .font(SierraFont.scaled(28, weight: .bold))
                                 .foregroundStyle(.primary)
                             Text("Trips")
                                 .font(.caption2)
@@ -550,15 +683,19 @@ struct AnalyticsDashboardView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
                         ForEach(tripSlices) { slice in
-                            legendChip(color: slice.color,
-                                       label: slice.status.rawValue,
-                                       count: slice.count,
-                                       isSelected: viewModel.selectedTripStatus == slice.status)
-                            .onTapGesture {
+                            Button {
                                 withAnimation(.spring(duration: 0.3, bounce: 0.2)) {
                                     viewModel.selectedTripStatus = viewModel.selectedTripStatus == slice.status ? nil : slice.status
                                 }
+                            } label: {
+                                legendChip(color: slice.color,
+                                           label: slice.status.rawValue,
+                                           count: slice.count,
+                                           isSelected: viewModel.selectedTripStatus == slice.status)
                             }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("\(slice.status.rawValue), \(slice.count)")
+                            .accessibilityHint("Filters the trip chart")
                         }
                     }
                     .padding(.horizontal, 2)
@@ -613,7 +750,7 @@ struct AnalyticsDashboardView: View {
                             let isLargest  = viewModel.selectedStaffLabel == nil && slice.count == staffSlices.max(by: { $0.count < $1.count })?.count
                             if isSelected || isLargest {
                                 Text("\(slice.count)")
-                                    .font(.system(size: 13, weight: .bold))
+                                    .font(SierraFont.scaled(13, weight: .bold))
                                     .foregroundStyle(.white)
                             }
                         }
@@ -628,7 +765,7 @@ struct AnalyticsDashboardView: View {
                     VStack(spacing: 2) {
                         if let selected = viewModel.selectedStaffLabel {
                             Text("\(staffSlices.first(where: { $0.label == selected })?.count ?? 0)")
-                                .font(.system(size: 28, weight: .bold))
+                                .font(SierraFont.scaled(28, weight: .bold))
                                 .foregroundStyle(.primary)
                             Text(selected)
                                 .font(.caption2)
@@ -637,7 +774,7 @@ struct AnalyticsDashboardView: View {
                                 .frame(maxWidth: 80)
                         } else {
                             Text("\(store.staff.count)")
-                                .font(.system(size: 28, weight: .bold))
+                                .font(SierraFont.scaled(28, weight: .bold))
                                 .foregroundStyle(.primary)
                             Text("Staff")
                                 .font(.caption2)
@@ -650,15 +787,19 @@ struct AnalyticsDashboardView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
                         ForEach(staffSlices) { slice in
-                            legendChip(color: slice.color,
-                                       label: slice.label,
-                                       count: slice.count,
-                                       isSelected: viewModel.selectedStaffLabel == slice.label)
-                            .onTapGesture {
+                            Button {
                                 withAnimation(.spring(duration: 0.3, bounce: 0.2)) {
                                     viewModel.selectedStaffLabel = viewModel.selectedStaffLabel == slice.label ? nil : slice.label
                                 }
+                            } label: {
+                                legendChip(color: slice.color,
+                                           label: slice.label,
+                                           count: slice.count,
+                                           isSelected: viewModel.selectedStaffLabel == slice.label)
                             }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("\(slice.label), \(slice.count)")
+                            .accessibilityHint("Filters the staff chart")
                         }
                     }
                     .padding(.horizontal, 2)
@@ -1001,12 +1142,12 @@ struct AnalyticsDashboardView: View {
     private func docHealthCell(icon: String, count: Int, label: String, color: Color) -> some View {
         VStack(spacing: 8) {
             Image(systemName: icon)
-                .font(.system(size: 26, weight: .light))
+                .font(SierraFont.scaled(26, weight: .light))
                 .foregroundStyle(color)
                 .symbolRenderingMode(.hierarchical)
 
             Text("\(count)")
-                .font(.system(size: 28, weight: .bold))
+                .font(SierraFont.scaled(28, weight: .bold))
                 .foregroundStyle(.primary)
 
             Text(label)

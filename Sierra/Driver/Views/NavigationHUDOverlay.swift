@@ -104,13 +104,13 @@ struct NavigationHUDOverlay: View {
             Image(systemName: maneuverIcon(for: coordinator.currentStepManeuver.isEmpty
                                            ? coordinator.currentStepInstruction
                                            : coordinator.currentStepManeuver))
-                .font(.system(size: 16, weight: .bold))
+                .font(SierraFont.scaled(16, weight: .bold))
                 .foregroundStyle(.white)
                 .frame(width: 30, height: 30)
                 .background(Color.appOrange, in: Circle())
 
             Text(shortTurnInstruction(coordinator.currentStepInstruction))
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .font(SierraFont.scaled(12, weight: .semibold, design: .rounded))
                 .foregroundColor(.white)
                 .lineLimit(1)
         }
@@ -131,7 +131,7 @@ struct NavigationHUDOverlay: View {
             Image(systemName: maneuverIcon(for: coordinator.currentStepManeuver.isEmpty
                                            ? coordinator.currentStepInstruction
                                            : coordinator.currentStepManeuver))
-                .font(.system(size: 24, weight: .bold))
+                .font(SierraFont.scaled(24, weight: .bold))
                 .foregroundColor(.white)
                 .frame(width: 52, height: 52)
                 .background(
@@ -141,15 +141,15 @@ struct NavigationHUDOverlay: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(formatDistance(coordinator.distanceRemainingMetres))
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(28, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
                 Text(coordinator.currentStepInstruction)
-                    .font(.system(size: 15, weight: .medium, design: .rounded))
+                    .font(SierraFont.scaled(15, weight: .medium, design: .rounded))
                     .foregroundColor(.white.opacity(0.9))
                     .lineLimit(2)
                 if !coordinator.nextStepInstruction.isEmpty {
                     Text("Then: \(coordinator.nextStepInstruction)")
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .font(SierraFont.scaled(12, weight: .medium, design: .rounded))
                         .foregroundColor(.white.opacity(0.55))
                         .lineLimit(1)
                 }
@@ -207,14 +207,14 @@ struct NavigationHUDOverlay: View {
     private func incidentBanner(_ incident: TrafficIncident) -> some View {
         HStack(spacing: 10) {
             Image(systemName: incidentIcon(incident.severity))
-                .font(.system(size: 18, weight: .bold))
+                .font(SierraFont.scaled(18, weight: .bold))
                 .foregroundStyle(incidentColor(incident.severity))
                 .frame(width: 36, height: 36)
                 .background(incidentColor(incident.severity).opacity(0.15), in: Circle())
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(incident.description)
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .font(SierraFont.scaled(13, weight: .semibold, design: .rounded))
                     .foregroundStyle(.white)
                     .lineLimit(1)
                 HStack(spacing: 6) {
@@ -336,10 +336,10 @@ struct NavigationHUDOverlay: View {
     private func statItem(value: String, label: String) -> some View {
         VStack(spacing: 4) {
             Text(value)
-                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .font(SierraFont.scaled(16, weight: .bold, design: .rounded))
                 .foregroundColor(.white)
             Text(label)
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .font(SierraFont.scaled(11, weight: .semibold, design: .rounded))
                 .foregroundColor(.white.opacity(0.6))
                 .textCase(.uppercase)
         }
@@ -364,11 +364,11 @@ struct NavigationHUDOverlay: View {
                 .frame(width: 68, height: 68)
             VStack(spacing: 1) {
                 Text(String(format: "%.0f", max(0, coordinator.currentSpeedKmh)))
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(26, weight: .bold, design: .rounded))
                     .monospacedDigit()
                     .foregroundColor(.white)
                 Text("km/h")
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .font(SierraFont.scaled(10, weight: .semibold, design: .rounded))
                     .foregroundColor(.white.opacity(0.6))
             }
         }
@@ -423,10 +423,10 @@ struct NavigationHUDOverlay: View {
         return VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("\(pct)%")
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(18, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
                 Text("Route")
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .font(SierraFont.scaled(10, weight: .semibold, design: .rounded))
                     .foregroundColor(.white.opacity(0.62))
                     .textCase(.uppercase)
             }
@@ -466,24 +466,24 @@ struct NavigationHUDOverlay: View {
     private func compactRealtimeIssueBadge(_ incident: TrafficIncident) -> some View {
         HStack(spacing: 8) {
             Image(systemName: incidentIcon(for: incident))
-                .font(.system(size: 13, weight: .bold))
+                .font(SierraFont.scaled(13, weight: .bold))
                 .foregroundStyle(incidentColor(incident.severity))
                 .frame(width: 24, height: 24)
                 .background(incidentColor(incident.severity).opacity(0.16), in: Circle())
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(shortIssueTitle(incident.description))
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .font(SierraFont.scaled(11, weight: .semibold, design: .rounded))
                     .foregroundStyle(.white)
                     .lineLimit(1)
                 if let dist = incident.distanceAheadMetres {
                     Text("\(formatDistance(dist)) ahead")
-                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .font(SierraFont.scaled(10, weight: .medium, design: .rounded))
                         .foregroundStyle(.white.opacity(0.62))
                         .lineLimit(1)
                 } else {
                     Text("Live incident")
-                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .font(SierraFont.scaled(10, weight: .medium, design: .rounded))
                         .foregroundStyle(.white.opacity(0.62))
                 }
             }
@@ -528,10 +528,10 @@ struct NavigationHUDOverlay: View {
         Button(action: action) {
             VStack(spacing: 5) {
                 Image(systemName: icon)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(SierraFont.scaled(16, weight: .semibold))
                     .foregroundColor(color)
                 Text(title)
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .font(SierraFont.scaled(10, weight: .semibold, design: .rounded))
                     .foregroundColor(.white.opacity(0.8))
             }
             .frame(maxWidth: .infinity)
@@ -554,6 +554,7 @@ struct NavigationHUDOverlay: View {
                         withAnimation(.spring(response: 0.3)) { showEndTripConfirm = false }
                     }
                 }
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 16) {
                 // Header
@@ -563,15 +564,15 @@ struct NavigationHUDOverlay: View {
                         .frame(width: 46, height: 46)
                         .overlay(
                             Image(systemName: "flag.checkered")
-                                .font(.system(size: 18, weight: .bold))
+                                .font(SierraFont.scaled(18, weight: .bold))
                                 .foregroundColor(Color.red.opacity(0.95))
                         )
                     VStack(alignment: .leading, spacing: 3) {
                         Text("End Navigation")
-                            .font(.system(size: 22, weight: .bold, design: .rounded))
+                            .font(SierraFont.scaled(22, weight: .bold, design: .rounded))
                             .foregroundColor(.white)
                         Text("Delivery options will open next.")
-                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .font(SierraFont.scaled(13, weight: .medium, design: .rounded))
                             .foregroundColor(.gray)
                     }
                 }
@@ -590,7 +591,7 @@ struct NavigationHUDOverlay: View {
                         endTripError = nil
                     } label: {
                         Text("Cancel")
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .font(SierraFont.scaled(16, weight: .bold, design: .rounded))
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
@@ -607,7 +608,7 @@ struct NavigationHUDOverlay: View {
                                 ProgressView().tint(.white)
                             } else {
                                 Text("End Navigation")
-                                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                                    .font(SierraFont.scaled(16, weight: .bold, design: .rounded))
                                     .foregroundColor(.white)
                             }
                         }
@@ -656,6 +657,7 @@ struct NavigationHUDOverlay: View {
                         showIncidentReport = false
                     }
                 }
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 10) {
@@ -664,26 +666,26 @@ struct NavigationHUDOverlay: View {
                         .frame(width: 42, height: 42)
                         .overlay(
                             Image(systemName: "exclamationmark.bubble.fill")
-                                .font(.system(size: 18, weight: .bold))
+                                .font(SierraFont.scaled(18, weight: .bold))
                                 .foregroundColor(.appOrange)
                         )
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Report Issue")
-                            .font(.system(size: 22, weight: .bold, design: .rounded))
+                            .font(SierraFont.scaled(22, weight: .bold, design: .rounded))
                             .foregroundColor(.white)
                         Text("This will be sent to admin while route continues.")
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .font(SierraFont.scaled(12, weight: .medium, design: .rounded))
                             .foregroundColor(.gray)
                     }
                 }
 
                 Text("Describe the issue")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .font(SierraFont.scaled(13, weight: .semibold, design: .rounded))
                     .foregroundColor(.gray)
 
                 ZStack(alignment: .topLeading) {
                     TextEditor(text: $issueText)
-                        .font(.system(size: 15, weight: .medium, design: .rounded))
+                        .font(SierraFont.scaled(15, weight: .medium, design: .rounded))
                         .foregroundColor(.white)
                         .scrollContentBackground(.hidden)
                         .frame(height: 108)
@@ -699,7 +701,7 @@ struct NavigationHUDOverlay: View {
 
                     if issueText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         Text("Example: Road blocked due to accident near next turn")
-                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .font(SierraFont.scaled(13, weight: .medium, design: .rounded))
                             .foregroundColor(.gray.opacity(0.7))
                             .padding(.horizontal, 16)
                             .padding(.vertical, 18)
@@ -715,7 +717,7 @@ struct NavigationHUDOverlay: View {
                         }
                     }) {
                         Text("Cancel")
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .font(SierraFont.scaled(16, weight: .bold, design: .rounded))
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 13)
@@ -728,7 +730,7 @@ struct NavigationHUDOverlay: View {
 
                     Button(action: submitIssue) {
                         Text("Send")
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .font(SierraFont.scaled(16, weight: .bold, design: .rounded))
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 13)
@@ -764,9 +766,9 @@ struct NavigationHUDOverlay: View {
         VStack {
             HStack(spacing: 8) {
                 Image(systemName: "paperplane.circle.fill")
-                    .font(.system(size: 16, weight: .bold))
+                    .font(SierraFont.scaled(16, weight: .bold))
                 Text("Issue sent to admin. Continuing route.")
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(14, weight: .bold, design: .rounded))
             }
             .foregroundColor(.white)
             .padding(.horizontal, 14)
@@ -855,12 +857,13 @@ struct NavigationHUDOverlay: View {
         ZStack(alignment: .bottom) {
             Color.black.opacity(0.6).ignoresSafeArea()
                 .onTapGesture { withAnimation { showSimPanel = false } }
+                .accessibilityHidden(true)
 
             VStack(spacing: 14) {
                 // Title
                 HStack {
                     Label("Route Simulator", systemImage: "ladybug.fill")
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(16, weight: .bold, design: .rounded))
                         .foregroundColor(.yellow)
                     Spacer()
                     Text("DEBUG ONLY")
@@ -873,7 +876,7 @@ struct NavigationHUDOverlay: View {
                 // Progress label
                 HStack {
                     Text(String(format: "Progress: %.0f%%", coordinator.simulationProgress * 100))
-                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .font(SierraFont.scaled(13, weight: .medium, design: .rounded))
                         .foregroundColor(.white.opacity(0.7))
                     Spacer()
                     Text(coordinator.simulated ? "▶ Running" : "⏸ Paused")
@@ -900,7 +903,7 @@ struct NavigationHUDOverlay: View {
                         coordinator.resetSimulation()
                     } label: {
                         Label("Reset", systemImage: "backward.end.fill")
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            .font(SierraFont.scaled(13, weight: .semibold, design: .rounded))
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 10)
@@ -915,7 +918,7 @@ struct NavigationHUDOverlay: View {
                     } label: {
                         Label(coordinator.simulated ? "Stop" : "Play",
                               systemImage: coordinator.simulated ? "stop.fill" : "play.fill")
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .font(SierraFont.scaled(13, weight: .bold, design: .rounded))
                             .foregroundColor(.black)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 10)
@@ -928,7 +931,7 @@ struct NavigationHUDOverlay: View {
                         withAnimation { showSimPanel = false }
                     } label: {
                         Label("Close", systemImage: "xmark")
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            .font(SierraFont.scaled(13, weight: .semibold, design: .rounded))
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 10)

@@ -31,6 +31,7 @@ final class AppDataStore {
     var maintenanceProfiles: [MaintenanceProfile] = []
     var staffApplications: [StaffApplication] = []
     var vehicles: [Vehicle] = []
+    var vehiclePartLifeProfiles: [VehiclePartLife] = []
     var vehicleDocuments: [VehicleDocument] = []
     var trips: [Trip] = []
     var fuelLogs: [FuelLog] = []
@@ -60,6 +61,7 @@ final class AppDataStore {
     private var lastFleetRefreshAt: Date?
     private var sentOverdueTripResponseAlerts: Set<UUID> = []
     private var deliveredRealtimeNotificationIds: Set<UUID> = []
+    private var latestVehicleCoordinateAtById: [UUID: Date] = [:]
 
     /// Shared refresh cadence for driver screens.
     var driverRefreshInterval: TimeInterval { 20 }
@@ -119,6 +121,7 @@ final class AppDataStore {
         async let maintProfsTask   = MaintenanceProfileService.fetchAllMaintenanceProfiles()
         async let appsTask         = StaffApplicationService.fetchAllStaffApplications()
         async let vehiclesTask     = VehicleService.fetchAllVehicles()
+        async let partLifeTask     = VehiclePartLifeService.fetchAllProfiles()
         async let vehicleDocsTask  = VehicleDocumentService.fetchAllVehicleDocuments()
         async let tripsTask        = TripService.fetchAllTrips()
         async let fuelLogsTask     = FuelLogService.fetchAllFuelLogs()
@@ -141,7 +144,13 @@ final class AppDataStore {
         do { driverProfiles      = try await driverProfsTask }  catch { errors.append("driverProfiles: \(error.localizedDescription)") }
         do { maintenanceProfiles = try await maintProfsTask }   catch { errors.append("maintenanceProfiles: \(error.localizedDescription)") }
         do { staffApplications   = try await appsTask }         catch { errors.append("staffApplications: \(error.localizedDescription)") }
-        do { vehicles            = try await vehiclesTask }     catch { errors.append("vehicles: \(error.localizedDescription)") }
+        do {
+            vehicles = try await vehiclesTask
+            rememberVehicleCoordinateTimestamps(from: vehicles)
+        } catch {
+            errors.append("vehicles: \(error.localizedDescription)")
+        }
+        do { vehiclePartLifeProfiles = try await partLifeTask } catch { errors.append("vehiclePartLifeProfiles: \(error.localizedDescription)") }
         do { vehicleDocuments    = try await vehicleDocsTask }  catch { errors.append("vehicleDocuments: \(error.localizedDescription)") }
         do { trips               = try await tripsTask; sortTripsByAssignmentRecency() }        catch { errors.append("trips: \(error.localizedDescription)") }
         do { fuelLogs            = try await fuelLogsTask }     catch { errors.append("fuelLogs: \(error.localizedDescription)") }
@@ -207,7 +216,12 @@ final class AppDataStore {
         var errors: [String] = []
         do { if let m = try await selfMemberTask { staff = [m] } }
             catch { errors.append("Staff: \(error.localizedDescription)") }
-        do { vehicles = try await vehiclesTask }           catch { errors.append("Vehicles: \(error.localizedDescription)") }
+        do {
+            vehicles = try await vehiclesTask
+            rememberVehicleCoordinateTimestamps(from: vehicles)
+        } catch {
+            errors.append("Vehicles: \(error.localizedDescription)")
+        }
         do { trips = try await tripsTask; sortTripsByAssignmentRecency() }                 catch { errors.append("Trips: \(error.localizedDescription)") }
         do { fuelLogs = try await fuelLogsTask }           catch { errors.append("Fuel logs: \(error.localizedDescription)") }
         do { vehicleInspections = try await inspectionsTask } catch { errors.append("Inspections: \(error.localizedDescription)") }
@@ -257,7 +271,16 @@ final class AppDataStore {
         async let deviationsTask = RouteDeviationService.fetchAllDeviations()
 
         var errors: [String] = []
-        do { vehicles = try await vehiclesTask } catch { errors.append("vehicles: \(error.localizedDescription)") }
+        do {
+            let fetchedVehicles = try await vehiclesTask
+            vehicles = mergedVehiclesPreservingRealtimeCoordinates(
+                existing: vehicles,
+                fetched: fetchedVehicles
+            )
+            rememberVehicleCoordinateTimestamps(from: vehicles)
+        } catch {
+            errors.append("vehicles: \(error.localizedDescription)")
+        }
         do {
             trips = try await tripsTask
             sortTripsByAssignmentRecency()
@@ -283,6 +306,7 @@ final class AppDataStore {
 
         async let selfMemberTask = StaffMemberService.fetchStaffMember(id: staffId)
         async let vehiclesTask   = VehicleService.fetchAllVehicles()
+        async let partLifeTask   = VehiclePartLifeService.fetchAllProfiles()
         async let workOrdersTask = WorkOrderService.fetchWorkOrders(assignedToId: staffId)
         async let maintTasksTask = MaintenanceTaskService.fetchMaintenanceTasks(assignedToId: staffId)
         async let maintRecsTask  = MaintenanceRecordService.fetchMaintenanceRecords(performedById: staffId)
@@ -296,8 +320,14 @@ final class AppDataStore {
         var errors: [String] = []
         do { if let m = try await selfMemberTask { staff = [m] } }
             catch { errors.append("Staff: \(error.localizedDescription)") }
-        do { vehicles = try await vehiclesTask }
-            catch { errors.append("Vehicles: \(error.localizedDescription)") }
+        do {
+            vehicles = try await vehiclesTask
+            rememberVehicleCoordinateTimestamps(from: vehicles)
+        } catch {
+            errors.append("Vehicles: \(error.localizedDescription)")
+        }
+        do { vehiclePartLifeProfiles = try await partLifeTask }
+            catch { errors.append("Part life profiles: \(error.localizedDescription)") }
         do { workOrders = try await workOrdersTask }
             catch { errors.append("Work orders: \(error.localizedDescription)") }
         do { maintenanceTasks = try await maintTasksTask }
@@ -807,6 +837,48 @@ final class AppDataStore {
         }
     }
 
+    func assignApprovedMaintenanceTaskAndEnsureWorkOrder(
+        taskId: UUID,
+        assignedToId: UUID
+    ) async throws {
+        guard let taskIndex = maintenanceTasks.firstIndex(where: { $0.id == taskId }) else {
+            try await MaintenanceTaskService.assignApprovedTask(taskId: taskId, assignedToId: assignedToId)
+            return
+        }
+
+        let task = maintenanceTasks[taskIndex]
+        try await MaintenanceTaskService.assignApprovedTask(taskId: taskId, assignedToId: assignedToId)
+
+        maintenanceTasks[taskIndex].assignedToId = assignedToId
+        maintenanceTasks[taskIndex].updatedAt = Date()
+
+        if workOrder(forMaintenanceTask: taskId) == nil {
+            let now = Date()
+            let created = WorkOrder(
+                id: UUID(),
+                maintenanceTaskId: taskId,
+                vehicleId: task.vehicleId,
+                assignedToId: assignedToId,
+                workOrderType: task.taskType == .scheduled ? .service : .repair,
+                partsSubStatus: .none,
+                status: .open,
+                repairDescription: "",
+                labourCostTotal: 0,
+                partsCostTotal: 0,
+                totalCost: 0,
+                startedAt: nil,
+                completedAt: nil,
+                technicianNotes: nil,
+                vinScanned: false,
+                repairImageUrls: [],
+                estimatedCompletionAt: nil,
+                createdAt: now,
+                updatedAt: now
+            )
+            try await addWorkOrder(created)
+        }
+    }
+
     func completeMaintenanceTask(id: UUID) async throws {
         try await MaintenanceTaskService.updateMaintenanceTaskStatus(id: id, status: .completed)
         if let idx = maintenanceTasks.firstIndex(where: { $0.id == id }) {
@@ -918,6 +990,15 @@ final class AppDataStore {
             reason: request.reason
         )
         sparePartsRequests.insert(request, at: 0)
+        Task {
+            await NotificationService.sendToAdmins(
+                type: .maintenanceRequest,
+                title: "Parts Request Raised",
+                body: "\(request.partName) x\(request.quantity) needs approval.",
+                entityType: "spare_parts_request",
+                entityId: request.id
+            )
+        }
         await recomputePartsSubStatus(forTaskId: request.maintenanceTaskId)
     }
 
@@ -948,6 +1029,22 @@ final class AppDataStore {
         req.quantityAllocated = inventoryApproval
         req.quantityOnOrder = remainingToOrder
         sparePartsRequests[idx] = req
+        Task {
+            let body: String
+            if remainingToOrder > 0 {
+                body = "\(req.partName): \(inventoryApproval) allocated, \(remainingToOrder) placed on order."
+            } else {
+                body = "\(req.partName) x\(req.quantity) approved from inventory."
+            }
+            try? await NotificationService.insertNotification(
+                recipientId: req.requestedById,
+                type: .partsApproved,
+                title: "Parts Decision Updated",
+                body: body,
+                entityType: "spare_parts_request",
+                entityId: req.id
+            )
+        }
 
         await recomputePartsSubStatus(forTaskId: req.maintenanceTaskId)
     }
@@ -985,6 +1082,17 @@ final class AppDataStore {
         req.orderReference = orderReference
         req.adminOrderedAt = Date()
         sparePartsRequests[idx] = req
+        Task {
+            let etaText = expectedArrivalAt.formatted(.dateTime.day().month(.abbreviated).hour().minute())
+            try? await NotificationService.insertNotification(
+                recipientId: req.requestedById,
+                type: .general,
+                title: "Parts Order Placed",
+                body: "\(req.partName) x\(remainingToOrder) expected by \(etaText).",
+                entityType: "spare_parts_request",
+                entityId: req.id
+            )
+        }
 
         await recomputePartsSubStatus(forTaskId: req.maintenanceTaskId)
     }
@@ -1435,6 +1543,7 @@ final class AppDataStore {
         let currentLongitude: Double?
         let status: VehicleStatus?
         let assignedDriverId: String?
+        let updatedAt: String?
 
         enum CodingKeys: String, CodingKey {
             case id
@@ -1442,6 +1551,7 @@ final class AppDataStore {
             case currentLongitude = "current_longitude"
             case status
             case assignedDriverId = "assigned_driver_id"
+            case updatedAt = "updated_at"
         }
     }
 
@@ -1467,11 +1577,18 @@ final class AppDataStore {
 
     private func applyVehicleRealtimeRecord<Record: Encodable>(_ record: Record) async {
         guard let patch = decodeVehicleRealtimePatch(from: record) else { return }
+        let eventTimestamp = parseRealtimeTimestamp(patch.updatedAt) ?? Date()
 
         if let idx = vehicles.firstIndex(where: { $0.id == patch.id }) {
             // Fast path: apply realtime fields immediately so admin map marker moves instantly.
-            if let lat = patch.currentLatitude { vehicles[idx].currentLatitude = lat }
-            if let lng = patch.currentLongitude { vehicles[idx].currentLongitude = lng }
+            if let lat = patch.currentLatitude, let lng = patch.currentLongitude,
+               isCoordinateValid(latitude: lat, longitude: lng) {
+                if shouldApplyVehicleCoordinateEvent(vehicleId: patch.id, timestamp: eventTimestamp) {
+                    vehicles[idx].currentLatitude = lat
+                    vehicles[idx].currentLongitude = lng
+                    latestVehicleCoordinateAtById[patch.id] = eventTimestamp
+                }
+            }
             if let status = patch.status { vehicles[idx].status = status }
             if let assignedDriverId = patch.assignedDriverId { vehicles[idx].assignedDriverId = assignedDriverId }
             return
@@ -1479,40 +1596,31 @@ final class AppDataStore {
 
         // Newly inserted / first-seen vehicle should appear on admin map without manual refresh.
         if let fresh = try? await VehicleService.fetchVehicle(id: patch.id) {
-            vehicles.insert(fresh, at: 0)
+            var hydrated = fresh
+            if let lat = patch.currentLatitude, let lng = patch.currentLongitude,
+               isCoordinateValid(latitude: lat, longitude: lng) {
+                hydrated.currentLatitude = lat
+                hydrated.currentLongitude = lng
+                latestVehicleCoordinateAtById[patch.id] = eventTimestamp
+            } else if let lat = hydrated.currentLatitude, let lng = hydrated.currentLongitude,
+                      isCoordinateValid(latitude: lat, longitude: lng) {
+                latestVehicleCoordinateAtById[patch.id] = hydrated.updatedAt
+            }
+            vehicles.insert(hydrated, at: 0)
             return
         }
 
-        // Last fallback when full fetch fails but realtime patch has coordinates.
-        if let lat = patch.currentLatitude, let lng = patch.currentLongitude {
-            let now = Date()
-            let fallback = Vehicle(
-                id: patch.id,
-                name: "Vehicle",
-                manufacturer: "",
-                model: "",
-                year: 0,
-                vin: "",
-                licensePlate: patch.id.uuidString.prefix(8).uppercased(),
-                color: "",
-                fuelType: .diesel,
-                seatingCapacity: 0,
-                status: patch.status ?? .idle,
-                assignedDriverId: patch.assignedDriverId,
-                currentLatitude: lat,
-                currentLongitude: lng,
-                odometer: 0,
-                totalTrips: 0,
-                totalDistanceKm: 0,
-                createdAt: now,
-                updatedAt: now
-            )
-            vehicles.insert(fallback, at: 0)
-        }
+        // Do not synthesize a vehicle row with placeholder values.
+        // Vehicle identity data must come from the authoritative vehicles table.
+        print("[AppDataStore] Ignoring vehicle realtime patch for unknown vehicle \(patch.id.uuidString)")
     }
 
     private func applyVehicleLocationRealtimeRecord<Record: Encodable>(_ record: Record) async {
         guard let patch = decodeVehicleLocationRealtimePatch(from: record) else { return }
+        guard isCoordinateValid(latitude: patch.latitude, longitude: patch.longitude) else { return }
+        let eventTimestamp = parseRealtimeTimestamp(patch.recordedAt) ?? Date()
+        guard shouldApplyVehicleCoordinateEvent(vehicleId: patch.vehicleId, timestamp: eventTimestamp) else { return }
+        latestVehicleCoordinateAtById[patch.vehicleId] = eventTimestamp
 
         if let idx = vehicles.firstIndex(where: { $0.id == patch.vehicleId }) {
             vehicles[idx].currentLatitude = patch.latitude
@@ -1521,33 +1629,16 @@ final class AppDataStore {
         }
 
         if let fresh = try? await VehicleService.fetchVehicle(id: patch.vehicleId) {
-            vehicles.insert(fresh, at: 0)
+            var hydrated = fresh
+            hydrated.currentLatitude = patch.latitude
+            hydrated.currentLongitude = patch.longitude
+            vehicles.insert(hydrated, at: 0)
             return
         }
 
-        let now = Date()
-        let fallback = Vehicle(
-            id: patch.vehicleId,
-            name: "Vehicle",
-            manufacturer: "",
-            model: "",
-            year: 0,
-            vin: "",
-            licensePlate: patch.vehicleId.uuidString.prefix(8).uppercased(),
-            color: "",
-            fuelType: .diesel,
-            seatingCapacity: 0,
-            status: .active,
-            assignedDriverId: patch.driverId?.uuidString,
-            currentLatitude: patch.latitude,
-            currentLongitude: patch.longitude,
-            odometer: 0,
-            totalTrips: 0,
-            totalDistanceKm: 0,
-            createdAt: now,
-            updatedAt: now
-        )
-        vehicles.insert(fallback, at: 0)
+        // Do not synthesize a vehicle row with placeholder values.
+        // Vehicle identity data must come from the authoritative vehicles table.
+        print("[AppDataStore] Ignoring location patch for unknown vehicle \(patch.vehicleId.uuidString)")
     }
 
     private func decodeVehicleRealtimePatch<Record: Encodable>(from record: Record) -> VehicleRealtimePatch? {
@@ -1559,6 +1650,81 @@ final class AppDataStore {
         guard let data = try? JSONEncoder().encode(record) else { return nil }
         return try? JSONDecoder().decode(VehicleLocationRealtimePatch.self, from: data)
     }
+
+    private func rememberVehicleCoordinateTimestamps(from vehicles: [Vehicle]) {
+        let knownIds = Set(vehicles.map(\.id))
+        latestVehicleCoordinateAtById = latestVehicleCoordinateAtById.filter { knownIds.contains($0.key) }
+        for vehicle in vehicles {
+            guard let lat = vehicle.currentLatitude, let lng = vehicle.currentLongitude,
+                  isCoordinateValid(latitude: lat, longitude: lng) else {
+                continue
+            }
+            let existing = latestVehicleCoordinateAtById[vehicle.id] ?? .distantPast
+            latestVehicleCoordinateAtById[vehicle.id] = max(existing, vehicle.updatedAt)
+        }
+    }
+
+    private func mergedVehiclesPreservingRealtimeCoordinates(
+        existing: [Vehicle],
+        fetched: [Vehicle]
+    ) -> [Vehicle] {
+        let existingById = Dictionary(uniqueKeysWithValues: existing.map { ($0.id, $0) })
+        return fetched.map { incoming in
+            var merged = incoming
+            guard let current = existingById[incoming.id] else { return merged }
+
+            let incomingHasCoordinate = {
+                guard let lat = incoming.currentLatitude, let lng = incoming.currentLongitude else { return false }
+                return isCoordinateValid(latitude: lat, longitude: lng)
+            }()
+            let currentHasCoordinate = {
+                guard let lat = current.currentLatitude, let lng = current.currentLongitude else { return false }
+                return isCoordinateValid(latitude: lat, longitude: lng)
+            }()
+            let latestRealtime = latestVehicleCoordinateAtById[incoming.id]
+
+            if let latestRealtime, incoming.updatedAt < latestRealtime, currentHasCoordinate {
+                merged.currentLatitude = current.currentLatitude
+                merged.currentLongitude = current.currentLongitude
+                return merged
+            }
+
+            if !incomingHasCoordinate, currentHasCoordinate, latestRealtime != nil {
+                merged.currentLatitude = current.currentLatitude
+                merged.currentLongitude = current.currentLongitude
+                return merged
+            }
+
+            return merged
+        }
+    }
+
+    private func shouldApplyVehicleCoordinateEvent(vehicleId: UUID, timestamp: Date) -> Bool {
+        guard let previous = latestVehicleCoordinateAtById[vehicleId] else { return true }
+        return timestamp >= previous
+    }
+
+    private func isCoordinateValid(latitude: Double, longitude: Double) -> Bool {
+        (-90...90).contains(latitude) && (-180...180).contains(longitude)
+    }
+
+    private func parseRealtimeTimestamp(_ value: String?) -> Date? {
+        guard let value else { return nil }
+        if let date = Self.realtimeISO8601WithFractional.date(from: value) { return date }
+        return Self.realtimeISO8601.date(from: value)
+    }
+
+    private static let realtimeISO8601WithFractional: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private static let realtimeISO8601: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
 
     // MARK: - Realtime — Trips (UPDATE + INSERT)
 
@@ -1843,11 +2009,12 @@ final class AppDataStore {
     /// Driver-side waiting state after pre-trip failure until FM reassigns vehicle.
     /// Backed by "Defect" emergency alert rows raised from pre-trip fail flow.
     func isTripWaitingForVehicleReassignment(_ trip: Trip) -> Bool {
-        emergencyAlerts.contains { alert in
+        guard let preInspection = preInspection(forTrip: trip.id),
+              preInspection.overallResult == .failed else { return false }
+        return emergencyAlerts.contains { alert in
             alert.tripId == trip.id
             && alert.alertType == .defect
             && (alert.status == .active || alert.status == .acknowledged)
-            && (alert.description?.lowercased().contains("pre-trip fail") ?? false)
         }
     }
 
@@ -2001,6 +2168,7 @@ final class AppDataStore {
     func endTrip(tripId: UUID, endMileage: Double? = nil) async throws {
         try await TripService.completeTrip(tripId: tripId, endMileage: endMileage)
         var completedTrip: Trip?
+        var fallbackDistanceKm: Double?
         if let idx = trips.firstIndex(where: { $0.id == tripId }) {
             let driverIdStr = trips[idx].driverId
             let vehicleId = trips[idx].vehicleUUID
@@ -2008,6 +2176,9 @@ final class AppDataStore {
             trips[idx].actualEndDate = Date()
             if let endMileage {
                 trips[idx].endMileage = endMileage
+            }
+            if let startMileage = trips[idx].startMileage, let finalMileage = trips[idx].endMileage {
+                fallbackDistanceKm = max(0, finalMileage - startMileage)
             }
             completedTrip = trips[idx]
             // Set driver back to Available
@@ -2032,6 +2203,27 @@ final class AppDataStore {
             let driverName = completedTrip.driverUUID
                 .flatMap { id in staff.first(where: { $0.id == id })?.displayName } ?? "Driver"
             await NotificationService.notifyAdminsTripEndedIfNeeded(trip: completedTrip, driverName: driverName)
+
+            do {
+                let partsLife = try await VehiclePartLifeService.processTripCompletion(
+                    tripId: completedTrip.id,
+                    fallbackDistanceKm: fallbackDistanceKm
+                )
+                if let profileIndex = vehiclePartLifeProfiles.firstIndex(where: { $0.vehicleId == partsLife.vehicleId }) {
+                    vehiclePartLifeProfiles[profileIndex] = partsLife.profile
+                } else {
+                    vehiclePartLifeProfiles.append(partsLife.profile)
+                }
+
+                if partsLife.serviceTaskId != nil {
+                    await refreshMaintenanceTasks(staffId: nil)
+                    if let vehicleIndex = vehicles.firstIndex(where: { $0.id == partsLife.vehicleId }) {
+                        vehicles[vehicleIndex].status = .inMaintenance
+                    }
+                }
+            } catch {
+                print("[AppDataStore.endTrip] Non-fatal: parts life processing failed: \(error)")
+            }
         }
         activeTripLocationHistory = []; currentTripDeviations = []; activeTripExpenses = []
     }

@@ -22,11 +22,13 @@ CREATE INDEX IF NOT EXISTS idx_prt_user_id ON public.password_reset_tokens(user_
 ALTER TABLE public.password_reset_tokens ENABLE ROW LEVEL SECURITY;
 
 -- Authenticated users can insert their own reset token
+DROP POLICY IF EXISTS prt_insert ON public.password_reset_tokens;
 CREATE POLICY prt_insert ON public.password_reset_tokens
   FOR INSERT TO authenticated
   WITH CHECK (true);
 
 -- Authenticated users can select their own tokens
+DROP POLICY IF EXISTS prt_select ON public.password_reset_tokens;
 CREATE POLICY prt_select ON public.password_reset_tokens
   FOR SELECT TO authenticated
   USING (email = (

@@ -49,7 +49,7 @@ struct DriverTripAcceptanceSheet: View {
                             } else {
                                 HStack(spacing: 10) {
                                     Image(systemName: "checkmark.circle.fill").font(.body.weight(.bold))
-                                    Text("Accept Trip").font(.system(size: 18, weight: .bold))
+                                    Text("Accept Trip").font(SierraFont.scaled(18, weight: .bold))
                                 }
                             }
                         }
@@ -84,7 +84,7 @@ struct DriverTripAcceptanceSheet: View {
             // Header
             HStack {
                 Text(trip.taskId)
-                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                    .font(SierraFont.scaled(13, weight: .semibold, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 8).padding(.vertical, 4)
                     .background(Color.gray.opacity(0.1), in: Capsule())

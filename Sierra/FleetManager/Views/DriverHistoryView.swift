@@ -87,7 +87,7 @@ struct DriverHistoryView: View {
                 .frame(width: 72, height: 72)
                 .overlay(
                     Text(String((driver?.name ?? "D").prefix(2)).uppercased())
-                        .font(.system(size: 24, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(24, weight: .bold, design: .rounded))
                 )
             Text(driver?.name ?? "Unknown").font(.title3.weight(.bold))
             HStack(spacing: 16) {
@@ -168,7 +168,7 @@ struct DriverHistoryView: View {
                     HStack(spacing: 2) {
                         ForEach(1...5, id: \.self) { i in
                             Image(systemName: i <= rating ? "star.fill" : "star")
-                                .font(.system(size: 10))
+                                .font(SierraFont.scaled(10))
                                 .foregroundStyle(i <= rating ? .orange : .gray.opacity(0.3))
                         }
                     }
@@ -210,10 +210,15 @@ struct DriverHistoryView: View {
 
                 HStack(spacing: 8) {
                     ForEach(1...5, id: \.self) { i in
-                        Image(systemName: i <= ratingValue ? "star.fill" : "star")
-                            .font(.title)
-                            .foregroundStyle(i <= ratingValue ? .orange : .gray.opacity(0.3))
-                            .onTapGesture { ratingValue = i }
+                        Button {
+                            ratingValue = i
+                        } label: {
+                            Image(systemName: i <= ratingValue ? "star.fill" : "star")
+                                .font(.title)
+                                .foregroundStyle(i <= ratingValue ? .orange : .gray.opacity(0.3))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Rate \(i) stars")
                     }
                 }
 

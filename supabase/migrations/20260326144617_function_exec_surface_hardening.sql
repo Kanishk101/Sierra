@@ -54,4 +54,4 @@ exception
   when insufficient_privilege then
     raise notice 'Skipping default sequence privilege hardening (insufficient privilege)';
 end
-$$;
+$$;;

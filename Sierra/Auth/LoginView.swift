@@ -14,7 +14,11 @@ struct LoginView: View {
 
     var body: some View {
         ZStack {
-            SierraTheme.Colors.appBackground.ignoresSafeArea()
+            SierraTheme.Colors.appBackground
+                .ignoresSafeArea()
+                .contentShape(Rectangle())
+                .onTapGesture { dismissKeyboard() }
+                .accessibilityHidden(true)
 
             ScrollView {
                 VStack(spacing: 20) {
@@ -37,7 +41,6 @@ struct LoginView: View {
                 loadingOverlay
             }
         }
-        .onTapGesture { dismissKeyboard() }
         .sheet(isPresented: $showForgotPassword) {
             NavigationStack { ForgotPasswordView() }
                 .presentationDetents([.large])
@@ -149,7 +152,7 @@ struct LoginView: View {
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: viewModel.biometricIcon)
-                    .font(.system(size: 22))
+                    .font(SierraFont.scaled(22))
                 Text(viewModel.biometricLabel)
                     .font(SierraFont.subheadline)
             }

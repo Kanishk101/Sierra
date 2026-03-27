@@ -5,7 +5,6 @@ import MapKit
 struct VehicleMapDetailSheet: View {
 
     let vehicle: Vehicle
-    var viewModel: FleetLiveMapViewModel
     var onDismiss: () -> Void
 
     @Environment(AppDataStore.self) private var store
@@ -72,11 +71,6 @@ struct VehicleMapDetailSheet: View {
         .onAppear {
             Task {
                 await loadLatestDetails()
-                if let trip = activeTrip {
-                    await viewModel.fetchBreadcrumb(vehicleId: displayedVehicle.id, tripId: trip.id)
-                } else {
-                    await viewModel.fetchRecentBreadcrumb(vehicleId: displayedVehicle.id)
-                }
             }
         }
     }
@@ -95,7 +89,7 @@ struct VehicleMapDetailSheet: View {
                 Text("\(displayedVehicle.name) \(displayedVehicle.model)")
                     .font(.headline)
                 Text(displayedVehicle.licensePlate)
-                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+                    .font(SierraFont.scaled(13, weight: .medium, design: .monospaced))
                     .foregroundStyle(.secondary)
                 HStack(spacing: 6) {
                     Circle()
@@ -122,7 +116,7 @@ struct VehicleMapDetailSheet: View {
                     .kerning(1)
 
                 Text(trip.taskId)
-                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    .font(SierraFont.scaled(12, weight: .bold, design: .monospaced))
                     .foregroundStyle(SierraTheme.Colors.ember)
 
                 HStack(spacing: 8) {
@@ -210,7 +204,7 @@ struct VehicleMapDetailSheet: View {
     private var idleSection: some View {
         VStack(spacing: 12) {
             Image(systemName: "moon.zzz.fill")
-                .font(.system(size: 32))
+                .font(SierraFont.scaled(32))
                 .foregroundStyle(.gray.opacity(0.5))
             Text("Vehicle is idle")
                 .font(.subheadline)
@@ -252,11 +246,6 @@ struct VehicleMapDetailSheet: View {
                 }
             }
 
-            // Breadcrumb trail
-            if viewModel.breadcrumbCoordinates.count >= 2 {
-                MapPolyline(coordinates: viewModel.breadcrumbCoordinates)
-                    .stroke(.orange, lineWidth: 3)
-            }
         }
         .frame(height: 220)
         .clipShape(RoundedRectangle(cornerRadius: 16))
@@ -292,7 +281,7 @@ struct VehicleMapDetailSheet: View {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
                             Text(trip.taskId)
-                                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                .font(SierraFont.scaled(12, weight: .bold, design: .monospaced))
                             Spacer()
                             Text(trip.status.rawValue)
                                 .font(.caption2.weight(.semibold))

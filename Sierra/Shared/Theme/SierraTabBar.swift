@@ -57,15 +57,19 @@ struct SierraTabViewModifier: ViewModifier {
         appearance.shadowColor = UIColor(SierraTheme.Colors.cloud)
 
         // Selected state
+        let selectedFont = UIFontMetrics(forTextStyle: .caption2)
+            .scaledFont(for: UIFont.systemFont(ofSize: 10, weight: .bold))
         let selectedAttributes: [NSAttributedString.Key: Any] = [
             .foregroundColor: UIColor(SierraTheme.Colors.ember),
-            .font: UIFont.systemFont(ofSize: 10, weight: .bold)
+            .font: selectedFont
         ]
 
         // Unselected state
+        let normalFont = UIFontMetrics(forTextStyle: .caption2)
+            .scaledFont(for: UIFont.systemFont(ofSize: 10, weight: .medium))
         let normalAttributes: [NSAttributedString.Key: Any] = [
             .foregroundColor: UIColor(SierraTheme.Colors.granite),
-            .font: UIFont.systemFont(ofSize: 10, weight: .medium)
+            .font: normalFont
         ]
 
         let itemAppearance = UITabBarItemAppearance()

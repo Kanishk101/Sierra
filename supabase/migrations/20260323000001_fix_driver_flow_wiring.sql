@@ -19,15 +19,31 @@
 -- ============================================================
 
 -- ── 1. Normalize existing trip rows ──────────────────────────
-UPDATE public.trips
-SET
-    driver_id           = LOWER(driver_id),
-    vehicle_id          = LOWER(vehicle_id),
-    created_by_admin_id = LOWER(created_by_admin_id)
-WHERE
-    (driver_id IS NOT NULL AND driver_id <> LOWER(driver_id))
-    OR (vehicle_id IS NOT NULL AND vehicle_id <> LOWER(vehicle_id))
-    OR (created_by_admin_id IS NOT NULL AND created_by_admin_id <> LOWER(created_by_admin_id));
+-- Only text columns need case-normalization. UUID columns are already
+-- case-insensitive at the type level and must not be passed to LOWER().
+DO $$
+DECLARE
+    col RECORD;
+BEGIN
+    FOR col IN
+        SELECT column_name, data_type
+          FROM information_schema.columns
+         WHERE table_schema = 'public'
+           AND table_name = 'trips'
+           AND column_name IN ('driver_id', 'vehicle_id', 'created_by_admin_id')
+    LOOP
+        IF col.data_type = 'text' THEN
+            EXECUTE format(
+                'UPDATE public.trips
+                    SET %1$I = LOWER(%1$I)
+                  WHERE %1$I IS NOT NULL
+                    AND %1$I <> LOWER(%1$I)',
+                col.column_name
+            );
+        END IF;
+    END LOOP;
+END;
+$$;
 
 DO $$ BEGIN RAISE NOTICE '[20260323000001] UUID normalization complete.'; END; $$;
 
@@ -38,19 +54,19 @@ DROP POLICY IF EXISTS trips_update_driver ON public.trips;
 CREATE POLICY trips_select_driver
     ON public.trips FOR SELECT TO authenticated
     USING (
-        LOWER(COALESCE(driver_id, '')) = LOWER(auth.uid()::text)
-        AND (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'driver'
+        LOWER(COALESCE(driver_id::text, '')) = LOWER(auth.uid()::text)
+        AND LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'driver'
     );
 
 CREATE POLICY trips_update_driver
     ON public.trips FOR UPDATE TO authenticated
     USING (
-        LOWER(COALESCE(driver_id, '')) = LOWER(auth.uid()::text)
-        AND (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'driver'
+        LOWER(COALESCE(driver_id::text, '')) = LOWER(auth.uid()::text)
+        AND LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'driver'
     )
     WITH CHECK (
-        LOWER(COALESCE(driver_id, '')) = LOWER(auth.uid()::text)
-        AND (SELECT role FROM public.staff_members WHERE id = auth.uid()) = 'driver'
+        LOWER(COALESCE(driver_id::text, '')) = LOWER(auth.uid()::text)
+        AND LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) = 'driver'
     );
 
 -- ── 3. Fix check_resource_overlap ────────────────────────────
@@ -69,7 +85,7 @@ AS $$
     SELECT
         EXISTS (
             SELECT 1 FROM trips
-            WHERE LOWER(driver_id) = LOWER(p_driver_id)
+            WHERE LOWER(driver_id::text) = LOWER(p_driver_id)
               AND status IN ('Scheduled','PendingAcceptance','Accepted','Active')
               AND (p_exclude_trip_id IS NULL OR LOWER(id::text) <> LOWER(p_exclude_trip_id))
               AND scheduled_date < p_end
@@ -77,7 +93,7 @@ AS $$
         ) AS driver_conflict,
         EXISTS (
             SELECT 1 FROM trips
-            WHERE LOWER(vehicle_id) = LOWER(p_vehicle_id)
+            WHERE LOWER(vehicle_id::text) = LOWER(p_vehicle_id)
               AND status IN ('Scheduled','PendingAcceptance','Accepted','Active')
               AND (p_exclude_trip_id IS NULL OR LOWER(id::text) <> LOWER(p_exclude_trip_id))
               AND scheduled_date < p_end
@@ -93,7 +109,7 @@ DROP POLICY IF EXISTS geofences_select_driver ON public.geofences;
 CREATE POLICY geofences_select_driver
     ON public.geofences FOR SELECT TO authenticated
     USING (
-        (SELECT role FROM public.staff_members WHERE id = auth.uid()) IN ('fleetManager','driver')
+        LOWER((SELECT role::text FROM public.staff_members WHERE id = auth.uid())) IN ('fleetmanager', 'driver')
     );
 
 -- ── 5. Ensure trip_status enum has PendingAcceptance (idempotent) ─

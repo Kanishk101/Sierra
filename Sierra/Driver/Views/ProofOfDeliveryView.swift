@@ -58,7 +58,7 @@ struct ProofOfDeliveryView: View {
                         // Title section
                         VStack(spacing: 6) {
                             Image(systemName: "checkmark.shield.fill")
-                                .font(.system(size: 40))
+                                .font(SierraFont.scaled(40))
                                 .foregroundStyle(
                                     LinearGradient(
                                         colors: [Color.appAmber, Color.appOrange],
@@ -68,11 +68,11 @@ struct ProofOfDeliveryView: View {
                                 )
 
                             Text("Delivery Verification")
-                                .font(.system(size: 22, weight: .bold, design: .rounded))
+                                .font(SierraFont.scaled(22, weight: .bold, design: .rounded))
                                 .foregroundColor(.appTextPrimary)
 
                             Text("Choose a method to verify delivery")
-                                .font(.system(size: 14, weight: .medium, design: .rounded))
+                                .font(SierraFont.scaled(14, weight: .medium, design: .rounded))
                                 .foregroundColor(.appTextSecondary)
                         }
                         .padding(.top, 4)
@@ -106,7 +106,7 @@ struct ProofOfDeliveryView: View {
                         dismiss()
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 24))
+                            .font(SierraFont.scaled(24))
                             .foregroundColor(.appTextSecondary)
                     }
                 }
@@ -148,9 +148,9 @@ struct ProofOfDeliveryView: View {
         } label: {
             VStack(spacing: 4) {
                 Image(systemName: icon)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(SierraFont.scaled(16, weight: .semibold))
                 Text(title)
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(12, weight: .bold, design: .rounded))
             }
             .foregroundColor(isSelected ? .white : .appTextSecondary)
             .frame(maxWidth: .infinity)
@@ -200,11 +200,11 @@ struct ProofOfDeliveryView: View {
                                 .fill(Color.appOrange.opacity(0.12))
                                 .frame(width: 52, height: 52)
                             Image(systemName: "camera.fill")
-                                .font(.system(size: 22, weight: .semibold))
+                                .font(SierraFont.scaled(22, weight: .semibold))
                                 .foregroundColor(.appOrange)
                         }
                         Text("Camera")
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .font(SierraFont.scaled(13, weight: .bold, design: .rounded))
                             .foregroundColor(.appTextPrimary)
                     }
                     .frame(maxWidth: .infinity)
@@ -237,11 +237,11 @@ struct ProofOfDeliveryView: View {
                                 .fill(Color.appOrange.opacity(0.12))
                                 .frame(width: 52, height: 52)
                             Image(systemName: "photo.on.rectangle")
-                                .font(.system(size: 22, weight: .semibold))
+                                .font(SierraFont.scaled(22, weight: .semibold))
                                 .foregroundColor(.appOrange)
                         }
                         Text("Gallery")
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .font(SierraFont.scaled(13, weight: .bold, design: .rounded))
                             .foregroundColor(.appTextPrimary)
                     }
                     .frame(maxWidth: .infinity)
@@ -279,7 +279,7 @@ struct ProofOfDeliveryView: View {
                         cameraImage = nil
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 24))
+                            .font(SierraFont.scaled(24))
                             .foregroundColor(.white)
                             .shadow(radius: 4)
                     }
@@ -288,10 +288,10 @@ struct ProofOfDeliveryView: View {
 
                 HStack(spacing: 6) {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 14, weight: .bold))
+                        .font(SierraFont.scaled(14, weight: .bold))
                         .foregroundColor(Color(red: 0.20, green: 0.65, blue: 0.32))
                     Text("Photo captured")
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(14, weight: .bold, design: .rounded))
                         .foregroundColor(Color(red: 0.20, green: 0.65, blue: 0.32))
                 }
                 .frame(maxWidth: .infinity)
@@ -309,10 +309,10 @@ struct ProofOfDeliveryView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Image(systemName: "signature")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(SierraFont.scaled(14, weight: .bold))
                     .foregroundColor(.appOrange)
                 Text("Draw Signature Below")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(15, weight: .bold, design: .rounded))
                     .foregroundColor(.appTextPrimary)
                 Spacer()
                 if !signatureLines.isEmpty {
@@ -322,9 +322,9 @@ struct ProofOfDeliveryView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "arrow.counterclockwise")
-                                .font(.system(size: 12, weight: .bold))
+                                .font(SierraFont.scaled(12, weight: .bold))
                             Text("Clear")
-                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                                .font(SierraFont.scaled(12, weight: .bold, design: .rounded))
                         }
                         .foregroundColor(Color(red: 0.90, green: 0.22, blue: 0.18))
                     }
@@ -347,10 +347,10 @@ struct ProofOfDeliveryView: View {
                 if signatureLines.isEmpty && currentLine.isEmpty {
                     VStack(spacing: 6) {
                         Image(systemName: "hand.draw.fill")
-                            .font(.system(size: 28))
+                            .font(SierraFont.scaled(28))
                             .foregroundColor(.appTextSecondary.opacity(0.3))
                         Text("Draw here")
-                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .font(SierraFont.scaled(13, weight: .medium, design: .rounded))
                             .foregroundColor(.appTextSecondary.opacity(0.5))
                     }
                 }
@@ -393,10 +393,10 @@ struct ProofOfDeliveryView: View {
             if !signatureLines.isEmpty {
                 HStack(spacing: 6) {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 14, weight: .bold))
+                        .font(SierraFont.scaled(14, weight: .bold))
                         .foregroundColor(Color(red: 0.20, green: 0.65, blue: 0.32))
                     Text("Signature captured")
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(14, weight: .bold, design: .rounded))
                         .foregroundColor(Color(red: 0.20, green: 0.65, blue: 0.32))
                 }
                 .frame(maxWidth: .infinity)
@@ -420,12 +420,12 @@ struct ProofOfDeliveryView: View {
                             .fill(Color.appOrange.opacity(0.12))
                             .frame(width: 64, height: 64)
                         Image(systemName: "number.circle.fill")
-                            .font(.system(size: 30, weight: .bold))
+                            .font(SierraFont.scaled(30, weight: .bold))
                             .foregroundColor(.appOrange)
                     }
 
                     Text("Generate a one-time code\nand share it with the recipient")
-                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .font(SierraFont.scaled(14, weight: .medium, design: .rounded))
                         .foregroundColor(.appTextSecondary)
                         .multilineTextAlignment(.center)
 
@@ -434,9 +434,9 @@ struct ProofOfDeliveryView: View {
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "key.fill")
-                                .font(.system(size: 14, weight: .bold))
+                                .font(SierraFont.scaled(14, weight: .bold))
                             Text("Generate OTP")
-                                .font(.system(size: 15, weight: .bold, design: .rounded))
+                                .font(SierraFont.scaled(15, weight: .bold, design: .rounded))
                         }
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
@@ -453,42 +453,42 @@ struct ProofOfDeliveryView: View {
                 // OTP sent confirmation (code intentionally hidden)
                 VStack(spacing: 10) {
                     Text("OTP SENT TO DRIVER ALERTS")
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(11, weight: .bold, design: .rounded))
                         .foregroundColor(.appTextSecondary)
                         .tracking(1.5)
 
                     HStack(spacing: 8) {
                         Image(systemName: "bell.badge.fill")
-                            .font(.system(size: 16, weight: .bold))
+                            .font(SierraFont.scaled(16, weight: .bold))
                             .foregroundColor(.appOrange)
                         Text("OTP sent as notification. Copy and paste here.")
-                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            .font(SierraFont.scaled(14, weight: .semibold, design: .rounded))
                             .foregroundColor(.appTextPrimary)
                     }
                     .multilineTextAlignment(.center)
 
                     HStack(spacing: 4) {
                         Image(systemName: "clock")
-                            .font(.system(size: 11))
+                            .font(SierraFont.scaled(11))
                         Text("Valid for 10 minutes")
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .font(SierraFont.scaled(12, weight: .medium, design: .rounded))
                     }
                     .foregroundColor(.appTextSecondary)
 
                     if otpSentNotification {
                         HStack(spacing: 5) {
                             Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 12, weight: .bold))
+                                .font(SierraFont.scaled(12, weight: .bold))
                             Text("Notification delivered")
-                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                .font(SierraFont.scaled(12, weight: .semibold, design: .rounded))
                         }
                         .foregroundColor(Color(red: 0.20, green: 0.65, blue: 0.32))
                     } else if otpNotificationFailed {
                         HStack(spacing: 5) {
                             Image(systemName: "exclamationmark.triangle.fill")
-                                .font(.system(size: 12, weight: .bold))
+                                .font(SierraFont.scaled(12, weight: .bold))
                             Text("Alerts sync delayed. OTP still valid here.")
-                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                .font(SierraFont.scaled(12, weight: .semibold, design: .rounded))
                         }
                         .foregroundColor(Color(red: 0.90, green: 0.22, blue: 0.18))
                     }
@@ -511,13 +511,13 @@ struct ProofOfDeliveryView: View {
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("RECIPIENT ENTERS CODE")
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(11, weight: .bold, design: .rounded))
                         .foregroundColor(.appTextSecondary)
                         .tracking(1)
 
                     TextField("Enter OTP", text: $otpEnteredByRecipient)
                         .keyboardType(.numberPad)
-                        .font(.system(size: 22, weight: .bold, design: .monospaced))
+                        .font(SierraFont.scaled(22, weight: .bold, design: .monospaced))
                         .foregroundColor(.appTextPrimary)
                         .padding(14)
                         .background(
@@ -540,9 +540,9 @@ struct ProofOfDeliveryView: View {
                         } label: {
                             HStack(spacing: 6) {
                                 Image(systemName: "checkmark.shield.fill")
-                                    .font(.system(size: 14, weight: .bold))
+                                    .font(SierraFont.scaled(14, weight: .bold))
                                 Text("Verify Code")
-                                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                                    .font(SierraFont.scaled(15, weight: .bold, design: .rounded))
                             }
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
@@ -555,9 +555,9 @@ struct ProofOfDeliveryView: View {
                     } else {
                         HStack(spacing: 6) {
                             Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 14, weight: .bold))
+                                .font(SierraFont.scaled(14, weight: .bold))
                             Text("OTP Verified")
-                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                                .font(SierraFont.scaled(14, weight: .bold, design: .rounded))
                         }
                         .foregroundColor(Color(red: 0.20, green: 0.65, blue: 0.32))
                         .frame(maxWidth: .infinity)
@@ -570,9 +570,9 @@ struct ProofOfDeliveryView: View {
                     if otpShowMismatch {
                         HStack(spacing: 4) {
                             Image(systemName: "exclamationmark.triangle.fill")
-                                .font(.system(size: 12))
+                                .font(SierraFont.scaled(12))
                             Text("Code does not match. Try again.")
-                                .font(.system(size: 13, weight: .medium, design: .rounded))
+                                .font(SierraFont.scaled(13, weight: .medium, design: .rounded))
                         }
                         .foregroundColor(Color(red: 0.90, green: 0.22, blue: 0.18))
                     }
@@ -580,9 +580,9 @@ struct ProofOfDeliveryView: View {
                     if otpExpired {
                         HStack(spacing: 4) {
                             Image(systemName: "clock.badge.exclamationmark.fill")
-                                .font(.system(size: 12))
+                                .font(SierraFont.scaled(12))
                             Text("OTP expired. Generate a new one.")
-                                .font(.system(size: 13, weight: .medium, design: .rounded))
+                                .font(SierraFont.scaled(13, weight: .medium, design: .rounded))
                         }
                         .foregroundColor(Color(red: 0.90, green: 0.22, blue: 0.18))
                     }
@@ -592,9 +592,9 @@ struct ProofOfDeliveryView: View {
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "arrow.clockwise.circle.fill")
-                                .font(.system(size: 13, weight: .bold))
+                                .font(SierraFont.scaled(13, weight: .bold))
                             Text("Regenerate OTP")
-                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                                .font(SierraFont.scaled(14, weight: .bold, design: .rounded))
                         }
                         .foregroundColor(.appOrange)
                         .frame(maxWidth: .infinity)
@@ -615,21 +615,21 @@ struct ProofOfDeliveryView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
                 Image(systemName: "person.fill")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(SierraFont.scaled(14, weight: .bold))
                     .foregroundColor(.appOrange)
                 Text("Recipient Details")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(15, weight: .bold, design: .rounded))
                     .foregroundColor(.appTextPrimary)
             }
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("RECIPIENT NAME")
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(11, weight: .bold, design: .rounded))
                     .foregroundColor(.appTextSecondary)
                     .tracking(1)
 
                 TextField("Enter recipient name", text: $recipientName)
-                    .font(.system(size: 15, weight: .medium, design: .rounded))
+                    .font(SierraFont.scaled(15, weight: .medium, design: .rounded))
                     .foregroundColor(.appTextPrimary)
                     .padding(12)
                     .background(
@@ -644,12 +644,12 @@ struct ProofOfDeliveryView: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("DELIVERY NOTES")
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(11, weight: .bold, design: .rounded))
                     .foregroundColor(.appTextSecondary)
                     .tracking(1)
 
                 TextField("Optional notes", text: $notes, axis: .vertical)
-                    .font(.system(size: 15, weight: .medium, design: .rounded))
+                    .font(SierraFont.scaled(15, weight: .medium, design: .rounded))
                     .foregroundColor(.appTextPrimary)
                     .lineLimit(3...6)
                     .padding(12)
@@ -687,10 +687,10 @@ struct ProofOfDeliveryView: View {
                         .tint(.white)
                 } else {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 16, weight: .bold))
+                        .font(SierraFont.scaled(16, weight: .bold))
                 }
                 Text("Submit Proof of Delivery")
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(16, weight: .bold, design: .rounded))
             }
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)

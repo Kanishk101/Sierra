@@ -9,6 +9,7 @@ struct MaintenanceHubView: View {
     @Environment(AppDataStore.self) private var store
     var showInlineHeader: Bool = true
     var topAccessory: AnyView? = nil
+    var openTaskId: UUID? = nil
 
     enum RequestTypeFilter: String, CaseIterable {
         case all = "All"; case repair = "Repair"; case service = "Service"
@@ -31,6 +32,7 @@ struct MaintenanceHubView: View {
     @State private var assigningTaskIds: Set<UUID> = []
     @State private var actionErrorMessage: String?
     @State private var showActionError = false
+    @State private var consumedOpenTaskId: UUID?
     
     private var adminId: UUID { AuthManager.shared.currentUser?.id ?? UUID() }
 
@@ -38,6 +40,7 @@ struct MaintenanceHubView: View {
         store.maintenanceTasks.sorted {
             if $0.status == .pending && $1.status != .pending { return true }
             if $0.status != .pending && $1.status == .pending { return false }
+            if $0.createdAt != $1.createdAt { return $0.createdAt > $1.createdAt }
             return $0.dueDate < $1.dueDate
         }
     }
@@ -57,7 +60,7 @@ struct MaintenanceHubView: View {
         allTasks.filter { matchesRequestType($0) }
     }
     private var totalCount: Int     { statsSourceTasks.count }
-    private var urgentCount: Int    { statsSourceTasks.filter { $0.priority == .urgent && ($0.status == .pending || $0.isEffectivelyAssigned || $0.status == .inProgress) }.count }
+    private var pendingCount: Int   { statsSourceTasks.filter { $0.status == .pending || $0.isEffectivelyAssigned || $0.status == .inProgress }.count }
     private var completedCount: Int { statsSourceTasks.filter { $0.status == .completed }.count }
 
     var body: some View {
@@ -141,6 +144,13 @@ struct MaintenanceHubView: View {
             Text(actionErrorMessage ?? "Something went wrong")
         }
         .task { if store.maintenanceTasks.isEmpty || store.workOrders.isEmpty { await store.loadAll() } }
+        .onAppear { openDeepLinkedTaskIfNeeded() }
+        .onChange(of: store.maintenanceTasks) { _, _ in
+            openDeepLinkedTaskIfNeeded()
+        }
+        .onChange(of: openTaskId) { _, _ in
+            openDeepLinkedTaskIfNeeded()
+        }
     }
 
     private var headerRow: some View {
@@ -152,7 +162,7 @@ struct MaintenanceHubView: View {
 
             Button { showInventoryAdmin = true } label: {
                 Image(systemName: "shippingbox")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(SierraFont.scaled(17, weight: .semibold))
                     .foregroundStyle(Color.appOrange)
             }
             .buttonStyle(.glass)
@@ -169,7 +179,7 @@ struct MaintenanceHubView: View {
     private var summaryRow: some View {
         HStack(spacing: 10) {
             summaryCard(value: totalCount,     label: "Total",     icon: "list.bullet.rectangle.fill", color: Color.appOrange)
-            summaryCard(value: urgentCount,    label: "Urgent",    icon: "flame.fill",                 color: .red)
+            summaryCard(value: pendingCount,   label: "Open",      icon: "clock.fill",                 color: .blue)
             summaryCard(value: completedCount, label: "Completed", icon: "checkmark.seal.fill",        color: .green)
         }
     }
@@ -177,12 +187,12 @@ struct MaintenanceHubView: View {
     private func summaryCard(value: Int, label: String, icon: String, color: Color) -> some View {
         VStack(spacing: 4) {
             HStack(spacing: 4) {
-                Image(systemName: icon).font(.system(size: 11, weight: .semibold))
-                Text("\(value)").font(.system(size: 20, weight: .bold, design: .rounded))
+                Image(systemName: icon).font(SierraFont.scaled(11, weight: .semibold))
+                Text("\(value)").font(SierraFont.scaled(20, weight: .bold, design: .rounded))
             }
             .foregroundStyle(color)
             Text(label)
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .font(SierraFont.scaled(10, weight: .semibold, design: .rounded))
                 .foregroundStyle(Color.appTextSecondary)
         }
         .frame(maxWidth: .infinity)
@@ -209,7 +219,7 @@ struct MaintenanceHubView: View {
     private func chipButton(title: String, isSelected: Bool, style: ChipStyle, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .font(SierraFont.scaled(13, weight: .semibold, design: .rounded))
                 .foregroundStyle(isSelected ? (style == .orange ? .white : Color.appOrange) : Color.appTextPrimary)
                 .padding(.horizontal, 16).padding(.vertical, 9)
                 .background(
@@ -230,19 +240,12 @@ struct MaintenanceHubView: View {
 
     private var filterMenu: some View {
         Menu {
-            Picker("Type", selection: $requestType) {
-                ForEach(RequestTypeFilter.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-            }
             Picker("Status", selection: $statusFilter) {
                 ForEach(StatusFilter.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }
-            if requestType != .all || statusFilter != .pending {
-                Divider()
-                Button("Reset Filters") { requestType = .all; statusFilter = .pending }
-            }
         } label: {
             Image(systemName: "line.3.horizontal.decrease.circle")
-                .font(.system(size: 18, weight: .semibold))
+                .font(SierraFont.scaled(18, weight: .semibold))
                 .foregroundStyle(Color.appTextPrimary)
         }
     }
@@ -263,11 +266,11 @@ struct MaintenanceHubView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text(title)
-                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(17, weight: .bold, design: .rounded))
                     .foregroundStyle(Color.appTextPrimary)
                 Spacer()
                 Text("\(tasks.count)")
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(11, weight: .bold, design: .rounded))
                     .foregroundStyle(Color.appOrange)
                     .padding(.horizontal, 10).padding(.vertical, 4)
                     .background(Color.appOrange.opacity(0.1), in: Capsule())
@@ -276,6 +279,7 @@ struct MaintenanceHubView: View {
                 AdminMaintenanceTaskCard(
                     task: task,
                     vehicle: store.vehicle(for: task.vehicleId),
+                    requester: store.staffMember(for: task.createdByAdminId),
                     workOrder: store.workOrder(forMaintenanceTask: task.id),
                     phaseSummary: phaseSummary(for: task),
                     onOpenDetail: { selectedTask = task },
@@ -298,11 +302,11 @@ struct MaintenanceHubView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("Parts Approval")
-                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(17, weight: .bold, design: .rounded))
                     .foregroundStyle(Color.appTextPrimary)
                 Spacer()
                 Text("\(pendingPartRequests.count)")
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(11, weight: .bold, design: .rounded))
                     .foregroundStyle(Color.appOrange)
                     .padding(.horizontal, 10).padding(.vertical, 4)
                     .background(Color.appOrange.opacity(0.1), in: Capsule())
@@ -328,13 +332,13 @@ struct MaintenanceHubView: View {
         VStack(spacing: 14) {
             Spacer(minLength: 40)
             Image(systemName: "wrench.and.screwdriver")
-                .font(.system(size: 48, weight: .light))
+                .font(SierraFont.scaled(48, weight: .light))
                 .foregroundStyle(Color.appOrange.opacity(0.35))
             Text("No requests found")
-                .font(.system(size: 20, weight: .bold, design: .rounded))
+                .font(SierraFont.scaled(20, weight: .bold, design: .rounded))
                 .foregroundStyle(Color.appTextPrimary)
             Text("Try changing status or filter options.")
-                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .font(SierraFont.scaled(14, weight: .medium, design: .rounded))
                 .foregroundStyle(Color.appTextSecondary)
             Spacer()
         }
@@ -413,8 +417,12 @@ struct MaintenanceHubView: View {
                 tripId: sourceTripId
             )
             await store.loadAll()
+            if let refreshed = store.maintenanceTasks.first(where: { $0.id == task.id }) {
+                assignTaskTarget = refreshed
+            }
         } catch {
-            selectedTask = task
+            actionErrorMessage = "Failed to approve task: \(error.localizedDescription)"
+            showActionError = true
         }
     }
 
@@ -428,6 +436,13 @@ struct MaintenanceHubView: View {
         recentlyRejectedTaskIds.insert(task.id)
         do {
             try await MaintenanceTaskService.rejectTask(taskId: task.id, approvedById: adminId, reason: cleanReason)
+            let sourceTripId = task.sourceInspectionId.flatMap { inspectionId in
+                store.vehicleInspections.first(where: { $0.id == inspectionId })?.tripId
+            }
+            await MaintenanceTaskService.resolveLinkedDefectAlertsOnTerminalDecision(
+                task: task,
+                tripId: sourceTripId
+            )
 
             if let idx = store.maintenanceTasks.firstIndex(where: { $0.id == task.id }) {
                 store.maintenanceTasks[idx].status = .cancelled
@@ -446,7 +461,10 @@ struct MaintenanceHubView: View {
         assigningTaskIds.insert(task.id)
         defer { assigningTaskIds.remove(task.id) }
         do {
-            try await MaintenanceTaskService.assignApprovedTask(taskId: task.id, assignedToId: assigneeId)
+            try await store.assignApprovedMaintenanceTaskAndEnsureWorkOrder(
+                taskId: task.id,
+                assignedToId: assigneeId
+            )
             try? await NotificationService.insertNotification(
                 recipientId: assigneeId,
                 type: .general,
@@ -457,7 +475,8 @@ struct MaintenanceHubView: View {
             )
             await store.loadAll()
         } catch {
-            selectedTask = task
+            actionErrorMessage = "Failed to assign task: \(error.localizedDescription)"
+            showActionError = true
         }
     }
 
@@ -474,6 +493,15 @@ struct MaintenanceHubView: View {
     private func isApprovedAwaitingAssignment(_ task: MaintenanceTask) -> Bool {
         task.isApprovedAwaitingAssignment
     }
+
+    private func openDeepLinkedTaskIfNeeded() {
+        guard let openTaskId else { return }
+        guard consumedOpenTaskId != openTaskId else { return }
+        guard let task = store.maintenanceTasks.first(where: { $0.id == openTaskId }) else { return }
+        consumedOpenTaskId = openTaskId
+        statusFilter = .all
+        selectedTask = task
+    }
 }
 
 // MARK: - Admin Task Card
@@ -481,6 +509,7 @@ struct MaintenanceHubView: View {
 private struct AdminMaintenanceTaskCard: View {
     let task: MaintenanceTask
     let vehicle: Vehicle?
+    let requester: StaffMember?
     let workOrder: WorkOrder?
     let phaseSummary: String
     var onOpenDetail: () -> Void
@@ -502,8 +531,8 @@ private struct AdminMaintenanceTaskCard: View {
                     // Row 1: id + status
                     HStack(alignment: .center, spacing: 6) {
                         HStack(spacing: 4) {
-                            Image(systemName: "number").font(.system(size: 10, weight: .bold))
-                            Text(taskIdText).font(.system(size: 11, weight: .bold, design: .monospaced))
+                            Image(systemName: "number").font(SierraFont.scaled(10, weight: .bold))
+                            Text(taskIdText).font(SierraFont.scaled(11, weight: .bold, design: .monospaced))
                         }
                         .foregroundStyle(Color.appOrange)
 
@@ -514,7 +543,7 @@ private struct AdminMaintenanceTaskCard: View {
 
                     // Row 2: Title
                     Text(task.title)
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(16, weight: .bold, design: .rounded))
                         .foregroundStyle(Color.appTextPrimary)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
@@ -522,11 +551,11 @@ private struct AdminMaintenanceTaskCard: View {
                     // Row 3: Vehicle pill
                     if let v = vehicle {
                         HStack(spacing: 8) {
-                            Image(systemName: "car.fill").font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.appOrange)
-                            Text(v.licensePlate).font(.system(size: 11, weight: .bold, design: .monospaced)).foregroundStyle(Color.appOrange)
-                            Text(v.name).font(.system(size: 12, weight: .medium, design: .rounded)).foregroundStyle(Color.appTextSecondary).lineLimit(1)
+                            Image(systemName: "car.fill").font(SierraFont.scaled(12, weight: .semibold)).foregroundStyle(Color.appOrange)
+                            Text(v.licensePlate).font(SierraFont.scaled(11, weight: .bold, design: .monospaced)).foregroundStyle(Color.appOrange)
+                            Text(v.name).font(SierraFont.scaled(12, weight: .medium, design: .rounded)).foregroundStyle(Color.appTextSecondary).lineLimit(1)
                             Spacer()
-                            Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold)).foregroundStyle(Color.appTextSecondary)
+                            Image(systemName: "chevron.right").font(SierraFont.scaled(10, weight: .bold)).foregroundStyle(Color.appTextSecondary)
                         }
                         .padding(.horizontal, 12).padding(.vertical, 9)
                         .background(Color.appOrange.opacity(0.07), in: Capsule())
@@ -536,25 +565,37 @@ private struct AdminMaintenanceTaskCard: View {
                     HStack(spacing: 10) {
                         if let eta = workOrder?.estimatedCompletionAt {
                             HStack(spacing: 4) {
-                                Image(systemName: "clock").font(.system(size: 11))
+                                Image(systemName: "clock").font(SierraFont.scaled(11))
                                 Text(eta.formatted(.dateTime.month(.abbreviated).day().hour().minute()))
-                                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                    .font(SierraFont.scaled(12, weight: .semibold, design: .rounded))
                             }
                             .foregroundStyle(Color.appTextSecondary)
                         } else {
                             HStack(spacing: 4) {
-                                Image(systemName: "calendar").font(.system(size: 11))
+                                Image(systemName: "calendar").font(SierraFont.scaled(11))
                                 Text(task.dueDate.formatted(.dateTime.month(.abbreviated).day()))
-                                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                    .font(SierraFont.scaled(12, weight: .semibold, design: .rounded))
                             }
                             .foregroundStyle(Color.appTextSecondary)
                         }
                         Spacer()
                         HStack(spacing: 5) {
-                            Image(systemName: "list.number").font(.system(size: 11))
-                            Text(phaseSummary).font(.system(size: 12, weight: .medium, design: .rounded))
+                            Image(systemName: "list.number").font(SierraFont.scaled(11))
+                            Text(phaseSummary).font(SierraFont.scaled(12, weight: .medium, design: .rounded))
                         }
                         .foregroundStyle(Color.appTextSecondary)
+                    }
+
+                    if let requester {
+                        HStack(spacing: 6) {
+                            Image(systemName: "person.fill")
+                                .font(SierraFont.scaled(11, weight: .semibold))
+                                .foregroundStyle(Color.appOrange)
+                            Text("Requested by \(requester.displayName)")
+                                .font(SierraFont.scaled(12, weight: .semibold, design: .rounded))
+                                .foregroundStyle(Color.appTextSecondary)
+                            Spacer()
+                        }
                     }
                 }
             }
@@ -565,9 +606,9 @@ private struct AdminMaintenanceTaskCard: View {
             if isRejected {
                 HStack(spacing: 6) {
                     Image(systemName: "xmark.octagon.fill")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(SierraFont.scaled(13, weight: .semibold))
                     Text("Rejected")
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(14, weight: .bold, design: .rounded))
                 }
                 .foregroundStyle(.red)
                 .frame(maxWidth: .infinity)
@@ -579,8 +620,8 @@ private struct AdminMaintenanceTaskCard: View {
                     Button(action: onReject) {
                         HStack(spacing: 6) {
                             if isRejecting { ProgressView().tint(.red).scaleEffect(0.8) }
-                            Image(systemName: "xmark.circle").font(.system(size: 13, weight: .semibold))
-                            Text("Reject").font(.system(size: 14, weight: .bold, design: .rounded))
+                            Image(systemName: "xmark.circle").font(SierraFont.scaled(13, weight: .semibold))
+                            Text("Reject").font(SierraFont.scaled(14, weight: .bold, design: .rounded))
                         }
                         .foregroundStyle(.red)
                         .frame(maxWidth: .infinity)
@@ -594,8 +635,8 @@ private struct AdminMaintenanceTaskCard: View {
                     Button(action: onApprove) {
                         HStack(spacing: 6) {
                             if isApproving { ProgressView().tint(.white).scaleEffect(0.8) }
-                            Image(systemName: "checkmark.seal.fill").font(.system(size: 13, weight: .semibold))
-                            Text("Approve").font(.system(size: 14, weight: .bold, design: .rounded))
+                            Image(systemName: "checkmark.seal.fill").font(SierraFont.scaled(13, weight: .semibold))
+                            Text("Approve").font(SierraFont.scaled(14, weight: .bold, design: .rounded))
                         }
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
@@ -609,9 +650,9 @@ private struct AdminMaintenanceTaskCard: View {
                 Button(action: onAssign) {
                     HStack(spacing: 6) {
                         if isAssigning { ProgressView().tint(.white).scaleEffect(0.8) }
-                        Image(systemName: "person.2.fill").font(.system(size: 13, weight: .semibold))
+                        Image(systemName: "person.2.fill").font(SierraFont.scaled(13, weight: .semibold))
                         Text("Assign Maintenance Personnel")
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .font(SierraFont.scaled(14, weight: .bold, design: .rounded))
                     }
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
@@ -635,7 +676,7 @@ private struct AdminMaintenanceTaskCard: View {
         HStack(spacing: 4) {
             Circle().fill(statusTint).frame(width: 6, height: 6)
             Text(task.isEffectivelyAssigned ? MaintenanceTaskStatus.assigned.rawValue : task.status.rawValue)
-                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .font(SierraFont.scaled(10, weight: .bold, design: .rounded))
         }
         .foregroundStyle(statusTint)
         .padding(.horizontal, 10).padding(.vertical, 5)
@@ -662,7 +703,7 @@ private struct AssignMaintenanceStaffScreen: View {
         VStack(alignment: .leading, spacing: 14) {
             if candidates.isEmpty {
                 Text("No free maintenance personnel available right now.")
-                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                    .font(SierraFont.scaled(14, weight: .medium, design: .rounded))
                     .foregroundStyle(Color.appTextSecondary)
                     .padding(.top, 8)
             } else {
@@ -677,20 +718,20 @@ private struct AssignMaintenanceStaffScreen: View {
                                     ZStack {
                                         Circle().fill(Color.appOrange.opacity(0.12)).frame(width: 34, height: 34)
                                         Text(staff.initials)
-                                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                                            .font(SierraFont.scaled(12, weight: .bold, design: .rounded))
                                             .foregroundStyle(Color.appOrange)
                                     }
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(staff.displayName)
-                                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                                            .font(SierraFont.scaled(14, weight: .bold, design: .rounded))
                                             .foregroundStyle(Color.appTextPrimary)
                                         Text(staff.availability.rawValue)
-                                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                            .font(SierraFont.scaled(11, weight: .semibold, design: .rounded))
                                             .foregroundStyle(Color.appTextSecondary)
                                     }
                                     Spacer()
                                     Image(systemName: "chevron.right")
-                                        .font(.system(size: 11, weight: .bold))
+                                        .font(SierraFont.scaled(11, weight: .bold))
                                         .foregroundStyle(Color.appTextSecondary)
                                 }
                                 .padding(.horizontal, 12)
@@ -731,26 +772,26 @@ private struct AdminSparePartApprovalCard: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(part.partName).font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextPrimary)
+                    Text(part.partName).font(SierraFont.scaled(15, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextPrimary)
                     if let pn = part.partNumber, !pn.isEmpty {
-                        Text("Part #\(pn)").font(.system(size: 11, weight: .semibold, design: .monospaced)).foregroundStyle(Color.appTextSecondary)
+                        Text("Part #\(pn)").font(SierraFont.scaled(11, weight: .semibold, design: .monospaced)).foregroundStyle(Color.appTextSecondary)
                     }
                 }
                 Spacer()
                 Text("×\(part.quantity)")
-                    .font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(Color.appOrange)
+                    .font(SierraFont.scaled(13, weight: .bold, design: .rounded)).foregroundStyle(Color.appOrange)
                     .padding(.horizontal, 10).padding(.vertical, 5).background(Color.appOrange.opacity(0.1), in: Capsule())
             }
 
             if let t = task {
                 Button(action: onOpenTask) {
                     HStack(spacing: 6) {
-                        Image(systemName: "wrench.and.screwdriver").font(.system(size: 11))
+                        Image(systemName: "wrench.and.screwdriver").font(SierraFont.scaled(11))
                         Text(t.title).lineLimit(1)
                         Spacer()
-                        Image(systemName: "chevron.right").font(.system(size: 10))
+                        Image(systemName: "chevron.right").font(SierraFont.scaled(10))
                     }
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .font(SierraFont.scaled(12, weight: .semibold, design: .rounded))
                     .foregroundStyle(Color.appTextSecondary)
                     .padding(.horizontal, 12).padding(.vertical, 8)
                     .background(Color.appDivider.opacity(0.25), in: RoundedRectangle(cornerRadius: 10))
@@ -761,14 +802,14 @@ private struct AdminSparePartApprovalCard: View {
             HStack(spacing: 10) {
                 if let v = vehicle {
                     HStack(spacing: 4) {
-                        Image(systemName: "car.fill").font(.system(size: 11))
-                        Text(v.licensePlate).font(.system(size: 11, weight: .bold, design: .monospaced))
+                        Image(systemName: "car.fill").font(SierraFont.scaled(11))
+                        Text(v.licensePlate).font(SierraFont.scaled(11, weight: .bold, design: .monospaced))
                     }.foregroundStyle(Color.appOrange)
                 }
                 if let r = requester {
                     HStack(spacing: 4) {
-                        Image(systemName: "person.fill").font(.system(size: 11))
-                        Text(r.displayName).font(.system(size: 12, weight: .semibold, design: .rounded)).lineLimit(1)
+                        Image(systemName: "person.fill").font(SierraFont.scaled(11))
+                        Text(r.displayName).font(SierraFont.scaled(12, weight: .semibold, design: .rounded)).lineLimit(1)
                     }.foregroundStyle(Color.appTextSecondary)
                 }
             }
@@ -777,14 +818,14 @@ private struct AdminSparePartApprovalCard: View {
 
             HStack(spacing: 12) {
                 Button(action: onReject) {
-                    Text("Reject").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.red)
+                    Text("Reject").font(SierraFont.scaled(14, weight: .bold, design: .rounded)).foregroundStyle(.red)
                         .frame(maxWidth: .infinity).padding(.vertical, 12)
                         .background(Capsule().fill(Color.red.opacity(0.08)))
                         .overlay(Capsule().stroke(Color.red.opacity(0.2), lineWidth: 1.5))
                 }
                 .buttonStyle(.plain)
                 Button(action: onApprove) {
-                    Text("Approve").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                    Text("Approve").font(SierraFont.scaled(14, weight: .bold, design: .rounded)).foregroundStyle(.white)
                         .frame(maxWidth: .infinity).padding(.vertical, 12)
                         .background(Capsule().fill(Color.appTextPrimary))
                 }
@@ -815,7 +856,7 @@ private struct RejectReasonSheet: View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 16) {
                 Text(subtitle)
-                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                    .font(SierraFont.scaled(14, weight: .medium, design: .rounded))
                     .foregroundStyle(Color.appTextSecondary)
 
                 ZStack(alignment: .topLeading) {
@@ -825,7 +866,7 @@ private struct RejectReasonSheet: View {
                         .frame(minHeight: 130)
                     if reason.isEmpty {
                         Text(placeholder)
-                            .font(.system(size: 14, weight: .medium, design: .rounded))
+                            .font(SierraFont.scaled(14, weight: .medium, design: .rounded))
                             .foregroundStyle(Color.appTextSecondary.opacity(0.5))
                             .padding(14)
                     }
@@ -839,7 +880,7 @@ private struct RejectReasonSheet: View {
                     onConfirm(trimmed); dismiss()
                 } label: {
                     Text(confirmTitle)
-                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(15, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity).padding(.vertical, 14)
                         .background(trimmed.isEmpty ? Color.gray : confirmColor, in: Capsule())

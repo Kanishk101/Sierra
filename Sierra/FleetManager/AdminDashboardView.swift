@@ -5,6 +5,7 @@ struct AdminDashboardView: View {
     @State private var searchText       = ""
     @State private var selectedTab      = 0
     @State private var lastContentTab   = 0
+    @State private var isSearchPresented = false
     @State private var showQuickActions = false
     @State private var mapViewModel     = FleetLiveMapViewModel()
     /// Tracks which segment is active inside the Trips tab (0 = Live Map, 1 = Trips)
@@ -19,11 +20,14 @@ struct AdminDashboardView: View {
     @State private var showAddVehicle        = false
     @State private var showCreateStaff       = false
     @State private var showCreateMaintenance = false
+    @State private var vehiclesInitialSegmentMode: Int = 0
+    @State private var vehiclesOpenMaintenanceTaskId: UUID?
 
     private var mapSearchMatches: [Vehicle] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return store.vehicles }
-        return store.vehicles.filter { vehicle in
+        let indiaScoped = store.vehicles.filter { mapViewModel.coordinate(for: $0) != nil }
+        guard !query.isEmpty else { return indiaScoped }
+        return indiaScoped.filter { vehicle in
             vehicle.name.localizedCaseInsensitiveContains(query)
             || vehicle.licensePlate.localizedCaseInsensitiveContains(query)
             || vehicle.model.localizedCaseInsensitiveContains(query)
@@ -37,7 +41,12 @@ struct AdminDashboardView: View {
             }
 
             Tab("Vehicles", systemImage: "car.fill", value: 1) {
-                NavigationStack { VehicleListView() }
+                NavigationStack {
+                    VehicleListView(
+                        initialSegmentMode: vehiclesInitialSegmentMode,
+                        initialMaintenanceTaskId: vehiclesOpenMaintenanceTaskId
+                    )
+                }
             }
 
             Tab("Staff", systemImage: "person.2.fill", value: 2) {
@@ -61,20 +70,35 @@ struct AdminDashboardView: View {
                 }
             }
         }
-        .tint(.orange)
+        .tint(SierraTheme.Colors.ember)
         .task {
             if store.vehicles.isEmpty || store.staff.isEmpty { await store.loadAll() }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
             Task { await store.loadAll() }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .sierraOpenVehicleMaintenance)) { note in
+            let taskId: UUID? = {
+                if let raw = note.userInfo?["taskId"] as? UUID { return raw }
+                if let raw = note.userInfo?["taskId"] as? String { return UUID(uuidString: raw) }
+                return nil
+            }()
+            vehiclesOpenMaintenanceTaskId = taskId
+            vehiclesInitialSegmentMode = 1
+            selectedTab = 1
+        }
         .onChange(of: selectedTab) { _, newValue in
             if newValue == 4 && lastContentTab == 0 {
                 showQuickActions = true
                 selectedTab = 0
+                isSearchPresented = false
+            } else if newValue == 4 {
+                // Trigger native search expansion when the Search tab is selected.
+                isSearchPresented = true
             } else if newValue != 4 {
                 lastContentTab = newValue
                 searchText = ""
+                isSearchPresented = false
             }
         }
         .sheet(isPresented: $showQuickActions) {
@@ -94,7 +118,7 @@ struct AdminDashboardView: View {
                 default: break
                 }
             }
-            .presentationDetents([.large])
+            .presentationDetents([.height(340)])
             .presentationBackground(Color(.systemBackground))
             .presentationDragIndicator(.visible)
         }
@@ -119,12 +143,17 @@ struct AdminDashboardView: View {
     private var searchTabContent: some View {
         switch lastContentTab {
         case 1:
-            NavigationStack { VehicleListView() }
-                .searchable(text: $searchText, prompt: "Search vehicles\u{2026}")
+            NavigationStack {
+                VehicleListView(
+                    initialSegmentMode: vehiclesInitialSegmentMode,
+                    initialMaintenanceTaskId: vehiclesOpenMaintenanceTaskId
+                )
+            }
+                .searchable(text: $searchText, isPresented: $isSearchPresented, prompt: "Search vehicles\u{2026}")
 
         case 2:
             StaffTabView()
-                .searchable(text: $searchText, prompt: "Search staff\u{2026}")
+                .searchable(text: $searchText, isPresented: $isSearchPresented, prompt: "Search staff\u{2026}")
 
         case 3:
             if tripsMapSegment == 0 {
@@ -145,7 +174,7 @@ struct AdminDashboardView: View {
                                 } label: {
                                     HStack(spacing: 12) {
                                         Image(systemName: "car.fill")
-                                            .font(.system(size: 16, weight: .semibold))
+                                            .font(SierraFont.scaled(16, weight: .semibold))
                                             .frame(width: 32, height: 32)
                                             .background(Color.blue.opacity(0.12), in: Circle())
                                         VStack(alignment: .leading, spacing: 2) {
@@ -168,17 +197,28 @@ struct AdminDashboardView: View {
                     }
                     .listStyle(.insetGrouped)
                     .navigationTitle("Find on Live Map")
+                    .navigationBarTitleDisplayMode(.large)
                 }
-                .searchable(text: $searchText, prompt: "Find vehicle on map…")
+                .searchable(text: $searchText, isPresented: $isSearchPresented, prompt: "Find vehicle on map…")
             } else {
                 // Trips segment — trip list search
-                NavigationStack { TripsListView() }
-                    .searchable(text: $searchText, prompt: "Search trips\u{2026}")
+                NavigationStack {
+                    TripsListView(
+                        externalSearchText: $searchText,
+                        usesInlineNavigationTitle: false
+                    )
+                }
+                    .searchable(text: $searchText, isPresented: $isSearchPresented, prompt: "Search trips\u{2026}")
             }
 
         default:
-            NavigationStack { VehicleListView() }
-                .searchable(text: $searchText, prompt: "Search\u{2026}")
+            NavigationStack {
+                VehicleListView(
+                    initialSegmentMode: vehiclesInitialSegmentMode,
+                    initialMaintenanceTaskId: vehiclesOpenMaintenanceTaskId
+                )
+            }
+                .searchable(text: $searchText, isPresented: $isSearchPresented, prompt: "Search\u{2026}")
         }
     }
 }

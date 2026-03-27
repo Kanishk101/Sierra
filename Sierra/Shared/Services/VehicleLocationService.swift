@@ -37,7 +37,50 @@ final class VehicleLocationService {
         guard Date().timeIntervalSince(lastPublishTime) >= minimumPublishIntervalSeconds else { return }
         lastPublishTime = Date()
 
-        struct HistoryPayload: Encodable {
+        let now = VehicleLocationService.iso.string(from: Date())
+        let rpcParams: [String: AnyJSON] = [
+            "p_vehicle_id": .string(vehicleId.uuidString),
+            "p_trip_id": .string(tripId.uuidString),
+            "p_driver_id": .string(driverId.uuidString),
+            "p_latitude": .double(latitude),
+            "p_longitude": .double(longitude),
+            "p_speed_kmh": speedKmh.map(AnyJSON.double) ?? .null,
+            "p_recorded_at": .string(now),
+        ]
+
+        // Preferred path: security-definer RPC performs atomic history insert + vehicle location update.
+        do {
+            try await supabase
+                .rpc("driver_publish_vehicle_location", params: rpcParams)
+                .execute()
+            return
+        } catch {
+            #if DEBUG
+            print("[VehicleLocationService] RPC publish failed, attempting legacy fallback: \(error)")
+            #endif
+        }
+
+        try await publishLocationLegacy(
+            vehicleId: vehicleId,
+            tripId: tripId,
+            driverId: driverId,
+            latitude: latitude,
+            longitude: longitude,
+            speedKmh: speedKmh,
+            recordedAt: now
+        )
+    }
+
+    private func publishLocationLegacy(
+        vehicleId: UUID,
+        tripId: UUID,
+        driverId: UUID,
+        latitude: Double,
+        longitude: Double,
+        speedKmh: Double?,
+        recordedAt: String
+    ) async throws {
+        struct HistoryPayload: Encodable, Sendable {
             let vehicle_id: String
             let trip_id: String
             let driver_id: String
@@ -47,14 +90,11 @@ final class VehicleLocationService {
             let recorded_at: String
         }
 
-        struct LocationPayload: Encodable {
+        struct LocationPayload: Encodable, Sendable {
             let current_latitude: Double
             let current_longitude: Double
         }
 
-        let now = VehicleLocationService.iso.string(from: Date())
-
-        // 1. Insert into vehicle_location_history
         try await supabase
             .from("vehicle_location_history")
             .insert(HistoryPayload(
@@ -64,11 +104,10 @@ final class VehicleLocationService {
                 latitude: latitude,
                 longitude: longitude,
                 speed_kmh: speedKmh,
-                recorded_at: now
+                recorded_at: recordedAt
             ))
             .execute()
 
-        // 2. Update vehicle's current position
         try await supabase
             .from("vehicles")
             .update(LocationPayload(current_latitude: latitude, current_longitude: longitude))

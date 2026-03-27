@@ -6,7 +6,6 @@ struct RepairTaskListView: View {
     @Environment(AppDataStore.self) private var store
     @State private var statusFilter: MaintenanceTaskStatus? = nil
     @State private var searchText = ""
-    @State private var showProfile = false
     @State private var vehicleSheetVehicle: Vehicle?
 
     private var currentUserId: UUID { AuthManager.shared.currentUser?.id ?? UUID() }
@@ -70,15 +69,10 @@ struct RepairTaskListView: View {
         .navigationTitle("Repairs")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) { profileButton }
             ToolbarItem(placement: .topBarTrailing) { filterMenuButton }
         }
         .navigationDestination(for: MaintenanceTask.self) { task in
             MaintenanceTaskDetailView(task: task)
-        }
-        .sheet(isPresented: $showProfile) {
-            MaintenanceProfileView()
-                .environment(store)
         }
         .sheet(item: $vehicleSheetVehicle) { vehicle in
             VehicleQuickStatusSheet(vehicle: vehicle)
@@ -99,7 +93,7 @@ struct RepairTaskListView: View {
             TextField("Search task ID, vehicle, title…", text: $searchText)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled(true)
-                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .font(SierraFont.scaled(14, weight: .medium, design: .rounded))
             if !searchText.isEmpty {
                 Button { searchText = "" } label: {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(Color.appTextSecondary)
@@ -132,13 +126,13 @@ struct RepairTaskListView: View {
         VStack(spacing: 4) {
             HStack(spacing: 4) {
                 Image(systemName: icon)
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(SierraFont.scaled(10, weight: .semibold))
                 Text("\(value)")
-                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(20, weight: .bold, design: .rounded))
             }
             .foregroundStyle(tint)
             Text(label)
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .font(SierraFont.scaled(10, weight: .semibold, design: .rounded))
                 .foregroundStyle(Color.appTextSecondary)
         }
         .frame(maxWidth: .infinity)
@@ -166,34 +160,8 @@ struct RepairTaskListView: View {
             }
         } label: {
             Image(systemName: isFilterActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
-                .font(.system(size: 17, weight: .semibold))
+                .font(SierraFont.scaled(17, weight: .semibold))
                 .foregroundStyle(Color.appOrange)
-        }
-    }
-
-    private var profileButton: some View {
-        Button { showProfile = true } label: {
-            if let staffer = store.staff.first(where: { $0.id == AuthManager.shared.currentUser?.id }) {
-                let initials = initials(for: staffer.name ?? "MP")
-                ZStack {
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [Color.appOrange, Color.appDeepOrange],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 32, height: 32)
-                    Text(initials)
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
-                }
-            } else {
-                Image(systemName: "person.circle.fill")
-                    .font(.system(size: 28))
-                    .foregroundStyle(Color.appOrange)
-            }
         }
     }
 
@@ -203,39 +171,21 @@ struct RepairTaskListView: View {
         VStack {
             Spacer(minLength: 60)
             Image(systemName: isFilterActive ? "line.3.horizontal.decrease.circle" : "wrench.and.screwdriver")
-                .font(.system(size: 48, weight: .light))
+                .font(SierraFont.scaled(48, weight: .light))
                 .foregroundStyle(Color.appOrange.opacity(0.3))
             Text(isFilterActive ? "No Matches" : "No Repair Tasks")
-                .font(.system(size: 20, weight: .bold, design: .rounded))
+                .font(SierraFont.scaled(20, weight: .bold, design: .rounded))
                 .foregroundStyle(Color.appTextPrimary)
                 .padding(.top, 6)
             Text(isFilterActive ? "Try a different filter." : "No assigned repair tasks right now.")
-                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .font(SierraFont.scaled(14, weight: .medium, design: .rounded))
                 .foregroundStyle(Color.appTextSecondary)
                 .multilineTextAlignment(.center)
-            if isFilterActive {
-                Button { statusFilter = nil } label: {
-                    Text("Clear Filter")
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundStyle(Color.appOrange)
-                        .padding(.horizontal, 20).padding(.vertical, 10)
-                        .background(Color.appOrange.opacity(0.1), in: Capsule())
-                }
-                .padding(.top, 4)
-            }
             Spacer()
         }
         .padding(.horizontal, 40)
     }
 
-    private func initials(for name: String) -> String {
-        let parts = name.split(separator: " ")
-        switch parts.count {
-        case 0:  return "?"
-        case 1:  return String(parts[0].prefix(2)).uppercased()
-        default: return "\(parts[0].prefix(1))\(parts[1].prefix(1))".uppercased()
-        }
-    }
 }
 
 // MARK: - Task Type Filter
@@ -251,6 +201,9 @@ enum TaskTypeFilter: Int, CaseIterable {
 struct VehicleQuickStatusSheet: View {
     let vehicle: Vehicle
     @Environment(AppDataStore.self) private var store
+    @State private var selectedDocumentURL: URL?
+    @State private var showDocumentLoadError = false
+    @State private var documentLoadErrorMessage = ""
 
     var body: some View {
         NavigationStack {
@@ -268,6 +221,19 @@ struct VehicleQuickStatusSheet: View {
             .background(Color.appSurface.ignoresSafeArea())
             .navigationTitle("Vehicle")
             .navigationBarTitleDisplayMode(.large)
+            .sheet(isPresented: Binding(
+                get: { selectedDocumentURL != nil },
+                set: { if !$0 { selectedDocumentURL = nil } }
+            )) {
+                if let selectedDocumentURL {
+                    InAppDocumentViewer(url: selectedDocumentURL)
+                }
+            }
+            .alert("Document Error", isPresented: $showDocumentLoadError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(documentLoadErrorMessage)
+            }
         }
     }
 
@@ -280,20 +246,20 @@ struct VehicleQuickStatusSheet: View {
                     .fill(statusColor(vehicle.status).opacity(0.12))
                     .frame(width: 56, height: 56)
                 Image(systemName: "car.fill")
-                    .font(.system(size: 24))
+                    .font(SierraFont.scaled(24))
                     .foregroundStyle(statusColor(vehicle.status))
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text(vehicle.name)
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(18, weight: .bold, design: .rounded))
                     .foregroundStyle(Color.appTextPrimary)
                 Text("\(vehicle.licensePlate) · \(vehicle.manufacturer) \(vehicle.model)")
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .font(SierraFont.scaled(13, weight: .medium, design: .rounded))
                     .foregroundStyle(Color.appTextSecondary)
             }
             Spacer()
             Text(vehicle.status.rawValue)
-                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .font(SierraFont.scaled(10, weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
                 .padding(.horizontal, 10).padding(.vertical, 5)
                 .background(statusColor(vehicle.status), in: Capsule())
@@ -311,6 +277,14 @@ struct VehicleQuickStatusSheet: View {
             detailRow(label: "Year", value: "\(vehicle.year)", icon: "calendar")
             Divider().padding(.leading, 44)
             detailRow(label: "Fuel", value: vehicle.fuelType.rawValue, icon: "fuelpump.fill")
+            if let fuelTank = vehicle.fuelTankCapacityLiters {
+                Divider().padding(.leading, 44)
+                detailRow(label: "Tank", value: String(format: "%.1f L", fuelTank), icon: "drop.fill")
+            }
+            if let mileage = vehicle.mileageKmPerLitre {
+                Divider().padding(.leading, 44)
+                detailRow(label: "Mileage", value: String(format: "%.1f km/L", mileage), icon: "speedometer")
+            }
             if vehicle.totalTrips > 0 {
                 Divider().padding(.leading, 44)
                 detailRow(label: "Trips", value: "\(vehicle.totalTrips)", icon: "arrow.triangle.swap")
@@ -334,15 +308,15 @@ struct VehicleQuickStatusSheet: View {
     private func detailRow(label: String, value: String, icon: String) -> some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
-                .font(.system(size: 14))
+                .font(SierraFont.scaled(14))
                 .foregroundStyle(Color.appOrange)
                 .frame(width: 24)
             Text(label)
-                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .font(SierraFont.scaled(14, weight: .medium, design: .rounded))
                 .foregroundStyle(Color.appTextSecondary)
             Spacer()
             Text(value)
-                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .font(SierraFont.scaled(14, weight: .bold, design: .rounded))
                 .foregroundStyle(Color.appTextPrimary)
         }
         .padding(.horizontal, 18)
@@ -359,24 +333,29 @@ struct VehicleQuickStatusSheet: View {
                 ForEach(Array(docs.enumerated()), id: \.element.id) { idx, doc in
                     HStack(spacing: 12) {
                         Image(systemName: docIcon(doc))
-                            .font(.system(size: 14))
+                            .font(SierraFont.scaled(14))
                             .foregroundStyle(docColor(doc))
                             .frame(width: 24)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(doc.documentType.rawValue)
-                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                .font(SierraFont.scaled(14, weight: .semibold, design: .rounded))
                                 .foregroundStyle(Color.appTextPrimary)
                             Text("Expires \(doc.expiryDate.formatted(.dateTime.month(.abbreviated).day().year()))")
-                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                                .font(SierraFont.scaled(12, weight: .medium, design: .rounded))
                                 .foregroundStyle(Color.appTextSecondary)
                         }
                         Spacer()
                         if doc.isExpired {
                             Text("EXPIRED")
-                                .font(.system(size: 9, weight: .bold, design: .rounded))
+                                .font(SierraFont.scaled(9, weight: .bold, design: .rounded))
                                 .foregroundStyle(.red)
                                 .padding(.horizontal, 8).padding(.vertical, 3)
                                 .background(.red.opacity(0.1), in: Capsule())
+                        } else if doc.documentUrl != nil {
+                            Button("View") {
+                                openDocument(doc)
+                            }
+                            .font(SierraFont.scaled(12, weight: .semibold, design: .rounded))
                         }
                     }
                     .padding(.horizontal, 18)
@@ -408,20 +387,20 @@ struct VehicleQuickStatusSheet: View {
                 ForEach(Array(inspections.enumerated()), id: \.element.id) { idx, insp in
                     HStack(spacing: 12) {
                         Image(systemName: inspIcon(insp.overallResult))
-                            .font(.system(size: 16))
+                            .font(SierraFont.scaled(16))
                             .foregroundStyle(inspColor(insp.overallResult))
                             .frame(width: 24)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(insp.type.rawValue)
-                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                .font(SierraFont.scaled(14, weight: .semibold, design: .rounded))
                                 .foregroundStyle(Color.appTextPrimary)
                             Text(insp.createdAt.formatted(.dateTime.month(.abbreviated).day().hour().minute()))
-                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                                .font(SierraFont.scaled(12, weight: .medium, design: .rounded))
                                 .foregroundStyle(Color.appTextSecondary)
                         }
                         Spacer()
                         Text(insp.overallResult.rawValue)
-                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .font(SierraFont.scaled(10, weight: .bold, design: .rounded))
                             .foregroundStyle(inspColor(insp.overallResult))
                             .padding(.horizontal, 8).padding(.vertical, 3)
                             .background(inspColor(insp.overallResult).opacity(0.1), in: Capsule())
@@ -484,5 +463,19 @@ struct VehicleQuickStatusSheet: View {
         case .failed: return .red
         default: return .orange
         }
+    }
+
+    private func openDocument(_ doc: VehicleDocument) {
+        guard let storedValue = doc.documentUrl, !storedValue.isEmpty else {
+            documentLoadErrorMessage = "No uploaded file is linked for this document."
+            showDocumentLoadError = true
+            return
+        }
+        guard let url = VehicleDocumentService.resolveDocumentURL(storedValue: storedValue) else {
+            documentLoadErrorMessage = "Unable to open this document."
+            showDocumentLoadError = true
+            return
+        }
+        selectedDocumentURL = url
     }
 }

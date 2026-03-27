@@ -108,7 +108,7 @@ struct ChangePasswordView: View {
                     .fill(SierraTheme.Colors.ember.opacity(0.1))
                     .frame(width: 80, height: 80)
                 Image(systemName: "lock.rotation")
-                    .font(.system(size: 34, weight: .light))
+                    .font(SierraFont.scaled(34, weight: .light))
                     .foregroundStyle(SierraTheme.Colors.ember)
                     .symbolRenderingMode(.hierarchical)
             }

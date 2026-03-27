@@ -39,13 +39,17 @@ struct SierraAppThemeModifier: ViewModifier {
         navAppearance.configureWithOpaqueBackground()
         navAppearance.backgroundColor = navBg
         navAppearance.shadowColor = UIColor.separator
+        let scaledTitleFont = UIFontMetrics(forTextStyle: .headline)
+            .scaledFont(for: UIFont.systemFont(ofSize: 20, weight: .semibold))
+        let scaledLargeTitleFont = UIFontMetrics(forTextStyle: .largeTitle)
+            .scaledFont(for: UIFont.systemFont(ofSize: 34, weight: .bold))
         navAppearance.titleTextAttributes = [
             .foregroundColor: titleCol,
-            .font: UIFont.systemFont(ofSize: 20, weight: .semibold)
+            .font: scaledTitleFont
         ]
         navAppearance.largeTitleTextAttributes = [
             .foregroundColor: titleCol,
-            .font: UIFont.systemFont(ofSize: 34, weight: .bold)
+            .font: scaledLargeTitleFont
         ]
         navAppearance.backButtonAppearance.normal.titleTextAttributes = [
             .foregroundColor: UIColor.clear
@@ -55,7 +59,7 @@ struct SierraAppThemeModifier: ViewModifier {
         UINavigationBar.appearance().standardAppearance   = navAppearance
         UINavigationBar.appearance().compactAppearance    = navAppearance
         UINavigationBar.appearance().scrollEdgeAppearance = scrollAppearance
-        UINavigationBar.appearance().tintColor = UIColor.systemOrange
+        UINavigationBar.appearance().tintColor = SierraAccessibilityPalette.accentUIColor
 
         // Tab Bar
         let tabAppearance = UITabBarAppearance()
@@ -63,18 +67,22 @@ struct SierraAppThemeModifier: ViewModifier {
         tabAppearance.backgroundColor = .systemBackground
         tabAppearance.shadowColor = UIColor.separator
 
+        let scaledSelectedTabFont = UIFontMetrics(forTextStyle: .caption2)
+            .scaledFont(for: UIFont.systemFont(ofSize: 10, weight: .bold))
+        let scaledNormalTabFont = UIFontMetrics(forTextStyle: .caption2)
+            .scaledFont(for: UIFont.systemFont(ofSize: 10, weight: .medium))
         let selectedAttrs: [NSAttributedString.Key: Any] = [
-            .foregroundColor: UIColor.systemOrange,
-            .font: UIFont.systemFont(ofSize: 10, weight: .bold)
+            .foregroundColor: SierraAccessibilityPalette.accentUIColor,
+            .font: scaledSelectedTabFont
         ]
         let normalAttrs: [NSAttributedString.Key: Any] = [
             .foregroundColor: UIColor.secondaryLabel,
-            .font: UIFont.systemFont(ofSize: 10, weight: .medium)
+            .font: scaledNormalTabFont
         ]
 
         let itemAppearance = UITabBarItemAppearance()
         itemAppearance.selected.titleTextAttributes = selectedAttrs
-        itemAppearance.selected.iconColor           = UIColor.systemOrange
+        itemAppearance.selected.iconColor           = SierraAccessibilityPalette.accentUIColor
         itemAppearance.normal.titleTextAttributes   = normalAttrs
         itemAppearance.normal.iconColor             = UIColor.secondaryLabel
 
@@ -92,7 +100,7 @@ struct SierraAppThemeModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .tint(.orange)
+            .tint(SierraTheme.Colors.ember)
             .environment(\.sierraTheme, .system)
     }
 }

@@ -36,6 +36,9 @@ struct RouteSelectionSheet: View {
                                     selectedIndex = index
                                 }
                             }
+                            .accessibilityAddTraits(.isButton)
+                            .accessibilityLabel("\(title(for: choice, index: index)), \(formatDuration(choice.route.expectedTravelTime))")
+                            .accessibilityHint("Selects this route")
                         }
                     }
                     .padding(.horizontal, 16)
@@ -81,7 +84,7 @@ struct RouteSelectionSheet: View {
                     .frame(height: 88)
 
                 Text("GO")
-                    .font(.system(size: 34, weight: .heavy, design: .rounded))
+                    .font(SierraFont.scaled(34, weight: .heavy, design: .rounded))
                     .foregroundStyle(.white)
             }
         }
@@ -155,7 +158,7 @@ struct RouteSelectionSheet: View {
 
         return HStack(spacing: 12) {
             Image(systemName: icon(for: choice, index: index))
-                .font(.system(size: 16, weight: .bold))
+                .font(SierraFont.scaled(16, weight: .bold))
                 .foregroundStyle(iconColor(for: choice, index: index))
                 .frame(width: 34, height: 34)
                 .background(iconColor(for: choice, index: index).opacity(0.15), in: Circle())
@@ -166,7 +169,7 @@ struct RouteSelectionSheet: View {
                         .font(.subheadline.weight(.semibold))
                     if choice.isGreen {
                         Text("ECO")
-                            .font(.system(size: 10, weight: .bold))
+                            .font(SierraFont.scaled(10, weight: .bold))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
@@ -208,6 +211,7 @@ struct RouteSelectionSheet: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(isSelected ? Color.green.opacity(0.45) : Color.clear, lineWidth: 1.5)
         )
+        .accessibilityElement(children: .combine)
     }
 
     private func title(for choice: RouteEngine.RouteChoice, index: Int) -> String {

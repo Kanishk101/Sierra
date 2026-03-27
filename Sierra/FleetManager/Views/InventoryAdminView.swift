@@ -5,7 +5,7 @@ struct InventoryAdminView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var searchText = ""
-    @State private var showCreate = false
+    @State private var showOrderPart = false
     @State private var editingPart: InventoryPart?
     @State private var deletingPart: InventoryPart?
     @State private var stockFilter: StockFilter = .all
@@ -52,15 +52,15 @@ struct InventoryAdminView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 searchBar
-                    .padding(.top, 12)
-                    .padding(.bottom, 8)
+                    .padding(.top, 18)
+                    .padding(.bottom, 14)
 
                 summaryRow
                     .padding(.horizontal, 20)
-                    .padding(.bottom, 10)
+                    .padding(.bottom, 14)
 
                 filterChips
-                    .padding(.bottom, 8)
+                    .padding(.bottom, 14)
 
                 if store.isLoading && store.inventoryParts.isEmpty {
                     loadingSkeleton
@@ -86,6 +86,7 @@ struct InventoryAdminView: View {
                             }
                         }
                         .padding(.horizontal, 20)
+                        .padding(.top, 2)
                         .padding(.bottom, 24)
                     }
                 }
@@ -100,9 +101,9 @@ struct InventoryAdminView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        showCreate = true
+                        showOrderPart = true
                     } label: {
-                        Image(systemName: "plus")
+                        Image(systemName: "cart.badge.plus")
                     }
                 }
             }
@@ -114,7 +115,7 @@ struct InventoryAdminView: View {
             .refreshable {
                 await store.loadAll(force: true)
             }
-            .sheet(isPresented: $showCreate) {
+            .sheet(isPresented: $showOrderPart) {
                 InventoryPartEditorSheet(part: nil)
                     .environment(store)
             }
@@ -145,7 +146,7 @@ struct InventoryAdminView: View {
             TextField("Search parts", text: $searchText)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled(true)
-                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .font(SierraFont.scaled(14, weight: .medium, design: .rounded))
             if !searchText.isEmpty {
                 Button { searchText = "" } label: {
                     Image(systemName: "xmark.circle.fill")
@@ -203,7 +204,7 @@ struct InventoryAdminView: View {
                         stockFilter = filter
                     } label: {
                         Text(filter.rawValue)
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .font(SierraFont.scaled(12, weight: .semibold, design: .rounded))
                             .foregroundStyle(stockFilter == filter ? Color.appOrange : Color.appTextSecondary)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 9)
@@ -222,23 +223,24 @@ struct InventoryAdminView: View {
             }
             .padding(.horizontal, 20)
         }
+        .frame(height: 44)
     }
 
     private func quickMetricChip(title: String, value: Int, tint: Color, icon: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Image(systemName: icon)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(SierraFont.scaled(12, weight: .semibold))
                     .foregroundStyle(tint)
                     .padding(7)
                     .background(tint.opacity(0.14), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 Spacer()
                 Text("\(value)")
-                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(22, weight: .bold, design: .rounded))
                     .foregroundStyle(tint)
             }
             Text(title)
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .font(SierraFont.scaled(12, weight: .semibold, design: .rounded))
                 .foregroundStyle(Color.appTextSecondary)
         }
         .frame(maxWidth: .infinity)
@@ -261,17 +263,17 @@ struct InventoryAdminView: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(part.partName)
-                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(17, weight: .bold, design: .rounded))
                         .foregroundStyle(Color.appTextPrimary)
                         .lineLimit(1)
                     Text(subtitle)
-                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .font(SierraFont.scaled(13, weight: .medium, design: .rounded))
                         .foregroundStyle(Color.appTextSecondary)
                         .lineLimit(1)
                 }
                 Spacer()
                 Text(statusText)
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(11, weight: .bold, design: .rounded))
                     .foregroundStyle(statusColor)
                     .padding(.horizontal, 11)
                     .padding(.vertical, 7)
@@ -288,14 +290,14 @@ struct InventoryAdminView: View {
             HStack(spacing: 8) {
                 if let category = part.category, !category.isEmpty {
                     Text(category)
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .font(SierraFont.scaled(11, weight: .semibold, design: .rounded))
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 5)
                         .background(Color.appDivider.opacity(0.45), in: Capsule())
                 }
                 Text(part.unit.uppercased())
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(11, weight: .bold, design: .rounded))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 5)
@@ -304,11 +306,29 @@ struct InventoryAdminView: View {
                 if let eta = part.expectedArrivalAt, part.onOrderQuantity > 0 {
                     HStack(spacing: 6) {
                         Image(systemName: "clock.badge.fill")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(SierraFont.scaled(11, weight: .semibold))
                         Text("ETA \(eta.formatted(.dateTime.day().month(.abbreviated).hour().minute()))")
-                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            .font(SierraFont.scaled(11, weight: .semibold, design: .rounded))
                     }
                     .foregroundStyle(Color.blue.opacity(0.92))
+                }
+            }
+
+            if !compatibleVehicleNames(for: part).isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(Array(compatibleVehicleNames(for: part).prefix(2)), id: \.self) { vehicleName in
+                        Text(vehicleName)
+                            .font(SierraFont.scaled(10, weight: .semibold, design: .rounded))
+                            .foregroundStyle(Color.appTextSecondary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.appDivider.opacity(0.35), in: Capsule())
+                    }
+                    if compatibleVehicleNames(for: part).count > 2 {
+                        Text("+\(compatibleVehicleNames(for: part).count - 2)")
+                            .font(SierraFont.scaled(10, weight: .bold, design: .rounded))
+                            .foregroundStyle(Color.appOrange)
+                    }
                 }
             }
         }
@@ -327,10 +347,10 @@ struct InventoryAdminView: View {
     private func metricText(_ label: String, value: Int, tint: Color) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("\(value)")
-                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .font(SierraFont.scaled(16, weight: .bold, design: .rounded))
                 .foregroundStyle(tint)
             Text(label)
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .font(SierraFont.scaled(11, weight: .semibold, design: .rounded))
                 .foregroundStyle(Color.appTextSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -339,18 +359,25 @@ struct InventoryAdminView: View {
         .background(tint.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
+    private func compatibleVehicleNames(for part: InventoryPart) -> [String] {
+        part.compatibleVehicleIds.compactMap { id in
+            guard let vehicle = store.vehicle(for: id) else { return nil }
+            return "\(vehicle.name) (\(vehicle.licensePlate))"
+        }
+    }
+
     private var emptyState: some View {
         VStack {
             Spacer(minLength: 60)
             Image(systemName: "shippingbox")
-                .font(.system(size: 46, weight: .light))
+                .font(SierraFont.scaled(46, weight: .light))
                 .foregroundStyle(Color.appOrange.opacity(0.35))
             Text("No Parts Found")
-                .font(.system(size: 20, weight: .bold, design: .rounded))
+                .font(SierraFont.scaled(20, weight: .bold, design: .rounded))
                 .foregroundStyle(Color.appTextPrimary)
                 .padding(.top, 6)
             Text("Try a different filter or add a new part.")
-                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .font(SierraFont.scaled(14, weight: .medium, design: .rounded))
                 .foregroundStyle(Color.appTextSecondary)
             Spacer()
         }
@@ -383,43 +410,77 @@ private struct InventoryPartEditorSheet: View {
     @State private var supplier = ""
     @State private var category = ""
     @State private var unit = "pcs"
-    @State private var currentQty = "0"
-    @State private var reorderLevel = "0"
-    @State private var onOrderQty = "0"
-    @State private var hasEta = false
+    @State private var currentQty = 0
+    @State private var onOrderQty = 0
     @State private var expectedArrival = Date()
-    @State private var isActive = true
     @State private var selectedVehicleIds = Set<UUID>()
+    @State private var selectedExistingPartId: UUID?
 
     @State private var isSaving = false
     @State private var errorMessage: String?
+
+    private var existingParts: [InventoryPart] {
+        store.inventoryParts
+            .filter(\.isActive)
+            .sorted { $0.partName.localizedCaseInsensitiveCompare($1.partName) == .orderedAscending }
+    }
+    private var isOrderingExistingPart: Bool {
+        part == nil && selectedExistingPartId != nil
+    }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("Part") {
+                    if part == nil {
+                        Picker("Part", selection: $selectedExistingPartId) {
+                            Text("Custom Part").tag(Optional<UUID>.none)
+                            ForEach(existingParts) { existing in
+                                Text("\(existing.partName) (\(existing.partNumber ?? "No PN"))")
+                                    .tag(Optional(existing.id))
+                            }
+                        }
+                    }
                     TextField("Part name", text: $name)
+                        .disabled(isOrderingExistingPart)
                     TextField("Part number", text: $number)
+                        .disabled(isOrderingExistingPart)
                     TextField("Supplier", text: $supplier)
+                        .disabled(isOrderingExistingPart)
                     TextField("Category", text: $category)
-                    TextField("Unit (pcs/ltr/set)", text: $unit)
+                        .disabled(isOrderingExistingPart)
+                    Picker("Unit", selection: $unit) {
+                        Text("PCS").tag("pcs")
+                        Text("LTR").tag("ltr")
+                        Text("SET").tag("set")
+                        Text("KG").tag("kg")
+                    }
+                    .pickerStyle(.menu)
+                    .disabled(isOrderingExistingPart)
                 }
 
                 Section("Stock") {
-                    TextField("Current quantity", text: $currentQty)
-                        .keyboardType(.numberPad)
-                    TextField("Reorder level", text: $reorderLevel)
-                        .keyboardType(.numberPad)
-                    TextField("On order quantity", text: $onOrderQty)
-                        .keyboardType(.numberPad)
-                    Toggle("Has expected arrival", isOn: $hasEta)
-                    if hasEta {
-                        DatePicker("Expected arrival", selection: $expectedArrival, displayedComponents: [.date, .hourAndMinute])
+                    LabeledContent("Current stock") {
+                        Text("\(currentQty) \(unit.uppercased())")
+                            .font(SierraFont.scaled(14, weight: .semibold))
                     }
-                    Toggle("Active", isOn: $isActive)
+                    Stepper(value: $onOrderQty, in: 0...10_000, step: 1) {
+                        HStack {
+                            Text("Quantity to order")
+                            Spacer()
+                            Text("\(onOrderQty)")
+                                .font(SierraFont.scaled(14, weight: .semibold))
+                                .foregroundStyle(Color.appOrange)
+                        }
+                    }
+                    DatePicker("Arrival date", selection: $expectedArrival, in: Date()..., displayedComponents: [.date])
+                    DatePicker("Arrival time", selection: $expectedArrival, displayedComponents: [.hourAndMinute])
                 }
 
                 Section("Compatible Vehicles") {
+                    Text("Compatible vehicles with this part")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     ForEach(store.vehicles) { vehicle in
                         Button {
                             if selectedVehicleIds.contains(vehicle.id) {
@@ -438,6 +499,7 @@ private struct InventoryPartEditorSheet: View {
                             }
                         }
                         .buttonStyle(.plain)
+                        .disabled(isOrderingExistingPart)
                     }
                 }
 
@@ -448,7 +510,7 @@ private struct InventoryPartEditorSheet: View {
                     }
                 }
             }
-            .navigationTitle(part == nil ? "Add Part" : "Edit Part")
+            .navigationTitle(part == nil ? "Order Part" : "Edit Part")
             .toolbarTitleDisplayMode(.inline)
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
@@ -457,13 +519,16 @@ private struct InventoryPartEditorSheet: View {
                         .disabled(isSaving)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button(isSaving ? "Saving..." : "Save") {
+                    Button(isSaving ? "Saving..." : (part == nil ? "Order" : "Save")) {
                         Task { await save() }
                     }
                     .disabled(isSaving)
                 }
             }
             .onAppear(perform: loadExisting)
+            .onChange(of: selectedExistingPartId) { _, _ in
+                applySelectedPartTemplate()
+            }
         }
     }
 
@@ -474,13 +539,25 @@ private struct InventoryPartEditorSheet: View {
         supplier = part.supplier ?? ""
         category = part.category ?? ""
         unit = part.unit
-        currentQty = String(part.currentQuantity)
-        reorderLevel = String(part.reorderLevel)
-        onOrderQty = String(part.onOrderQuantity)
-        hasEta = part.expectedArrivalAt != nil
+        currentQty = part.currentQuantity
+        onOrderQty = part.onOrderQuantity
         expectedArrival = part.expectedArrivalAt ?? Date()
-        isActive = part.isActive
         selectedVehicleIds = Set(part.compatibleVehicleIds)
+    }
+
+    private func applySelectedPartTemplate() {
+        guard part == nil else { return }
+        guard let selectedId = selectedExistingPartId,
+              let existing = existingParts.first(where: { $0.id == selectedId }) else {
+            return
+        }
+        name = existing.partName
+        number = existing.partNumber ?? ""
+        supplier = existing.supplier ?? ""
+        category = existing.category ?? ""
+        unit = existing.unit
+        currentQty = existing.currentQuantity
+        selectedVehicleIds = Set(existing.compatibleVehicleIds)
     }
 
     private func save() async {
@@ -489,10 +566,8 @@ private struct InventoryPartEditorSheet: View {
             errorMessage = "Part name is required."
             return
         }
-        guard let current = Int(currentQty), let reorder = Int(reorderLevel), let onOrder = Int(onOrderQty), current >= 0, reorder >= 0, onOrder >= 0 else {
-            errorMessage = "Quantities must be valid non-negative numbers."
-            return
-        }
+        let current = max(0, currentQty)
+        let onOrder = max(0, onOrderQty)
 
         isSaving = true
         defer { isSaving = false }
@@ -507,11 +582,27 @@ private struct InventoryPartEditorSheet: View {
                     category: category.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
                     unit: unit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "pcs" : unit,
                     currentQuantity: current,
-                    reorderLevel: reorder,
+                    reorderLevel: part.reorderLevel,
                     onOrderQuantity: onOrder,
-                    expectedArrivalAt: hasEta ? expectedArrival : nil,
+                    expectedArrivalAt: onOrder > 0 ? expectedArrival : nil,
                     compatibleVehicleIds: Array(selectedVehicleIds),
-                    isActive: isActive
+                    isActive: part.isActive
+                )
+            } else if let selectedId = selectedExistingPartId,
+                      let existing = existingParts.first(where: { $0.id == selectedId }) {
+                try await store.updateInventoryPart(
+                    id: existing.id,
+                    partName: existing.partName,
+                    partNumber: existing.partNumber,
+                    supplier: existing.supplier,
+                    category: existing.category,
+                    unit: existing.unit,
+                    currentQuantity: existing.currentQuantity,
+                    reorderLevel: existing.reorderLevel,
+                    onOrderQuantity: existing.onOrderQuantity + onOrder,
+                    expectedArrivalAt: onOrder > 0 ? expectedArrival : existing.expectedArrivalAt,
+                    compatibleVehicleIds: existing.compatibleVehicleIds,
+                    isActive: existing.isActive
                 )
             } else {
                 try await store.createInventoryPart(
@@ -521,11 +612,11 @@ private struct InventoryPartEditorSheet: View {
                     category: category.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
                     unit: unit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "pcs" : unit,
                     currentQuantity: current,
-                    reorderLevel: reorder,
+                    reorderLevel: max(1, current),
                     onOrderQuantity: onOrder,
-                    expectedArrivalAt: hasEta ? expectedArrival : nil,
+                    expectedArrivalAt: onOrder > 0 ? expectedArrival : nil,
                     compatibleVehicleIds: Array(selectedVehicleIds),
-                    isActive: isActive
+                    isActive: true
                 )
             }
             dismiss()

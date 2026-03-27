@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Form to add or edit a vehicle. Presented as .sheet.
 /// Phase 13: UI only — all state and logic in AddVehicleViewModel.
@@ -8,6 +9,8 @@ struct AddVehicleView: View {
     @Environment(AppDataStore.self) private var store
 
     @State private var vm: AddVehicleViewModel
+    @State private var showRegistrationFilePicker = false
+    @State private var showInsuranceFilePicker = false
 
     init(editingVehicle: Vehicle? = nil, onSaved: (() -> Void)? = nil) {
         let viewModel = AddVehicleViewModel(editingVehicle: editingVehicle)
@@ -101,32 +104,24 @@ struct AddVehicleView: View {
                 if !validModels.contains(vm.model) {
                     vm.model = validModels.first ?? vm.model
                 }
+                if vm.presetManufacturers.contains(newManufacturer) {
+                    vm.selectedManufacturerOption = newManufacturer
+                } else {
+                    vm.selectedManufacturerOption = "Custom"
+                }
                 vm.applyPresetSelectionIfNeeded()
             }
             .onChange(of: vm.name) { _, newName in
-                if vm.vehicleNameOptions.contains(where: { $0.caseInsensitiveCompare(newName) == .orderedSame }) {
-                    vm.selectedNameOption = vm.vehicleNameOptions.first(where: {
-                        $0.caseInsensitiveCompare(newName) == .orderedSame
-                    }) ?? newName
+                if vm.presetNames.contains(newName) {
+                    vm.selectedNameOption = newName
                 } else if !newName.isEmpty {
                     vm.selectedNameOption = "Custom"
                 }
             }
-            .onChange(of: vm.manufacturer) { _, newManufacturer in
-                if vm.manufacturerOptions.contains(where: { $0.caseInsensitiveCompare(newManufacturer) == .orderedSame }) {
-                    vm.selectedManufacturerOption = vm.manufacturerOptions.first(where: {
-                        $0.caseInsensitiveCompare(newManufacturer) == .orderedSame
-                    }) ?? newManufacturer
-                } else if !newManufacturer.isEmpty {
-                    vm.selectedManufacturerOption = "Custom"
-                }
-            }
             .onChange(of: vm.model) { _, _ in vm.applyPresetSelectionIfNeeded() }
             .onChange(of: vm.model) { _, newModel in
-                if vm.modelOptions.contains(where: { $0.caseInsensitiveCompare(newModel) == .orderedSame }) {
-                    vm.selectedModelOption = vm.modelOptions.first(where: {
-                        $0.caseInsensitiveCompare(newModel) == .orderedSame
-                    }) ?? newModel
+                if vm.presetModels.contains(newModel) {
+                    vm.selectedModelOption = newModel
                 } else if !newModel.isEmpty {
                     vm.selectedModelOption = "Custom"
                 }
@@ -135,6 +130,32 @@ struct AddVehicleView: View {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(vm.errorMessage ?? "An unknown error occurred.")
+            }
+            .fileImporter(
+                isPresented: $showRegistrationFilePicker,
+                allowedContentTypes: [.pdf, .png, .jpeg, .webP],
+                allowsMultipleSelection: false
+            ) { result in
+                do {
+                    guard let url = try result.get().first else { return }
+                    try vm.attachRegistrationDocument(from: url)
+                } catch {
+                    vm.errorMessage = "Could not attach registration document: \(error.localizedDescription)"
+                    vm.showError = true
+                }
+            }
+            .fileImporter(
+                isPresented: $showInsuranceFilePicker,
+                allowedContentTypes: [.pdf, .png, .jpeg, .webP],
+                allowsMultipleSelection: false
+            ) { result in
+                do {
+                    guard let url = try result.get().first else { return }
+                    try vm.attachInsuranceDocument(from: url)
+                } catch {
+                    vm.errorMessage = "Could not attach insurance document: \(error.localizedDescription)"
+                    vm.showError = true
+                }
             }
         }
     }
@@ -244,6 +265,28 @@ struct AddVehicleView: View {
                 ForEach(FuelType.allCases, id: \.self) { ft in Text(ft.description).tag(ft) }
             }
             Stepper("Seating: \(vm.seatingCapacity)", value: $vm.seatingCapacity, in: 1...50)
+            VStack(alignment: .leading, spacing: 4) {
+                TextField("Fuel Tank Capacity (L)", text: $vm.fuelTankCapacityInput)
+                    .keyboardType(.decimalPad)
+                    .onChange(of: vm.fuelTankCapacityInput) { _, newValue in
+                        vm.fuelTankCapacityInput = newValue.filter { $0.isNumber || $0 == "." }
+                        vm.fuelTankCapacityError = vm.fuelTankCapacityValidationError(for: vm.fuelTankCapacityInput)
+                    }
+                if let err = vm.fuelTankCapacityError {
+                    Text(err).font(.caption2).foregroundStyle(.red)
+                }
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                TextField("Mileage (km/L)", text: $vm.mileageInput)
+                    .keyboardType(.decimalPad)
+                    .onChange(of: vm.mileageInput) { _, newValue in
+                        vm.mileageInput = newValue.filter { $0.isNumber || $0 == "." }
+                        vm.mileageError = vm.mileageValidationError(for: vm.mileageInput)
+                    }
+                if let err = vm.mileageError {
+                    Text(err).font(.caption2).foregroundStyle(.red)
+                }
+            }
         }
     }
 
@@ -274,6 +317,16 @@ struct AddVehicleView: View {
                 }
                 DatePicker("Issued Date", selection: $vm.regIssued, displayedComponents: .date)
                 DatePicker("Expiry Date", selection: $vm.regExpiry, in: Date()..., displayedComponents: .date)
+                Button {
+                    showRegistrationFilePicker = true
+                } label: {
+                    Label(vm.regDocumentName == nil ? "Attach Registration File" : "Replace Registration File", systemImage: "paperclip")
+                }
+                if let regDocumentName = vm.regDocumentName {
+                    Text(regDocumentName)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
 
@@ -299,6 +352,16 @@ struct AddVehicleView: View {
                 }
                 DatePicker("Issued Date", selection: $vm.insIssued, displayedComponents: .date)
                 DatePicker("Expiry Date", selection: $vm.insExpiry, in: Date()..., displayedComponents: .date)
+                Button {
+                    showInsuranceFilePicker = true
+                } label: {
+                    Label(vm.insDocumentName == nil ? "Attach Insurance File" : "Replace Insurance File", systemImage: "paperclip")
+                }
+                if let insDocumentName = vm.insDocumentName {
+                    Text(insDocumentName)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
     }

@@ -5,7 +5,7 @@ struct StaffTabView: View {
     @State private var segment: StaffSegment = .drivers
     @State private var selectedStaffMember: StaffMember?
     @State private var showCreateStaff = false
-    @State private var selectedStatus: StaffStatus? = nil
+    @State private var selectedAvailability: StaffAvailability? = nil
 
     enum StaffSegment: String, CaseIterable {
         case drivers = "Drivers"
@@ -17,7 +17,7 @@ struct StaffTabView: View {
         let role: UserRole = segment == .drivers ? .driver : .maintenancePersonnel
         let all = store.staff.filter {
             $0.role == role && $0.isApproved && $0.status != .pendingApproval
-            && (selectedStatus == nil || $0.status == selectedStatus)
+            && (selectedAvailability == nil || $0.availability == selectedAvailability)
         }.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
         return all
     }
@@ -77,26 +77,26 @@ struct StaffTabView: View {
 
             Menu {
                 Button {
-                    selectedStatus = nil
+                    selectedAvailability = nil
                 } label: {
                     Text("All")
                 }
                 Divider()
-                ForEach([StaffStatus.active, .suspended], id: \.self) { status in
+                ForEach(StaffAvailability.allCases, id: \.self) { availability in
                     Button {
-                        selectedStatus = status
+                        selectedAvailability = availability
                     } label: {
-                        Text(status.rawValue)
+                        Text(availability.rawValue)
                     }
                 }
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "line.3.horizontal.decrease.circle")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(SierraFont.scaled(14, weight: .semibold))
                     Text(staffFilterTitle)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(SierraFont.scaled(13, weight: .semibold))
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(SierraFont.scaled(11, weight: .semibold))
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
@@ -107,7 +107,7 @@ struct StaffTabView: View {
     }
 
     private var staffFilterTitle: String {
-        selectedStatus?.rawValue ?? "All"
+        selectedAvailability?.rawValue ?? "All"
     }
 
     private var staffListContent: some View {
@@ -117,7 +117,7 @@ struct StaffTabView: View {
             } else if visibleStaff.isEmpty {
                 VStack(spacing: 16) {
                     Spacer(minLength: 60)
-                    Image(systemName: "person.2.slash").font(.system(size: 44, weight: .light)).foregroundStyle(.secondary)
+                    Image(systemName: "person.2.slash").font(SierraFont.scaled(44, weight: .light)).foregroundStyle(.secondary)
                     Text("No \(segment.rawValue.lowercased()) yet").font(.body).foregroundStyle(.secondary)
                     Spacer()
                 }
@@ -129,6 +129,9 @@ struct StaffTabView: View {
                             staffCard(member)
                                 .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                                 .onTapGesture { selectedStaffMember = member }
+                                .accessibilityAddTraits(.isButton)
+                                .accessibilityLabel(member.displayName)
+                                .accessibilityHint("Opens staff profile")
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                     if member.status == .active {
                                         Button(role: .destructive) { Task { await toggleSuspend(member, suspend: true) } } label: { Label("Suspend", systemImage: "person.slash") }
@@ -171,23 +174,19 @@ struct StaffTabView: View {
         HStack(spacing: 14) {
             Circle()
                 .fill(Color(.systemGray5)).frame(width: 44, height: 44)
-                .overlay(Text(member.initials).font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.primary))
+                .overlay(Text(member.initials).font(SierraFont.scaled(15, weight: .bold, design: .rounded)).foregroundStyle(.primary))
             VStack(alignment: .leading, spacing: 2) {
-                Text(member.displayName).font(.system(size: 15, weight: .semibold)).foregroundStyle(.primary)
+                Text(member.displayName).font(SierraFont.scaled(15, weight: .semibold)).foregroundStyle(.primary)
                 Text(member.email).font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            if member.status == .suspended {
-                Text("Suspended").font(.system(size: 9, weight: .bold)).foregroundStyle(.white)
-                    .padding(.horizontal, 6).padding(.vertical, 2).background(.red, in: Capsule())
-            } else {
-                availabilityBadge(member.availability)
-            }
+            availabilityBadge(member.availability)
         }
         .padding(16)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .opacity(member.status == .suspended ? 0.6 : 1.0)
         .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
+        .accessibilityElement(children: .combine)
     }
 
     private func availabilityBadge(_ availability: StaffAvailability) -> some View {
@@ -247,7 +246,7 @@ private struct ApplicationsListView: View {
                 } else {
                     VStack(spacing: 16) {
                         Spacer()
-                        Image(systemName: "person.crop.circle.badge.checkmark").font(.system(size: 44, weight: .light)).foregroundStyle(.secondary)
+                        Image(systemName: "person.crop.circle.badge.checkmark").font(SierraFont.scaled(44, weight: .light)).foregroundStyle(.secondary)
                         Text("No \(viewModel.selectedFilter.rawValue.lowercased()) applications").font(.body).foregroundStyle(.secondary)
                         Spacer()
                     }.frame(maxWidth: .infinity)
@@ -256,7 +255,11 @@ private struct ApplicationsListView: View {
                 ScrollView {
                     LazyVStack(spacing: 8) {
                         ForEach(viewModel.filteredApplications) { app in
-                            applicationCard(app).onTapGesture { selectedApplication = app }
+                            applicationCard(app)
+                                .onTapGesture { selectedApplication = app }
+                                .accessibilityAddTraits(.isButton)
+                                .accessibilityLabel("Open \(app.role.displayName) application")
+                                .accessibilityHint("Shows application details and actions")
                         }
                     }
                     .padding(.horizontal, 20).padding(.bottom, 32)
@@ -290,9 +293,9 @@ private struct ApplicationsListView: View {
     private func applicationCard(_ app: StaffApplication) -> some View {
         HStack(spacing: 14) {
             Circle().fill(avatarColor(for: app.status).opacity(0.15)).frame(width: 48, height: 48)
-                .overlay(Text(store.staffMember(for: app.staffMemberId)?.initials ?? String(app.phone.suffix(2))).font(.system(size: 16, weight: .bold, design: .rounded)).foregroundStyle(avatarColor(for: app.status)))
+                .overlay(Text(store.staffMember(for: app.staffMemberId)?.initials ?? String(app.phone.suffix(2))).font(SierraFont.scaled(16, weight: .bold, design: .rounded)).foregroundStyle(avatarColor(for: app.status)))
             VStack(alignment: .leading, spacing: 2) {
-                Text(store.staffMember(for: app.staffMemberId)?.displayName ?? app.phone).font(.system(size: 16, weight: .semibold)).foregroundStyle(.primary)
+                Text(store.staffMember(for: app.staffMemberId)?.displayName ?? app.phone).font(SierraFont.scaled(16, weight: .semibold)).foregroundStyle(.primary)
                 HStack(spacing: 6) {
                     Text(app.role.displayName).font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 6).padding(.vertical, 3).background(Color(.systemGray5), in: Capsule())
                     Text("\u{00B7}").foregroundStyle(.tertiary)
@@ -310,6 +313,7 @@ private struct ApplicationsListView: View {
         .padding(16)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
+        .accessibilityElement(children: .combine)
     }
 
     private func avatarColor(for status: ApprovalStatus) -> Color {

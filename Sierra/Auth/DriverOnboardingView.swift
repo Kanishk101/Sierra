@@ -15,7 +15,7 @@ struct DriverOnboardingView: View {
                     Spacer(minLength: 60)
 
                     Image(systemName: "person.text.rectangle.fill")
-                        .font(.system(size: 56, weight: .light))
+                        .font(SierraFont.scaled(56, weight: .light))
                         .foregroundStyle(.orange)
 
                     Text("Complete Your Profile")
@@ -35,7 +35,7 @@ struct DriverOnboardingView: View {
                             // Profile submission to be implemented with backend
                         } label: {
                             Text("Submit Profile")
-                                .font(.system(size: 17, weight: .semibold))
+                                .font(SierraFont.scaled(17, weight: .semibold))
                                 .foregroundStyle(.white)
                                 .frame(maxWidth: .infinity)
                                 .frame(height: 54)

@@ -61,73 +61,78 @@ struct TripsAndMapContainerView: View {
                 Spacer()
 
                 if mapSegment == 0 {
-                    Button {
-                        showCreateTrip = true
-                    } label: {
-                        Image(systemName: "plus")
-                            .font(.title3.weight(.semibold))
-                    }
-                    .buttonStyle(.glass)
-                    .buttonBorderShape(.circle)
-
-                    Menu {
-                        ForEach(FleetLiveMapViewModel.VehicleFilter.allCases, id: \.self) { filter in
+                    toolbarControlGroup(
+                        leading: {
                             Button {
-                                mapViewModel.selectedFilter = filter
+                                showCreateTrip = true
                             } label: {
-                                HStack {
-                                    Text(filter.rawValue)
-                                    if mapViewModel.selectedFilter == filter {
-                                        Spacer()
-                                        Image(systemName: "checkmark")
+                                Image(systemName: "plus")
+                                    .font(SierraFont.scaled(16, weight: .semibold))
+                                    .frame(width: 34, height: 34)
+                            }
+                            .buttonStyle(.plain)
+                        },
+                        trailing: {
+                            Menu {
+                                ForEach(FleetLiveMapViewModel.VehicleFilter.allCases, id: \.self) { filter in
+                                    Button {
+                                        mapViewModel.selectedFilter = filter
+                                    } label: {
+                                        HStack {
+                                            Text(filter.rawValue)
+                                            if mapViewModel.selectedFilter == filter {
+                                                Spacer()
+                                                Image(systemName: "checkmark")
+                                            }
+                                        }
                                     }
                                 }
-                            }
-                        }
-                    } label: {
-                        Image(systemName: mapViewModel.selectedFilter == .all ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
-                            .font(.title3.weight(.semibold))
-                    }
-                    .buttonStyle(.glass)
-                    .buttonBorderShape(.circle)
-                } else {
-                    Button {
-                        tripsCreateTick += 1
-                    } label: {
-                        Image(systemName: "plus")
-                            .font(.title3.weight(.semibold))
-                    }
-                    .buttonStyle(.glass)
-                    .buttonBorderShape(.circle)
-
-                    Menu {
-                        Button {
-                            tripsSelectedStatus = nil
-                        } label: {
-                            Text("All")
-                        }
-                        Divider()
-                        ForEach([TripStatus.pendingAcceptance, .scheduled, .active, .completed, .cancelled], id: \.self) { status in
-                            Button {
-                                tripsSelectedStatus = status
                             } label: {
-                                Text(menuTripStatusLabel(status))
+                                Image(systemName: mapViewModel.selectedFilter == .all ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
+                                    .font(SierraFont.scaled(16, weight: .semibold))
+                                    .frame(width: 34, height: 34)
                             }
+                            .buttonStyle(.plain)
                         }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "line.3.horizontal.decrease.circle")
-                                .font(.system(size: 14, weight: .semibold))
-                            Text(tripFilterTitle)
-                                .font(.system(size: 13, weight: .semibold))
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 11, weight: .semibold))
+                    )
+                } else {
+                    toolbarControlGroup(
+                        leading: {
+                            Button {
+                                tripsCreateTick += 1
+                            } label: {
+                                Image(systemName: "plus")
+                                    .font(SierraFont.scaled(16, weight: .semibold))
+                                    .frame(width: 34, height: 34)
+                            }
+                            .buttonStyle(.plain)
+                        },
+                        trailing: {
+                            Menu {
+                                Button {
+                                    tripsSelectedStatus = nil
+                                } label: {
+                                    Label("All", systemImage: tripsSelectedStatus == nil ? "checkmark" : "")
+                                }
+                                Divider()
+                                ForEach([TripStatus.pendingAcceptance, .scheduled, .active, .completed, .cancelled], id: \.self) { status in
+                                    Button {
+                                        tripsSelectedStatus = status
+                                    } label: {
+                                        Label(
+                                            menuTripStatusLabel(status),
+                                            systemImage: tripsSelectedStatus == status ? "checkmark" : ""
+                                        )
+                                    }
+                                }
+                            } label: {
+                                Image(systemName: tripsSelectedStatus == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
+                                    .font(SierraFont.scaled(16, weight: .semibold))
+                                    .frame(width: 34, height: 34)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
-                    }
-                    .buttonStyle(.glass)
-                    .buttonBorderShape(.capsule)
+                    )
                 }
             }
             .padding(.horizontal, 16)
@@ -163,9 +168,25 @@ struct TripsAndMapContainerView: View {
         }
     }
 
-    private var tripFilterTitle: String {
-        guard let status = tripsSelectedStatus else { return "All" }
-        return menuTripStatusLabel(status)
+    private func toolbarControlGroup<Leading: View, Trailing: View>(
+        @ViewBuilder leading: () -> Leading,
+        @ViewBuilder trailing: () -> Trailing
+    ) -> some View {
+        HStack(spacing: 0) {
+            leading()
+            Divider()
+                .frame(height: 22)
+                .overlay(Color.secondary.opacity(0.18))
+                .padding(.vertical, 6)
+            trailing()
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 2)
+        .background(.regularMaterial, in: Capsule())
+        .overlay(
+            Capsule().stroke(Color.secondary.opacity(0.18), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
     }
 
     private func menuTripStatusLabel(_ status: TripStatus) -> String {

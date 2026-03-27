@@ -48,6 +48,7 @@ struct VehicleDocumentInsertPayload: Encodable {
 // MARK: - VehicleDocumentService
 
 struct VehicleDocumentService {
+    static let storageBucket = "vehicle-documents"
 
     static func fetchAllVehicleDocuments() async throws -> [VehicleDocument] {
         try await supabase
@@ -101,5 +102,41 @@ struct VehicleDocumentService {
             .delete()
             .eq("id", value: id.uuidString)
             .execute()
+    }
+
+    static func uploadVehicleDocument(
+        data: Data,
+        fileExtension: String,
+        vehicleId: UUID,
+        documentType: VehicleDocumentType
+    ) async throws -> String {
+        let ext = fileExtension.lowercased()
+        let mimeType: String = switch ext {
+        case "pdf": "application/pdf"
+        case "png": "image/png"
+        case "webp": "image/webp"
+        case "heic": "image/heic"
+        case "heif": "image/heif"
+        default: "image/jpeg"
+        }
+
+        let safeType = documentType.rawValue.lowercased().replacingOccurrences(of: " ", with: "-")
+        let path = "\(vehicleId.uuidString)/\(safeType)/\(UUID().uuidString).\(ext)"
+        try await supabase.storage
+            .from(storageBucket)
+            .upload(path, data: data, options: .init(contentType: mimeType, upsert: true))
+        return try supabase.storage
+            .from(storageBucket)
+            .getPublicURL(path: path)
+            .absoluteString
+    }
+
+    static func resolveDocumentURL(storedValue: String) -> URL? {
+        if let direct = URL(string: storedValue), direct.scheme != nil {
+            return direct
+        }
+        return try? supabase.storage
+            .from(storageBucket)
+            .getPublicURL(path: storedValue)
     }
 }

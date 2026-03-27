@@ -18,7 +18,6 @@ struct MaintenanceTaskInsertPayload: Encodable {
     let assignedToId: String?
     let title: String
     let taskDescription: String
-    let priority: String
     let status: String
     let taskType: String
     let sourceAlertId: String?
@@ -31,7 +30,7 @@ struct MaintenanceTaskInsertPayload: Encodable {
         case assignedToId       = "assigned_to_id"
         case title
         case taskDescription    = "task_description"
-        case priority, status
+        case status
         case taskType           = "task_type"
         case sourceAlertId      = "source_alert_id"
         case sourceInspectionId = "source_inspection_id"
@@ -44,7 +43,6 @@ struct MaintenanceTaskInsertPayload: Encodable {
         assignedToId       = t.assignedToId?.uuidString
         title              = t.title
         taskDescription    = t.taskDescription
-        priority           = t.priority.rawValue
         status             = t.status.rawValue
         taskType           = t.taskType.rawValue
         sourceAlertId      = t.sourceAlertId?.uuidString
@@ -62,7 +60,6 @@ struct MaintenanceTaskUpdatePayload: Encodable {
     let assignedToId: String?
     let title: String
     let taskDescription: String
-    let priority: String
     let status: String
     let taskType: String
     let sourceAlertId: String?
@@ -76,7 +73,7 @@ struct MaintenanceTaskUpdatePayload: Encodable {
         case assignedToId       = "assigned_to_id"
         case title
         case taskDescription    = "task_description"
-        case priority, status
+        case status
         case taskType           = "task_type"
         case sourceAlertId      = "source_alert_id"
         case sourceInspectionId = "source_inspection_id"
@@ -90,7 +87,6 @@ struct MaintenanceTaskUpdatePayload: Encodable {
         assignedToId       = t.assignedToId?.uuidString
         title              = t.title
         taskDescription    = t.taskDescription
-        priority           = t.priority.rawValue
         status             = t.status.rawValue
         taskType           = t.taskType.rawValue
         sourceAlertId      = t.sourceAlertId?.uuidString
@@ -144,6 +140,18 @@ struct MaintenanceTaskService {
             .order("due_date", ascending: true)
             .execute()
             .value
+    }
+
+    static func fetchTask(sourceAlertId: UUID) async throws -> MaintenanceTask? {
+        let rows: [MaintenanceTask] = try await supabase
+            .from("maintenance_tasks")
+            .select()
+            .eq("source_alert_id", value: sourceAlertId.uuidString)
+            .order("created_at", ascending: false)
+            .limit(1)
+            .execute()
+            .value
+        return rows.first
     }
 
     // MARK: Insert
@@ -280,14 +288,12 @@ struct MaintenanceTaskService {
         createdById: UUID,
         title: String,
         description: String,
-        priority: TaskPriority,
         sourceInspectionId: UUID?
-    ) async throws {
+    ) async throws -> UUID {
         struct DriverRequestPayload: Encodable {
             let vehicle_id: String
             let title: String
             let task_description: String
-            let priority: String
             let source_inspection_id: String?
             let due_date: String
         }
@@ -300,7 +306,6 @@ struct MaintenanceTaskService {
             vehicle_id: vehicleId.uuidString.lowercased(),
             title: title,
             task_description: description,
-            priority: priority.rawValue,
             source_inspection_id: sourceInspectionId?.uuidString,
             due_date: iso.string(from: Calendar.current.date(byAdding: .day, value: 3, to: Date()) ?? Date())
         )
@@ -309,10 +314,78 @@ struct MaintenanceTaskService {
         // Route creation through edge function with explicit caller JWT validation.
         // Keep `createdById` in signature for backward call-site compatibility.
         _ = createdById
-        let _: DriverRequestResponse = try await SupabaseManager.invokeEdgeWithSessionRecovery(
+        let response: DriverRequestResponse = try await SupabaseManager.invokeEdgeWithSessionRecovery(
             "create-driver-maintenance-request",
             body: payload
         )
+        guard let taskId = UUID(uuidString: response.id) else {
+            throw NSError(
+                domain: "MaintenanceTaskService",
+                code: -1,
+                userInfo: [NSLocalizedDescriptionKey: "Driver request created but task ID was invalid."]
+            )
+        }
+        return taskId
+    }
+
+    static func fetchAvailableMaintenancePersonnel(limit: Int = 12) async throws -> [UUID] {
+        struct StaffRow: Decodable { let id: UUID }
+        let rows: [StaffRow] = try await supabase
+            .from("staff_members")
+            .select("id")
+            .eq("role", value: UserRole.maintenancePersonnel.rawValue)
+            .eq("status", value: StaffStatus.active.rawValue)
+            .eq("availability", value: StaffAvailability.available.rawValue)
+            .order("updated_at", ascending: true)
+            .limit(limit)
+            .execute()
+            .value
+        return rows.map(\.id)
+    }
+
+    static func approveAndAssignWithoutStatusChange(
+        taskId: UUID,
+        approvedById: UUID,
+        assignedToId: UUID
+    ) async throws {
+        struct Payload: Encodable {
+            let approved_by_id: String
+            let approved_at: String
+            let rejection_reason: String?
+            let assigned_to_id: String
+        }
+        try await supabase
+            .from("maintenance_tasks")
+            .update(Payload(
+                approved_by_id: approvedById.uuidString,
+                approved_at: iso.string(from: Date()),
+                rejection_reason: nil,
+                assigned_to_id: assignedToId.uuidString
+            ))
+            .eq("id", value: taskId.uuidString)
+            .execute()
+    }
+
+    static func assignToFirstAvailableMaintenancePersonnel(
+        taskId: UUID,
+        approvedById: UUID
+    ) async -> UUID? {
+        guard let assigneeId = try? await fetchAvailableMaintenancePersonnel(limit: 1).first else {
+            return nil
+        }
+        do {
+            try await approveAndAssignWithoutStatusChange(
+                taskId: taskId,
+                approvedById: approvedById,
+                assignedToId: assigneeId
+            )
+            return assigneeId
+        } catch {
+            #if DEBUG
+            print("[MaintenanceTaskService] Auto-assignment failed: \(error)")
+            #endif
+            return nil
+        }
     }
 
     // MARK: - Alert linkage
@@ -322,6 +395,15 @@ struct MaintenanceTaskService {
     /// 1) explicit source_alert_id on the task, and
     /// 2) active defect alerts for the same vehicle/trip (fallback for legacy rows).
     static func resolveLinkedDefectAlertsOnApproval(
+        task: MaintenanceTask,
+        tripId: UUID?
+    ) async {
+        await resolveLinkedDefectAlertsOnTerminalDecision(task: task, tripId: tripId)
+    }
+
+    /// Resolves linked defect alerts when a maintenance request reaches any terminal decision
+    /// path in admin flow (approval/assignment/rejection), so alerts don't stay stale.
+    static func resolveLinkedDefectAlertsOnTerminalDecision(
         task: MaintenanceTask,
         tripId: UUID?
     ) async {

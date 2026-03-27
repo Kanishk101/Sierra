@@ -36,6 +36,10 @@ VALUES (
 ON CONFLICT (id) DO NOTHING;
 
 -- 2. RLS policies for storage.objects
+DROP POLICY IF EXISTS "Authenticated staff upload inspection photos" ON storage.objects;
+DROP POLICY IF EXISTS "Authenticated staff read inspection photos" ON storage.objects;
+DROP POLICY IF EXISTS "Fleet managers update inspection photos" ON storage.objects;
+DROP POLICY IF EXISTS "Fleet managers delete inspection photos" ON storage.objects;
 
 -- Any authenticated staff member can upload inspection photos.
 -- All three roles may conduct inspections (drivers pre/post-trip,
@@ -48,7 +52,7 @@ CREATE POLICY "Authenticated staff upload inspection photos"
         AND EXISTS (
             SELECT 1 FROM public.staff_members
             WHERE id   = auth.uid()
-              AND role IN ('driver', 'maintenancePersonnel', 'fleetManager')
+              AND LOWER(role::text) IN ('driver', 'maintenancepersonnel', 'fleetmanager')
         )
     );
 
@@ -72,7 +76,7 @@ CREATE POLICY "Fleet managers update inspection photos"
         bucket_id = 'inspection-photos'
         AND EXISTS (
             SELECT 1 FROM public.staff_members
-            WHERE id = auth.uid() AND role = 'fleetManager'
+            WHERE id = auth.uid() AND LOWER(role::text) = 'fleetmanager'
         )
     );
 
@@ -83,7 +87,7 @@ CREATE POLICY "Fleet managers delete inspection photos"
         bucket_id = 'inspection-photos'
         AND EXISTS (
             SELECT 1 FROM public.staff_members
-            WHERE id = auth.uid() AND role = 'fleetManager'
+            WHERE id = auth.uid() AND LOWER(role::text) = 'fleetmanager'
         )
     );
 

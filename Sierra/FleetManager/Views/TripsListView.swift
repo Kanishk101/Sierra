@@ -4,6 +4,8 @@ struct TripsListView: View {
     var embeddedInContainer: Bool = false
     var externalCreateTick: Int = 0
     var externalSelectedStatus: Binding<TripStatus?>? = nil
+    var externalSearchText: Binding<String>? = nil
+    var usesInlineNavigationTitle: Bool = true
     @Environment(AppDataStore.self) private var store
     @State private var selectedStatus: TripStatus? = nil
     @State private var showCreateSheet = false
@@ -21,9 +23,26 @@ struct TripsListView: View {
         }
     }
 
+    private var activeSearchText: String {
+        externalSearchText?.wrappedValue ?? ""
+    }
+
     private var filtered: [Trip] {
-        store.trips
+        let query = activeSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+
+        return store.trips
             .filter { activeSelectedStatus == nil || $0.status.normalized == activeSelectedStatus }
+            .filter { trip in
+                guard !query.isEmpty else { return true }
+                let driver = driverName(for: trip)?.lowercased() ?? ""
+                let plate = vehiclePlate(for: trip)?.lowercased() ?? ""
+                return trip.taskId.lowercased().contains(query)
+                    || trip.origin.lowercased().contains(query)
+                    || trip.destination.lowercased().contains(query)
+                    || driver.contains(query)
+                    || plate.contains(query)
+            }
             .sorted { $0.scheduledDate > $1.scheduledDate }
     }
 
@@ -55,7 +74,7 @@ struct TripsListView: View {
         } else {
             content
                 .navigationTitle("Trip")
-                .navigationBarTitleDisplayMode(.inline)
+                .navigationBarTitleDisplayMode(usesInlineNavigationTitle ? .inline : .large)
                 .toolbarBackground(.hidden, for: .navigationBar)
                 .toolbar {
                     ToolbarItemGroup(placement: .topBarTrailing) {
@@ -106,6 +125,7 @@ struct TripsListView: View {
                 tripCard(trip)
                     .contentShape(Rectangle())
                     .onTapGesture { navigationTarget = trip.id }
+                    .accessibilityAddTraits(.isButton)
                     .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
@@ -122,24 +142,24 @@ struct TripsListView: View {
         return VStack(alignment: .leading, spacing: 16) {
             HStack {
                 Image(systemName: "bus")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(SierraFont.scaled(18, weight: .semibold))
                     .foregroundStyle(.secondary)
                 Text(trip.taskId)
-                    .font(.system(size: 13, weight: .bold, design: .monospaced))
+                    .font(SierraFont.scaled(13, weight: .bold, design: .monospaced))
                     .foregroundStyle(accentOrange)
                 Spacer()
             }
 
             HStack(spacing: 10) {
                 Text(trip.origin.uppercased())
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(18, weight: .bold, design: .rounded))
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                 Image(systemName: "arrow.right")
-                    .font(.system(size: 17, weight: .bold))
+                    .font(SierraFont.scaled(17, weight: .bold))
                     .foregroundStyle(accentOrange)
                 Text(trip.destination.uppercased())
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(18, weight: .bold, design: .rounded))
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                 Spacer(minLength: 0)
@@ -147,19 +167,19 @@ struct TripsListView: View {
 
             HStack(spacing: 6) {
                 Image(systemName: "calendar.badge.clock")
-                    .font(.system(size: 18, weight: .medium))
+                    .font(SierraFont.scaled(18, weight: .medium))
                     .foregroundStyle(.secondary)
                 Text(trip.scheduledDate.formatted(.dateTime.day().month(.abbreviated).hour().minute()))
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .font(SierraFont.scaled(14, weight: .semibold, design: .rounded))
                     .foregroundStyle(.secondary)
             }
 
             HStack(spacing: 6) {
                 Image(systemName: "person")
-                    .font(.system(size: 16, weight: .medium))
+                    .font(SierraFont.scaled(16, weight: .medium))
                     .foregroundStyle(.secondary)
                 Text(driverName ?? "Unassigned driver")
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .font(SierraFont.scaled(14, weight: .semibold, design: .rounded))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -167,7 +187,7 @@ struct TripsListView: View {
             if let plate {
                 HStack(spacing: 8) {
                     Text(plate)
-                        .font(.system(size: 13, weight: .bold, design: .monospaced))
+                        .font(SierraFont.scaled(13, weight: .bold, design: .monospaced))
                         .foregroundStyle(accentOrange)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 6)
@@ -176,7 +196,7 @@ struct TripsListView: View {
                     Spacer(minLength: 8)
 
                     Text(trip.priority.rawValue)
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .font(SierraFont.scaled(13, weight: .semibold, design: .rounded))
                         .foregroundStyle(accentOrange)
 
                     statusPill(trip.status)
@@ -186,7 +206,7 @@ struct TripsListView: View {
                     Spacer(minLength: 8)
 
                     Text(trip.priority.rawValue)
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .font(SierraFont.scaled(13, weight: .semibold, design: .rounded))
                         .foregroundStyle(accentOrange)
                     statusPill(trip.status)
                 }
@@ -197,9 +217,9 @@ struct TripsListView: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "doc.text")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(SierraFont.scaled(15, weight: .semibold))
                     Text("View Details")
-                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(15, weight: .bold, design: .rounded))
                 }
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
@@ -216,6 +236,10 @@ struct TripsListView: View {
                 .shadow(color: .black.opacity(0.06), radius: 14, x: 0, y: 6)
         )
         .overlay(RoundedRectangle(cornerRadius: 22).stroke(Color.appDivider.opacity(0.35), lineWidth: 1))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(trip.origin) to \(trip.destination)")
+        .accessibilityValue("\(trip.status.rawValue), priority \(trip.priority.rawValue)")
+        .accessibilityHint("Opens trip details")
     }
 
     private func driverName(for trip: Trip) -> String? {
@@ -254,7 +278,7 @@ struct TripsListView: View {
     private func statusPill(_ status: TripStatus) -> some View {
         let color = statusColor(status)
         return Text(statusLabel(status))
-            .font(.system(size: 12, weight: .semibold, design: .rounded))
+            .font(SierraFont.scaled(12, weight: .semibold, design: .rounded))
             .foregroundStyle(color)
             .padding(.horizontal, 10)
             .padding(.vertical, 4)

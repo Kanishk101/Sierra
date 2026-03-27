@@ -14,7 +14,46 @@
 -- staff_members was already in the publication.
 -- ============================================================
 
-ALTER PUBLICATION supabase_realtime ADD TABLE public.vehicles;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.trips;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.emergency_alerts;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+      FROM pg_publication_tables
+     WHERE pubname = 'supabase_realtime'
+       AND schemaname = 'public'
+       AND tablename = 'vehicles'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.vehicles;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+      FROM pg_publication_tables
+     WHERE pubname = 'supabase_realtime'
+       AND schemaname = 'public'
+       AND tablename = 'trips'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.trips;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+      FROM pg_publication_tables
+     WHERE pubname = 'supabase_realtime'
+       AND schemaname = 'public'
+       AND tablename = 'emergency_alerts'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.emergency_alerts;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+      FROM pg_publication_tables
+     WHERE pubname = 'supabase_realtime'
+       AND schemaname = 'public'
+       AND tablename = 'notifications'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;
+  END IF;
+END
+$$;

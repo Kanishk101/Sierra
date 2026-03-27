@@ -226,7 +226,7 @@ struct DriverTripsListView: View {
         VStack(spacing: 10) {
             HStack(alignment: .center) {
                 Text("All Trips")
-                    .font(.system(size: 30, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(30, weight: .bold, design: .rounded))
                     .foregroundColor(.appTextPrimary)
                 Spacer()
 
@@ -249,7 +249,7 @@ struct DriverTripsListView: View {
                                 .fill(isSearchExpanded ? Color.appOrange.opacity(0.12) : Color.clear)
                                 .frame(width: 36, height: 36)
                             Image(systemName: "magnifyingglass")
-                                .font(.system(size: 20, weight: .semibold))
+                                .font(SierraFont.scaled(20, weight: .semibold))
                                 .foregroundColor(.appOrange)
                         }
                     }
@@ -262,10 +262,10 @@ struct DriverTripsListView: View {
             if isSearchExpanded {
                 HStack(spacing: 10) {
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(SierraFont.scaled(18, weight: .semibold))
                         .foregroundColor(.appTextSecondary)
                     TextField("Search task ID, origin…", text: $searchText)
-                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .font(SierraFont.scaled(14, weight: .medium, design: .rounded))
                         .focused($isSearchFocused)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
@@ -308,14 +308,6 @@ struct DriverTripsListView: View {
                     }
                 }
             }
-            if isFilterActive {
-                Divider()
-                Button(role: .destructive) {
-                    withAnimation(.spring(response: 0.4)) { selectedStatus = nil }
-                } label: {
-                    Label("Clear Filters", systemImage: "xmark.circle")
-                }
-            }
         } label: {
             ZStack {
                 Circle()
@@ -324,7 +316,7 @@ struct DriverTripsListView: View {
                 Image(systemName: isFilterActive
                       ? "line.3.horizontal.decrease.circle.fill"
                       : "line.3.horizontal.decrease.circle")
-                    .font(.system(size: 20, weight: .semibold))
+                    .font(SierraFont.scaled(20, weight: .semibold))
                     .foregroundColor(.appOrange)
             }
         }
@@ -478,11 +470,11 @@ struct DriverTripsListView: View {
     private func statItem(value: String, label: String, icon: String, color: Color) -> some View {
         VStack(spacing: 4) {
             HStack(spacing: 5) {
-                Image(systemName: icon).font(.system(size: 13, weight: .bold)).foregroundColor(color)
-                Text(value).font(.system(size: 22, weight: .bold, design: .rounded)).foregroundColor(.appTextPrimary)
+                Image(systemName: icon).font(SierraFont.scaled(13, weight: .bold)).foregroundColor(color)
+                Text(value).font(SierraFont.scaled(22, weight: .bold, design: .rounded)).foregroundColor(.appTextPrimary)
             }
             Text(label)
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .font(SierraFont.scaled(11, weight: .semibold, design: .rounded))
                 .foregroundColor(.appTextSecondary)
                 .textCase(.uppercase).tracking(0.5)
         }
@@ -492,18 +484,18 @@ struct DriverTripsListView: View {
     private func filterBanner(_ status: TripStatus) -> some View {
         HStack(spacing: 10) {
             Image(systemName: "line.3.horizontal.decrease.circle.fill")
-                .font(.system(size: 14, weight: .bold))
+                .font(SierraFont.scaled(14, weight: .bold))
                 .foregroundColor(statusColor(status))
             Text("Showing: \(statusDisplayName(status))")
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .font(SierraFont.scaled(13, weight: .semibold, design: .rounded))
                 .foregroundColor(.appTextPrimary)
             Spacer()
             Button {
                 withAnimation(.spring(response: 0.3)) { selectedStatus = nil }
             } label: {
                 HStack(spacing: 4) {
-                    Text("Clear").font(.system(size: 13, weight: .bold, design: .rounded))
-                    Image(systemName: "xmark.circle.fill").font(.system(size: 14))
+                    Text("Clear").font(SierraFont.scaled(13, weight: .bold, design: .rounded))
+                    Image(systemName: "xmark.circle.fill").font(SierraFont.scaled(14))
                 }
                 .foregroundColor(Color.appOrange)
             }
@@ -571,8 +563,8 @@ struct DriverTripsListView: View {
             HStack(spacing: 12) {
                 NavigationLink(value: trip.id) {
                     HStack(spacing: 6) {
-                        Image(systemName: "doc.text.magnifyingglass").font(.system(size: 13, weight: .semibold))
-                        Text("View Details").font(.system(size: 14, weight: .bold, design: .rounded))
+                        Image(systemName: "doc.text.magnifyingglass").font(SierraFont.scaled(13, weight: .semibold))
+                        Text("View Details").font(SierraFont.scaled(14, weight: .bold, design: .rounded))
                     }
                     .foregroundColor(Color.appOrange)
                     .frame(maxWidth: .infinity)
@@ -583,8 +575,8 @@ struct DriverTripsListView: View {
                 .buttonStyle(.plain)
 
                 HStack(spacing: 6) {
-                    Image(systemName: "checkmark.circle.fill").font(.system(size: 13, weight: .semibold))
-                    Text("Completed").font(.system(size: 14, weight: .bold, design: .rounded))
+                    Image(systemName: "checkmark.circle.fill").font(SierraFont.scaled(13, weight: .semibold))
+                    Text("Completed").font(SierraFont.scaled(14, weight: .bold, design: .rounded))
                 }
                 .foregroundColor(Color(red: 0.20, green: 0.65, blue: 0.32))
                 .frame(maxWidth: .infinity)
@@ -600,8 +592,8 @@ struct DriverTripsListView: View {
                         showTripDetail(trip)
                     } label: {
                         HStack(spacing: 6) {
-                            Image(systemName: "doc.text.magnifyingglass").font(.system(size: 13, weight: .semibold))
-                            Text("View Details").font(.system(size: 14, weight: .bold, design: .rounded))
+                            Image(systemName: "doc.text.magnifyingglass").font(SierraFont.scaled(13, weight: .semibold))
+                            Text("View Details").font(SierraFont.scaled(14, weight: .bold, design: .rounded))
                         }
                         .foregroundColor(Color.appOrange)
                         .frame(maxWidth: .infinity)
@@ -613,8 +605,8 @@ struct DriverTripsListView: View {
                 } else {
                     NavigationLink(value: trip.id) {
                         HStack(spacing: 6) {
-                            Image(systemName: "doc.text.magnifyingglass").font(.system(size: 13, weight: .semibold))
-                            Text("View Details").font(.system(size: 14, weight: .bold, design: .rounded))
+                            Image(systemName: "doc.text.magnifyingglass").font(SierraFont.scaled(13, weight: .semibold))
+                            Text("View Details").font(SierraFont.scaled(14, weight: .bold, design: .rounded))
                         }
                         .foregroundColor(Color.appOrange)
                         .frame(maxWidth: .infinity)
@@ -628,8 +620,8 @@ struct DriverTripsListView: View {
                 // Right: varies by state
                 if isCancelled {
                     HStack(spacing: 6) {
-                        Image(systemName: "xmark.circle.fill").font(.system(size: 13, weight: .semibold))
-                        Text("Cancelled").font(.system(size: 14, weight: .bold, design: .rounded))
+                        Image(systemName: "xmark.circle.fill").font(SierraFont.scaled(13, weight: .semibold))
+                        Text("Cancelled").font(SierraFont.scaled(14, weight: .bold, design: .rounded))
                     }
                     .foregroundColor(Color(red: 0.90, green: 0.22, blue: 0.18))
                     .frame(maxWidth: .infinity)
@@ -639,8 +631,8 @@ struct DriverTripsListView: View {
                     // Accept Trip
                     Button { acceptTrip(trip) } label: {
                         HStack(spacing: 6) {
-                            Image(systemName: "hand.thumbsup.fill").font(.system(size: 13, weight: .semibold))
-                            Text("Accept Trip").font(.system(size: 14, weight: .bold, design: .rounded))
+                            Image(systemName: "hand.thumbsup.fill").font(SierraFont.scaled(13, weight: .semibold))
+                            Text("Accept Trip").font(SierraFont.scaled(14, weight: .bold, design: .rounded))
                         }
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
@@ -651,8 +643,8 @@ struct DriverTripsListView: View {
                     .disabled(isAccepting)
                 } else if isAcceptedScheduled && !hasPreInspection {
                     HStack(spacing: 6) {
-                        Image(systemName: "checkmark.seal.fill").font(.system(size: 13, weight: .semibold))
-                        Text("Accepted").font(.system(size: 14, weight: .bold, design: .rounded))
+                        Image(systemName: "checkmark.seal.fill").font(SierraFont.scaled(13, weight: .semibold))
+                        Text("Accepted").font(SierraFont.scaled(14, weight: .bold, design: .rounded))
                     }
                     .foregroundColor(Color(red: 0.20, green: 0.65, blue: 0.32))
                     .frame(maxWidth: .infinity)
@@ -664,8 +656,8 @@ struct DriverTripsListView: View {
                         navigationTrip = trip
                     } label: {
                         HStack(spacing: 6) {
-                            Image(systemName: "location.fill").font(.system(size: 13, weight: .semibold))
-                            Text("Start Navigation").font(.system(size: 14, weight: .bold, design: .rounded))
+                            Image(systemName: "location.fill").font(SierraFont.scaled(13, weight: .semibold))
+                            Text("Start Navigation").font(SierraFont.scaled(14, weight: .bold, design: .rounded))
                         }
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
@@ -679,8 +671,8 @@ struct DriverTripsListView: View {
                         navigationTrip = trip
                     } label: {
                         HStack(spacing: 6) {
-                            Image(systemName: "location.fill").font(.system(size: 13, weight: .semibold))
-                            Text("Start Navigation").font(.system(size: 14, weight: .bold, design: .rounded))
+                            Image(systemName: "location.fill").font(SierraFont.scaled(13, weight: .semibold))
+                            Text("Start Navigation").font(SierraFont.scaled(14, weight: .bold, design: .rounded))
                         }
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
@@ -690,8 +682,8 @@ struct DriverTripsListView: View {
                     .buttonStyle(.plain)
                 } else if isCompleted {
                     HStack(spacing: 6) {
-                        Image(systemName: "checkmark.circle.fill").font(.system(size: 13, weight: .semibold))
-                        Text("Completed").font(.system(size: 14, weight: .bold, design: .rounded))
+                        Image(systemName: "checkmark.circle.fill").font(SierraFont.scaled(13, weight: .semibold))
+                        Text("Completed").font(SierraFont.scaled(14, weight: .bold, design: .rounded))
                     }
                     .foregroundColor(Color(red: 0.20, green: 0.65, blue: 0.32))
                     .frame(maxWidth: .infinity)
@@ -701,8 +693,8 @@ struct DriverTripsListView: View {
                 } else {
                     // Fallback: any other status (cancelled, legacy)
                     HStack(spacing: 6) {
-                        Image(systemName: "clock.fill").font(.system(size: 13, weight: .semibold))
-                        Text(statusDisplayName(status)).font(.system(size: 14, weight: .bold, design: .rounded))
+                        Image(systemName: "clock.fill").font(SierraFont.scaled(13, weight: .semibold))
+                        Text(statusDisplayName(status)).font(SierraFont.scaled(14, weight: .bold, design: .rounded))
                     }
                     .foregroundColor(.appTextSecondary)
                     .frame(maxWidth: .infinity)
@@ -722,8 +714,8 @@ struct DriverTripsListView: View {
 
     private var completedBadge: some View {
         HStack(spacing: 5) {
-            Image(systemName: "checkmark.circle.fill").font(.system(size: 11, weight: .bold))
-            Text("Completed").font(.system(size: 12, weight: .bold, design: .rounded))
+            Image(systemName: "checkmark.circle.fill").font(SierraFont.scaled(11, weight: .bold))
+            Text("Completed").font(SierraFont.scaled(12, weight: .bold, design: .rounded))
         }
         .foregroundColor(Color(red: 0.20, green: 0.65, blue: 0.32))
         .padding(.horizontal, 12).padding(.vertical, 6)
@@ -737,11 +729,11 @@ struct DriverTripsListView: View {
         let rest = words.dropFirst().joined(separator: " ")
         return VStack(alignment: .leading, spacing: 1) {
             Text(city.uppercased())
-                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .font(SierraFont.scaled(18, weight: .bold, design: .rounded))
                 .foregroundColor(.appTextPrimary).lineLimit(1).minimumScaleFactor(0.7)
             if !rest.isEmpty {
                 Text(rest)
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .font(SierraFont.scaled(11, weight: .medium, design: .rounded))
                     .foregroundColor(.appTextSecondary).lineLimit(1)
             }
         }
@@ -753,12 +745,12 @@ struct DriverTripsListView: View {
            let v = store.vehicle(for: uuid) {
             HStack(spacing: 8) {
                 Text(v.licensePlate)
-                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    .font(SierraFont.scaled(12, weight: .bold, design: .monospaced))
                     .foregroundColor(Color.appOrange)
                     .padding(.horizontal, 10).padding(.vertical, 4)
                     .background(Capsule().fill(Color.appOrange.opacity(0.08)))
                 Text("\(v.name) \(v.model)")
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .font(SierraFont.scaled(13, weight: .medium, design: .rounded))
                     .foregroundColor(.appTextSecondary).lineLimit(1)
             }
         }
@@ -770,17 +762,17 @@ struct DriverTripsListView: View {
         let isUrgent  = deadline < Date().addingTimeInterval(2 * 3600) && !isOverdue
         HStack(spacing: 6) {
             Image(systemName: isOverdue ? "exclamationmark.triangle.fill" : "clock.badge.exclamationmark.fill")
-                .font(.system(size: 13, weight: .semibold))
+                .font(SierraFont.scaled(13, weight: .semibold))
                 .foregroundColor(isOverdue ? .red : Color.appOrange)
             Text(isOverdue
                  ? "Response Overdue"
                  : "Respond by \(deadline.formatted(.dateTime.hour().minute()))")
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .font(SierraFont.scaled(13, weight: .semibold, design: .rounded))
                 .foregroundColor(isOverdue ? .red : Color.appOrange)
             Spacer()
             if isUrgent {
                 Text("< 2h left")
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(11, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
                     .padding(.horizontal, 8).padding(.vertical, 4)
                     .background(Capsule().fill(Color.appOrange))
@@ -797,18 +789,9 @@ struct DriverTripsListView: View {
             subtitle: hasSearchOrFilter
                 ? "No trips match your current search/filter."
                 : "You haven\u{2019}t been assigned any trips yet.",
-            actionTitle: hasSearchOrFilter ? "Clear Filters" : "Refresh",
+            actionTitle: "Refresh",
             action: {
-                if hasSearchOrFilter {
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
-                        selectedStatus = nil
-                        searchText = ""
-                        isSearchExpanded = false
-                        isSearchFocused = false
-                    }
-                } else {
-                    Task { if let id = driverId { await store.refreshDriverData(driverId: id, force: true) } }
-                }
+                Task { if let id = driverId { await store.refreshDriverData(driverId: id, force: true) } }
             }
         )
     }
@@ -854,7 +837,7 @@ struct PriorityBadge: View {
                     .onAppear { isPulsing = true }
             }
             Text(priority.rawValue)
-                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .font(SierraFont.scaled(12, weight: .bold, design: .rounded))
                 .foregroundColor(priority.color)
         }
         .padding(.horizontal, 12).padding(.vertical, 6)
@@ -872,7 +855,7 @@ struct RouteArrow: View {
                 .stroke(Color.appOrange.opacity(0.5),
                         style: StrokeStyle(lineWidth: 2, dash: [5, 4], dashPhase: dashOffset))
                 .frame(width: 30, height: 2)
-            Image(systemName: "arrowtriangle.right.fill").font(.system(size: 9)).foregroundColor(Color.appOrange)
+            Image(systemName: "arrowtriangle.right.fill").font(SierraFont.scaled(9)).foregroundColor(Color.appOrange)
         }
         .onAppear {
             dashOffset = 0
@@ -915,13 +898,13 @@ struct AcceptSuccessOverlay: View {
                         .frame(width: 80, height: 80)
                         .shadow(color: Color(red: 0.20, green: 0.65, blue: 0.32).opacity(0.4), radius: 20)
                     Image(systemName: "checkmark")
-                        .font(.system(size: 36, weight: .bold))
+                        .font(SierraFont.scaled(36, weight: .bold))
                         .foregroundColor(.white)
                         .opacity(checkOpacity)
                         .scaleEffect(checkOpacity > 0 ? 1.0 : 0.3)
                 }
                 Text("Trip Accepted!")
-                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(20, weight: .bold, design: .rounded))
                     .foregroundColor(.appTextPrimary)
                     .opacity(checkOpacity)
             }
@@ -939,8 +922,8 @@ struct AcceptSuccessOverlay: View {
 struct CompletedBadge: View {
     var body: some View {
         HStack(spacing: 5) {
-            Image(systemName: "checkmark.circle.fill").font(.system(size: 11, weight: .bold))
-            Text("Completed").font(.system(size: 12, weight: .bold, design: .rounded))
+            Image(systemName: "checkmark.circle.fill").font(SierraFont.scaled(11, weight: .bold))
+            Text("Completed").font(SierraFont.scaled(12, weight: .bold, design: .rounded))
         }
         .foregroundColor(Color(red: 0.20, green: 0.65, blue: 0.32))
         .padding(.horizontal, 12).padding(.vertical, 6)
@@ -961,6 +944,7 @@ struct TripDetailOverlay: View {
     var body: some View {
         ZStack {
             Color.black.opacity(0.45).ignoresSafeArea().onTapGesture { onDismiss() }
+                .accessibilityHidden(true)
             TripDetailCard(trip: trip, vehicle: vehicle, onStartInspection: onStartInspection)
                 .padding(.horizontal, 28)
                 .scaleEffect(cardScale)
@@ -1156,8 +1140,8 @@ struct TripDetailCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Image(systemName: "bus.fill").font(.system(size: 14, weight: .semibold)).foregroundColor(.appTextSecondary)
-                Text(trip.taskId).font(.system(size: 13, weight: .bold, design: .monospaced)).foregroundColor(.appOrange)
+                Image(systemName: "bus.fill").font(SierraFont.scaled(14, weight: .semibold)).foregroundColor(.appTextSecondary)
+                Text(trip.taskId).font(SierraFont.scaled(13, weight: .bold, design: .monospaced)).foregroundColor(.appOrange)
                 Spacer()
                 PriorityBadge(priority: trip.priority)
             }
@@ -1173,25 +1157,25 @@ struct TripDetailCard: View {
 
             HStack(spacing: 0) {
                 HStack(spacing: 8) {
-                    Image(systemName: "calendar").font(.system(size: 15, weight: .semibold)).foregroundColor(.appOrange)
-                    Text(formattedDate).font(.system(size: 14, weight: .semibold, design: .rounded)).foregroundColor(.appTextPrimary)
+                    Image(systemName: "calendar").font(SierraFont.scaled(15, weight: .semibold)).foregroundColor(.appOrange)
+                    Text(formattedDate).font(SierraFont.scaled(14, weight: .semibold, design: .rounded)).foregroundColor(.appTextPrimary)
                 }
                 Spacer()
                 HStack(spacing: 8) {
-                    Image(systemName: "clock.fill").font(.system(size: 15, weight: .semibold)).foregroundColor(.appOrange)
-                    Text(formattedTime).font(.system(size: 14, weight: .semibold, design: .rounded)).foregroundColor(.appTextPrimary)
+                    Image(systemName: "clock.fill").font(SierraFont.scaled(15, weight: .semibold)).foregroundColor(.appOrange)
+                    Text(formattedTime).font(SierraFont.scaled(14, weight: .semibold, design: .rounded)).foregroundColor(.appTextPrimary)
                 }
             }
 
             HStack(spacing: 0) {
                 Text(trip.origin.uppercased())
-                    .font(.system(size: 15, weight: .bold, design: .rounded)).foregroundColor(.appTextPrimary)
+                    .font(SierraFont.scaled(15, weight: .bold, design: .rounded)).foregroundColor(.appTextPrimary)
                     .lineLimit(1).minimumScaleFactor(0.8)
                 Spacer(minLength: 8)
                 HStack(spacing: 0) {
                     DetailRouteLine(dashOffset: $routeDash).frame(width: 28, height: 2)
                     Text(distanceDisplay)
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(12, weight: .bold, design: .rounded))
                         .foregroundColor(.appTextPrimary).lineLimit(1).fixedSize()
                         .padding(.horizontal, 12).padding(.vertical, 5)
                         .background(Capsule().stroke(Color.appOrange.opacity(0.5), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])))
@@ -1199,17 +1183,17 @@ struct TripDetailCard: View {
                 }
                 Spacer(minLength: 8)
                 Text(trip.destination.uppercased())
-                    .font(.system(size: 15, weight: .bold, design: .rounded)).foregroundColor(.appTextPrimary)
+                    .font(SierraFont.scaled(15, weight: .bold, design: .rounded)).foregroundColor(.appTextPrimary)
                     .lineLimit(1).minimumScaleFactor(0.8)
             }
 
             if !sortedStops.isEmpty {
                 HStack(alignment: .top, spacing: 8) {
                     Text("Stops:")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(13, weight: .bold, design: .rounded))
                         .foregroundColor(.appTextSecondary)
                     Text(sortedStops.map(\.name).joined(separator: " • "))
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .font(SierraFont.scaled(13, weight: .semibold, design: .rounded))
                         .foregroundColor(.appTextPrimary)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
@@ -1219,11 +1203,11 @@ struct TripDetailCard: View {
             if let v = vehicle {
                 HStack(spacing: 8) {
                     Text(v.licensePlate)
-                        .font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundColor(.appOrange)
+                        .font(SierraFont.scaled(12, weight: .bold, design: .monospaced)).foregroundColor(.appOrange)
                         .padding(.horizontal, 10).padding(.vertical, 4)
                         .background(Capsule().fill(Color.appOrange.opacity(0.08)))
                     Text("\(v.name) \(v.model)")
-                        .font(.system(size: 13, weight: .medium, design: .rounded)).foregroundColor(.appTextSecondary)
+                        .font(SierraFont.scaled(13, weight: .medium, design: .rounded)).foregroundColor(.appTextSecondary)
                 }
             }
 
@@ -1257,10 +1241,10 @@ struct TripDetailCard: View {
                 // Ready to start — green "Pre-Trip Done" state
                 HStack(spacing: 8) {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 14, weight: .bold))
+                        .font(SierraFont.scaled(14, weight: .bold))
                         .foregroundColor(Color(red: 0.20, green: 0.65, blue: 0.32))
                     Text("Pre-Trip Done · Ready to Start")
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(14, weight: .bold, design: .rounded))
                         .foregroundColor(Color(red: 0.20, green: 0.65, blue: 0.32))
                 }
                 .frame(maxWidth: .infinity)
@@ -1271,10 +1255,10 @@ struct TripDetailCard: View {
                 // Pre-trip done but not yet within start window
                 HStack(spacing: 8) {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 14, weight: .bold))
+                        .font(SierraFont.scaled(14, weight: .bold))
                         .foregroundColor(Color(red: 0.20, green: 0.65, blue: 0.32))
                     Text("Inspection Done · Starts at \(trip.scheduledDate.formatted(.dateTime.hour().minute()))")
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .font(SierraFont.scaled(13, weight: .semibold, design: .rounded))
                         .foregroundColor(.appTextSecondary)
                         .lineLimit(1).minimumScaleFactor(0.8)
                 }
@@ -1322,7 +1306,7 @@ struct SlideToStartInspectionButton: View {
                     .overlay(Capsule().stroke(Color.appDivider, lineWidth: 1))
 
                 Text(label)
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(16, weight: .bold, design: .rounded))
                     .foregroundColor(.appTextPrimary)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.horizontal, 60).lineLimit(1).minimumScaleFactor(0.82)
@@ -1332,7 +1316,7 @@ struct SlideToStartInspectionButton: View {
                     .fill(LinearGradient(colors: [Color.appAmber, Color.appOrange, Color.appDeepOrange],
                                           startPoint: .topLeading, endPoint: .bottomTrailing))
                     .frame(width: knobWidth, height: knobHeight)
-                    .overlay(Image(systemName: "chevron.right.2").font(.system(size: 16, weight: .black)).foregroundColor(.white))
+                    .overlay(Image(systemName: "chevron.right.2").font(SierraFont.scaled(16, weight: .black)).foregroundColor(.white))
                     .shadow(color: Color.appOrange.opacity(0.35), radius: 10, x: 0, y: 4)
                     .offset(x: dragOffset + horizontalPadding)
                     .gesture(
@@ -1371,8 +1355,8 @@ struct SlideToStartInspectionButton: View {
 struct CompletedInspectionButton: View {
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: "checkmark.seal.fill").font(.system(size: 14, weight: .bold))
-            Text("Post-Trip Inspection Completed").font(.system(size: 15, weight: .bold, design: .rounded))
+            Image(systemName: "checkmark.seal.fill").font(SierraFont.scaled(14, weight: .bold))
+            Text("Post-Trip Inspection Completed").font(SierraFont.scaled(15, weight: .bold, design: .rounded))
         }
         .foregroundColor(Color(red: 0.20, green: 0.65, blue: 0.32))
         .frame(maxWidth: .infinity).padding(.vertical, 16)
@@ -1407,18 +1391,18 @@ struct AcceptRequiredOverlay: View {
                     Circle().fill(Color.appOrange).frame(width: 64, height: 64)
                         .shadow(color: Color.appOrange.opacity(0.4), radius: 16)
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 28, weight: .bold)).foregroundColor(.white)
+                        .font(SierraFont.scaled(28, weight: .bold)).foregroundColor(.white)
                 }
                 .onAppear { iconPulse = true }
 
-                Text("Action Required").font(.system(size: 20, weight: .bold, design: .rounded)).foregroundColor(.appTextPrimary)
+                Text("Action Required").font(SierraFont.scaled(20, weight: .bold, design: .rounded)).foregroundColor(.appTextPrimary)
                 Text("Accept the trip first to start pre-trip inspection.")
-                    .font(.system(size: 14, weight: .medium, design: .rounded)).foregroundColor(.appTextSecondary)
+                    .font(SierraFont.scaled(14, weight: .medium, design: .rounded)).foregroundColor(.appTextSecondary)
                     .multilineTextAlignment(.center).padding(.horizontal, 2)
 
                 Button(action: { UIImpactFeedbackGenerator(style: .light).impactOccurred(); onDismiss() }) {
                     Text("Dismiss")
-                        .font(.system(size: 14, weight: .semibold, design: .rounded)).foregroundColor(.appTextSecondary)
+                        .font(SierraFont.scaled(14, weight: .semibold, design: .rounded)).foregroundColor(.appTextSecondary)
                 }
             }
             .padding(.horizontal, 20).padding(.vertical, 18).frame(maxWidth: 330)
@@ -1445,20 +1429,20 @@ struct WaitingVehicleOverlay: View {
                 ZStack {
                     Circle().fill(Color.appOrange.opacity(0.15)).frame(width: 90, height: 90)
                     Circle().fill(Color.appOrange).frame(width: 64, height: 64).shadow(color: Color.appOrange.opacity(0.4), radius: 16)
-                    Image(systemName: "hourglass.circle.fill").font(.system(size: 28, weight: .bold)).foregroundColor(.white)
+                    Image(systemName: "hourglass.circle.fill").font(SierraFont.scaled(28, weight: .bold)).foregroundColor(.white)
                         .rotationEffect(.degrees(hourglassRotation))
                         .animation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true), value: hourglassRotation)
                 }
                 .onAppear { hourglassRotation = 180 }
 
-                Text("Waiting for Vehicle").font(.system(size: 20, weight: .bold, design: .rounded)).foregroundColor(.appTextPrimary)
+                Text("Waiting for Vehicle").font(SierraFont.scaled(20, weight: .bold, design: .rounded)).foregroundColor(.appTextPrimary)
                 Text("A new vehicle is being assigned. You'll be notified once it's ready.")
-                    .font(.system(size: 14, weight: .medium, design: .rounded)).foregroundColor(.appTextSecondary)
+                    .font(SierraFont.scaled(14, weight: .medium, design: .rounded)).foregroundColor(.appTextSecondary)
                     .multilineTextAlignment(.center).padding(.horizontal, 2)
 
                 Button(action: { UIImpactFeedbackGenerator(style: .medium).impactOccurred(); onDismiss() }) {
                     Text("OK")
-                        .font(.system(size: 15, weight: .bold, design: .rounded)).foregroundColor(.white)
+                        .font(SierraFont.scaled(15, weight: .bold, design: .rounded)).foregroundColor(.white)
                         .frame(maxWidth: .infinity).padding(.vertical, 12)
                         .background(Capsule().fill(Color.appOrange))
                 }

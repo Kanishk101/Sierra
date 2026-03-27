@@ -102,19 +102,36 @@ CREATE INDEX IF NOT EXISTS idx_push_tokens_staff_id ON public.push_tokens (staff
 -- 3. Remove the broken pg_net push trigger from migration 002
 --    (it required ALTER DATABASE SET which Supabase doesn't permit)
 -- ------------------------------------------------------------
-DROP TRIGGER IF EXISTS trg_send_push_on_notification_insert ON public.notifications;
-DROP FUNCTION IF EXISTS public.fn_send_push_on_notification_insert();
+DO $$
+DECLARE
+    trig RECORD;
+BEGIN
+    FOR trig IN
+        SELECT t.tgname
+          FROM pg_trigger t
+          JOIN pg_proc p ON p.oid = t.tgfoid
+          JOIN pg_namespace n ON n.oid = p.pronamespace
+         WHERE t.tgrelid = 'public.notifications'::regclass
+           AND n.nspname = 'public'
+           AND p.proname = 'fn_send_push_on_notification_insert'
+    LOOP
+        EXECUTE format('DROP TRIGGER IF EXISTS %I ON public.notifications', trig.tgname);
+    END LOOP;
 
-RAISE NOTICE '=== push_tokens schema fixed ===';
-RAISE NOTICE 'Column: token -> device_token';
-RAISE NOTICE 'Unique constraint: staff_id + device_token';
-RAISE NOTICE 'Broken pg_net trigger: removed';
-RAISE NOTICE '';
-RAISE NOTICE 'For background push delivery, configure a Supabase Database Webhook:';
-RAISE NOTICE '  Dashboard -> Database -> Webhooks -> Create new webhook';
-RAISE NOTICE '  Table: notifications | Event: INSERT';
-RAISE NOTICE '  URL: https://<ref>.supabase.co/functions/v1/send-push-notification';
-RAISE NOTICE '================================';
+    DROP FUNCTION IF EXISTS public.fn_send_push_on_notification_insert();
+
+    RAISE NOTICE '=== push_tokens schema fixed ===';
+    RAISE NOTICE 'Column: token -> device_token';
+    RAISE NOTICE 'Unique constraint: staff_id + device_token';
+    RAISE NOTICE 'Broken pg_net trigger: removed';
+    RAISE NOTICE '';
+    RAISE NOTICE 'For background push delivery, configure a Supabase Database Webhook:';
+    RAISE NOTICE '  Dashboard -> Database -> Webhooks -> Create new webhook';
+    RAISE NOTICE '  Table: notifications | Event: INSERT';
+    RAISE NOTICE '  URL: https://<ref>.supabase.co/functions/v1/send-push-notification';
+    RAISE NOTICE '================================';
+END;
+$$;
 
 -- ============================================================
 -- END OF MIGRATION 005

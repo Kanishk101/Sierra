@@ -14,6 +14,11 @@ struct SparePartsRequestSheet: View {
 
     private var currentUserId: UUID { AuthManager.shared.currentUser?.id ?? UUID() }
     private var workOrder: WorkOrder? { store.workOrder(forMaintenanceTask: task.id) }
+    private var catalogParts: [InventoryPart] {
+        store.inventoryParts
+            .filter(\.isActive)
+            .sorted { $0.partName.localizedCaseInsensitiveCompare($1.partName) == .orderedAscending }
+    }
 
     var body: some View {
         NavigationStack {
@@ -40,7 +45,7 @@ struct SparePartsRequestSheet: View {
                         Color.black.opacity(0.3).ignoresSafeArea()
                         VStack(spacing: 14) {
                             Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 56))
+                                .font(SierraFont.scaled(56))
                                 .foregroundStyle(.green)
                             Text("Parts Requested!")
                                 .font(.title3.weight(.bold))
@@ -57,6 +62,11 @@ struct SparePartsRequestSheet: View {
                 }
             }
             .animation(.easeInOut(duration: 0.25), value: showSuccess)
+            .task {
+                if store.inventoryParts.isEmpty {
+                    await store.loadMaintenanceData(staffId: currentUserId)
+                }
+            }
         }
     }
 
@@ -117,6 +127,7 @@ struct SparePartsRequestSheet: View {
             ForEach(requiredParts.indices, id: \.self) { idx in
                 PartInputRow(
                     part: $requiredParts[idx],
+                    catalogParts: catalogParts,
                     canRemove: requiredParts.count > 1,
                     onRemove: {
                         withAnimation(.easeInOut(duration: 0.2)) {
@@ -173,6 +184,7 @@ struct SparePartsRequestSheet: View {
                 ForEach(additionalParts.indices, id: \.self) { idx in
                     PartInputRow(
                         part: $additionalParts[idx],
+                        catalogParts: catalogParts,
                         canRemove: true,
                         onRemove: {
                             withAnimation(.easeInOut(duration: 0.2)) {
@@ -229,9 +241,9 @@ struct SparePartsRequestSheet: View {
     private func statCapsule(title: String, value: Int, tint: Color) -> some View {
         HStack(spacing: 4) {
             Text("\(value)")
-                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .font(SierraFont.scaled(11, weight: .bold, design: .rounded))
             Text(title)
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .font(SierraFont.scaled(10, weight: .semibold, design: .rounded))
         }
         .foregroundStyle(tint)
         .padding(.horizontal, 10)
@@ -298,6 +310,7 @@ struct DraftPart: Identifiable {
 
 struct PartInputRow: View {
     @Binding var part: DraftPart
+    var catalogParts: [InventoryPart]
     var canRemove: Bool
     var onRemove: () -> Void
 
@@ -325,21 +338,25 @@ struct PartInputRow: View {
             if part.useCatalog {
                 // Catalog dropdown
                 Menu {
-                    ForEach(PartsCatalog.items, id: \.name) { item in
+                    ForEach(catalogParts, id: \.id) { item in
                         Button {
-                            part.partName = item.name
-                            part.partNumber = item.partNumber
+                            part.partName = item.partName
+                            part.partNumber = item.partNumber ?? ""
                         } label: {
                             HStack {
-                                Text(item.name)
+                                Text(item.partName)
                                 Spacer()
-                                Text(item.partNumber).foregroundStyle(.secondary)
+                                Text(item.partNumber ?? "No PN").foregroundStyle(.secondary)
                             }
                         }
                     }
                 } label: {
                     HStack {
-                        Text(part.partName.isEmpty ? "Select Part…" : part.partName)
+                        Text(
+                            part.partName.isEmpty
+                            ? (catalogParts.isEmpty ? "No parts available" : "Select Part…")
+                            : part.partName
+                        )
                             .font(.subheadline)
                             .foregroundStyle(part.partName.isEmpty ? Color.appTextSecondary : Color.appTextPrimary)
                         Spacer()
@@ -348,6 +365,7 @@ struct PartInputRow: View {
                     .padding(.horizontal, 12).padding(.vertical, 10)
                     .background(Color.appSurface, in: RoundedRectangle(cornerRadius: 8))
                 }
+                .disabled(catalogParts.isEmpty)
             } else {
                 TextField("Part Name", text: $part.partName)
                     .textFieldStyle(.customRounded)
@@ -362,7 +380,7 @@ struct PartInputRow: View {
                 HStack(spacing: 10) {
                     qtyButton(icon: "minus") { part.quantity = max(1, part.quantity - 1) }
                     Text("\(part.quantity)")
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(18, weight: .bold, design: .rounded))
                         .foregroundStyle(Color.appTextPrimary)
                         .frame(minWidth: 26)
                     qtyButton(icon: "plus") { part.quantity = min(99, part.quantity + 1) }
@@ -386,7 +404,7 @@ struct PartInputRow: View {
     private func qtyButton(icon: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
-                .font(.system(size: 12, weight: .bold))
+                .font(SierraFont.scaled(12, weight: .bold))
                 .foregroundStyle(Color.appTextPrimary)
                 .frame(width: 24, height: 24)
                 .background(Circle().fill(Color.appSurface))
@@ -410,36 +428,4 @@ struct CustomRoundedTextFieldStyle: TextFieldStyle {
 
 extension TextFieldStyle where Self == CustomRoundedTextFieldStyle {
     static var customRounded: Self { CustomRoundedTextFieldStyle() }
-}
-
-// MARK: - Parts Catalog (Static Data)
-
-enum PartsCatalog {
-    struct CatalogItem {
-        let name: String
-        let partNumber: String
-    }
-
-    static let items: [CatalogItem] = [
-        .init(name: "Brake Pad Set – Front", partNumber: "BP-F-001"),
-        .init(name: "Brake Pad Set – Rear", partNumber: "BP-R-002"),
-        .init(name: "Oil Filter", partNumber: "OF-STD-010"),
-        .init(name: "Air Filter (Engine)", partNumber: "AF-ENG-020"),
-        .init(name: "Cabin Air Filter", partNumber: "AF-CAB-021"),
-        .init(name: "Spark Plug (pack of 4)", partNumber: "SP-STD-030"),
-        .init(name: "Battery (12V 70Ah)", partNumber: "BAT-12V-070"),
-        .init(name: "Wiper Blade (pair)", partNumber: "WB-STD-040"),
-        .init(name: "Headlight Bulb (LED)", partNumber: "HL-LED-050"),
-        .init(name: "Tyre – Front (205/55 R16)", partNumber: "TY-F-205"),
-        .init(name: "Tyre – Rear (205/55 R16)", partNumber: "TY-R-205"),
-        .init(name: "Engine Oil (5W-30, 5L)", partNumber: "LUB-5W30-5L"),
-        .init(name: "Coolant Top-Up (1L)", partNumber: "LUB-COOL-1L"),
-        .init(name: "Transmission Fluid (1L)", partNumber: "LUB-TRANS-1L"),
-        .init(name: "Timing Belt", partNumber: "TB-STD-060"),
-        .init(name: "Serpentine Belt", partNumber: "SB-STD-070"),
-        .init(name: "Alternator", partNumber: "ALT-STD-080"),
-        .init(name: "Starter Motor", partNumber: "STR-STD-090"),
-        .init(name: "Radiator Hose (upper)", partNumber: "RH-UPR-100"),
-        .init(name: "Windscreen (laminated)", partNumber: "WS-LAM-110"),
-    ]
 }

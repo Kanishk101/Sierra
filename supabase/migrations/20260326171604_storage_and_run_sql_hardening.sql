@@ -27,4 +27,4 @@ DROP POLICY IF EXISTS "authenticated flreew_0" ON storage.objects;
 UPDATE storage.buckets
 SET public = false
 WHERE id IN ('documents', 'File')
-  AND public = true;
+  AND public = true;;

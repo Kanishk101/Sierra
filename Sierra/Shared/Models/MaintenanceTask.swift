@@ -21,16 +21,6 @@ enum MaintenanceTaskStatus: String, Codable, CaseIterable {
     case cancelled  = "Cancelled"
 }
 
-// MARK: - Task Priority
-// Maps to PostgreSQL enum: task_priority
-
-enum TaskPriority: String, Codable, CaseIterable {
-    case low    = "Low"
-    case medium = "Medium"
-    case high   = "High"
-    case urgent = "Urgent"
-}
-
 // MARK: - MaintenanceTask
 // Maps to table: maintenance_tasks
 
@@ -46,7 +36,6 @@ struct MaintenanceTask: Identifiable, Codable, Hashable {
     // MARK: Task details
     var title: String                         // title
     var taskDescription: String              // task_description
-    var priority: TaskPriority               // priority (default 'Medium')
     var status: MaintenanceTaskStatus        // status (default 'Pending')
     var taskType: MaintenanceTaskType        // task_type (default 'Scheduled')
 
@@ -76,7 +65,6 @@ struct MaintenanceTask: Identifiable, Codable, Hashable {
         case assignedToId        = "assigned_to_id"
         case title
         case taskDescription     = "task_description"
-        case priority
         case status
         case taskType            = "task_type"
         case sourceAlertId       = "source_alert_id"

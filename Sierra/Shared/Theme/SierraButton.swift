@@ -22,6 +22,7 @@ struct SierraButton: View {
     var icon: String? = nil
     var isFullWidth: Bool = true
     var isLoading: Bool = false
+    var accessibilityLabel: String? = nil
     let action: () -> Void
 
     // MARK: - Body
@@ -29,17 +30,17 @@ struct SierraButton: View {
     var body: some View {
         switch variant {
         case .primary:
-            Button(action: action) { label }.buttonStyle(SierraPrimaryButtonStyle()).disabled(isLoading)
+            button(with: SierraPrimaryButtonStyle())
         case .secondary:
-            Button(action: action) { label }.buttonStyle(SierraSecondaryButtonStyle()).disabled(isLoading)
+            button(with: SierraSecondaryButtonStyle())
         case .ghost:
-            Button(action: action) { label }.buttonStyle(SierraGhostButtonStyle()).disabled(isLoading)
+            button(with: SierraGhostButtonStyle())
         case .outline:
-            Button(action: action) { label }.buttonStyle(SierraOutlineButtonStyle()).disabled(isLoading)
+            button(with: SierraOutlineButtonStyle())
         case .danger:
-            Button(action: action) { label }.buttonStyle(SierraDangerButtonStyle()).disabled(isLoading)
+            button(with: SierraDangerButtonStyle())
         case .text:
-            Button(action: action) { label }.buttonStyle(SierraTextButtonStyle()).disabled(isLoading)
+            button(with: SierraTextButtonStyle())
         }
     }
 
@@ -55,7 +56,7 @@ struct SierraButton: View {
             HStack(spacing: 6) {
                 if let icon {
                     Image(systemName: icon)
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(SierraFont.scaled(15, weight: .semibold))
                 }
                 Text(title)
             }
@@ -70,6 +71,15 @@ struct SierraButton: View {
         case .outline:             SierraTheme.Colors.summitNavy
         case .danger:              SierraTheme.Colors.danger
         }
+    }
+
+    private func button<S: ButtonStyle>(with style: S) -> some View {
+        Button(action: action) { label }
+            .buttonStyle(style)
+            .disabled(isLoading)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(accessibilityLabel ?? title)
+            .accessibilityValue(isLoading ? "Loading" : "")
     }
 
     // MARK: - Convenience Factories
@@ -111,12 +121,13 @@ struct SierraIconButton: View {
     var tint: Color = .white
     var background: Color? = nil
     var size: CGFloat = 20
+    var accessibilityLabel: String? = nil
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: size, weight: .semibold))
+                .font(SierraFont.scaled(size, weight: .semibold))
                 .foregroundStyle(tint)
                 .frame(width: 44, height: 44)
                 .background {
@@ -127,6 +138,7 @@ struct SierraIconButton: View {
                 }
                 .contentShape(Rectangle())
         }
+        .accessibilityLabel(accessibilityLabel ?? systemName.accessibilitySymbolLabel)
     }
 }
 
@@ -141,6 +153,7 @@ struct SierraFAB: View {
 
     var systemName: String = "plus"
     var label: String? = nil
+    var accessibilityLabel: String? = nil
     let action: () -> Void
 
     private var isExtended: Bool { label != nil }
@@ -152,7 +165,7 @@ struct SierraFAB: View {
                     // Extended FAB
                     HStack(spacing: 8) {
                         Image(systemName: systemName)
-                            .font(.system(size: 18, weight: .semibold))
+                            .font(SierraFont.scaled(18, weight: .semibold))
                         Text(label)
                             .font(SierraFont.body(15, weight: .semibold))
                     }
@@ -161,7 +174,7 @@ struct SierraFAB: View {
                 } else {
                     // Icon-only FAB
                     Image(systemName: systemName)
-                        .font(.system(size: 22, weight: .semibold))
+                        .font(SierraFont.scaled(22, weight: .semibold))
                         .frame(width: 56, height: 56)
                 }
             }
@@ -174,5 +187,16 @@ struct SierraFAB: View {
             )
             .sierraShadow(SierraTheme.Shadow.modal)
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityLabel ?? label ?? "Primary action")
+    }
+}
+
+private extension String {
+    var accessibilitySymbolLabel: String {
+        self
+            .replacingOccurrences(of: ".fill", with: "")
+            .replacingOccurrences(of: ".", with: " ")
+            .capitalized
     }
 }

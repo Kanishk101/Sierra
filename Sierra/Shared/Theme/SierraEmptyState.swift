@@ -21,7 +21,7 @@ struct SierraEmptyState: View {
 
             // ── Icon ──
             Image(systemName: icon)
-                .font(.system(size: 32, weight: .medium))
+                .font(SierraFont.scaled(32, weight: .medium))
                 .foregroundStyle(SierraTheme.Colors.granite)
                 .frame(width: 80, height: 80)
                 .background(

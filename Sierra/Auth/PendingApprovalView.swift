@@ -31,7 +31,7 @@ struct PendingApprovalView: View {
                                 }
 
                             Image(systemName: "clock.badge.checkmark.fill")
-                                .font(.system(size: 60, weight: .light))
+                                .font(SierraFont.scaled(60, weight: .light))
                                 .foregroundStyle(SierraTheme.Colors.ember)
                                 .symbolRenderingMode(.hierarchical)
                         }

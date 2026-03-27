@@ -62,9 +62,9 @@ BEGIN
     v_days_until := EXTRACT(DAY FROM (NEW.expiry_date - NOW()))::INT;
 
     SELECT COALESCE(name, 'Unknown Vehicle')
-      INTO v_vehicle_name
+     INTO v_vehicle_name
       FROM public.vehicles
-     WHERE id = NEW.vehicle_id;
+     WHERE id::text = NEW.vehicle_id::text;
 
     v_status_text := CASE
         WHEN NEW.expiry_date < NOW() THEN 'EXPIRED'
@@ -82,16 +82,16 @@ BEGIN
     -- Notify all active fleet managers (canonical role string from Migration 004)
     FOR v_admin_id IN
         SELECT id FROM public.staff_members
-         WHERE role   = 'fleetManager'
+         WHERE LOWER(role::text) = 'fleetmanager'
            AND status = 'Active'
     LOOP
         -- De-duplicate: skip if notification already exists for this doc + admin
         IF NOT EXISTS (
-            SELECT 1 FROM public.notifications
-             WHERE entity_type    = 'vehicle_document'
-               AND entity_id::text = NEW.id::text
-               AND recipient_id   = v_admin_id::text
-               AND type           = 'Document Expiry'
+               SELECT 1 FROM public.notifications
+                 WHERE entity_type    = 'vehicle_document'
+                   AND entity_id::text = NEW.id::text
+                   AND recipient_id::text = v_admin_id::text
+                   AND type           = 'Document Expiry'
         ) THEN
             INSERT INTO public.notifications
                 (id, recipient_id, type, title, body, entity_type, entity_id, is_read, sent_at)
@@ -149,7 +149,7 @@ BEGIN
         END;
 
         SELECT COALESCE(name, 'Unknown Vehicle') INTO v_vname
-          FROM public.vehicles WHERE id = doc.vehicle_id;
+          FROM public.vehicles WHERE id::text = doc.vehicle_id::text;
 
         v_title := 'Document ' || status_text || ': ' || doc.document_type;
         v_body  := v_vname || ' — ' || doc.document_type || ' ' || status_text
@@ -157,13 +157,13 @@ BEGIN
 
         FOR adm IN
             SELECT id FROM public.staff_members
-             WHERE role = 'fleetManager' AND status = 'Active'
+             WHERE LOWER(role::text) = 'fleetmanager' AND status = 'Active'
         LOOP
             IF NOT EXISTS (
                 SELECT 1 FROM public.notifications
                  WHERE entity_type    = 'vehicle_document'
                    AND entity_id::text = doc.id::text
-                   AND recipient_id   = adm.id::text
+                   AND recipient_id::text = adm.id::text
                    AND type           = 'Document Expiry'
             ) THEN
                 INSERT INTO public.notifications

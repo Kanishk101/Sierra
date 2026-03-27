@@ -21,6 +21,16 @@ struct ReportsView: View {
     @State private var selectedRange: DateRange = .month
     @State private var selectedDriverId: UUID?
 
+    // MARK: - AI Summary State
+
+    @State private var fleetSummaryState: AISummaryCard.SummaryState = .idle
+    @State private var tripsSummaryState: AISummaryCard.SummaryState = .idle
+
+    init(initialPage: Int = 0) {
+        let page = min(max(initialPage, 0), 4)
+        _currentPage = State(initialValue: page)
+    }
+
     // MARK: - Date Helpers
 
     private var csvDateFormatter: DateFormatter {
@@ -91,6 +101,103 @@ struct ReportsView: View {
     private var drivers: [StaffMember] {
         store.staff.filter { $0.role == .driver && $0.status == .active }
     }
+    private var tripStatusBreakdown: [String: Int] {
+        var active = 0
+        var scheduled = 0
+        var completed = 0
+        var cancelled = 0
+
+        for trip in tripsInRange {
+            switch trip.status.normalized {
+            case .active:
+                active += 1
+            case .scheduled, .pendingAcceptance, .accepted:
+                scheduled += 1
+            case .completed:
+                completed += 1
+            case .cancelled, .rejected:
+                cancelled += 1
+            }
+        }
+        return [
+            "active": active,
+            "scheduled": scheduled,
+            "completed": completed,
+            "cancelled": cancelled
+        ]
+    }
+
+    // MARK: - AI Summary Fetchers
+
+    @MainActor
+    private func fetchFleetSummary() async {
+        fleetSummaryState = .loading
+
+
+        // Build a compact data snapshot from in-memory store
+        let topVehicles = Dictionary(grouping: completedTripsInRange, by: { $0.vehicleId ?? "" })
+            .map { (id: $0.key,
+                    dist: $0.value.compactMap { t -> Double? in
+                        guard let s = t.startMileage, let e = t.endMileage else { return nil }
+                        return e - s }.reduce(0, +),
+                    trips: $0.value.count) }
+            .sorted { $0.dist > $1.dist }.prefix(5)
+            .map { item -> [String: Any] in
+                let name = store.vehicles.first(where: { $0.id.uuidString == item.id })?.name ?? "Unknown"
+                return ["vehicle": name, "distance_km": Int(item.dist), "trips": item.trips]
+            }
+
+        let totalLitres = fuelLogsInRange.map(\.fuelQuantityLitres).reduce(0, +)
+        let totalFuelSpend = fuelLogsInRange.map(\.fuelCost).reduce(0, +)
+        let activeVehicles = store.vehicles.filter { $0.status == .active }.count
+        let busyVehicles   = store.vehicles.filter { $0.status == .busy }.count
+
+        let snapshot: [String: Any] = [
+            "date_range":          selectedRange.rawValue,
+            "total_vehicles":      store.vehicles.count,
+            "active_vehicles":     activeVehicles,
+            "busy_vehicles":       busyVehicles,
+            "total_distance_km":   Int(totalDistanceInRange),
+            "completed_trips":     completedTripsInRange.count,
+            "fuel_litres":         Int(totalLitres),
+            "fuel_spend_inr":      Int(totalFuelSpend),
+            "top_vehicles_by_distance": topVehicles
+        ]
+
+        do {
+            let text = try await GroqSummaryService.summarise(topic: "Fleet Usage", data: snapshot)
+            fleetSummaryState = .loaded(text)
+        } catch {
+            fleetSummaryState = .failed((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
+        }
+    }
+
+    @MainActor
+    private func fetchTripsSummary() async {
+        tripsSummaryState = .loading
+
+        let overdueCount = maintenanceTasksInRange.filter { t in
+            t.dueDate < Date() && t.status != .completed && t.status != .cancelled
+        }.count
+
+        let snapshot: [String: Any] = [
+            "date_range":             selectedRange.rawValue,
+            "trips_in_range":         tripsInRange.count,
+            "completed_trips":        completedTripsInRange.count,
+            "total_distance_km":      Int(totalDistanceInRange),
+            "avg_trip_duration":      avgTripDuration,
+            "trip_status_breakdown":  tripStatusBreakdown,
+            "overdue_maintenance":    overdueCount,
+            "inactive_vehicles":      store.vehicles.filter { $0.status != .active }.count
+        ]
+
+        do {
+            let text = try await GroqSummaryService.summarise(topic: "Trips Overview", data: snapshot)
+            tripsSummaryState = .loaded(text)
+        } catch {
+            tripsSummaryState = .failed((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
+        }
+    }
 
     // MARK: - Body
 
@@ -113,6 +220,11 @@ struct ReportsView: View {
                 Button { currentPage = 4 } label: {
                     Image(systemName: "square.and.arrow.up")
                 }
+            }
+        }
+        .task {
+            if store.trips.isEmpty || store.vehicles.isEmpty || store.maintenanceTasks.isEmpty {
+                await store.loadAll()
             }
         }
     }
@@ -155,10 +267,17 @@ struct ReportsView: View {
                     }.count
                     healthRow(icon: "exclamationmark.triangle.fill", label: "Overdue Maintenance", count: overdueCount, color: .red)
                 }
+
+                // MARK: AI Summary
+                AISummaryCard(state: tripsSummaryState) {
+                    Task { await fetchTripsSummary() }
+                }
             }
             .padding(16)
             .padding(.bottom, 32)  // room for dot indicators
         }
+        .onAppear { if case .idle = tripsSummaryState { Task { await fetchTripsSummary() } } }
+        .onChange(of: selectedRange) { _, _ in Task { await fetchTripsSummary() } }
     }
 
     // MARK: - Page 1: Fleet Usage
@@ -181,7 +300,7 @@ struct ReportsView: View {
                         }
                     }
                     .frame(height: 200)
-                    .chartXAxis { AxisMarks(values: .automatic) { _ in AxisValueLabel().font(.system(size: 8)) } }
+                    .chartXAxis { AxisMarks(values: .automatic) { _ in AxisValueLabel().font(SierraFont.scaled(8)) } }
                     .padding(16)
                     .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
@@ -225,10 +344,17 @@ struct ReportsView: View {
                 }
 
                 exportInlineButton("Export Fleet CSV") { shareCSV(generateFleetCSV(), filename: "fleet_report.csv") }
+
+                // MARK: AI Summary
+                AISummaryCard(state: fleetSummaryState) {
+                    Task { await fetchFleetSummary() }
+                }
             }
             .padding(16)
             .padding(.bottom, 32)
         }
+        .onAppear { if case .idle = fleetSummaryState { Task { await fetchFleetSummary() } } }
+        .onChange(of: selectedRange) { _, _ in Task { await fetchFleetSummary() } }
     }
 
     // MARK: - Page 2: Driver Activity
@@ -273,7 +399,7 @@ struct ReportsView: View {
                             Circle()
                                 .fill(Color(.systemGray5))
                                 .frame(width: 32, height: 32)
-                                .overlay(Text(d.initials).font(.system(size: 11, weight: .bold, design: .rounded)))
+                                .overlay(Text(d.initials).font(SierraFont.scaled(11, weight: .bold, design: .rounded)))
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(d.name ?? "Unknown").font(.subheadline.weight(.medium))
                                 Text("\(trips.count) trips").font(.caption2).foregroundStyle(.secondary)
@@ -282,7 +408,7 @@ struct ReportsView: View {
                             let rated = trips.compactMap(\.driverRating)
                             if !rated.isEmpty {
                                 HStack(spacing: 2) {
-                                    Image(systemName: "star.fill").font(.system(size: 9)).foregroundStyle(.orange)
+                                    Image(systemName: "star.fill").font(SierraFont.scaled(9)).foregroundStyle(.orange)
                                     Text(String(format: "%.1f", Double(rated.reduce(0, +)) / Double(rated.count)))
                                         .font(.caption.weight(.bold)).foregroundStyle(.orange)
                                 }
@@ -308,7 +434,7 @@ struct ReportsView: View {
                             }
                             Spacer()
                             Text(trip.status.rawValue)
-                                .font(.system(size: 10, weight: .bold))
+                                .font(SierraFont.scaled(10, weight: .bold))
                                 .foregroundStyle(trip.status == .completed ? .green : .orange)
                                 .padding(.horizontal, 8).padding(.vertical, 3)
                                 .background((trip.status == .completed ? Color.green : .orange).opacity(0.1), in: Capsule())
@@ -316,7 +442,7 @@ struct ReportsView: View {
                                 HStack(spacing: 1) {
                                     ForEach(0..<5) { i in
                                         Image(systemName: i < rating ? "star.fill" : "star")
-                                            .font(.system(size: 8))
+                                            .font(SierraFont.scaled(8))
                                             .foregroundStyle(i < rating ? .orange : Color(.systemGray4))
                                     }
                                 }
@@ -389,30 +515,6 @@ struct ReportsView: View {
                         miniStat("Total", "₹\(String(format: "%.0f", totalCost))")
                     }
                 }
-
-                // Urgency breakdown
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("BY PRIORITY").font(.caption.weight(.bold)).foregroundStyle(.secondary).kerning(1)
-                    let priorities = Dictionary(grouping: maintenanceTasksInRange, by: \.priority)
-                    let total = max(maintenanceTasksInRange.count, 1)
-                    ForEach(["Low", "Medium", "High", "Urgent"], id: \.self) { label in
-                        let priority = TaskPriority(rawValue: label) ?? .low
-                        let count = priorities[priority]?.count ?? 0
-                        HStack(spacing: 8) {
-                            Text(label).font(.caption).frame(width: 60, alignment: .leading)
-                            GeometryReader { geo in
-                                RoundedRectangle(cornerRadius: 4)
-                                    .fill(priorityColor(label))
-                                    .frame(width: geo.size.width * CGFloat(count) / CGFloat(total))
-                            }
-                            .frame(height: 14)
-                            Text("\(count)").font(.caption.weight(.bold)).foregroundStyle(.secondary)
-                        }
-                    }
-                    .padding(.vertical, 2)
-                }
-                .padding(12)
-                .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
 
                 exportInlineButton("Export Maintenance CSV") { shareCSV(generateMaintenanceCSV(), filename: "maintenance_report.csv") }
             }
@@ -576,16 +678,6 @@ struct ReportsView: View {
         .buttonStyle(.plain)
     }
 
-    private func priorityColor(_ label: String) -> Color {
-        switch label {
-        case "Low":    return .green
-        case "Medium": return .blue
-        case "High":   return .orange
-        case "Urgent": return .red
-        default:       return .gray
-        }
-    }
-
     // MARK: - CSV Generators (Safeguard 3: in-memory string, shared via UIActivityViewController)
 
     private func generateFleetCSV() -> String {
@@ -622,7 +714,7 @@ struct ReportsView: View {
     }
 
     private func generateMaintenanceCSV() -> String {
-        var csv = "Title,Vehicle,Vehicle Plate,Assigned To,Priority,Status,Due Date,Completed,Labour Cost,Parts Cost,Total Cost\n"
+        var csv = "Title,Vehicle,Vehicle Plate,Assigned To,Status,Due Date,Completed,Labour Cost,Parts Cost,Total Cost\n"
         for task in maintenanceTasksInRange {
             let vehicle = store.vehicles.first(where: { $0.id == task.vehicleId })
             let assignee = task.assignedToId.flatMap { store.staffMember(for: $0) }
@@ -630,7 +722,7 @@ struct ReportsView: View {
             let labourCost = record.map { String(format: "%.0f", $0.labourCost) } ?? ""
             let partsCost  = record.map { String(format: "%.0f", $0.partsCost) } ?? ""
             let totalCost  = record.map { String(format: "%.0f", $0.totalCost) } ?? ""
-            csv += "\(csvEscape(task.title)),\(csvEscape(vehicle?.name ?? "")),\(csvEscape(vehicle?.licensePlate ?? "")),\(csvEscape(assignee?.name ?? "")),\(task.priority.rawValue),\(task.status.rawValue),\(csvDate(task.dueDate)),\(csvDate(task.completedAt)),\(labourCost),\(partsCost),\(totalCost)\n"
+            csv += "\(csvEscape(task.title)),\(csvEscape(vehicle?.name ?? "")),\(csvEscape(vehicle?.licensePlate ?? "")),\(csvEscape(assignee?.name ?? "")),\(task.status.rawValue),\(csvDate(task.dueDate)),\(csvDate(task.completedAt)),\(labourCost),\(partsCost),\(totalCost)\n"
         }
         return csv
     }

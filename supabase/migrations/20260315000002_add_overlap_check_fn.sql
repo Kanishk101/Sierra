@@ -38,7 +38,7 @@ AS $$
         EXISTS (
             SELECT 1
               FROM trips
-             WHERE driver_id = p_driver_id
+             WHERE driver_id::text = p_driver_id
                AND status    IN ('Scheduled', 'Active')
                AND (
                        p_exclude_trip_id IS NULL
@@ -55,7 +55,7 @@ AS $$
         EXISTS (
             SELECT 1
               FROM trips
-             WHERE vehicle_id = p_vehicle_id
+             WHERE vehicle_id::text = p_vehicle_id
                AND status     IN ('Scheduled', 'Active')
                AND (
                        p_exclude_trip_id IS NULL

@@ -27,7 +27,11 @@ struct TripNavigationContainerView: View {
 
     var body: some View {
         ZStack {
-            TripNavigationView(coordinator: coordinator, simulate: false)
+            if MapService.hasValidToken {
+                TripNavigationView(coordinator: coordinator, simulate: false)
+            } else {
+                TripNavigationFallbackMapView(coordinator: coordinator)
+            }
 
             NavigationHUDOverlay(coordinator: coordinator) {
                 // End trip flow: after confirmation in HUD, open same delivery proof sheet
@@ -47,7 +51,7 @@ struct TripNavigationContainerView: View {
                         if coordinator.isNavigating { showDismissAlert = true } else { dismissView() }
                     } label: {
                         Image(systemName: "xmark")
-                            .font(.system(size: 14, weight: .bold))
+                            .font(SierraFont.scaled(14, weight: .bold))
                             .foregroundStyle(.secondary)
                             .frame(width: 36, height: 36)
                             .background(.ultraThinMaterial, in: Circle())
@@ -71,7 +75,7 @@ struct TripNavigationContainerView: View {
                             coordinator.toggleCameraMode()
                         } label: {
                             Image(systemName: coordinator.isOverviewMode ? "location.north.line.fill" : "map.fill")
-                                .font(.system(size: 14, weight: .bold))
+                                .font(SierraFont.scaled(14, weight: .bold))
                                 .foregroundStyle(.secondary)
                                 .frame(width: 36, height: 36)
                                 .background(.ultraThinMaterial, in: Circle())
@@ -82,7 +86,7 @@ struct TripNavigationContainerView: View {
                             coordinator.switchToFollowMode()
                         } label: {
                             Image(systemName: "location.north.circle.fill")
-                                .font(.system(size: 14, weight: .bold))
+                                .font(SierraFont.scaled(14, weight: .bold))
                                 .foregroundStyle(.secondary)
                                 .frame(width: 36, height: 36)
                                 .background(.ultraThinMaterial, in: Circle())

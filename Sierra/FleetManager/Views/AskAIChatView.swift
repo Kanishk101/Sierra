@@ -30,7 +30,7 @@ struct AskAIChatView: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button { dismiss() } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 20))
+                            .font(SierraFont.scaled(20))
                             .foregroundStyle(SierraTheme.Colors.granite)
                             .symbolRenderingMode(.hierarchical)
                     }
@@ -113,7 +113,7 @@ struct AskAIChatView: View {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
             } label: {
                 Image(systemName: viewModel.isLoading ? "ellipsis.circle.fill" : "arrow.up.circle.fill")
-                    .font(.system(size: 34))
+                    .font(SierraFont.scaled(34))
                     .foregroundStyle(canSend ? SierraTheme.Colors.ember : SierraTheme.Colors.granite)
                     .symbolRenderingMode(.hierarchical)
                     .contentTransition(.symbolEffect(.replace))
@@ -148,8 +148,8 @@ private struct MessageBubble: View {
                     Circle()
                         .fill(SierraTheme.Colors.ember.opacity(0.14))
                         .frame(width: 30, height: 30)
-                    Image(systemName: "sparkles.circle.fill")
-                        .font(.system(size: 13, weight: .semibold))
+                    Image(systemName: "sparkles")
+                        .font(SierraFont.scaled(13, weight: .semibold))
                         .foregroundStyle(SierraTheme.Colors.ember)
                 }
             }
@@ -209,8 +209,8 @@ private struct TypingIndicator: View {
         HStack(alignment: .bottom, spacing: 8) {
             ZStack {
                 Circle().fill(SierraTheme.Colors.ember.opacity(0.14)).frame(width: 30, height: 30)
-                Image(systemName: "sparkles.circle.fill")
-                    .font(.system(size: 13, weight: .semibold))
+                Image(systemName: "sparkles")
+                    .font(SierraFont.scaled(13, weight: .semibold))
                     .foregroundStyle(SierraTheme.Colors.ember)
             }
             HStack(spacing: 5) {
@@ -253,8 +253,8 @@ struct AskAIFAB: View {
                 // Glow layer
                 Circle()
                     .fill(SierraTheme.Colors.ember.opacity(0.24))
-                    .frame(width: 64, height: 64)
-                    .blur(radius: 8)
+                    .frame(width: 78, height: 78)
+                    .blur(radius: 10)
 
                 // Main button
                 Circle()
@@ -265,11 +265,11 @@ struct AskAIFAB: View {
                             endPoint: .bottomTrailing
                         )
                     )
-                    .frame(width: 56, height: 56)
-                    .shadow(color: SierraTheme.Colors.ember.opacity(0.42), radius: 10, y: 4)
+                    .frame(width: 66, height: 66)
+                    .shadow(color: SierraTheme.Colors.ember.opacity(0.42), radius: 12, y: 5)
 
                 Image(systemName: "sparkles")
-                    .font(.system(size: 22, weight: .semibold))
+                    .font(SierraFont.scaled(26, weight: .semibold))
                     .foregroundStyle(.white)
             }
         }

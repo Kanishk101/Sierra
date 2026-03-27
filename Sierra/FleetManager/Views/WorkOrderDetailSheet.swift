@@ -71,7 +71,7 @@ struct WorkOrderDetailSheet: View {
                 NavigationStack {
                     VStack(alignment: .leading, spacing: 16) {
                         Text("Place order for \(part.partName)")
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .font(SierraFont.scaled(16, weight: .bold, design: .rounded))
                         DatePicker(
                             "Expected Arrival",
                             selection: $orderArrivalAt,
@@ -95,7 +95,7 @@ struct WorkOrderDetailSheet: View {
                             }
                         } label: {
                             Text("Confirm Place Order")
-                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                                .font(SierraFont.scaled(14, weight: .bold, design: .rounded))
                                 .foregroundStyle(.white)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 12)
@@ -138,7 +138,7 @@ struct WorkOrderDetailSheet: View {
                             .fill(Color.appOrange.opacity(0.12))
                             .frame(width: 44, height: 44)
                         Image(systemName: "car.fill")
-                            .font(.system(size: 18))
+                            .font(SierraFont.scaled(18))
                             .foregroundStyle(Color.appOrange)
                     }
                     VStack(alignment: .leading, spacing: 2) {
@@ -162,7 +162,6 @@ struct WorkOrderDetailSheet: View {
                 Text(task.title)
                     .font(.title3.weight(.bold))
                 HStack(spacing: 8) {
-                    priorityBadge
                     typeBadge
                 }
             }
@@ -172,23 +171,14 @@ struct WorkOrderDetailSheet: View {
         .padding(.top, 8)
     }
 
-    private var priorityBadge: some View {
-        let color = priorityColor(task.priority)
-        return Text(task.priority.rawValue)
-            .font(.system(size: 10, weight: .bold))
-            .foregroundStyle(color)
-            .padding(.horizontal, 10).padding(.vertical, 4)
-            .background(color.opacity(0.12), in: Capsule())
-    }
-
     private var typeBadge: some View {
         let isService = task.taskType == .scheduled
         let color: Color = isService ? .blue : .orange
         let icon = isService ? "calendar.badge.checkmark" : "wrench.and.screwdriver.fill"
         let label = isService ? "Service" : "Repair"
         return HStack(spacing: 4) {
-            Image(systemName: icon).font(.system(size: 9))
-            Text(label).font(.system(size: 10, weight: .bold))
+            Image(systemName: icon).font(SierraFont.scaled(9))
+            Text(label).font(SierraFont.scaled(10, weight: .bold))
         }
         .foregroundStyle(color)
         .padding(.horizontal, 10).padding(.vertical, 4)
@@ -214,7 +204,7 @@ struct WorkOrderDetailSheet: View {
         HStack(alignment: .top, spacing: 14) {
             VStack(spacing: 0) {
                 Image(systemName: stage.isComplete ? "checkmark.circle.fill" : stage.isCurrent ? "circle.inset.filled" : "circle")
-                    .font(.system(size: 18))
+                    .font(SierraFont.scaled(18))
                     .foregroundStyle(stage.isComplete ? .green : stage.isCurrent ? Color.appOrange : Color(.systemGray3))
                 if !isLast {
                     Rectangle()
@@ -276,7 +266,7 @@ struct WorkOrderDetailSheet: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text("Phase \(phase.phaseNumber)")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .font(SierraFont.scaled(10, weight: .bold, design: .monospaced))
                         .foregroundStyle(Color.appOrange)
                     Text(phase.title)
                         .font(.subheadline.weight(.medium))
@@ -288,12 +278,12 @@ struct WorkOrderDetailSheet: View {
                 }
                 if let target = phase.plannedCompletionAt {
                     Text("Target \(target.formatted(.dateTime.month(.abbreviated).day().hour().minute()))")
-                        .font(.system(size: 10))
+                        .font(SierraFont.scaled(10))
                         .foregroundStyle(Color.appOrange)
                 }
                 if phase.isCompleted, let at = phase.completedAt {
                     Text("Completed \(at.formatted(.dateTime.month(.abbreviated).day().hour().minute()))")
-                        .font(.system(size: 10)).foregroundStyle(.green)
+                        .font(SierraFont.scaled(10)).foregroundStyle(.green)
                 }
             }
             Spacer()
@@ -439,7 +429,7 @@ struct WorkOrderDetailSheet: View {
     private func partStatusBadge(_ status: SparePartsRequestStatus) -> some View {
         let color = partStatusColor(status)
         return Text(status.rawValue)
-            .font(.system(size: 10, weight: .bold))
+            .font(SierraFont.scaled(10, weight: .bold))
             .foregroundStyle(color)
             .padding(.horizontal, 8).padding(.vertical, 3)
             .background(color.opacity(0.12), in: Capsule())
@@ -464,7 +454,7 @@ struct WorkOrderDetailSheet: View {
     private func costCell(_ label: String, value: Double, color: Color) -> some View {
         VStack(spacing: 4) {
             Text("₹\(value, specifier: "%.0f")")
-                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .font(SierraFont.scaled(16, weight: .bold, design: .rounded))
                 .foregroundStyle(color)
             Text(label)
                 .font(.caption2)
@@ -490,7 +480,7 @@ struct WorkOrderDetailSheet: View {
                     Spacer()
                     if overdue {
                         Text("OVERDUE")
-                            .font(.system(size: 9, weight: .bold))
+                            .font(SierraFont.scaled(9, weight: .bold))
                             .foregroundStyle(.red)
                             .padding(.horizontal, 8).padding(.vertical, 3)
                             .background(.red.opacity(0.1), in: Capsule())
@@ -543,7 +533,7 @@ struct WorkOrderDetailSheet: View {
                 .frame(width: 44, height: 44)
                 .overlay(
                     Text(staff.initials)
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(16, weight: .bold, design: .rounded))
                         .foregroundStyle(.primary)
                 )
 
@@ -580,7 +570,7 @@ struct WorkOrderDetailSheet: View {
     private var noWorkOrderState: some View {
         VStack(spacing: 14) {
             Image(systemName: "doc.questionmark")
-                .font(.system(size: 44, weight: .light))
+                .font(SierraFont.scaled(44, weight: .light))
                 .foregroundStyle(Color(.systemGray3))
             Text("No Work Order")
                 .font(.headline)
@@ -650,15 +640,6 @@ struct WorkOrderDetailSheet: View {
     }
 
     // MARK: - Color Helpers
-
-    private func priorityColor(_ p: TaskPriority) -> Color {
-        switch p {
-        case .low: return .green
-        case .medium: return .blue
-        case .high: return .orange
-        case .urgent: return .red
-        }
-    }
 
     private func partStatusColor(_ s: SparePartsRequestStatus) -> Color {
         switch s {

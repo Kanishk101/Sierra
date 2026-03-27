@@ -39,7 +39,7 @@ AS $$
         EXISTS (
             SELECT 1
               FROM trips
-             WHERE driver_id = p_driver_id
+             WHERE driver_id::text = p_driver_id
                AND status    IN ('Scheduled', 'Active')
                AND (p_exclude_trip_id IS NULL OR id::text <> p_exclude_trip_id)
                AND scheduled_date < p_end
@@ -49,7 +49,7 @@ AS $$
         EXISTS (
             SELECT 1
               FROM trips
-             WHERE vehicle_id = p_vehicle_id
+             WHERE vehicle_id::text = p_vehicle_id
                AND status     IN ('Scheduled', 'Active')
                AND (p_exclude_trip_id IS NULL OR id::text <> p_exclude_trip_id)
                AND scheduled_date < p_end
@@ -114,12 +114,12 @@ BEGIN
         IF NEW.driver_id IS NOT NULL THEN
             UPDATE staff_members
                SET availability = 'Busy'
-             WHERE id::text = NEW.driver_id;
+             WHERE id::text = NEW.driver_id::text;
         END IF;
         IF NEW.vehicle_id IS NOT NULL THEN
             UPDATE vehicles
                SET status = 'Busy'
-             WHERE id::text = NEW.vehicle_id;
+             WHERE id::text = NEW.vehicle_id::text;
         END IF;
     END IF;
 
@@ -129,13 +129,13 @@ BEGIN
         IF NEW.driver_id IS NOT NULL THEN
             UPDATE staff_members
                SET availability = 'Available'
-             WHERE id::text = NEW.driver_id;
+             WHERE id::text = NEW.driver_id::text;
         END IF;
         IF NEW.vehicle_id IS NOT NULL THEN
             UPDATE vehicles
                SET status = 'Idle',
                    assigned_driver_id = NULL
-             WHERE id::text = NEW.vehicle_id;
+             WHERE id::text = NEW.vehicle_id::text;
         END IF;
     END IF;
 
@@ -166,12 +166,28 @@ CREATE INDEX IF NOT EXISTS idx_vlh_recorded_at
     ON public.vehicle_location_history (recorded_at);
 
 -- Schedule daily cleanup (runs as postgres superuser via cron)
-SELECT cron.schedule(
-    'sierra-cleanup-location-history',
-    '0 2 * * *',
-    $$DELETE FROM public.vehicle_location_history
-        WHERE recorded_at < now() - INTERVAL '30 days'$$
-);
+DO $$
+DECLARE
+    existing_job_id bigint;
+BEGIN
+    SELECT jobid
+      INTO existing_job_id
+      FROM cron.job
+     WHERE jobname = 'sierra-cleanup-location-history'
+     LIMIT 1;
+
+    IF existing_job_id IS NOT NULL THEN
+        PERFORM cron.unschedule(existing_job_id);
+    END IF;
+
+    PERFORM cron.schedule(
+        'sierra-cleanup-location-history',
+        '0 2 * * *',
+        $job$DELETE FROM public.vehicle_location_history
+            WHERE recorded_at < now() - INTERVAL '30 days'$job$
+    );
+END;
+$$;
 
 
 -- ════════════════════════════════════════════════════════════

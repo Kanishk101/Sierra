@@ -29,7 +29,7 @@ struct MaintenanceProfileEditView: View {
 
                 if let errorMessage {
                     Text(errorMessage)
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .font(SierraFont.scaled(13, weight: .semibold, design: .rounded))
                         .foregroundStyle(.red)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 4)
@@ -63,7 +63,7 @@ struct MaintenanceProfileEditView: View {
     private func sectionCard<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(title)
-                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .font(SierraFont.scaled(14, weight: .bold, design: .rounded))
                 .foregroundStyle(Color.appTextPrimary)
 
             VStack(spacing: 10) {
@@ -82,12 +82,12 @@ struct MaintenanceProfileEditView: View {
     private func field(label: String, text: Binding<String>, keyboard: UIKeyboardType, icon: String) -> some View {
         HStack(spacing: 10) {
             Image(systemName: icon)
-                .font(.system(size: 13, weight: .semibold))
+                .font(SierraFont.scaled(13, weight: .semibold))
                 .foregroundStyle(Color.appOrange)
                 .frame(width: 16)
             TextField(label, text: text)
                 .keyboardType(keyboard)
-                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .font(SierraFont.scaled(14, weight: .medium, design: .rounded))
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 12)

@@ -25,7 +25,7 @@ struct OnboardingPageView: View {
                         .padding(12)
                 } else {
                     Image(systemName: page.icon)
-                        .font(.system(size: 72, weight: .regular))
+                        .font(SierraFont.scaled(72, weight: .regular))
                         .symbolRenderingMode(.palette)
                         .foregroundStyle(Color.orange)
                 }
@@ -35,7 +35,7 @@ struct OnboardingPageView: View {
             // ── Text ──
             VStack(spacing: 12) {
                 Text(page.title)
-                    .font(.system(size: 34, weight: .bold))
+                    .font(SierraFont.scaled(34, weight: .bold))
                     .foregroundStyle(Color(.label))
                     .multilineTextAlignment(.center)
                     .tracking(-0.5)
@@ -45,7 +45,7 @@ struct OnboardingPageView: View {
                     .padding(.horizontal, 32)
 
                 Text(page.subtitle)
-                    .font(.system(size: 17, weight: .regular))
+                    .font(SierraFont.scaled(17, weight: .regular))
                     .foregroundStyle(Color(.secondaryLabel))
                     .multilineTextAlignment(.center)
                     .lineSpacing(3)

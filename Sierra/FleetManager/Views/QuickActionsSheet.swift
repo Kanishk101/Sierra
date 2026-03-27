@@ -13,7 +13,7 @@ struct QuickActionsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(AppDataStore.self) private var store
 
-    /// Called when the user selects a navigation-only action (Alerts, Reports, Geofences, Notifications).
+    /// Called when the user selects a navigation-only action (kept for backward compatibility).
     var onNavigate: (QuickActionDestination) -> Void
 
     /// Called when the user selects a creation action (trip, vehicle, staff, maintenance).
@@ -33,10 +33,6 @@ struct QuickActionsSheet: View {
         QuickAction(icon: "car.badge.gearshape",          label: "Add Vehicle",         color: .green,  tag: "vehicle"),
         QuickAction(icon: "person.badge.plus",            label: "Add Staff",           color: .indigo, tag: "staff"),
         QuickAction(icon: "wrench.and.screwdriver.fill",  label: "Maint. Request",      color: .orange, tag: "maintenance"),
-        QuickAction(icon: "chart.bar.fill",               label: "View Reports",        color: .purple, tag: "reports"),
-        QuickAction(icon: "bell.badge.fill",              label: "View Alerts",         color: .red,    tag: "alerts"),
-        QuickAction(icon: "mappin.and.ellipse",           label: "View Geofences",      color: .teal,   tag: "geofences"),
-        QuickAction(icon: "tray.full.fill",               label: "Notifications",       color: .gray,   tag: "notifications"),
     ]
 
     var body: some View {
@@ -60,7 +56,7 @@ struct QuickActionsSheet: View {
                     Button { handle(action.tag) } label: {
                         VStack(spacing: 16) {
                             Image(systemName: action.icon)
-                                .font(.system(size: 26, weight: .light))
+                                .font(SierraFont.scaled(26, weight: .light))
                                 .foregroundStyle(action.color)
                                 .frame(width: 52, height: 52)
                                 .background(action.color.opacity(0.10), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -85,9 +81,8 @@ struct QuickActionsSheet: View {
             }
             .padding(.horizontal, 20)
 
-            Spacer()
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .frame(maxWidth: .infinity, alignment: .top)
         .background(Color(.systemBackground).ignoresSafeArea())
     }
 
@@ -95,32 +90,6 @@ struct QuickActionsSheet: View {
 
     private func handle(_ tag: String) {
         switch tag {
-        // Navigation-only actions — dismiss first, then let parent navigate
-        case "alerts":
-            dismiss()
-            Task {
-                try? await Task.sleep(for: .milliseconds(350))
-                onNavigate(.alerts)
-            }
-        case "reports":
-            dismiss()
-            Task {
-                try? await Task.sleep(for: .milliseconds(350))
-                onNavigate(.reports)
-            }
-        case "geofences":
-            dismiss()
-            Task {
-                try? await Task.sleep(for: .milliseconds(350))
-                onNavigate(.geofences)
-            }
-        case "notifications":
-            dismiss()
-            Task {
-                try? await Task.sleep(for: .milliseconds(350))
-                onNavigate(.notifications)
-            }
-
         // Creation actions — dismiss self, parent handles sheet presentation
         case "trip", "vehicle", "staff", "maintenance":
             let creationTag = tag

@@ -216,14 +216,14 @@ struct TripDetailDriverView: View {
                         ZStack {
                             Circle().fill(Color.green).frame(width: 28, height: 28)
                             Image(systemName: "location.fill")
-                                .font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
+                                .font(SierraFont.scaled(13, weight: .bold)).foregroundStyle(.white)
                         }.shadow(radius: 3)
                     }
                     Annotation(trip.destination, coordinate: destCoord) {
                         ZStack {
                             Circle().fill(Color.appOrange).frame(width: 28, height: 28)
                             Image(systemName: "mappin")
-                                .font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
+                                .font(SierraFont.scaled(13, weight: .bold)).foregroundStyle(.white)
                         }.shadow(radius: 3)
                     }
                 }
@@ -249,8 +249,8 @@ struct TripDetailDriverView: View {
                 if trip.status == .active && !endRecorded {
                     Button { showNavigation = true } label: {
                         HStack(spacing: 8) {
-                            Image(systemName: "location.fill").font(.system(size: 14, weight: .bold))
-                            Text("Open Navigation").font(.system(size: 14, weight: .bold))
+                            Image(systemName: "location.fill").font(SierraFont.scaled(14, weight: .bold))
+                            Text("Open Navigation").font(SierraFont.scaled(14, weight: .bold))
                         }
                         .foregroundStyle(.white)
                         .padding(.horizontal, 20).padding(.vertical, 10)
@@ -375,11 +375,11 @@ struct TripDetailDriverView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("Today's Route")
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(18, weight: .bold, design: .rounded))
                     .foregroundColor(.appTextPrimary)
                 Spacer()
                 Text(trip.taskId)
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(12, weight: .bold, design: .rounded))
                     .foregroundColor(.appOrange)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
@@ -410,15 +410,15 @@ struct TripDetailDriverView: View {
                     .frame(width: 22, height: 22)
                     .overlay(
                         Image(systemName: icon)
-                            .font(.system(size: 11, weight: .bold))
+                            .font(SierraFont.scaled(11, weight: .bold))
                             .foregroundColor(tint)
                     )
                 Text(label)
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .font(SierraFont.scaled(10, weight: .semibold, design: .rounded))
                     .foregroundColor(.appTextSecondary)
             }
             Text(value)
-                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .font(SierraFont.scaled(14, weight: .bold, design: .rounded))
                 .foregroundColor(.appTextPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
@@ -429,10 +429,10 @@ struct TripDetailDriverView: View {
     private func mapChip(text: String, icon: String, iconColor: Color) -> some View {
         HStack(spacing: 8) {
             Image(systemName: icon)
-                .font(.system(size: 9, weight: .bold))
+                .font(SierraFont.scaled(9, weight: .bold))
                 .foregroundColor(iconColor)
             Text(text)
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .font(SierraFont.scaled(12, weight: .semibold, design: .rounded))
                 .foregroundColor(.appTextPrimary)
         }
         .padding(.horizontal, 12)
@@ -467,7 +467,7 @@ struct TripDetailDriverView: View {
 
         return VStack(alignment: .leading, spacing: 0) {
             Text("TRIP FLOW")
-                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .font(SierraFont.scaled(11, weight: .bold, design: .rounded))
                 .foregroundColor(.appTextSecondary)
                 .kerning(1)
                 .padding(.horizontal, 18)
@@ -483,16 +483,16 @@ struct TripDetailDriverView: View {
                                   : Color(.tertiarySystemGroupedBackground))
                             .frame(width: 36, height: 36)
                         Image(systemName: step.done ? "checkmark" : step.icon)
-                            .font(.system(size: 13, weight: .bold))
+                            .font(SierraFont.scaled(13, weight: .bold))
                             .foregroundColor(step.done ? .green : .appTextSecondary)
                     }
                     Text(step.label)
-                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .font(SierraFont.scaled(14, weight: .semibold, design: .rounded))
                         .foregroundColor(step.done ? .appTextPrimary : .appTextSecondary)
                     Spacer()
                     if step.label == "Navigate" && trip.status == .active && !trip.hasEndedNavigationPhase {
                         Text("TAP BELOW")
-                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .font(SierraFont.scaled(10, weight: .bold, design: .rounded))
                             .foregroundColor(.green)
                             .padding(.horizontal, 10).padding(.vertical, 4)
                             .background(Capsule().fill(Color.green.opacity(0.10)))
@@ -528,12 +528,12 @@ struct TripDetailDriverView: View {
             HStack(spacing: 8) {
                 Circle().fill(statusColor(trip.status)).frame(width: 10, height: 10)
                 Text(statusLabel(trip.status))
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(14, weight: .bold, design: .rounded))
                     .foregroundColor(statusColor(trip.status))
             }
             Spacer()
             Text(trip.priority.rawValue)
-                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .font(SierraFont.scaled(11, weight: .bold, design: .rounded))
                 .foregroundColor(.white)
                 .padding(.horizontal, 12).padding(.vertical, 5)
                 .background(Capsule().fill(priorityColor(trip.priority)))
@@ -556,10 +556,10 @@ struct TripDetailDriverView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 6) {
                 Image(systemName: "number.square.fill")
-                    .font(.system(size: 13, weight: .bold))
+                    .font(SierraFont.scaled(13, weight: .bold))
                     .foregroundColor(.appOrange)
                 Text(trip.taskId)
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(13, weight: .bold, design: .rounded))
                     .foregroundColor(.appOrange)
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
@@ -576,7 +576,7 @@ struct TripDetailDriverView: View {
                             .frame(width: 38, height: 38)
                             .overlay(
                                 Image(systemName: "dot.radiowaves.left.and.right")
-                                    .font(.system(size: 15, weight: .bold))
+                                    .font(SierraFont.scaled(15, weight: .bold))
                                     .foregroundColor(.green)
                             )
                         Rectangle()
@@ -585,19 +585,19 @@ struct TripDetailDriverView: View {
                     }
                     VStack(alignment: .leading, spacing: 4) {
                         Text("START")
-                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .font(SierraFont.scaled(10, weight: .bold, design: .rounded))
                             .foregroundColor(.green)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 5)
                             .background(Capsule().fill(Color.green.opacity(0.10)))
                         Text(trip.origin.uppercased())
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .font(SierraFont.scaled(14, weight: .bold, design: .rounded))
                             .foregroundColor(.appTextPrimary)
                         Label(
                             trip.scheduledDate.formatted(.dateTime.hour().minute()),
                             systemImage: "clock"
                         )
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .font(SierraFont.scaled(11, weight: .medium, design: .rounded))
                         .foregroundColor(.appTextSecondary)
                     }
                     Spacer(minLength: 0)
@@ -612,7 +612,7 @@ struct TripDetailDriverView: View {
                                 .frame(width: 38, height: 38)
                                 .overlay(
                                     Image(systemName: "mappin.circle.fill")
-                                        .font(.system(size: 15, weight: .bold))
+                                        .font(SierraFont.scaled(15, weight: .bold))
                                         .foregroundColor(.blue)
                                 )
                             Rectangle()
@@ -621,13 +621,13 @@ struct TripDetailDriverView: View {
                         }
                         VStack(alignment: .leading, spacing: 4) {
                             Text("STOP \(index + 1)")
-                                .font(.system(size: 10, weight: .bold, design: .rounded))
+                                .font(SierraFont.scaled(10, weight: .bold, design: .rounded))
                                 .foregroundColor(.blue)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 5)
                                 .background(Capsule().fill(Color.blue.opacity(0.10)))
                             Text(stop.name.uppercased())
-                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                                .font(SierraFont.scaled(13, weight: .bold, design: .rounded))
                                 .foregroundColor(.appTextPrimary)
                         }
                         Spacer(minLength: 0)
@@ -641,25 +641,25 @@ struct TripDetailDriverView: View {
                         .frame(width: 38, height: 38)
                         .overlay(
                             Image(systemName: "location.fill")
-                                .font(.system(size: 15, weight: .bold))
+                                .font(SierraFont.scaled(15, weight: .bold))
                                 .foregroundColor(.appOrange)
                         )
                     VStack(alignment: .leading, spacing: 4) {
                         Text("DESTINATION")
-                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .font(SierraFont.scaled(10, weight: .bold, design: .rounded))
                             .foregroundColor(.appOrange)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 5)
                             .background(Capsule().fill(Color.appOrange.opacity(0.10)))
                         Text(trip.destination.uppercased())
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .font(SierraFont.scaled(14, weight: .bold, design: .rounded))
                             .foregroundColor(.appTextPrimary)
                         if let deadline = trip.responseDeadline {
                             Label(
                                 "Respond by \(deadline.formatted(.dateTime.hour().minute()))",
                                 systemImage: "clock.badge.exclamationmark"
                             )
-                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            .font(SierraFont.scaled(11, weight: .semibold, design: .rounded))
                             .foregroundColor(.orange)
                         }
                     }
@@ -672,10 +672,10 @@ struct TripDetailDriverView: View {
                 if let distanceText = routeDistanceDisplay(for: trip) {
                     HStack(spacing: 6) {
                         Image(systemName: "arrow.up.right.circle.fill")
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(SierraFont.scaled(13, weight: .semibold))
                             .foregroundColor(.blue)
                         Text(distanceText)
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .font(SierraFont.scaled(13, weight: .bold, design: .rounded))
                             .foregroundColor(.appTextPrimary)
                     }
                     .padding(.horizontal, 12)
@@ -687,10 +687,10 @@ struct TripDetailDriverView: View {
                 // Scheduled time chip
                 HStack(spacing: 6) {
                     Image(systemName: "clock.fill")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(SierraFont.scaled(13, weight: .semibold))
                         .foregroundColor(.appOrange)
                     Text(trip.scheduledDate.formatted(.dateTime.hour().minute()))
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(13, weight: .bold, design: .rounded))
                         .foregroundColor(.appTextPrimary)
                 }
                 .padding(.horizontal, 12)
@@ -703,10 +703,10 @@ struct TripDetailDriverView: View {
             if let geofenceSummary = geofenceSummaryText(for: trip) {
                 HStack(spacing: 6) {
                     Image(systemName: "scope")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(SierraFont.scaled(13, weight: .semibold))
                         .foregroundColor(.teal)
                     Text(geofenceSummary)
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .font(SierraFont.scaled(12, weight: .semibold, design: .rounded))
                         .foregroundColor(.appTextPrimary)
                         .lineLimit(2)
                 }
@@ -719,11 +719,11 @@ struct TripDetailDriverView: View {
             if !trip.deliveryInstructions.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("DELIVERY INSTRUCTIONS")
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(10, weight: .bold, design: .rounded))
                         .foregroundColor(.appTextSecondary)
                         .kerning(1)
                     Text(trip.deliveryInstructions)
-                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .font(SierraFont.scaled(13, weight: .medium, design: .rounded))
                         .foregroundColor(.appTextPrimary)
                 }
                 .padding(.top, 4)
@@ -747,18 +747,18 @@ struct TripDetailDriverView: View {
     private func vehicleCard(_ vehicle: Vehicle) -> some View {
         HStack(spacing: 12) {
             Image(systemName: "bus.fill")
-                .font(.system(size: 14, weight: .semibold))
+                .font(SierraFont.scaled(14, weight: .semibold))
                 .foregroundColor(.appTextSecondary)
 
             Text(vehicle.licensePlate)
-                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                .font(SierraFont.scaled(12, weight: .bold, design: .monospaced))
                 .foregroundColor(.appOrange)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)
                 .background(Capsule().fill(Color.appOrange.opacity(0.08)))
 
             Text("\(vehicle.name) \(vehicle.model)")
-                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                .font(SierraFont.scaled(14, weight: .semibold, design: .rounded))
                 .foregroundColor(.appTextPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
@@ -796,7 +796,7 @@ struct TripDetailDriverView: View {
                 if trip.acceptedAt == nil {
                     VStack(spacing: 8) {
                         Image(systemName: "clock.badge.questionmark")
-                            .font(.system(size: 28))
+                            .font(SierraFont.scaled(28))
                             .foregroundStyle(.secondary)
                         Text("Awaiting Dispatch")
                             .font(.subheadline.weight(.semibold))
@@ -892,7 +892,7 @@ struct TripDetailDriverView: View {
                     } else {
                         HStack(spacing: 10) {
                             Image(systemName: "checkmark.circle.fill").font(.body.weight(.bold))
-                            Text("Accept Trip").font(.system(size: 18, weight: .bold))
+                            Text("Accept Trip").font(SierraFont.scaled(18, weight: .bold))
                         }
                     }
                 }
@@ -912,9 +912,9 @@ struct TripDetailDriverView: View {
         Button { showNavigation = true } label: {
             HStack(spacing: 8) {
                 Image(systemName: "location.fill")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(SierraFont.scaled(13, weight: .semibold))
                 Text("Navigate")
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(14, weight: .bold, design: .rounded))
             }
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)
@@ -942,7 +942,7 @@ struct TripDetailDriverView: View {
                 } else {
                     HStack(spacing: 10) {
                         Image(systemName: "flag.checkered").font(.body.weight(.bold))
-                        Text("End Trip").font(.system(size: 18, weight: .bold))
+                        Text("End Trip").font(SierraFont.scaled(18, weight: .bold))
                     }
                 }
             }
@@ -967,14 +967,14 @@ struct TripDetailDriverView: View {
     private func completionSummary(_ trip: Trip) -> some View {
         VStack(spacing: 10) {
             Image(systemName: "checkmark.seal.fill")
-                .font(.system(size: 40))
+                .font(SierraFont.scaled(40))
                 .foregroundColor(.green)
             Text("Trip Completed")
-                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .font(SierraFont.scaled(18, weight: .bold, design: .rounded))
                 .foregroundColor(.appTextPrimary)
             if let endDate = trip.actualEndDate {
                 Text(endDate.formatted(.dateTime.month(.abbreviated).day().hour().minute()))
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .font(SierraFont.scaled(12, weight: .medium, design: .rounded))
                     .foregroundColor(.appTextSecondary)
             }
         }
@@ -1042,8 +1042,8 @@ struct TripDetailDriverView: View {
     private func secondaryActionButton(_ title: String, icon: String, color: Color, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 8) {
-                Image(systemName: icon).font(.system(size: 14, weight: .semibold))
-                Text(title).font(.system(size: 15, weight: .semibold))
+                Image(systemName: icon).font(SierraFont.scaled(14, weight: .semibold))
+                Text(title).font(SierraFont.scaled(15, weight: .semibold))
             }
             .foregroundStyle(color)
             .frame(maxWidth: .infinity)

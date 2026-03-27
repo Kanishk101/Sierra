@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 
 enum DriverTab: Hashable {
-    case home, trips, alerts
+    case home, trips, notifications
 }
 
 struct DriverTabView: View {
@@ -40,14 +40,14 @@ struct DriverTabView: View {
                 .id(tripsResetToken)
             }
 
-            Tab("Alerts", systemImage: "bell.fill", value: .alerts) {
+            Tab("Notifications", systemImage: "bell.fill", value: .notifications) {
                 NavigationStack {
                     DriverAlertsView()
                 }
                 .id(alertsResetToken)
             }
         }
-        .tint(.orange)
+        .tint(SierraTheme.Colors.ember)
         .overlay(alignment: .top) {
             if let banner = bannerCoordinator.current {
                 NotificationBannerView(
@@ -97,7 +97,7 @@ struct DriverTabView: View {
                 homeResetToken = UUID()
             case .trips:
                 tripsResetToken = UUID()
-            case .alerts:
+            case .notifications:
                 alertsResetToken = UUID()
             }
         }
@@ -117,17 +117,21 @@ struct DriverTabView: View {
         appearance.configureWithDefaultBackground()
         appearance.backgroundColor = UIColor.systemBackground
 
-        let selectedColor = UIColor(red: 0.95, green: 0.55, blue: 0.10, alpha: 1.0)
+        let selectedColor = SierraAccessibilityPalette.accentUIColor
+        let selectedFont = UIFontMetrics(forTextStyle: .caption1)
+            .scaledFont(for: UIFont.systemFont(ofSize: 11, weight: .bold))
         appearance.stackedLayoutAppearance.selected.iconColor = selectedColor
         appearance.stackedLayoutAppearance.selected.titleTextAttributes = [
             .foregroundColor: selectedColor,
-            .font: UIFont.systemFont(ofSize: 11, weight: .bold)
+            .font: selectedFont
         ]
         let normalColor = UIColor.secondaryLabel
+        let normalFont = UIFontMetrics(forTextStyle: .caption1)
+            .scaledFont(for: UIFont.systemFont(ofSize: 11, weight: .medium))
         appearance.stackedLayoutAppearance.normal.iconColor = normalColor
         appearance.stackedLayoutAppearance.normal.titleTextAttributes = [
             .foregroundColor: normalColor,
-            .font: UIFont.systemFont(ofSize: 11, weight: .medium)
+            .font: normalFont
         ]
         UITabBar.appearance().standardAppearance = appearance
         UITabBar.appearance().scrollEdgeAppearance = appearance

@@ -120,12 +120,12 @@ struct DriverHomeView: View {
                                 // Section title
                                 HStack {
                                     Text("Recent Trips")
-                                        .font(.system(size: 20, weight: .bold, design: .rounded))
+                                        .font(SierraFont.scaled(20, weight: .bold, design: .rounded))
                                         .foregroundColor(.appTextPrimary)
                                     Spacer()
                                     Button { tabSelection = .trips } label: {
                                         Text("View All")
-                                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                            .font(SierraFont.scaled(14, weight: .semibold, design: .rounded))
                                             .foregroundColor(.appOrange)
                                     }
                                 }
@@ -272,10 +272,11 @@ struct DriverHomeView: View {
                             .frame(width: 38, height: 38)
                             .overlay(
                                 Text(driverMember?.initials ?? "D")
-                                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                                    .font(SierraFont.scaled(14, weight: .bold, design: .rounded))
                                     .foregroundStyle(.white)
                             )
                     }
+                    .accessibilityLabel("Open profile")
                     Spacer()
                     HStack(spacing: 8) {
                         Circle()
@@ -292,18 +293,21 @@ struct DriverHomeView: View {
                             .labelsHidden()
                             .scaleEffect(0.85)
                             .disabled(isUpdatingAvailability)
+                            .accessibilityLabel("Availability")
+                            .accessibilityHint("Switch between available and unavailable")
                     }
+                    .accessibilityElement(children: .combine)
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 60)
 
                 Text(timeOfDayGreeting)
-                    .font(.system(size: 16, weight: .medium, design: .rounded))
+                    .font(SierraFont.scaled(16, weight: .medium, design: .rounded))
                     .foregroundColor(.white.opacity(0.9))
                     .tracking(0.5)
 
                 Text(headerName.uppercased())
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(28, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
                     .tracking(1.2)
                     .minimumScaleFactor(0.85)
@@ -374,19 +378,19 @@ struct DriverHomeView: View {
                     .fill(Color.appTextPrimary)
                     .frame(width: 44, height: 44)
                 Image(systemName: "location.north.fill")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(SierraFont.scaled(17, weight: .semibold))
                     .foregroundColor(.white)
                     .rotationEffect(.degrees(45))
             }
 
             Text("See your current route")
-                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                .font(SierraFont.scaled(16, weight: .semibold, design: .rounded))
                 .foregroundColor(.appTextPrimary)
 
             Spacer()
 
             Image(systemName: "chevron.right")
-                .font(.system(size: 14, weight: .bold))
+                .font(SierraFont.scaled(14, weight: .bold))
                 .foregroundColor(.appTextSecondary)
         }
         .padding(.horizontal, 18)
@@ -409,11 +413,11 @@ struct DriverHomeView: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("\(upcomingTrips.count) upcoming Rides")
-                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .font(SierraFont.scaled(14, weight: .medium, design: .rounded))
                         .foregroundColor(.appTextSecondary)
 
                     Text(nextRideHeadline)
-                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(22, weight: .bold, design: .rounded))
                         .foregroundColor(.appTextPrimary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
@@ -433,7 +437,7 @@ struct DriverHomeView: View {
                         .frame(width: 80, height: 70)
 
                     Image(systemName: "bus.fill")
-                        .font(.system(size: 32))
+                        .font(SierraFont.scaled(32))
                         .foregroundColor(.appTextSecondary.opacity(0.5))
                 }
             }
@@ -443,7 +447,7 @@ struct DriverHomeView: View {
 
             Button { tabSelection = .trips } label: {
                 Text("View Rides")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(15, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
@@ -506,13 +510,13 @@ struct DriverHomeView: View {
 
         return VStack(alignment: .leading, spacing: 1) {
             Text(city.uppercased())
-                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .font(SierraFont.scaled(18, weight: .bold, design: .rounded))
                 .foregroundColor(.appTextPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
             if !rest.isEmpty {
                 Text(rest)
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .font(SierraFont.scaled(11, weight: .medium, design: .rounded))
                     .foregroundColor(.appTextSecondary)
                     .lineLimit(1)
             }
@@ -527,14 +531,14 @@ struct DriverHomeView: View {
                let vehicle = store.vehicle(for: vUUID) {
                 HStack(spacing: 8) {
                     Text(vehicle.licensePlate)
-                        .font(.system(size: 12, weight: .bold, design: .monospaced))
+                        .font(SierraFont.scaled(12, weight: .bold, design: .monospaced))
                         .foregroundColor(Color.appOrange)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
                         .background(Capsule().fill(Color.appOrange.opacity(0.08)))
 
                     Text("\(vehicle.name) \(vehicle.model)")
-                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .font(SierraFont.scaled(13, weight: .medium, design: .rounded))
                         .foregroundColor(.appTextSecondary)
                         .lineLimit(1)
                 }
@@ -766,7 +770,7 @@ struct DriverHomeView: View {
 
     private var noTripAssignedCard: some View {
         VStack(spacing: 14) {
-            Image(systemName: "mappin.slash").font(.system(size: 50))
+            Image(systemName: "mappin.slash").font(SierraFont.scaled(50))
                 .foregroundStyle(.gray.opacity(0.5)).padding(.top, 20)
             Text("No Trip Assigned").font(.headline).foregroundStyle(.secondary)
             Text("Your Fleet Manager hasn\u{2019}t assigned a delivery task yet.")
@@ -855,12 +859,12 @@ struct DriverHomeView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(message)
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(15, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
 
                 if !toastIsError {
                     Text(availabilitySwitch ? "Ready to accept rides" : "You won\u{2019}t receive new rides")
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .font(SierraFont.scaled(12, weight: .medium, design: .rounded))
                         .foregroundColor(.white.opacity(0.75))
                 }
             }
@@ -869,7 +873,7 @@ struct DriverHomeView: View {
 
             Image(systemName: toastIsError ? "xmark.circle.fill"
                   : (availabilitySwitch ? "checkmark.circle.fill" : "moon.fill"))
-                .font(.system(size: 22))
+                .font(SierraFont.scaled(22))
                 .foregroundColor(.white.opacity(0.8))
         }
         .padding(.horizontal, 18)

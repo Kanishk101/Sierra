@@ -65,4 +65,4 @@ alter policy wo_phases_insert on public.work_order_phases
         where work_orders.assigned_to_id = (select auth.uid())
       )
     )
-  );
+  );;

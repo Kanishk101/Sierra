@@ -511,10 +511,10 @@ final class PreTripInspectionViewModel {
                 let path = "\(prefix)/\(tripId.uuidString)/\(item.id.uuidString)/\(UUID().uuidString).jpg"
                 do {
                     try await supabase.storage
-                        .from("sierra-uploads")
+                        .from("inspection-photos")
                         .upload(path, data: compressed, options: .init(contentType: "image/jpeg"))
                     let publicUrl = try supabase.storage
-                        .from("sierra-uploads")
+                        .from("inspection-photos")
                         .getPublicURL(path: path)
                     urls.append(publicUrl.absoluteString)
                 } catch {
@@ -535,10 +535,10 @@ final class PreTripInspectionViewModel {
                 let path = "\(prefix)/\(tripId.uuidString)/general/\(UUID().uuidString).jpg"
                 do {
                     try await supabase.storage
-                        .from("sierra-uploads")
+                        .from("inspection-photos")
                         .upload(path, data: compressed, options: .init(contentType: "image/jpeg"))
                     let publicUrl = try supabase.storage
-                        .from("sierra-uploads")
+                        .from("inspection-photos")
                         .getPublicURL(path: path)
                     generalUrls.append(publicUrl.absoluteString)
                 } catch {
@@ -623,27 +623,66 @@ final class PreTripInspectionViewModel {
 
             // 4. Resolve vehicle license plate for maintenance request title
             let vehiclePlate = store.vehicle(for: vehicleId)?.licensePlate ?? vehicleId.uuidString.prefix(8).description
+            var createdMaintenanceTaskId: UUID?
 
             // 5. Auto-create repair request for inspection failure (pre-trip or post-trip).
             // Warnings alone notify but do not auto-create.
             if overallResult == .failed {
                 let issueItemNames = failedItems.map(\.name).joined(separator: ", ")
+                let issueDetails = failedItems
+                    .map { item in
+                        let cleanNote = item.notes.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if cleanNote.isEmpty {
+                            return "- \(item.name)"
+                        }
+                        return "- \(item.name): \(cleanNote)"
+                    }
+                    .joined(separator: "\n")
                 let typeLabel = inspectionType == .preTripInspection ? "Pre-trip" : "Post-trip"
                 let autoDescription = maintenanceDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    ? "\(typeLabel) inspection issues: \(issueItemNames)"
+                    ? "\(typeLabel) inspection issues: \(issueItemNames)\n\(issueDetails)"
                     : maintenanceDescription
 
-                let priority: TaskPriority
-                priority = overallResult == .failed ? .urgent : .medium
-
-                try? await MaintenanceTaskService.createDriverRequest(
+                let createdTaskId = try await MaintenanceTaskService.createDriverRequest(
                     vehicleId: vehicleId,
                     createdById: driverId,
                     title: "\(typeLabel) Defect \u{2013} \(vehiclePlate)",
                     description: autoDescription,
-                    priority: priority,
                     sourceInspectionId: inspection.id
                 )
+                createdMaintenanceTaskId = createdTaskId
+
+                // Pre-trip failure should always raise an active defect alert that blocks the trip
+                // until reassignment is done by fleet manager.
+                if inspectionType == .preTripInspection {
+                    let trip = store.trip(for: tripId)
+                    let lat = trip?.originLatitude ?? trip?.destinationLatitude ?? 0
+                    let lon = trip?.originLongitude ?? trip?.destinationLongitude ?? 0
+                    let defectAlert = EmergencyAlert(
+                        id: UUID(),
+                        driverId: driverId,
+                        tripId: tripId,
+                        vehicleId: vehicleId,
+                        latitude: lat,
+                        longitude: lon,
+                        alertType: .defect,
+                        status: .active,
+                        description: "\(typeLabel) inspection failed: \(issueItemNames)",
+                        acknowledgedBy: nil,
+                        acknowledgedAt: nil,
+                        resolvedAt: nil,
+                        triggeredAt: Date(),
+                        createdAt: Date()
+                    )
+                    try? await EmergencyAlertService.addEmergencyAlert(defectAlert)
+                    store.emergencyAlerts.insert(defectAlert, at: 0)
+                }
+
+                // Keep vehicle state in sync immediately after a failed inspection.
+                if let vehicleIdx = store.vehicles.firstIndex(where: { $0.id == vehicleId }) {
+                    store.vehicles[vehicleIdx].status = .inMaintenance
+                    try? await VehicleService.updateVehicle(store.vehicles[vehicleIdx])
+                }
 
                 // Notify all admins about the defect (non-blocking)
                 let defectTitle = "\(typeLabel) Defect \u{2013} \(vehiclePlate)"
@@ -653,16 +692,19 @@ final class PreTripInspectionViewModel {
                         type: .maintenanceRequest,
                         title: "Defect Reported \u{2013} \(vehiclePlate)",
                         body: "\(driverName) reported: \(defectTitle)",
-                        entityType: "vehicle_inspection",
-                        entityId: inspection.id
+                        entityType: "maintenance_task",
+                        entityId: createdTaskId
                     )
                 }
 
-                maintenanceBannerText = "Maintenance request submitted for \(vehiclePlate)"
+                maintenanceBannerText = "Maintenance flow started for \(vehiclePlate)"
             }
 
-            if inspectionType == .postTripInspection {
-                await attachLatestPostTripMaintenanceRequestToInspection(inspectionId: inspection.id)
+            if inspectionType == .postTripInspection, let createdMaintenanceTaskId {
+                await linkInspectionToMaintenanceTaskIfMissing(
+                    taskId: createdMaintenanceTaskId,
+                    inspectionId: inspection.id
+                )
             }
 
             // 6. Update trip's inspection ID using targeted patch only.
@@ -705,36 +747,29 @@ final class PreTripInspectionViewModel {
         isSubmitting = false
     }
 
-    private func attachLatestPostTripMaintenanceRequestToInspection(inspectionId: UUID) async {
-        struct TaskRow: Decodable {
-            let id: UUID
-            let source_inspection_id: UUID?
-            let created_at: Date
-        }
-
+    private func linkInspectionToMaintenanceTaskIfMissing(taskId: UUID, inspectionId: UUID) async {
+        struct TaskRow: Decodable { let source_inspection_id: UUID? }
         do {
             let rows: [TaskRow] = try await supabase
                 .from("maintenance_tasks")
-                .select("id, source_inspection_id, created_at")
-                .eq("vehicle_id", value: vehicleId.uuidString.lowercased())
-                .eq("created_by_admin_id", value: driverId.uuidString.lowercased())
-                .eq("task_type", value: MaintenanceTaskType.inspectionDefect.rawValue)
-                .order("created_at", ascending: false)
-                .limit(8)
+                .select("source_inspection_id")
+                .eq("id", value: taskId.uuidString.lowercased())
+                .limit(1)
                 .execute()
                 .value
 
-            guard let target = rows.first(where: { $0.source_inspection_id == nil }) else { return }
+            guard let target = rows.first else { return }
+            guard target.source_inspection_id == nil else { return }
 
             struct Payload: Encodable { let source_inspection_id: String }
             try await supabase
                 .from("maintenance_tasks")
                 .update(Payload(source_inspection_id: inspectionId.uuidString))
-                .eq("id", value: target.id.uuidString)
+                .eq("id", value: taskId.uuidString.lowercased())
                 .execute()
         } catch {
             #if DEBUG
-            print("[PreTripInspectionViewModel] Failed to attach inspection to maintenance request: \(error)")
+            print("[PreTripInspectionViewModel] Failed to deterministically link inspection to maintenance task: \(error)")
             #endif
         }
     }

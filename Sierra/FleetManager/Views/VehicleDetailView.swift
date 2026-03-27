@@ -13,6 +13,9 @@ struct VehicleDetailView: View {
     @State private var editModel = ""
     @State private var editColor = ""
     @State private var editPlate = ""
+    @State private var selectedDocumentURL: URL?
+    @State private var showDocumentLoadError = false
+    @State private var documentLoadErrorMessage = ""
 
     private var vehicle: Vehicle? {
         store.vehicles.first { $0.id == vehicleId }
@@ -56,6 +59,19 @@ struct VehicleDetailView: View {
         } message: {
             Text("This action cannot be undone. All associated data will be removed.")
         }
+        .sheet(isPresented: Binding(
+            get: { selectedDocumentURL != nil },
+            set: { if !$0 { selectedDocumentURL = nil } }
+        )) {
+            if let selectedDocumentURL {
+                InAppDocumentViewer(url: selectedDocumentURL)
+            }
+        }
+        .alert("Document Error", isPresented: $showDocumentLoadError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(documentLoadErrorMessage)
+        }
     }
 
     // MARK: - Content
@@ -79,6 +95,12 @@ struct VehicleDetailView: View {
                     infoRow("Color",         value: v.color)
                     infoRow("Fuel Type",     value: v.fuelType.rawValue)
                     infoRow("Seating",       value: "\(v.seatingCapacity)")
+                    if let fuelTank = v.fuelTankCapacityLiters {
+                        infoRow("Fuel Tank", value: String(format: "%.1f L", fuelTank))
+                    }
+                    if let mileage = v.mileageKmPerLitre {
+                        infoRow("Mileage", value: String(format: "%.1f km/L", mileage))
+                    }
                     infoRow("Status",        value: v.status.rawValue)
                     infoRow("Odometer",      value: String(format: "%.0f km", v.odometer))
                     infoRow("Total Trips",   value: "\(v.totalTrips)")
@@ -110,7 +132,7 @@ struct VehicleDetailView: View {
                             .frame(width: 36, height: 36)
                             .overlay(
                                 Text(driver.initials)
-                                    .font(.system(size: 13, weight: .bold))
+                                    .font(SierraFont.scaled(13, weight: .bold))
                                     .foregroundStyle(.orange)
                             )
                         VStack(alignment: .leading, spacing: 2) {
@@ -139,7 +161,7 @@ struct VehicleDetailView: View {
                     HStack {
                         Spacer()
                         Label("Delete Vehicle", systemImage: "trash.fill")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(SierraFont.scaled(16, weight: .semibold))
                         Spacer()
                     }
                 }
@@ -185,6 +207,13 @@ struct VehicleDetailView: View {
 
             Spacer()
 
+            if doc.documentUrl != nil {
+                Button("View") {
+                    Task { await openDocument(doc) }
+                }
+                .font(.caption)
+            }
+
             Text(statusText)
                 .font(.caption2)
                 .foregroundStyle(statusColor)
@@ -219,6 +248,21 @@ struct VehicleDetailView: View {
             print("[VehicleDetailView] Save error: \(error)")
             isEditing = false
         }
+    }
+
+    @MainActor
+    private func openDocument(_ doc: VehicleDocument) async {
+        guard let storedValue = doc.documentUrl, !storedValue.isEmpty else {
+            documentLoadErrorMessage = "No uploaded file is linked for this document."
+            showDocumentLoadError = true
+            return
+        }
+        guard let url = VehicleDocumentService.resolveDocumentURL(storedValue: storedValue) else {
+            documentLoadErrorMessage = "Unable to open this document."
+            showDocumentLoadError = true
+            return
+        }
+        selectedDocumentURL = url
     }
 }
 

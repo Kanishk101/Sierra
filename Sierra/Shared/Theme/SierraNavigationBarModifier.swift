@@ -9,6 +9,7 @@ struct NavigationBarItem: Identifiable {
     let systemName: String
     let action: () -> Void
     var tint: Color = .white
+    var accessibilityLabel: String? = nil
 }
 
 // MARK: - SierraNavigationBarModifier
@@ -76,6 +77,7 @@ struct SierraNavigationBarModifier: ViewModifier {
                                 Image(systemName: item.systemName)
                                     .foregroundStyle(item.tint)
                             }
+                            .accessibilityLabel(item.accessibilityLabel ?? item.systemName.replacingOccurrences(of: ".", with: " "))
                         }
                     }
                 }

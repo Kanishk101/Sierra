@@ -4,6 +4,7 @@ import LocalAuthentication
 /// Maintenance profile sheet aligned with Sierra card-based design.
 struct MaintenanceProfileView: View {
     @Environment(AppDataStore.self) private var store
+    @Environment(AccessibilitySettings.self) private var accessibilitySettings
     @Environment(\.dismiss) private var dismiss
 
     @State private var isBiometricEnabled = BiometricPreference.isEnabled
@@ -57,6 +58,7 @@ struct MaintenanceProfileView: View {
                     contactCard
                     professionalCard
                     securityCard
+                    accessibilityCard
                     actionsCard
                 }
                 .padding(.horizontal, 20)
@@ -70,6 +72,7 @@ struct MaintenanceProfileView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                         .foregroundStyle(Color.appOrange)
+                        .accessibilityLabel("Close profile")
                 }
             }
         }
@@ -83,56 +86,60 @@ struct MaintenanceProfileView: View {
                 .frame(width: 64, height: 64)
                 .overlay(
                     Text(member?.initials ?? "M")
-                        .font(.system(size: 24, weight: .bold, design: .rounded))
+                        .font(SierraFont.title2)
                         .foregroundStyle(.white)
                 )
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(member?.displayName ?? "Maintenance Personnel")
-                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .font(SierraFont.title3)
                     .foregroundStyle(Color.appTextPrimary)
                     .lineLimit(2)
                 Text(member?.email ?? AuthManager.shared.currentUser?.email ?? "")
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .font(SierraFont.caption1)
                     .foregroundStyle(Color.appTextSecondary)
                     .lineLimit(1)
 
                 HStack(spacing: 6) {
                     Circle()
-                        .fill((member?.availability == .available) ? Color.green : Color.gray)
+                        .fill((member?.availability == .available) ? Color.statusActive : Color.gray)
                         .frame(width: 7, height: 7)
                     Text((member?.availability == .available) ? "Available" : "Unavailable")
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                        .foregroundStyle((member?.availability == .available) ? Color.green : Color.appTextSecondary)
+                        .font(SierraFont.caption2.weight(.bold))
+                        .foregroundStyle((member?.availability == .available) ? Color.statusActive : Color.appTextSecondary)
                 }
+                .accessibilityLabel("Availability \((member?.availability == .available) ? "Available" : "Unavailable")")
             }
             Spacer()
         }
         .padding(16)
         .background(cardBackground)
+        .accessibilityElement(children: .combine)
     }
 
     private var statsCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             sectionTitle("Work Summary")
             HStack(spacing: 10) {
-                metricPill(value: assignedTasks, label: "Assigned", tint: .blue)
-                metricPill(value: inProgressTasks, label: "In Progress", tint: .purple)
-                metricPill(value: completedTasks, label: "Completed", tint: .green)
+                metricPill(value: assignedTasks, label: "Assigned", symbol: "tray.full.fill", tint: Color.appOrange)
+                metricPill(value: inProgressTasks, label: "In Progress", symbol: "wrench.and.screwdriver.fill", tint: SierraTheme.Colors.info)
+                metricPill(value: completedTasks, label: "Completed", symbol: "checkmark.seal.fill", tint: SierraTheme.Colors.success)
             }
             if let profile {
                 HStack(spacing: 8) {
                     Image(systemName: "clock.arrow.circlepath")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(SierraFont.caption1.weight(.semibold))
                         .foregroundStyle(Color.appOrange)
                     Text("\(profile.yearsOfExperience) years of experience")
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .font(SierraFont.footnote.weight(.semibold))
                         .foregroundStyle(Color.appTextSecondary)
                 }
+                .accessibilityElement(children: .combine)
             }
         }
         .padding(16)
         .background(cardBackground)
+        .accessibilityElement(children: .combine)
     }
 
     private var contactCard: some View {
@@ -145,6 +152,7 @@ struct MaintenanceProfileView: View {
         }
         .padding(16)
         .background(cardBackground)
+        .accessibilityElement(children: .contain)
     }
 
     private var professionalCard: some View {
@@ -159,19 +167,20 @@ struct MaintenanceProfileView: View {
                 if !profile.specializations.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Specializations")
-                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .font(SierraFont.caption1.weight(.bold))
                             .foregroundStyle(Color.appTextSecondary)
                         specializationChips(profile.specializations)
                     }
                 }
             } else {
                 Text("Professional profile is not available yet.")
-                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                    .font(SierraFont.body(14, weight: .medium))
                     .foregroundStyle(Color.appTextSecondary)
             }
         }
         .padding(16)
         .background(cardBackground)
+        .accessibilityElement(children: .contain)
     }
 
     private var securityCard: some View {
@@ -180,7 +189,7 @@ struct MaintenanceProfileView: View {
 
             HStack {
                 Label(biometricLabel, systemImage: biometricIcon)
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .font(SierraFont.body(14, weight: .semibold))
                     .foregroundStyle(Color.appTextPrimary)
                 Spacer()
                 Toggle("", isOn: $isBiometricEnabled)
@@ -190,27 +199,62 @@ struct MaintenanceProfileView: View {
                     .onChange(of: isBiometricEnabled) { _, enabled in
                         BiometricPreference.isEnabled = enabled
                     }
+                    .accessibilityLabel("\(biometricLabel) login")
+                    .accessibilityHint("Enables biometric authentication for sign in")
             }
             .padding(.vertical, 2)
+            .accessibilityElement(children: .combine)
 
             NavigationLink {
                 ChangePasswordView()
             } label: {
                 HStack {
                     Label("Change Password", systemImage: "lock.rotation")
-                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .font(SierraFont.body(14, weight: .semibold))
                         .foregroundStyle(Color.appTextPrimary)
                     Spacer()
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 11, weight: .bold))
+                        .font(SierraFont.caption2.weight(.bold))
                         .foregroundStyle(Color.appTextSecondary)
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Change password")
         }
         .padding(16)
         .background(cardBackground)
+        .accessibilityElement(children: .contain)
+    }
+
+    private var accessibilityCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle("Accessibility")
+
+            HStack {
+                Label("Color Blind Mode", systemImage: "eyedropper.halffull")
+                    .font(SierraFont.body(14, weight: .semibold))
+                    .foregroundStyle(Color.appTextPrimary)
+                Spacer()
+                Toggle("", isOn: Binding(
+                    get: { accessibilitySettings.isColorBlindModeEnabled },
+                    set: { accessibilitySettings.isColorBlindModeEnabled = $0 }
+                ))
+                .labelsHidden()
+                .tint(Color.appOrange)
+                .accessibilityLabel("Color blind mode")
+                .accessibilityHint("Switches to a high-contrast color palette")
+            }
+            .padding(.vertical, 2)
+            .accessibilityElement(children: .combine)
+
+            Text("High-contrast colors and clearer visual cues improve readability.")
+                .font(SierraFont.caption1)
+                .foregroundStyle(Color.appTextSecondary)
+        }
+        .padding(16)
+        .background(cardBackground)
+        .accessibilityElement(children: .contain)
     }
 
     private var actionsCard: some View {
@@ -221,7 +265,7 @@ struct MaintenanceProfileView: View {
             } label: {
                 HStack {
                     Label("Edit Profile", systemImage: "square.and.pencil")
-                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .font(SierraFont.body(15, weight: .bold))
                         .foregroundStyle(Color.appOrange)
                     Spacer()
                 }
@@ -230,6 +274,7 @@ struct MaintenanceProfileView: View {
                 .background(Color.appOrange.opacity(0.1), in: RoundedRectangle(cornerRadius: 14))
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Edit profile")
 
             Button(role: .destructive) {
                 AuthManager.shared.signOut()
@@ -237,16 +282,18 @@ struct MaintenanceProfileView: View {
             } label: {
                 HStack {
                     Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
-                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .font(SierraFont.body(15, weight: .bold))
                     Spacer()
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 13)
                 .background(Color.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 14))
             }
+            .accessibilityLabel("Sign out")
         }
         .padding(16)
         .background(cardBackground)
+        .accessibilityElement(children: .contain)
     }
 
     private var cardBackground: some View {
@@ -258,40 +305,45 @@ struct MaintenanceProfileView: View {
 
     private func sectionTitle(_ title: String) -> some View {
         Text(title)
-            .font(.system(size: 14, weight: .bold, design: .rounded))
+            .font(SierraFont.body(14, weight: .bold))
             .foregroundStyle(Color.appTextPrimary)
     }
 
     private func infoRow(_ title: String, value: String, icon: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: icon)
-                .font(.system(size: 12, weight: .semibold))
+                .font(SierraFont.caption1.weight(.semibold))
                 .foregroundStyle(Color.appOrange)
                 .frame(width: 18)
             Text(title)
-                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .font(SierraFont.footnote)
                 .foregroundStyle(Color.appTextSecondary)
             Spacer(minLength: 8)
             Text(value)
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .font(SierraFont.footnote.weight(.semibold))
                 .foregroundStyle(Color.appTextPrimary)
                 .multilineTextAlignment(.trailing)
         }
+        .accessibilityElement(children: .combine)
     }
 
-    private func metricPill(value: Int, label: String, tint: Color) -> some View {
+    private func metricPill(value: Int, label: String, symbol: String, tint: Color) -> some View {
         VStack(spacing: 3) {
+            Image(systemName: symbol)
+                .font(SierraFont.caption2.weight(.semibold))
+                .foregroundStyle(tint)
             Text("\(value)")
-                .font(.system(size: 20, weight: .bold, design: .rounded))
+                .font(SierraFont.title3.weight(.bold))
                 .foregroundStyle(tint)
             Text(label)
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .font(SierraFont.caption2)
                 .foregroundStyle(Color.appTextSecondary)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 10)
         .background(RoundedRectangle(cornerRadius: 14).fill(tint.opacity(0.08)))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(tint.opacity(0.16), lineWidth: 1))
+        .accessibilityElement(children: .combine)
     }
 
     private func specializationChips(_ values: [String]) -> some View {
@@ -299,7 +351,7 @@ struct MaintenanceProfileView: View {
             HStack(spacing: 8) {
                 ForEach(values, id: \.self) { value in
                     Text(value)
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .font(SierraFont.caption2)
                         .foregroundStyle(Color.appTextPrimary)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
@@ -314,4 +366,5 @@ struct MaintenanceProfileView: View {
 #Preview {
     MaintenanceProfileView()
         .environment(AppDataStore.shared)
+        .environment(AccessibilitySettings.shared)
 }

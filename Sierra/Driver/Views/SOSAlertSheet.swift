@@ -39,7 +39,7 @@ struct SOSAlertSheet: View {
 
                 // SOS icon
                 Image(systemName: "sos.circle.fill")
-                    .font(.system(size: 80))
+                    .font(SierraFont.scaled(80))
                     .foregroundStyle(.white)
                     .shadow(color: .black.opacity(0.3), radius: 10)
 
@@ -106,7 +106,7 @@ struct SOSAlertSheet: View {
     private var confirmationView: some View {
         VStack(spacing: 8) {
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 48))
+                .font(SierraFont.scaled(48))
                 .foregroundStyle(.white)
             Text("Alert Sent — Help is on the way")
                 .font(.headline)

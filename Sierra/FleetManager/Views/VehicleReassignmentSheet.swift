@@ -14,10 +14,15 @@ struct VehicleReassignmentSheet: View {
     @State private var errorText: String? = nil
     @State private var searchText = ""
 
+    private var trip: Trip? {
+        store.trip(for: tripId)
+    }
+
     /// Only vehicles that are currently assignable (Active or Idle).
     private var availableVehicles: [Vehicle] {
-        let base = store.vehicles.filter { v in
-            v.status == .active || v.status == .idle
+        let currentVehicleId = trip?.vehicleUUID
+        let base = store.availableVehicles().filter { v in
+            (v.status == .active || v.status == .idle) && v.id != currentVehicleId
         }
         guard !searchText.isEmpty else { return base }
         let query = searchText.lowercased()
@@ -122,10 +127,46 @@ struct VehicleReassignmentSheet: View {
     private func reassign(vehicleId: UUID) async {
         isSubmitting = true
         defer { isSubmitting = false }
+
+        guard let trip else {
+            errorText = "Trip details are unavailable. Please refresh and try again."
+            return
+        }
+        guard trip.vehicleUUID != vehicleId else {
+            errorText = "This vehicle is already assigned to the trip."
+            return
+        }
+        guard let driverId = trip.driverUUID else {
+            errorText = "Trip driver is missing. Reassignment is blocked until driver is set."
+            return
+        }
+
         do {
-            let trip = store.trips.first(where: { $0.id == tripId })
             let newVehicle = store.vehicle(for: vehicleId)
+            let plannedEnd = trip.scheduledEndDate
+                ?? Calendar.current.date(byAdding: .hour, value: 2, to: trip.scheduledDate)
+                ?? trip.scheduledDate.addingTimeInterval(2 * 3600)
+            let overlap = try await TripService.checkOverlap(
+                driverId: driverId,
+                vehicleId: vehicleId,
+                start: trip.scheduledDate,
+                end: plannedEnd,
+                excludingTripId: trip.id
+            )
+            if overlap.vehicleConflict {
+                errorText = "Selected vehicle is already allocated to another overlapping trip."
+                return
+            }
+
             try await TripService.reassignVehicle(tripId: tripId, newVehicleId: vehicleId)
+
+            // Keep UI immediately consistent with the successful backend reassignment.
+            if let idx = store.trips.firstIndex(where: { $0.id == tripId }) {
+                store.trips[idx].vehicleId = vehicleId.uuidString.lowercased()
+                store.trips[idx].preInspectionId = nil
+                store.trips[idx].status = .scheduled
+                store.trips[idx].updatedAt = Date()
+            }
 
             // Resolve active pre-trip defect alerts for this trip so driver card
             // unblocks from "Waiting for Vehicle" as soon as reassignment completes.
@@ -133,14 +174,16 @@ struct VehicleReassignmentSheet: View {
                 alert.tripId == tripId
                 && alert.alertType == .defect
                 && (alert.status == .active || alert.status == .acknowledged)
-                && (alert.description?.lowercased().contains("pre-trip fail") ?? false)
             }
             for alert in alertsToResolve {
                 try? await EmergencyAlertService.resolveAlert(id: alert.id)
+                if let localIdx = store.emergencyAlerts.firstIndex(where: { $0.id == alert.id }) {
+                    store.emergencyAlerts[localIdx].status = .resolved
+                    store.emergencyAlerts[localIdx].resolvedAt = Date()
+                }
             }
 
             if
-                let trip,
                 let driverIdText = trip.driverId,
                 let driverUUID = UUID(uuidString: driverIdText)
             {
@@ -157,8 +200,11 @@ struct VehicleReassignmentSheet: View {
                 )
             }
 
-            await store.loadAll()
             dismiss()
+            Task {
+                await store.refreshAdminTripsLiveData()
+                await store.loadAll(force: true)
+            }
         } catch {
             self.errorText = error.localizedDescription
         }

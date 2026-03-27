@@ -103,7 +103,7 @@ struct MaintenanceApplicationSubmittedView: View {
     private var statusCard: some View {
         HStack(spacing: 12) {
             Image(systemName: isRejected ? "xmark.octagon.fill" : "clock.fill")
-                .font(.system(size: 20))
+                .font(SierraFont.scaled(20))
                 .foregroundStyle(isRejected ? .red : .orange)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -111,14 +111,14 @@ struct MaintenanceApplicationSubmittedView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                 Text(isRejected ? "Application Rejected" : "Pending Review")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(SierraFont.scaled(16, weight: .semibold))
                     .foregroundStyle(.primary)
             }
 
             Spacer()
 
             Text(isRejected ? "Rejected" : "Pending")
-                .font(.system(size: 12, weight: .bold))
+                .font(SierraFont.scaled(12, weight: .bold))
                 .foregroundStyle(isRejected ? .red : .orange)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
@@ -139,7 +139,7 @@ struct MaintenanceApplicationSubmittedView: View {
                     .font(.caption)
                     .foregroundStyle(.red)
                 Text("Rejection Reason")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(SierraFont.scaled(14, weight: .bold))
                     .foregroundStyle(.primary)
             }
 

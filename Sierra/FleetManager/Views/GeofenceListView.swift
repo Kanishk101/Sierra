@@ -25,7 +25,7 @@ struct GeofenceListView: View {
             if !vm.isLoading && vm.geofences.isEmpty {
                 Section {
                     VStack(spacing: 12) {
-                        Image(systemName: "mappin.slash").font(.system(size: 40, weight: .light)).foregroundStyle(.secondary.opacity(0.5))
+                        Image(systemName: "mappin.slash").font(SierraFont.scaled(40, weight: .light)).foregroundStyle(.secondary.opacity(0.5))
                         Text("No geofences configured").font(.subheadline).foregroundStyle(.secondary)
                         Text("Geofences are created within the trip creation flow.").font(.caption).foregroundStyle(.tertiary).multilineTextAlignment(.center)
                     }
@@ -51,7 +51,7 @@ struct GeofenceListView: View {
         HStack(spacing: 14) {
             ZStack {
                 Circle().fill(geofence.isActive ? SierraTheme.Colors.alpineMint.opacity(0.15) : Color.gray.opacity(0.1)).frame(width: 40, height: 40)
-                Image(systemName: geofenceIcon(geofence.geofenceType)).font(.system(size: 16, weight: .semibold)).foregroundStyle(geofence.isActive ? SierraTheme.Colors.alpineMint : .gray)
+                Image(systemName: geofenceIcon(geofence.geofenceType)).font(SierraFont.scaled(16, weight: .semibold)).foregroundStyle(geofence.isActive ? SierraTheme.Colors.alpineMint : .gray)
             }
             VStack(alignment: .leading, spacing: 3) {
                 Text(geofence.name).font(.subheadline.weight(.semibold))
@@ -62,8 +62,11 @@ struct GeofenceListView: View {
             Spacer()
             Toggle("", isOn: .init(get: { geofence.isActive }, set: { _ in Task { await vm.toggleActive(geofence) } }))
                 .labelsHidden().tint(SierraTheme.Colors.alpineMint)
+                .accessibilityLabel("\(geofence.name) geofence status")
+                .accessibilityHint("Enables or disables this geofence")
         }
         .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
     }
 
     private func geofenceIcon(_ type: GeofenceType) -> String {

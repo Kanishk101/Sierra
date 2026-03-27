@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - SierraFont
 
@@ -11,13 +12,75 @@ import SwiftUI
 /// Usage: `.font(SierraFont.title1)` or `.font(SierraFont.display(28, weight: .bold))`
 public enum SierraFont {
 
+    // MARK: - Scaling Helpers
+
+    private static func uiWeight(_ weight: Font.Weight) -> UIFont.Weight {
+        switch weight {
+        case .ultraLight: return .ultraLight
+        case .thin: return .thin
+        case .light: return .light
+        case .regular: return .regular
+        case .medium: return .medium
+        case .semibold: return .semibold
+        case .bold: return .bold
+        case .heavy: return .heavy
+        case .black: return .black
+        default: return .regular
+        }
+    }
+
+    private static func textStyle(for size: CGFloat) -> UIFont.TextStyle {
+        switch size {
+        case 34...: return .largeTitle
+        case 28..<34: return .title1
+        case 22..<28: return .title2
+        case 20..<22: return .title3
+        case 17..<20: return .headline
+        case 15..<17: return .body
+        case 13..<15: return .subheadline
+        case 12..<13: return .footnote
+        default: return .caption1
+        }
+    }
+
+    private static func scaledFont(
+        size: CGFloat,
+        weight: Font.Weight,
+        design: UIFontDescriptor.SystemDesign = .default
+    ) -> Font {
+        let base = UIFont.systemFont(ofSize: size, weight: uiWeight(weight))
+        let descriptor = base.fontDescriptor.withDesign(design) ?? base.fontDescriptor
+        let designed = UIFont(descriptor: descriptor, size: size)
+        let scaled = UIFontMetrics(forTextStyle: textStyle(for: size)).scaledFont(for: designed)
+        return Font(scaled)
+    }
+
+    private static func descriptorDesign(_ design: Font.Design) -> UIFontDescriptor.SystemDesign {
+        switch design {
+        case .default: return .default
+        case .rounded: return .rounded
+        case .serif: return .serif
+        case .monospaced: return .monospaced
+        @unknown default: return .default
+        }
+    }
+
+    /// Dynamic-type aware replacement for fixed-size `.system(size:)` fonts.
+    static func scaled(
+        _ size: CGFloat,
+        weight: Font.Weight = .regular,
+        design: Font.Design = .default
+    ) -> Font {
+        scaledFont(size: size, weight: weight, design: descriptorDesign(design))
+    }
+
     // ─────────────────────────────────────────
     // MARK: - Display Scale (SF Pro Display)
     // ─────────────────────────────────────────
 
     /// Dynamic display font - large, bold, headers.
     static func display(_ size: CGFloat, weight: Font.Weight = .bold) -> Font {
-        .system(size: size, weight: weight, design: .default)
+        scaledFont(size: size, weight: weight, design: .default)
     }
 
     /// Screen titles - NavigationBar large title (34pt bold)
@@ -35,7 +98,7 @@ public enum SierraFont {
 
     /// Dynamic body font - standard text.
     static func body(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
-        .system(size: size, weight: weight, design: .default)
+        scaledFont(size: size, weight: weight, design: .default)
     }
 
     /// List row primary titles (17pt semibold)
@@ -59,7 +122,7 @@ public enum SierraFont {
 
     /// Dynamic mono font - data identifiers.
     static func mono(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
-        .system(size: size, weight: weight, design: .monospaced)
+        scaledFont(size: size, weight: weight, design: .monospaced)
     }
 
     /// OTP / large data display (20pt medium)

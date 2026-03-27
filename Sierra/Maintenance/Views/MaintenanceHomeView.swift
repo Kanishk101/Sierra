@@ -44,13 +44,6 @@ struct MaintenanceHomeView: View {
     private var assignedTasks: [MaintenanceTask] { myTasks.filter { $0.isEffectivelyAssigned } }
     private var completedTasks: [MaintenanceTask] { myTasks.filter { $0.status == .completed } }
 
-    private var urgentTasks: [MaintenanceTask] {
-        myTasks.filter {
-            $0.priority == .urgent &&
-            ($0.isEffectivelyAssigned || $0.status == .inProgress)
-        }
-    }
-
     private var activePendingTasks: [MaintenanceTask] {
         Array(myTasks.filter {
             $0.isEffectivelyAssigned || $0.status == .inProgress
@@ -72,10 +65,6 @@ struct MaintenanceHomeView: View {
                         }
 
                         summaryCard
-
-                        if !urgentTasks.isEmpty {
-                            urgentAlertBanner
-                        }
 
                         if !activePendingTasks.isEmpty {
                             recentTasksSection
@@ -140,10 +129,11 @@ struct MaintenanceHomeView: View {
                             .frame(width: 38, height: 38)
                             .overlay(
                                 Text(staffMember?.initials ?? "M")
-                                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                                    .font(SierraFont.scaled(14, weight: .bold, design: .rounded))
                                     .foregroundStyle(.white)
                             )
                     }
+                    .accessibilityLabel("Open profile")
                     Spacer()
                     HStack(spacing: 8) {
                         Circle()
@@ -160,17 +150,20 @@ struct MaintenanceHomeView: View {
                             .labelsHidden()
                             .scaleEffect(0.85)
                             .disabled(isUpdatingAvailability)
+                            .accessibilityLabel("Availability")
+                            .accessibilityHint("Switch between available and unavailable")
                     }
+                    .accessibilityElement(children: .combine)
                 }
                 .padding(.horizontal, 20).padding(.top, 60)
 
                 Text(timeOfDayGreeting)
-                    .font(.system(size: 16, weight: .medium, design: .rounded))
+                    .font(SierraFont.scaled(16, weight: .medium, design: .rounded))
                     .foregroundColor(.white.opacity(0.9))
                     .tracking(0.5)
 
                 Text(headerName.uppercased())
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(28, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
                     .tracking(1.2)
                     .minimumScaleFactor(0.85)
@@ -197,20 +190,20 @@ struct MaintenanceHomeView: View {
                 ZStack {
                     Circle().fill(Color.appTextPrimary).frame(width: 44, height: 44)
                     Image(systemName: "wrench.and.screwdriver.fill")
-                        .font(.system(size: 17, weight: .semibold)).foregroundColor(.white)
+                        .font(SierraFont.scaled(17, weight: .semibold)).foregroundColor(.white)
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Active Task")
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .font(SierraFont.scaled(11, weight: .semibold, design: .rounded))
                         .foregroundColor(.appTextSecondary)
                     Text(task.title)
-                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(15, weight: .bold, design: .rounded))
                         .foregroundColor(.appTextPrimary)
                         .lineLimit(1)
                 }
                 Spacer()
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .bold))
+                    .font(SierraFont.scaled(13, weight: .bold))
                     .foregroundColor(.appTextSecondary)
             }
             .padding(.horizontal, 18).padding(.vertical, 14)
@@ -233,10 +226,10 @@ struct MaintenanceHomeView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     let pending = assignedTasks.count + activeTasks.count
                     Text("\(pending) \(pending == 1 ? "Task" : "Tasks") Active")
-                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .font(SierraFont.scaled(14, weight: .medium, design: .rounded))
                         .foregroundColor(.appTextSecondary)
                     Text(summaryHeadline)
-                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(22, weight: .bold, design: .rounded))
                         .foregroundColor(.appTextPrimary)
                         .lineLimit(2).minimumScaleFactor(0.8)
                         .fixedSize(horizontal: false, vertical: true)
@@ -249,7 +242,7 @@ struct MaintenanceHomeView: View {
                             startPoint: .top, endPoint: .bottom))
                         .frame(width: 80, height: 70)
                     Image(systemName: "wrench.and.screwdriver")
-                        .font(.system(size: 30))
+                        .font(SierraFont.scaled(30))
                         .foregroundColor(.appTextSecondary.opacity(0.4))
                 }
             }
@@ -282,49 +275,26 @@ struct MaintenanceHomeView: View {
     private func statCell(value: Int, label: String, color: Color) -> some View {
         VStack(spacing: 4) {
             Text("\(value)")
-                .font(.system(size: 22, weight: .bold, design: .rounded))
+                .font(SierraFont.scaled(22, weight: .bold, design: .rounded))
                 .foregroundColor(color)
             Text(label)
-                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .font(SierraFont.scaled(11, weight: .medium, design: .rounded))
                 .foregroundColor(.appTextSecondary)
         }
         .frame(maxWidth: .infinity)
-    }
-
-    private var urgentAlertBanner: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                Circle().fill(Color.red.opacity(0.1)).frame(width: 36, height: 36)
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 14, weight: .semibold)).foregroundStyle(.red)
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                Text("\(urgentTasks.count) Urgent \(urgentTasks.count == 1 ? "Task" : "Tasks")")
-                    .font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.red)
-                if let first = urgentTasks.first {
-                    Text(first.title)
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundStyle(.red.opacity(0.75)).lineLimit(1)
-                }
-            }
-            Spacer()
-        }
-        .padding(.horizontal, 16).padding(.vertical, 14)
-        .background(RoundedRectangle(cornerRadius: 16).fill(Color.red.opacity(0.07)))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.red.opacity(0.18), lineWidth: 1))
     }
 
     private var recentTasksSection: some View {
         VStack(spacing: 12) {
             HStack {
                 Text("Active Tasks")
-                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(20, weight: .bold, design: .rounded))
                     .foregroundColor(.appTextPrimary)
                 Spacer()
                 let allActive = myTasks.filter { $0.isEffectivelyAssigned || $0.status == .inProgress }
                 if allActive.count > 3 {
                     Text("\(allActive.count - 3) more")
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .font(SierraFont.scaled(13, weight: .semibold, design: .rounded))
                         .foregroundColor(.appOrange)
                 }
             }
@@ -342,12 +312,12 @@ struct MaintenanceHomeView: View {
     private var emptyState: some View {
         VStack(spacing: 16) {
             Image(systemName: "wrench.and.screwdriver")
-                .font(.system(size: 50)).foregroundStyle(.gray.opacity(0.35)).padding(.top, 20)
+                .font(SierraFont.scaled(50)).foregroundStyle(.gray.opacity(0.35)).padding(.top, 20)
             Text("All Clear")
-                .font(.system(size: 20, weight: .bold, design: .rounded))
+                .font(SierraFont.scaled(20, weight: .bold, design: .rounded))
                 .foregroundStyle(Color.appTextPrimary)
             Text("No active tasks right now.\nCheck the Service and Repair tabs for your full task history.")
-                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .font(SierraFont.scaled(14, weight: .medium, design: .rounded))
                 .foregroundStyle(Color.appTextSecondary)
                 .multilineTextAlignment(.center).lineSpacing(3).padding(.horizontal, 16)
         }
@@ -423,12 +393,12 @@ struct MaintenanceHomeView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(message)
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(15, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
 
                 if !toastIsError {
                     Text(availabilitySwitch ? "Ready for new work orders" : "You won’t receive new assignments")
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .font(SierraFont.scaled(12, weight: .medium, design: .rounded))
                         .foregroundColor(.white.opacity(0.75))
                 }
             }
@@ -437,7 +407,7 @@ struct MaintenanceHomeView: View {
 
             Image(systemName: toastIsError ? "xmark.circle.fill"
                   : (availabilitySwitch ? "checkmark.circle.fill" : "moon.fill"))
-                .font(.system(size: 22))
+                .font(SierraFont.scaled(22))
                 .foregroundColor(.white.opacity(0.8))
         }
         .padding(.horizontal, 18)

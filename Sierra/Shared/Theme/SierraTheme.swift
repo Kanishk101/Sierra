@@ -17,14 +17,14 @@ public enum SierraTheme {
         public static let summitNavy   = Color("SummitNavy")
         /// #1A3A6B - card surfaces, tab bar dark bg
         public static let sierraBlue   = Color("SierraBlue")
-        /// #F07B35 (now using standardized appOrange) - ALL primary CTAs
-        public static let ember        = Color(red: 0.95, green: 0.55, blue: 0.10)
-        /// #F9A872 - ember tint
-        public static let emberLight   = Color(red: 1.0, green: 0.75, blue: 0.20).opacity(0.12)
-        /// #C45E1A - pressed states
-        public static let emberDark    = Color(red: 0.90, green: 0.35, blue: 0.08)
-        /// #0AB891 - success, available driver, completed, checkmarks
-        public static let alpineMint   = Color("AlpineMint")
+        /// Primary interactive accent with optional color-blind high-contrast mode.
+        public static var ember: Color { SierraAccessibilityPalette.accent }
+        /// Accent tint.
+        public static var emberLight: Color { SierraAccessibilityPalette.accentLight.opacity(0.12) }
+        /// Accent pressed/strong variant.
+        public static var emberDark: Color { SierraAccessibilityPalette.accentDark }
+        /// Success color. Switches to a color-blind-safe tone when enabled.
+        public static var alpineMint: Color { SierraAccessibilityPalette.success }
         /// #4DCFB3 - mint tint on dark bg
         public static let alpineLight  = Color("AlpineLight")
         /// #078A6C - mint pressed / dark mode text
@@ -33,11 +33,11 @@ public enum SierraTheme {
         // ── Standard UI (Vivid & Premium) ──
 
         /// Primary brand orange — CTAs, accents, active states
-        public static let appOrange    = Color(red: 0.95, green: 0.55, blue: 0.10)
+        public static var appOrange: Color { SierraAccessibilityPalette.accent }
         /// Deep orange — gradient dark end, pressed states
-        public static let appDeepOrange = Color(red: 0.90, green: 0.35, blue: 0.08)
+        public static var appDeepOrange: Color { SierraAccessibilityPalette.accentDark }
         /// Warm amber — gradient endpoints
-        public static let appAmber     = Color(red: 1.0, green: 0.75, blue: 0.20)
+        public static var appAmber: Color { SierraAccessibilityPalette.accentLight }
         /// Standardized app background
         public static let appSurface   = Color(.systemGroupedBackground)
         /// Standardized card background
@@ -61,13 +61,13 @@ public enum SierraTheme {
         // ── Semantic / Status ──
 
         /// Success - alias for alpineMint
-        public static let success      = Color("AlpineMint")
+        public static var success: Color { SierraAccessibilityPalette.success }
         /// #F59E0B - expiring docs, pending approval, in-maintenance
-        public static let warning      = Color("Warning")
+        public static var warning: Color { SierraAccessibilityPalette.warning }
         /// #EF4444 - destructive buttons, expired docs, cancelled, failed inspection
         public static let danger       = Color("Danger")
         /// #3B82F6 - informational states, scheduled/pending trip
-        public static let info         = Color("Info")
+        public static var info: Color { SierraAccessibilityPalette.info }
 
         // ── Adaptive (Light / Dark) ──
 
@@ -153,13 +153,13 @@ extension View {
 
 extension Color {
     /// Vehicle active, trip in-progress, driver available
-    static let statusActive    = SierraTheme.Colors.alpineMint
+    static var statusActive: Color { SierraTheme.Colors.alpineMint }
     /// Vehicle idle, paused
     static let statusIdle      = Color.gray
     /// Trip scheduled, awaiting
-    static let statusScheduled = SierraTheme.Colors.info
+    static var statusScheduled: Color { SierraTheme.Colors.info }
     /// Expiring docs, pending review, in-maintenance
-    static let statusWarning   = SierraTheme.Colors.warning
+    static var statusWarning: Color { SierraTheme.Colors.warning }
     /// Cancelled, expired, emergency, breakdown
     static let statusDanger    = SierraTheme.Colors.danger
     /// Trip completed, resolved
@@ -168,11 +168,11 @@ extension Color {
     // ── Driver UI Design Tokens (FMS_SS reference) ──
 
     /// Primary brand orange — CTAs, accents, active states
-    static let appOrange      = Color(red: 0.95, green: 0.55, blue: 0.10)
+    static var appOrange: Color { SierraTheme.Colors.appOrange }
     /// Warm amber — gradient endpoints, slider knob start
-    static let appAmber       = Color(red: 1.0, green: 0.75, blue: 0.20)
+    static var appAmber: Color { SierraTheme.Colors.appAmber }
     /// Deep orange — gradient dark end, pressed states
-    static let appDeepOrange  = Color(red: 0.90, green: 0.35, blue: 0.08)
+    static var appDeepOrange: Color { SierraTheme.Colors.appDeepOrange }
     /// Light neutral surface — screen backgrounds
     static let appSurface     = Color(.systemGroupedBackground)
     /// Card background (white)

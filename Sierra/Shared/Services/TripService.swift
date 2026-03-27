@@ -609,15 +609,17 @@ struct TripService {
             let vehicle_id: String
             let pre_inspection_id: String?
             let status: String
+            let updated_at: String
         }
         struct Row: Decodable { let id: UUID; let vehicle_id: UUID? }
         let rows: [Row] = try await supabase.from("trips")
             .update(Payload(
-                vehicle_id: newVehicleId.uuidString,
+                vehicle_id: newVehicleId.uuidString.lowercased(),
                 pre_inspection_id: nil,
-                status: TripStatus.scheduled.rawValue
+                status: TripStatus.scheduled.rawValue,
+                updated_at: iso.string(from: Date())
             ))
-            .eq("id", value: tripId.uuidString)
+            .eq("id", value: tripId.uuidString.lowercased())
             .select("id, vehicle_id").execute().value
         guard !rows.isEmpty else { throw TripServiceError.tripNotFound(tripId) }
     }

@@ -16,7 +16,7 @@ struct SierraSearchBar: View {
     var body: some View {
         HStack(spacing: Spacing.xs) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 15))
+                .font(SierraFont.scaled(15))
                 .foregroundStyle(SierraTheme.Colors.granite)
 
             TextField(placeholder, text: $text)
@@ -30,7 +30,7 @@ struct SierraSearchBar: View {
                     text = ""
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 16))
+                        .font(SierraFont.scaled(16))
                         .foregroundStyle(SierraTheme.Colors.granite)
                 }
             }

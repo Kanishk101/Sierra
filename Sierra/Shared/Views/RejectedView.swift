@@ -22,7 +22,7 @@ struct RejectedView: View {
                         .frame(width: 120, height: 120)
                     
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 54, weight: .light))
+                        .font(SierraFont.scaled(54, weight: .light))
                         .foregroundStyle(SierraTheme.Colors.danger)
                         .symbolRenderingMode(.hierarchical)
                 }

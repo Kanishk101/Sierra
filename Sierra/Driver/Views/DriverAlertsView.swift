@@ -46,12 +46,12 @@ struct DriverAlertsView: View {
                                     .fill(Color.appOrange)
                                     .frame(width: 8, height: 8)
                                 Text("\(unreadCount) unread")
-                                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                                    .font(SierraFont.scaled(14, weight: .bold, design: .rounded))
                                     .foregroundColor(.appOrange)
                                 Spacer()
                                 Button { markAllRead() } label: {
                                     Text("Mark All Read")
-                                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                                        .font(SierraFont.scaled(13, weight: .bold, design: .rounded))
                                         .foregroundColor(.appOrange)
                                 }
                             }
@@ -91,7 +91,7 @@ struct DriverAlertsView: View {
     private var headerBar: some View {
         HStack {
             Text("Notifications")
-                .font(.system(size: 30, weight: .bold, design: .rounded))
+                .font(SierraFont.scaled(30, weight: .bold, design: .rounded))
                 .foregroundColor(.appTextPrimary)
             Spacer()
             if !driverNotifications.isEmpty {
@@ -103,7 +103,7 @@ struct DriverAlertsView: View {
                             .tint(.red)
                     } else {
                         Text("Clear")
-                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            .font(SierraFont.scaled(15, weight: .semibold, design: .rounded))
                             .foregroundColor(.red)
                     }
                 }
@@ -119,14 +119,14 @@ struct DriverAlertsView: View {
                     .fill(iconColor(for: notification.type).opacity(0.12))
                     .frame(width: 44, height: 44)
                 Image(systemName: iconName(for: notification.type))
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(SierraFont.scaled(18, weight: .semibold))
                     .foregroundColor(iconColor(for: notification.type))
             }
 
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Text(alertTitle(for: notification))
-                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(15, weight: .bold, design: .rounded))
                         .foregroundColor(.appTextPrimary)
                         .lineLimit(1)
                     Spacer()
@@ -138,15 +138,15 @@ struct DriverAlertsView: View {
                 }
 
                 Text(alertSubtitle(for: notification))
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .font(SierraFont.scaled(13, weight: .medium, design: .rounded))
                     .foregroundColor(.appTextSecondary)
                     .lineLimit(3)
 
                 HStack(spacing: 4) {
                     Image(systemName: "clock")
-                        .font(.system(size: 11))
+                        .font(SierraFont.scaled(11))
                     Text(notification.sentAt.formatted(.relative(presentation: .named)))
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .font(SierraFont.scaled(12, weight: .medium, design: .rounded))
                 }
                 .foregroundColor(.appTextSecondary.opacity(0.7))
             }
@@ -169,6 +169,11 @@ struct DriverAlertsView: View {
         .onTapGesture {
             markRead(notification)
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel(notification.title)
+        .accessibilityValue(notification.isRead ? "Read" : "Unread")
+        .accessibilityHint("Marks notification as read")
     }
 
     // MARK: - Empty State
@@ -180,14 +185,14 @@ struct DriverAlertsView: View {
                     .fill(Color.appOrange.opacity(0.08))
                     .frame(width: 72, height: 72)
                 Image(systemName: "bell.slash.fill")
-                    .font(.system(size: 32))
+                    .font(SierraFont.scaled(32))
                     .foregroundColor(.appOrange.opacity(0.4))
             }
             Text("No Notifications")
-                .font(.system(size: 20, weight: .bold, design: .rounded))
+                .font(SierraFont.scaled(20, weight: .bold, design: .rounded))
                 .foregroundColor(.appTextPrimary)
             Text("You're all caught up.\nNew alerts will appear here.")
-                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .font(SierraFont.scaled(14, weight: .medium, design: .rounded))
                 .foregroundColor(.appTextSecondary)
                 .multilineTextAlignment(.center)
         }
@@ -250,7 +255,7 @@ struct DriverAlertsView: View {
         case .tripCancelled:           return "xmark.octagon.fill"
         case .vehicleAssigned:         return "car.fill"
         case .maintenanceApproved:     return "wrench.and.screwdriver.fill"
-        case .maintenanceRejected:     return "wrench.trianglebadge.exclamationmark"
+        case .maintenanceRejected:     return "wrench.and.screwdriver.fill"
         case .maintenanceOverdue:      return "exclamationmark.triangle.fill"
         case .sosAlert:                return "sos.circle.fill"
         case .defectAlert:             return "exclamationmark.shield.fill"

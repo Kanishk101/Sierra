@@ -10,11 +10,11 @@ struct AppFallbackErrorBanner: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 13, weight: .bold))
+                .font(SierraFont.caption2.weight(.bold))
                 .foregroundColor(.white)
 
             Text(message)
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .font(SierraFont.footnote.weight(.semibold))
                 .foregroundColor(.white)
                 .lineLimit(2)
 
@@ -22,11 +22,13 @@ struct AppFallbackErrorBanner: View {
 
             Button(action: onDismiss) {
                 Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 16, weight: .bold))
+                    .font(SierraFont.callout.weight(.bold))
                     .foregroundColor(.white.opacity(0.9))
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss error")
         }
+        .accessibilityElement(children: .combine)
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
         .background(
@@ -47,21 +49,21 @@ struct AppEmptyStateCard: View {
     var body: some View {
         VStack(spacing: 10) {
             Image(systemName: "tray.fill")
-                .font(.system(size: 30))
+                .font(SierraFont.scaled(30))
                 .foregroundColor(.appTextSecondary.opacity(0.5))
 
             Text(title)
-                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .font(SierraFont.title3)
                 .foregroundColor(.appTextPrimary)
 
             Text(subtitle)
-                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .font(SierraFont.footnote)
                 .foregroundColor(.appTextSecondary)
                 .multilineTextAlignment(.center)
 
             Button(action: action) {
                 Text(actionTitle)
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .font(SierraFont.body(14, weight: .bold))
                     .foregroundColor(.appOrange)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
@@ -75,7 +77,9 @@ struct AppEmptyStateCard: View {
                     )
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(actionTitle)
         }
+        .accessibilityElement(children: .combine)
         .frame(maxWidth: .infinity)
         .padding(.vertical, 24)
         .padding(.horizontal, 16)

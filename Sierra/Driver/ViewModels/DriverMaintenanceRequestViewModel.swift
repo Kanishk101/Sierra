@@ -24,7 +24,6 @@ final class DriverMaintenanceRequestViewModel {
 
     var title: String = ""
     var issueDescription: String = ""
-    var priority: TaskPriority = .medium
     var photos: [Data] = []
 
     // MARK: - Submission state
@@ -97,12 +96,11 @@ final class DriverMaintenanceRequestViewModel {
             let finalDescription = composedDescription(photoURLs: uploadedURLs)
             let fleetManagerId = await resolveFleetManagerId()
 
-            try await MaintenanceTaskService.createDriverRequest(
+            _ = try await MaintenanceTaskService.createDriverRequest(
                 vehicleId: vehicleId,
                 createdById: driverId,
                 title: title,
                 description: finalDescription,
-                priority: priority,
                 sourceInspectionId: sourceInspectionId
             )
 

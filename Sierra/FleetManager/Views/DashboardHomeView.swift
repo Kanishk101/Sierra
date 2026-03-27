@@ -53,6 +53,7 @@ struct DashboardHomeView: View {
     @State private var showProfile       = false
     @State private var showAnalytics     = false
     @State private var showNotifications = false
+    @State private var showReports = false
     @State private var showAskAI          = false
     @State private var quickModal: DashboardQuickModal?
     @State private var selectedTripId: UUID?
@@ -107,6 +108,12 @@ struct DashboardHomeView: View {
                 .sheet(isPresented: $showNotifications) {
                     NotificationCentreView()
                 }
+                .sheet(isPresented: $showReports) {
+                    NavigationStack {
+                        ReportsView(initialPage: 0)
+                            .environment(AppDataStore.shared)
+                    }
+                }
                 .sheet(item: $quickModal) { modal in
                     switch modal {
                     case .staff:
@@ -144,30 +151,56 @@ struct DashboardHomeView: View {
 
             Spacer()
 
-            Button { showNotifications = true } label: {
-                ZStack(alignment: .topTrailing) {
-                    Image(systemName: "bell.fill")
-                        .font(.body.weight(.semibold))
-                    if store.unreadNotificationCount > 0 {
-                        Text("\(min(store.unreadNotificationCount, 9))")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(.white)
-                            .frame(width: 16, height: 16)
-                            .background(.red, in: Circle())
-                            .offset(x: 8, y: -8)
+            HStack(spacing: 0) {
+                Button {
+                    showNotifications = true
+                } label: {
+                    ZStack(alignment: .topTrailing) {
+                        Image(systemName: "bell.fill")
+                            .font(SierraFont.scaled(15, weight: .semibold))
+                            .frame(width: 36, height: 32)
+                        if store.unreadNotificationCount > 0 {
+                            Text("\(min(store.unreadNotificationCount, 9))")
+                                .font(SierraFont.scaled(9, weight: .bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 16, height: 16)
+                                .background(.red, in: Circle())
+                                .offset(x: 8, y: -8)
+                        }
                     }
                 }
-            }
-            .buttonStyle(.glass)
-            .buttonBorderShape(.circle)
+                .accessibilityLabel("Notifications")
 
-            Button { showProfile = true } label: {
-                Text(adminInitials)
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .frame(width: 28, height: 28)
+                Divider()
+                    .frame(height: 20)
+                    .padding(.vertical, 6)
+
+                Button {
+                    showReports = true
+                } label: {
+                    Image(systemName: "chart.bar.doc.horizontal")
+                        .font(SierraFont.scaled(15, weight: .semibold))
+                        .frame(width: 36, height: 32)
+                }
+                .accessibilityLabel("Reports")
+
+                Divider()
+                    .frame(height: 20)
+                    .padding(.vertical, 6)
+
+                Button {
+                    showProfile = true
+                } label: {
+                    Text(adminInitials)
+                        .font(SierraFont.scaled(13, weight: .bold, design: .rounded))
+                        .frame(width: 36, height: 32)
+                }
+                .accessibilityLabel("Profile")
             }
-            .buttonStyle(.glass)
-            .buttonBorderShape(.circle)
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 4)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(Capsule().stroke(Color.primary.opacity(0.12), lineWidth: 1))
         }
     }
 
@@ -237,13 +270,13 @@ struct DashboardHomeView: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top) {
                     Image(systemName: icon)
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(SierraFont.scaled(15, weight: .semibold))
                         .foregroundStyle(color)
                         .frame(width: 32, height: 32)
                         .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                     Spacer()
                     if badge > 0 {
-                        Image(systemName: "circle.fill").font(.system(size: 10)).foregroundStyle(.orange)
+                        Image(systemName: "circle.fill").font(SierraFont.scaled(10)).foregroundStyle(.orange)
                     }
                 }
                 VStack(alignment: .leading, spacing: 2) {
@@ -252,7 +285,7 @@ struct DashboardHomeView: View {
                         color: .primary,
                         font: .system(size: 24, weight: .bold, design: .rounded)
                     )
-                    Text(label).font(.system(size: 13)).foregroundStyle(.secondary)
+                    Text(label).font(SierraFont.scaled(13)).foregroundStyle(.secondary)
                 }
             }
             .padding(16)
@@ -273,7 +306,7 @@ struct DashboardHomeView: View {
                     Spacer()
                     HStack(spacing: 4) {
                         Text("View Report").font(.subheadline).foregroundStyle(.orange)
-                        Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(.orange)
+                        Image(systemName: "chevron.right").font(SierraFont.scaled(11, weight: .semibold)).foregroundStyle(.orange)
                     }
                 }
                 HStack(spacing: 12) {
@@ -283,13 +316,13 @@ struct DashboardHomeView: View {
                 }
                 if !vm.monthlyData.allSatisfy({ $0.count == 0 }) {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Trip volume - last 6 months").font(.system(size: 12)).foregroundStyle(.secondary)
+                        Text("Trip volume - last 6 months").font(SierraFont.scaled(12)).foregroundStyle(.secondary)
                         Chart(vm.monthlyData) { item in
                             BarMark(x: .value("Month", item.month), y: .value("Trips", item.count))
                                 .foregroundStyle(.tint).cornerRadius(4)
                         }
                         .chartYAxis(.hidden)
-                        .chartXAxis { AxisMarks { AxisValueLabel().font(.system(size: 10)).foregroundStyle(Color.secondary) } }
+                        .chartXAxis { AxisMarks { AxisValueLabel().font(SierraFont.scaled(10)).foregroundStyle(Color.secondary) } }
                         .frame(height: 64)
                     }
                 }
@@ -332,8 +365,8 @@ struct DashboardHomeView: View {
 
     private func docPill(icon: String, count: Int, label: String, color: Color) -> some View {
         HStack(spacing: 5) {
-            Image(systemName: icon).font(.system(size: 11, weight: .medium)).foregroundStyle(color).symbolRenderingMode(.hierarchical)
-            Text("\(count) \(label)").font(.system(size: 12, weight: .medium)).foregroundStyle(color)
+            Image(systemName: icon).font(SierraFont.scaled(11, weight: .medium)).foregroundStyle(color).symbolRenderingMode(.hierarchical)
+            Text("\(count) \(label)").font(SierraFont.scaled(12, weight: .medium)).foregroundStyle(color)
         }
         .padding(.horizontal, 10).padding(.vertical, 5)
         .background(color.opacity(0.1), in: Capsule())
@@ -365,16 +398,16 @@ struct DashboardHomeView: View {
         return HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(trip.origin) \u{2192} \(trip.destination)")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(SierraFont.scaled(16, weight: .semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                 Text(trip.taskId)
-                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+                    .font(SierraFont.scaled(13, weight: .medium, design: .monospaced))
                     .foregroundStyle(.secondary)
             }
             Spacer()
             Text(tripStatusLabel(status))
-                .font(.system(size: 12, weight: .semibold))
+                .font(SierraFont.scaled(12, weight: .semibold))
                 .foregroundStyle(tripStatusColor(status))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)
@@ -386,6 +419,11 @@ struct DashboardHomeView: View {
         .padding(.vertical, 14)
         .contentShape(Rectangle())
         .onTapGesture { selectedTripId = trip.id }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel("\(trip.origin) to \(trip.destination)")
+        .accessibilityValue(tripStatusLabel(status))
+        .accessibilityHint("Opens trip details")
     }
 
     private func tripStatusColor(_ status: TripStatus) -> Color {
@@ -437,35 +475,40 @@ struct DashboardHomeView: View {
                     .fill((doc.isExpired ? Color.red : Color.orange).opacity(0.12))
                     .frame(width: 36, height: 36)
                 Image(systemName: doc.isExpired ? "exclamationmark.triangle.fill" : "clock.badge.exclamationmark")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(SierraFont.scaled(14, weight: .medium))
                     .foregroundStyle(doc.isExpired ? .red : .orange)
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(doc.documentType.rawValue).font(.system(size: 15, weight: .semibold)).foregroundStyle(.primary)
+                Text(doc.documentType.rawValue).font(SierraFont.scaled(15, weight: .semibold)).foregroundStyle(.primary)
                 Text("Expires \(doc.expiryDate.formatted(.dateTime.day().month(.abbreviated).year()))")
-                    .font(.system(size: 13)).foregroundStyle(doc.isExpired ? .red : .orange)
+                    .font(SierraFont.scaled(13)).foregroundStyle(doc.isExpired ? .red : .orange)
             }
             Spacer()
             Text(doc.isExpired ? "Expired" : "Soon")
-                .font(.system(size: 12, weight: .semibold)).foregroundStyle(doc.isExpired ? .red : .orange)
+                .font(SierraFont.scaled(12, weight: .semibold)).foregroundStyle(doc.isExpired ? .red : .orange)
                 .padding(.horizontal, 8).padding(.vertical, 4)
                 .background((doc.isExpired ? Color.red : Color.orange).opacity(0.1), in: Capsule())
         }
         .padding(.horizontal, 16).padding(.vertical, 12)
         .contentShape(Rectangle())
         .onTapGesture { selectedVehicleId = doc.vehicleId }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel("\(doc.documentType.rawValue) document")
+        .accessibilityValue(doc.isExpired ? "Expired" : "Expiring soon")
+        .accessibilityHint("Opens vehicle details")
     }
 
     private func sectionHeader(_ title: String) -> some View {
         Text(title)
-            .font(.system(size: 20, weight: .bold))
+            .font(SierraFont.scaled(20, weight: .bold))
             .foregroundStyle(.primary)
     }
 
     private func emptyPlaceholder(_ message: String, icon: String) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: icon).font(.system(size: 20)).foregroundStyle(.quaternary)
-            Text(message).font(.system(size: 15)).foregroundStyle(.secondary)
+            Image(systemName: icon).font(SierraFont.scaled(20)).foregroundStyle(.quaternary)
+            Text(message).font(SierraFont.scaled(15)).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)

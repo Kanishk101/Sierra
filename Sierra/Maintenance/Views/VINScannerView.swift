@@ -22,22 +22,23 @@ struct VINScannerView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var isScanning = true
     @State private var highlightedResult: InventoryScanResult?
+    private let scannerROI = CGRect(x: 0.12, y: 0.40, width: 0.76, height: 0.20)
 
     var body: some View {
         ZStack {
-            CameraPreviewView(onTextRecognised: handleRecognisedText)
+            CameraPreviewView(onTextRecognised: handleRecognisedText, regionOfInterest: scannerROI)
 
             // Viewfinder overlay
             VStack {
                 Spacer()
                 RoundedRectangle(cornerRadius: 8)
                     .strokeBorder(.white, lineWidth: 2)
-                    .frame(width: 300, height: 60)
+                    .frame(width: 300, height: 78)
                     .overlay(
                         Text("Align VIN / Barcode / QR within frame")
                             .font(.caption)
                             .foregroundStyle(.white)
-                            .offset(y: 40)
+                            .offset(y: 48)
                     )
                 Spacer()
             }

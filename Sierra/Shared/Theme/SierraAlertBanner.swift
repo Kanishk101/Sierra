@@ -48,7 +48,7 @@ struct SierraAlertBanner: View {
         HStack(spacing: Spacing.sm) {
             // ── Accent icon square ──
             Image(systemName: alertType.iconName)
-                .font(.system(size: 18, weight: .semibold))
+                .font(SierraFont.scaled(18, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: 36, height: 36)
                 .background(alertType.accentColor, in: RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
@@ -65,11 +65,13 @@ struct SierraAlertBanner: View {
             if let dismissAction {
                 Button(action: dismissAction) {
                     Image(systemName: "xmark")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(SierraFont.scaled(14, weight: .semibold))
                         .foregroundStyle(SierraTheme.Colors.granite)
                 }
+                .accessibilityLabel("Dismiss alert")
             }
         }
+        .accessibilityElement(children: .combine)
         .padding(Spacing.md)
         .background(SierraTheme.Colors.cardSurface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
         .overlay(alignment: .leading) {

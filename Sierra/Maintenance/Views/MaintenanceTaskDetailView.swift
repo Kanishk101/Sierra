@@ -24,13 +24,20 @@ struct MaintenanceTaskDetailView: View {
     private var vehicle: Vehicle? { store.vehicle(for: task.vehicleId) }
     private var sprs: [SparePartsRequest] { store.sparePartsRequests(forTask: task.id) }
     private var phases: [WorkOrderPhase] { store.phases(forWorkOrder: workOrder?.id ?? UUID()) }
+    private var isServiceRequest: Bool {
+        if let workOrder {
+            return workOrder.workOrderType == .service
+        }
+        return task.taskType == .scheduled
+    }
     private var allPhasesDone: Bool { !phases.isEmpty && phases.allSatisfy { $0.isCompleted } }
+    private var canCompleteTask: Bool { isServiceRequest || allPhasesDone }
 
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
                 overviewCard
-                if task.status == .inProgress { progressCard }
+                if task.status == .inProgress && !isServiceRequest { progressCard }
                 if !sprs.isEmpty || task.isEffectivelyAssigned { partsCard }
                 actionButtons
             }
@@ -40,7 +47,7 @@ struct MaintenanceTaskDetailView: View {
         }
         .background(Color.appSurface.ignoresSafeArea())
         .navigationTitle("Task Overview")
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showVehicleSheet) {
             if let vehicle { VehicleQuickStatusSheet(vehicle: vehicle).environment(store) }
         }
@@ -64,15 +71,15 @@ struct MaintenanceTaskDetailView: View {
             // Status banner
             HStack(spacing: 10) {
                 Image(systemName: statusBannerIcon(task.status))
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(SierraFont.scaled(16, weight: .semibold))
                     .foregroundStyle(taskStatusColor(task.status))
                 Text(statusBannerText)
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(14, weight: .bold, design: .rounded))
                     .foregroundStyle(taskStatusColor(task.status))
                 Spacer()
                 if task.status == .inProgress, !dueCountdown.isEmpty {
                     Text(dueCountdown)
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(12, weight: .bold, design: .rounded))
                         .foregroundStyle(taskStatusColor(task.status))
                         .padding(.horizontal, 8).padding(.vertical, 4)
                         .background(taskStatusColor(task.status).opacity(0.1), in: Capsule())
@@ -84,13 +91,12 @@ struct MaintenanceTaskDetailView: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 12) {
-                // Title + priority (NO description shown in overview)
+                // Title (NO description shown in overview)
                 HStack(alignment: .top) {
                     Text(task.title)
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(18, weight: .bold, design: .rounded))
                         .foregroundStyle(Color.appTextPrimary)
                     Spacer()
-                    priorityBadge(task.priority)
                 }
 
                 Divider()
@@ -106,15 +112,15 @@ struct MaintenanceTaskDetailView: View {
                         HStack(spacing: 12) {
                             ZStack {
                                 RoundedRectangle(cornerRadius: 12).fill(Color.appOrange.opacity(0.1)).frame(width: 44, height: 44)
-                                Image(systemName: "car.fill").font(.system(size: 18)).foregroundStyle(Color.appOrange)
+                                Image(systemName: "car.fill").font(SierraFont.scaled(18)).foregroundStyle(Color.appOrange)
                             }
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(v.name).font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextPrimary)
-                                Text("\(v.licensePlate) · \(v.model)").font(.system(size: 13, weight: .medium, design: .rounded)).foregroundStyle(Color.appTextSecondary)
+                                Text(v.name).font(SierraFont.scaled(15, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextPrimary)
+                                Text("\(v.licensePlate) · \(v.model)").font(SierraFont.scaled(13, weight: .medium, design: .rounded)).foregroundStyle(Color.appTextSecondary)
                             }
                             Spacer()
-                            Text("\(Int(v.odometer)) km").font(.system(size: 12, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextSecondary)
-                            Image(systemName: "chevron.right").font(.system(size: 11, weight: .bold)).foregroundStyle(Color.appTextSecondary)
+                            Text("\(Int(v.odometer)) km").font(SierraFont.scaled(12, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextSecondary)
+                            Image(systemName: "chevron.right").font(SierraFont.scaled(11, weight: .bold)).foregroundStyle(Color.appTextSecondary)
                         }
                     }
                     .buttonStyle(.plain)
@@ -123,15 +129,12 @@ struct MaintenanceTaskDetailView: View {
                 if let wo = workOrder, let eta = wo.estimatedCompletionAt {
                     Divider()
                     HStack(spacing: 10) {
-                        Image(systemName: "clock.badge").font(.system(size: 12)).foregroundStyle(Color.appOrange).frame(width: 20)
-                        Text("ETA").font(.system(size: 13, weight: .medium, design: .rounded)).foregroundStyle(Color.appTextSecondary)
+                        Image(systemName: "clock.badge").font(SierraFont.scaled(12)).foregroundStyle(Color.appOrange).frame(width: 20)
+                        Text("ETA").font(SierraFont.scaled(13, weight: .medium, design: .rounded)).foregroundStyle(Color.appTextSecondary)
                         Spacer()
                         Text(eta.formatted(.dateTime.month(.abbreviated).day().hour().minute()))
-                            .font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextPrimary)
+                            .font(SierraFont.scaled(13, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextPrimary)
                     }
-                    Text("ETA is locked after work starts")
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .foregroundStyle(Color.appTextSecondary)
                 }
             }
             .padding(18)
@@ -143,10 +146,10 @@ struct MaintenanceTaskDetailView: View {
 
     private func infoRow(icon: String, label: String, value: String) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: icon).font(.system(size: 12)).foregroundStyle(Color.appOrange).frame(width: 20)
-            Text(label).font(.system(size: 13, weight: .medium, design: .rounded)).foregroundStyle(Color.appTextSecondary)
+            Image(systemName: icon).font(SierraFont.scaled(12)).foregroundStyle(Color.appOrange).frame(width: 20)
+            Text(label).font(SierraFont.scaled(13, weight: .medium, design: .rounded)).foregroundStyle(Color.appTextSecondary)
             Spacer()
-            Text(value).font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextPrimary)
+            Text(value).font(SierraFont.scaled(13, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextPrimary)
         }
     }
 
@@ -155,17 +158,17 @@ struct MaintenanceTaskDetailView: View {
     private var progressCard: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Progress").font(.system(size: 16, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextPrimary)
+                Text("Progress").font(SierraFont.scaled(16, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextPrimary)
                 Spacer()
                 if task.status == .inProgress {
                     Button { showPhasePlanner = true } label: {
-                        Image(systemName: "plus.circle.fill").font(.system(size: 18, weight: .semibold)).foregroundStyle(Color.appOrange)
+                        Image(systemName: "plus.circle.fill").font(SierraFont.scaled(18, weight: .semibold)).foregroundStyle(Color.appOrange)
                     }
                     .buttonStyle(.plain)
                 }
                 let done = phases.filter { $0.isCompleted }.count
                 Text("\(done)/\(phases.count)")
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(13, weight: .bold, design: .rounded))
                     .foregroundStyle(allPhasesDone ? .green : Color.appOrange)
                     .padding(.horizontal, 8).padding(.vertical, 4)
                     .background((allPhasesDone ? Color.green : Color.appOrange).opacity(0.1), in: Capsule())
@@ -175,7 +178,7 @@ struct MaintenanceTaskDetailView: View {
             if !phasesLoaded {
                 HStack { Spacer(); ProgressView().tint(Color.appOrange); Spacer() }.padding(18)
             } else if phases.isEmpty {
-                Text("No phases defined").font(.system(size: 13, weight: .medium, design: .rounded)).foregroundStyle(Color.appTextSecondary).padding(.horizontal, 18).padding(.bottom, 18)
+                Text("No phases defined").font(SierraFont.scaled(13, weight: .medium, design: .rounded)).foregroundStyle(Color.appTextSecondary).padding(.horizontal, 18).padding(.bottom, 18)
             } else {
                 ForEach(Array(phases.enumerated()), id: \.element.id) { idx, phase in
                     phaseRow(phase)
@@ -190,32 +193,32 @@ struct MaintenanceTaskDetailView: View {
     private func phaseRow(_ phase: WorkOrderPhase) -> some View {
         HStack(spacing: 12) {
             Image(systemName: phase.isCompleted ? "checkmark.circle.fill" : (phase.isLocked ? "lock.circle" : "circle.dotted"))
-                .font(.system(size: 22))
+                .font(SierraFont.scaled(22))
                 .foregroundStyle(phase.isCompleted ? .green : (phase.isLocked ? Color.appOrange : Color.appDivider))
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(phase.title)
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .font(SierraFont.scaled(14, weight: .semibold, design: .rounded))
                     .foregroundStyle(phase.isCompleted ? Color.appTextSecondary : Color.appTextPrimary)
                     .strikethrough(phase.isCompleted)
                 if let desc = phase.description, !desc.isEmpty {
-                    Text(desc).font(.system(size: 12, weight: .medium, design: .rounded)).foregroundStyle(Color.appTextSecondary).lineLimit(2)
+                    Text(desc).font(SierraFont.scaled(12, weight: .medium, design: .rounded)).foregroundStyle(Color.appTextSecondary).lineLimit(2)
                 }
                 if let target = phase.plannedCompletionAt {
                     Text("Target \(target.formatted(.dateTime.month(.abbreviated).day().hour().minute()))")
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .font(SierraFont.scaled(11, weight: .medium, design: .rounded))
                         .foregroundStyle(Color.appOrange)
                 } else if let mins = phase.estimatedMinutes, mins > 0 {
-                    Text("ETA \(mins / 60)h \(mins % 60)m").font(.system(size: 11, weight: .medium, design: .rounded)).foregroundStyle(Color.appOrange)
+                    Text("ETA \(mins / 60)h \(mins % 60)m").font(SierraFont.scaled(11, weight: .medium, design: .rounded)).foregroundStyle(Color.appOrange)
                 }
                 if phase.isCompleted, let completedAt = phase.completedAt {
-                    Text("Done \(completedAt.formatted(.dateTime.hour().minute()))").font(.system(size: 11, weight: .medium, design: .rounded)).foregroundStyle(.green)
+                    Text("Done \(completedAt.formatted(.dateTime.hour().minute()))").font(SierraFont.scaled(11, weight: .medium, design: .rounded)).foregroundStyle(.green)
                 }
             }
             Spacer()
             if phase.isCompleted {
                 Text("Done")
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(11, weight: .bold, design: .rounded))
                     .foregroundStyle(.green)
                     .padding(.horizontal, 10).padding(.vertical, 6)
                     .background(Color.green.opacity(0.12), in: Capsule())
@@ -227,7 +230,7 @@ struct MaintenanceTaskDetailView: View {
                     }
                 } label: {
                     Text("Mark Done")
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(11, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 10).padding(.vertical, 6)
                         .background(canComplete(phase: phase) ? Color.green : Color.green.opacity(0.35), in: Capsule())
@@ -244,18 +247,18 @@ struct MaintenanceTaskDetailView: View {
     private var partsCard: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Parts").font(.system(size: 16, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextPrimary)
+                Text("Parts").font(SierraFont.scaled(16, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextPrimary)
                 Spacer()
                 if let wo = workOrder, wo.partsSubStatus != .none {
                     Label(wo.partsSubStatus.displayText, systemImage: wo.partsSubStatus.icon)
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(12, weight: .bold, design: .rounded))
                         .foregroundStyle(partsStatusColor(wo.partsSubStatus))
                 }
             }
             .padding(18)
 
             if sprs.isEmpty {
-                Text("No parts requested yet").font(.system(size: 13, weight: .medium, design: .rounded)).foregroundStyle(Color.appTextSecondary).padding(.horizontal, 18).padding(.bottom, 18)
+                Text("No parts requested yet").font(SierraFont.scaled(13, weight: .medium, design: .rounded)).foregroundStyle(Color.appTextSecondary).padding(.horizontal, 18).padding(.bottom, 18)
             } else {
                 ForEach(Array(sprs.enumerated()), id: \.element.id) { idx, spr in
                     let phaseTitle = spr.workOrderPhaseId.flatMap { phaseId in
@@ -264,18 +267,18 @@ struct MaintenanceTaskDetailView: View {
                     HStack(spacing: 12) {
                         Circle().fill(sprStatusColor(spr.status)).frame(width: 8, height: 8)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(spr.partName).font(.system(size: 14, weight: .semibold, design: .rounded)).foregroundStyle(Color.appTextPrimary)
+                            Text(spr.partName).font(SierraFont.scaled(14, weight: .semibold, design: .rounded)).foregroundStyle(Color.appTextPrimary)
                             if let pn = spr.partNumber, !pn.isEmpty {
-                                Text(pn).font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.appTextSecondary)
+                                Text(pn).font(SierraFont.scaled(11, design: .monospaced)).foregroundStyle(Color.appTextSecondary)
                             }
                             if let phaseTitle, !phaseTitle.isEmpty {
                                 Text("Phase: \(phaseTitle)")
-                                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                                    .font(SierraFont.scaled(11, weight: .medium, design: .rounded))
                                     .foregroundStyle(Color.appOrange)
                             }
                         }
                         Spacer()
-                        Text("×\(spr.quantity)").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextPrimary)
+                        Text("×\(spr.quantity)").font(SierraFont.scaled(14, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextPrimary)
                     }
                     .padding(.horizontal, 18).padding(.vertical, 10)
                     if idx < sprs.count - 1 { Divider().padding(.leading, 38) }
@@ -286,7 +289,7 @@ struct MaintenanceTaskDetailView: View {
                     let approved = sprs.filter { $0.status == .approved }.count
                     let fulfilled = sprs.filter { $0.status == .fulfilled }.count
                     Text("\(sprs.count) item\(sprs.count == 1 ? "" : "s") · \(pending) pending · \(approved) approved · \(fulfilled) fulfilled")
-                        .font(.system(size: 12, weight: .medium, design: .rounded)).foregroundStyle(Color.appTextSecondary)
+                        .font(SierraFont.scaled(12, weight: .medium, design: .rounded)).foregroundStyle(Color.appTextSecondary)
                 }
                 .padding(18)
             }
@@ -307,29 +310,33 @@ struct MaintenanceTaskDetailView: View {
             if task.isEffectivelyAssigned {
                 let partsStatus = workOrder?.partsSubStatus ?? .none
                 if partsStatus == .ready || partsStatus == .approved || partsStatus == .none {
-                HStack(spacing: 10) {
-                    actionButton(title: "Plan Phases", icon: "list.number", color: Color.appTextPrimary) { showPhasePlanner = true }
-                    actionButton(title: "Start Work", icon: "play.fill", color: .purple) { showEstimatedTimeSheet = true }
+                    if isServiceRequest {
+                        actionButton(title: "Start Work", icon: "play.fill", color: .purple) { showEstimatedTimeSheet = true }
+                    } else {
+                        HStack(spacing: 10) {
+                            actionButton(title: "Plan Phases", icon: "list.number", color: Color.appTextPrimary) { showPhasePlanner = true }
+                            actionButton(title: "Start Work", icon: "play.fill", color: .purple) { showEstimatedTimeSheet = true }
+                        }
+                    }
                 }
-            }
             }
             if status == .inProgress {
                 Button { Task { await markRepairDone() } } label: {
                     HStack(spacing: 8) {
                         if isCompleting { ProgressView().tint(.white) }
                         Image(systemName: "checkmark.seal.fill")
-                        Text(allPhasesDone ? "Complete" : "Complete All Phases First")
-                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                        Text(canCompleteTask ? "Complete" : "Complete All Phases First")
+                            .font(SierraFont.scaled(15, weight: .bold, design: .rounded))
                     }
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity).frame(height: 52)
-                    .background(allPhasesDone ? Color.green : Color.green.opacity(0.35), in: RoundedRectangle(cornerRadius: 16))
+                    .background(canCompleteTask ? Color.green : Color.green.opacity(0.35), in: RoundedRectangle(cornerRadius: 16))
                 }
-                .disabled(isCompleting || !allPhasesDone)
+                .disabled(isCompleting || !canCompleteTask)
 
-                if !phases.isEmpty && !allPhasesDone {
+                if !isServiceRequest && !phases.isEmpty && !allPhasesDone {
                     Text("\(phases.filter { $0.isCompleted }.count)/\(phases.count) phases completed")
-                        .font(.system(size: 12, weight: .medium, design: .rounded)).foregroundStyle(Color.appTextSecondary)
+                        .font(SierraFont.scaled(12, weight: .medium, design: .rounded)).foregroundStyle(Color.appTextSecondary)
                 }
             }
         }
@@ -339,7 +346,7 @@ struct MaintenanceTaskDetailView: View {
         Button(action: action) {
             HStack(spacing: 8) {
                 Image(systemName: icon)
-                Text(title).font(.system(size: 15, weight: .bold, design: .rounded))
+                Text(title).font(SierraFont.scaled(15, weight: .bold, design: .rounded))
             }
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity).frame(height: 52)
@@ -357,18 +364,18 @@ struct MaintenanceTaskDetailView: View {
                     VStack(spacing: 8) {
                         ZStack {
                             Circle().fill(Color.appOrange.opacity(0.1)).frame(width: 64, height: 64)
-                            Image(systemName: "timer").font(.system(size: 28, weight: .light)).foregroundStyle(Color.appOrange)
+                            Image(systemName: "timer").font(SierraFont.scaled(28, weight: .light)).foregroundStyle(Color.appOrange)
                         }
-                        Text("Set Estimated Time").font(.system(size: 20, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextPrimary)
-                        Text("How long will this repair take?").font(.system(size: 14, weight: .medium, design: .rounded)).foregroundStyle(Color.appTextSecondary)
+                        Text("Set Estimated Time").font(SierraFont.scaled(20, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextPrimary)
+                        Text("How long will this repair take?").font(SierraFont.scaled(14, weight: .medium, design: .rounded)).foregroundStyle(Color.appTextSecondary)
                     }
                     .padding(.top, 28).padding(.bottom, 20)
 
                     VStack(spacing: 0) {
                         HStack(spacing: 0) {
-                            Text("Days").font(.system(size: 11, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextSecondary).frame(maxWidth: .infinity)
-                            Text("Hours").font(.system(size: 11, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextSecondary).frame(maxWidth: .infinity)
-                            Text("Minutes").font(.system(size: 11, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextSecondary).frame(maxWidth: .infinity)
+                            Text("Days").font(SierraFont.scaled(11, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextSecondary).frame(maxWidth: .infinity)
+                            Text("Hours").font(SierraFont.scaled(11, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextSecondary).frame(maxWidth: .infinity)
+                            Text("Minutes").font(SierraFont.scaled(11, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextSecondary).frame(maxWidth: .infinity)
                         }
                         .padding(.horizontal, 24).padding(.bottom, 4)
 
@@ -386,19 +393,19 @@ struct MaintenanceTaskDetailView: View {
 
                     let totalMins = estimatedDays * 1440 + estimatedHours * 60 + estimatedMinutes
                     HStack(spacing: 6) {
-                        Image(systemName: "clock.fill").font(.system(size: 12)).foregroundStyle(Color.appOrange)
+                        Image(systemName: "clock.fill").font(SierraFont.scaled(12)).foregroundStyle(Color.appOrange)
                         if totalMins == 0 {
-                            Text("Select a duration").font(.system(size: 13, weight: .medium, design: .rounded)).foregroundStyle(Color.appTextSecondary)
+                            Text("Select a duration").font(SierraFont.scaled(13, weight: .medium, design: .rounded)).foregroundStyle(Color.appTextSecondary)
                         } else {
                             Text("ETA: \(etaSummary(days: estimatedDays, hours: estimatedHours, mins: estimatedMinutes))")
-                                .font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextPrimary)
+                                .font(SierraFont.scaled(13, weight: .bold, design: .rounded)).foregroundStyle(Color.appTextPrimary)
                         }
                     }
                     .padding(.top, 14)
 
                     if phases.isEmpty {
                         Button { showEstimatedTimeSheet = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { showPhasePlanner = true } } label: {
-                            Text("Plan Phases First").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(Color.appOrange)
+                            Text("Plan Phases First").font(SierraFont.scaled(13, weight: .bold, design: .rounded)).foregroundStyle(Color.appOrange)
                                 .padding(.horizontal, 12).padding(.vertical, 8).background(Capsule().fill(Color.appOrange.opacity(0.1)))
                         }
                         .padding(.top, 10)
@@ -410,7 +417,7 @@ struct MaintenanceTaskDetailView: View {
                         HStack(spacing: 8) {
                             if isStarting { ProgressView().tint(.white).scaleEffect(0.85) }
                             Image(systemName: "play.fill")
-                            Text("Start Work Now").font(.system(size: 15, weight: .bold, design: .rounded))
+                            Text("Start Work Now").font(SierraFont.scaled(15, weight: .bold, design: .rounded))
                         }
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity).frame(height: 52)
@@ -440,10 +447,10 @@ struct MaintenanceTaskDetailView: View {
                 VStack(spacing: 0) {
                     HStack {
                         Image(systemName: "line.3.horizontal")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(SierraFont.scaled(12, weight: .semibold))
                             .foregroundStyle(Color.appOrange)
                         Text("Drag phases to reorder. Submit locks a phase plan.")
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .font(SierraFont.scaled(12, weight: .medium, design: .rounded))
                             .foregroundStyle(Color.appTextSecondary)
                         Spacer()
                     }
@@ -474,9 +481,9 @@ struct MaintenanceTaskDetailView: View {
                     } label: {
                         HStack(spacing: 8) {
                             Image(systemName: "plus.circle.fill")
-                                .font(.system(size: 16, weight: .semibold))
+                                .font(SierraFont.scaled(16, weight: .semibold))
                             Text("Add Phase")
-                                .font(.system(size: 15, weight: .bold, design: .rounded))
+                                .font(SierraFont.scaled(15, weight: .bold, design: .rounded))
                         }
                         .foregroundStyle(Color.appOrange)
                         .frame(maxWidth: .infinity)
@@ -499,7 +506,7 @@ struct MaintenanceTaskDetailView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { Task { await persistPhasePlan() } }
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(14, weight: .bold, design: .rounded))
                         .foregroundStyle(Color.appTextPrimary)
                 }
             }
@@ -542,7 +549,9 @@ struct MaintenanceTaskDetailView: View {
         if var wo {
             wo.estimatedCompletionAt = eta; wo.startedAt = Date(); wo.status = .inProgress
             try? await store.updateWorkOrder(wo)
-            if phases.isEmpty { await persistPhasePlan(workOrderId: wo.id, closeSheet: false) }
+            if !isServiceRequest && phases.isEmpty {
+                await persistPhasePlan(workOrderId: wo.id, closeSheet: false)
+            }
         }
         if let idx = store.maintenanceTasks.firstIndex(where: { $0.id == task.id }) {
             store.maintenanceTasks[idx].status = .inProgress
@@ -690,15 +699,6 @@ struct MaintenanceTaskDetailView: View {
 
     // MARK: - Helper Views & Functions
 
-    private func priorityBadge(_ p: TaskPriority) -> some View {
-        let c = priorityColor(p)
-        return HStack(spacing: 4) {
-            Image(systemName: priorityIcon(p)).font(.system(size: 10))
-            Text(p.rawValue).font(.system(size: 10, weight: .bold, design: .rounded))
-        }
-        .foregroundStyle(c).padding(.horizontal, 10).padding(.vertical, 5).background(c.opacity(0.1), in: Capsule())
-    }
-
     private var dueCountdown: String {
         guard task.status == .inProgress, let eta = workOrder?.estimatedCompletionAt else { return "" }
         let r = eta.timeIntervalSince(Date())
@@ -733,12 +733,6 @@ struct MaintenanceTaskDetailView: View {
         case .cancelled: return "xmark.circle"
         }
     }
-    private func priorityColor(_ p: TaskPriority) -> Color {
-        switch p { case .low: .green; case .medium: .blue; case .high: .orange; case .urgent: .red }
-    }
-    private func priorityIcon(_ p: TaskPriority) -> String {
-        switch p { case .low: "arrow.down"; case .medium: "minus"; case .high: "arrow.up"; case .urgent: "exclamationmark.2" }
-    }
     private func partsStatusColor(_ s: PartsSubStatus) -> Color {
         switch s { case .none: .gray; case .requested, .partiallyReady, .orderPlaced: .orange; case .approved: Color(red: 0.1, green: 0.7, blue: 0.4); case .ready: .green }
     }
@@ -769,23 +763,23 @@ private struct PhaseEditorCard: View {
                         .fill(Color.appOrange.opacity(0.1))
                         .frame(width: 28, height: 28)
                     Text("\(phaseNumber)")
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(12, weight: .bold, design: .rounded))
                         .foregroundStyle(Color.appOrange)
                 }
                 Text("Phase \(phaseNumber)")
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(14, weight: .bold, design: .rounded))
                     .foregroundStyle(Color.appTextPrimary)
                 Spacer()
                 if draft.isLocked {
                     Text("Submitted")
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(10, weight: .bold, design: .rounded))
                         .foregroundStyle(.green)
                         .padding(.horizontal, 8).padding(.vertical, 4)
                         .background(Color.green.opacity(0.12), in: Capsule())
                 }
                 Button(action: onDelete) {
                     Image(systemName: "trash")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(SierraFont.scaled(14, weight: .semibold))
                         .foregroundStyle(Color.red.opacity(0.7))
                 }
                 .buttonStyle(.plain)
@@ -794,10 +788,10 @@ private struct PhaseEditorCard: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("Title")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .font(SierraFont.scaled(11, weight: .semibold, design: .rounded))
                     .foregroundStyle(Color.appTextSecondary)
                 TextField("e.g. Disassemble engine block", text: $draft.title)
-                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                    .font(SierraFont.scaled(14, weight: .medium, design: .rounded))
                     .padding(.horizontal, 12).padding(.vertical, 10)
                     .background(Color.appSurface, in: RoundedRectangle(cornerRadius: 10))
                     .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.appDivider.opacity(0.6), lineWidth: 1))
@@ -806,11 +800,11 @@ private struct PhaseEditorCard: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("Notes (optional)")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .font(SierraFont.scaled(11, weight: .semibold, design: .rounded))
                     .foregroundStyle(Color.appTextSecondary)
                 TextField("Add notes or instructions…", text: $draft.details, axis: .vertical)
                     .lineLimit(2...4)
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .font(SierraFont.scaled(13, weight: .medium, design: .rounded))
                     .padding(.horizontal, 12).padding(.vertical, 10)
                     .background(Color.appSurface, in: RoundedRectangle(cornerRadius: 10))
                     .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.appDivider.opacity(0.6), lineWidth: 1))
@@ -819,7 +813,7 @@ private struct PhaseEditorCard: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("Phase target completion")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .font(SierraFont.scaled(11, weight: .semibold, design: .rounded))
                     .foregroundStyle(Color.appTextSecondary)
                 DatePicker(
                     "Phase Target",
@@ -838,14 +832,14 @@ private struct PhaseEditorCard: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("Parts Requests")
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .font(SierraFont.scaled(11, weight: .semibold, design: .rounded))
                         .foregroundStyle(Color.appTextSecondary)
                     Spacer()
                     Button {
                         draft.partDrafts.append(PhasePartDraft())
                     } label: {
                         Image(systemName: "plus.circle.fill")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(SierraFont.scaled(16, weight: .semibold))
                             .foregroundStyle(Color.appOrange)
                     }
                     .buttonStyle(.plain)
@@ -866,7 +860,7 @@ private struct PhaseEditorCard: View {
                 draft.isLocked = true
             } label: {
                 Text(draft.isLocked ? "Phase Submitted" : "Submit Phase")
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(13, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 10)
@@ -950,12 +944,12 @@ private struct PhasePartDraftRow: View {
                 Stepper("Qty \(draft.quantity)", value: $draft.quantity, in: 1...500)
                     .labelsHidden()
                 Text("\(draft.quantity)")
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(12, weight: .bold, design: .rounded))
                     .foregroundStyle(Color.appTextSecondary)
                 if canDelete {
                     Button(action: onDelete) {
                         Image(systemName: "trash")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(SierraFont.scaled(12, weight: .semibold))
                             .foregroundStyle(.red)
                     }
                     .buttonStyle(.plain)

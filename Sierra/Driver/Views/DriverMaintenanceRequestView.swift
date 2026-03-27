@@ -79,19 +79,6 @@ struct DriverMaintenanceRequestView: View {
                 Label("Issue Details", systemImage: "wrench.and.screwdriver.fill")
             }
 
-            if vm.showsSeverityPicker {
-                Section {
-                    Picker("Priority", selection: $vm.priority) {
-                        ForEach(TaskPriority.allCases, id: \.self) { p in
-                            Text(p.rawValue).tag(p)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                } header: {
-                    Label("Severity", systemImage: "exclamationmark.triangle.fill")
-                }
-            }
-
             photoSection
 
             Section {
@@ -118,12 +105,12 @@ struct DriverMaintenanceRequestView: View {
                             Image(systemName: "wrench.and.screwdriver.fill")
                                 .foregroundStyle(Color.appOrange)
                             Text(defectHeader)
-                                .font(.system(size: 19, weight: .bold, design: .rounded))
+                                .font(SierraFont.scaled(19, weight: .bold, design: .rounded))
                                 .foregroundStyle(Color.appTextPrimary)
                         }
 
                         Text(defectSubtitle)
-                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .font(SierraFont.scaled(13, weight: .medium, design: .rounded))
                             .foregroundStyle(Color.appTextSecondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -139,11 +126,11 @@ struct DriverMaintenanceRequestView: View {
                     if let issue = vm.fixedIssueSummary, !issue.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Issue Found")
-                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                .font(SierraFont.scaled(12, weight: .semibold, design: .rounded))
                                 .foregroundStyle(Color.appTextSecondary)
 
                             Text(issue)
-                                .font(.system(size: 15, weight: .bold, design: .rounded))
+                                .font(SierraFont.scaled(15, weight: .bold, design: .rounded))
                                 .foregroundStyle(Color.appOrange)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.horizontal, 12)
@@ -161,11 +148,11 @@ struct DriverMaintenanceRequestView: View {
 
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Description")
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .font(SierraFont.scaled(12, weight: .semibold, design: .rounded))
                             .foregroundStyle(Color.appTextSecondary)
 
                         TextEditor(text: $vm.issueDescription)
-                            .font(.system(size: 14, weight: .medium, design: .rounded))
+                            .font(SierraFont.scaled(14, weight: .medium, design: .rounded))
                             .foregroundStyle(Color.appTextPrimary)
                             .frame(minHeight: 120)
                             .padding(10)
@@ -179,7 +166,7 @@ struct DriverMaintenanceRequestView: View {
                             )
 
                         Text("Add any extra notes for admin (optional).")
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .font(SierraFont.scaled(12, weight: .medium, design: .rounded))
                             .foregroundStyle(Color.appTextSecondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -200,15 +187,15 @@ struct DriverMaintenanceRequestView: View {
     private func lockedInfoRow(label: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(label)
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .font(SierraFont.scaled(12, weight: .semibold, design: .rounded))
                 .foregroundStyle(Color.appTextSecondary)
 
             HStack(spacing: 8) {
                 Image(systemName: "lock.fill")
-                    .font(.system(size: 11, weight: .bold))
+                    .font(SierraFont.scaled(11, weight: .bold))
                     .foregroundStyle(Color.appOrange)
                 Text(value)
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(15, weight: .bold, design: .rounded))
                     .foregroundStyle(Color.appTextPrimary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -228,7 +215,7 @@ struct DriverMaintenanceRequestView: View {
     private var photosCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             Label("Optional Photos", systemImage: "photo.on.rectangle.angled")
-                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .font(SierraFont.scaled(13, weight: .bold, design: .rounded))
                 .foregroundStyle(Color.appTextPrimary)
 
             if !vm.photos.isEmpty {
@@ -250,7 +237,7 @@ struct DriverMaintenanceRequestView: View {
 
             PhotosPicker(selection: $selectedPhotos, maxSelectionCount: 5, matching: .images) {
                 Label(vm.photos.isEmpty ? "Add Photos" : "Add More Photos", systemImage: "camera.fill")
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .font(SierraFont.scaled(14, weight: .semibold, design: .rounded))
                     .foregroundStyle(Color.appOrange)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
@@ -325,10 +312,10 @@ struct DriverMaintenanceRequestView: View {
                     ProgressView().tint(.white)
                 } else {
                     Image(systemName: "paperplane.fill")
-                        .font(.system(size: 14, weight: .bold))
+                        .font(SierraFont.scaled(14, weight: .bold))
                 }
                 Text("Submit Request")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .font(SierraFont.scaled(15, weight: .bold, design: .rounded))
             }
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)

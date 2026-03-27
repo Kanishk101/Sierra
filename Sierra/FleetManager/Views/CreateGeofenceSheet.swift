@@ -129,7 +129,7 @@ struct CreateGeofenceSheet: View {
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(alignment: .center) {
             Image(systemName: "plus")
-                .font(.system(size: 14, weight: .semibold))
+                .font(SierraFont.scaled(14, weight: .semibold))
                 .foregroundStyle(SierraTheme.Colors.ember)
                 .padding(5)
                 .background(.ultraThinMaterial, in: Circle())
@@ -164,10 +164,6 @@ struct CreateGeofenceSheet: View {
         }
         .onMapCameraChange(frequency: .continuous) { context in
             mapCenterCoordinate = context.region.center
-        }
-        .onTapGesture { location in
-            // Note: SwiftUI Map doesn't support direct tap-to-coordinate.
-            // Admin should use address search to set coordinates.
         }
     }
 
@@ -239,9 +235,9 @@ struct CreateGeofenceSheet: View {
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: geofenceTypeIcon(type))
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(SierraFont.scaled(11, weight: .semibold))
                             Text(type.rawValue)
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(SierraFont.scaled(12, weight: .semibold))
                                 .lineLimit(1)
                         }
                         .padding(.horizontal, 10)

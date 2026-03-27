@@ -19,7 +19,7 @@ struct SierraDocumentRow: View {
 
                 // ── Document icon ──
                 Image(systemName: iconName)
-                    .font(.system(size: 20))
+                    .font(SierraFont.scaled(20))
                     .foregroundStyle(status.dotColor)
                     .frame(width: 36, height: 36)
                     .background(
@@ -51,6 +51,10 @@ struct SierraDocumentRow: View {
                 in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
             )
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(documentName)
+        .accessibilityValue("Expires \(expiryDate), \(status.label)")
+        .accessibilityHint("Opens document details")
     }
 
     // MARK: - Icon Mapping

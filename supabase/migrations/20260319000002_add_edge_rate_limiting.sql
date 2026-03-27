@@ -16,6 +16,9 @@ CREATE TABLE IF NOT EXISTS public.edge_rate_limits (
     CONSTRAINT edge_rate_limits_pk PRIMARY KEY (action, identifier, bucket_start)
 );
 
+ALTER TABLE public.edge_rate_limits
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
 CREATE INDEX IF NOT EXISTS idx_edge_rate_limits_updated_at
     ON public.edge_rate_limits (updated_at);
 

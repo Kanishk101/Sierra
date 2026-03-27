@@ -22,6 +22,9 @@ struct DriverTripCardActionButton: View {
                 Button(action: action) { label }
                     .buttonStyle(.plain)
                     .disabled(isDisabled)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(title)
+                    .accessibilityValue(isDisabled ? "Disabled" : "")
             } else {
                 label
             }
@@ -31,9 +34,9 @@ struct DriverTripCardActionButton: View {
     private var label: some View {
         HStack(spacing: 6) {
             Image(systemName: icon)
-                .font(.system(size: 13, weight: .semibold))
+                .font(SierraFont.scaled(13, weight: .semibold))
             Text(title)
-                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .font(SierraFont.body(14, weight: .bold))
         }
         .foregroundColor(foregroundColor)
         .frame(maxWidth: .infinity)

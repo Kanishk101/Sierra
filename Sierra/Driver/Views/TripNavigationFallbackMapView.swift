@@ -68,6 +68,15 @@ struct TripNavigationFallbackMapView: View {
         .onChange(of: coordinator.remainingRouteCoordinates.count) { _, _ in
             updateCamera()
         }
+        .onChange(of: coordinator.breadcrumbCoordinates.count) { _, _ in
+            updateCamera()
+        }
+        .onChange(of: coordinator.currentLocation?.coordinate.latitude) { _, _ in
+            updateCamera()
+        }
+        .onChange(of: coordinator.currentLocation?.coordinate.longitude) { _, _ in
+            updateCamera()
+        }
     }
 
     private func endpointMarker(systemImage: String, color: Color) -> some View {
@@ -76,7 +85,7 @@ struct TripNavigationFallbackMapView: View {
                 .fill(color)
                 .frame(width: 28, height: 28)
             Image(systemName: systemImage)
-                .font(.system(size: 12, weight: .bold))
+                .font(SierraFont.scaled(12, weight: .bold))
                 .foregroundStyle(.white)
         }
         .shadow(color: .black.opacity(0.25), radius: 4, y: 2)

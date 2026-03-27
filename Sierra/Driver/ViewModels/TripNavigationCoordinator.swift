@@ -533,6 +533,8 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     private var rerouteQueued = false
     private var rerouteDeferredTask: Task<Void, Never>?
     private var lastDeviationRecoveryNotifiedAt: Date = .distantPast
+    var lastLocationPublishError: String?
+    private var locationPublishFailureCount: Int = 0
     private let maxReasonableJumpSpeedMetresPerSecond: Double = 75
     private let maxBreadcrumbPoints = 6000
 
@@ -623,11 +625,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
 
     // MARK: - Mapbox Navigation Core
     private func startMapboxActiveGuidanceIfPossible() async {
-        guard routeEngine.selectedChoiceIndex == 0 else {
-            // Respect non-primary route selection; custom guidance remains active.
-            isUsingMapboxNavigationCore = false
-            return
-        }
+        let preferredChoiceIndex = max(0, routeEngine.selectedChoiceIndex)
         guard let provider = Self.navigationProvider,
               let routeOptions = buildNavigationRouteOptions() else {
             isUsingMapboxNavigationCore = false
@@ -644,6 +642,12 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
             routeEngine.applyNavigationRoutes(navigationRoutes)
             refreshStateAfterRouteBuild()
             provider.mapboxNavigation.tripSession().startActiveGuidance(with: navigationRoutes, startLegIndex: 0)
+            if preferredChoiceIndex > 0 {
+                let alternativeIndex = preferredChoiceIndex - 1
+                if alternativeIndex < navigationRoutes.alternativeRoutes.count {
+                    provider.mapboxNavigation.navigation().selectAlternativeRoute(at: alternativeIndex)
+                }
+            }
 
             mapboxSessionRouteId = navigationRoutes.mainRoute.routeId
             isUsingMapboxNavigationCore = true
@@ -994,10 +998,22 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
                 let lat   = location.coordinate.latitude
                 let lng   = location.coordinate.longitude
                 let speed = location.speed > 0 ? location.speed * 3.6 : nil
-                try? await VehicleLocationService.shared.publishLocation(
-                    vehicleId: vehicleId, tripId: self.trip.id,
-                    driverId: driverId, latitude: lat, longitude: lng, speedKmh: speed
-                )
+                do {
+                    try await VehicleLocationService.shared.publishLocation(
+                        vehicleId: vehicleId, tripId: self.trip.id,
+                        driverId: driverId, latitude: lat, longitude: lng, speedKmh: speed
+                    )
+                    self.locationPublishFailureCount = 0
+                    self.lastLocationPublishError = nil
+                } catch {
+                    self.locationPublishFailureCount += 1
+                    self.lastLocationPublishError = error.localizedDescription
+                    #if DEBUG
+                    if self.locationPublishFailureCount == 1 || self.locationPublishFailureCount % 3 == 0 {
+                        print("[NavCoordinator] Location publish failed (\(self.locationPublishFailureCount)): \(error)")
+                    }
+                    #endif
+                }
             }
         }
     }

@@ -19,7 +19,7 @@ struct StatCardView: View {
             HStack {
                 if let icon {
                     Image(systemName: icon)
-                        .font(.system(size: 14))
+                        .font(SierraFont.scaled(14))
                         .foregroundStyle(accentColor)
                 }
                 Text(label)

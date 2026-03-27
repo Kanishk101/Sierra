@@ -13,7 +13,7 @@ struct ForcePasswordChangeView: View {
                 VStack(spacing: 24) {
                     Spacer(minLength: 60)
                     Image(systemName: "lock.rotation.fill")
-                        .font(.system(size: 50, weight: .light))
+                        .font(SierraFont.scaled(50, weight: .light))
                         .foregroundStyle(SierraTheme.Colors.ember)
                         .symbolRenderingMode(.hierarchical)
                     VStack(spacing: 8) {

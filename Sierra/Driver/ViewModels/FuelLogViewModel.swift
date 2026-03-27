@@ -119,12 +119,12 @@ final class FuelLogViewModel {
         isUploadingReceipt = true
         defer { isUploadingReceipt = false }
         do {
-            let path = "fuel-receipts/\(driverId.uuidString)/\(UUID().uuidString).jpg"
+            let path = "\(driverId.uuidString)/\(UUID().uuidString).jpg"
             try await supabase.storage
-                .from("sierra-uploads")
+                .from("fuel-receipts")
                 .upload(path, data: imageData, options: .init(contentType: "image/jpeg"))
             let url = try supabase.storage
-                .from("sierra-uploads")
+                .from("fuel-receipts")
                 .getPublicURL(path: path)
             receiptURL = url.absoluteString
         } catch {

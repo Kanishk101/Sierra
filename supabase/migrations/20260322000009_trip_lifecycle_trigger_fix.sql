@@ -58,13 +58,13 @@ BEGIN
         IF NEW.driver_id IS NOT NULL THEN
             UPDATE public.staff_members
                SET availability = 'Busy'
-             WHERE id::text = NEW.driver_id;
+             WHERE id::text = NEW.driver_id::text;
         END IF;
 
         IF NEW.vehicle_id IS NOT NULL THEN
             UPDATE public.vehicles
                SET status = 'Busy'
-             WHERE id::text = NEW.vehicle_id;
+             WHERE id::text = NEW.vehicle_id::text;
         END IF;
 
     END IF;
@@ -86,12 +86,12 @@ BEGIN
         IF NEW.driver_id IS NOT NULL THEN
             UPDATE public.staff_members
                SET availability = 'Available'
-             WHERE id::text = NEW.driver_id
+             WHERE id::text = NEW.driver_id::text
                -- Guard: no other Active trip for this driver
                AND NOT EXISTS (
                    SELECT 1 FROM public.trips t2
-                    WHERE t2.driver_id = NEW.driver_id
-                      AND t2.id        <> NEW.id
+                    WHERE t2.driver_id::text = NEW.driver_id::text
+                      AND t2.id::text        <> NEW.id::text
                       AND t2.status    = 'Active'
                );
         END IF;
@@ -100,12 +100,12 @@ BEGIN
             UPDATE public.vehicles
                SET status             = 'Idle',
                    assigned_driver_id = NULL
-             WHERE id::text = NEW.vehicle_id
+             WHERE id::text = NEW.vehicle_id::text
                -- Guard: no other Active trip for this vehicle
                AND NOT EXISTS (
                    SELECT 1 FROM public.trips t2
-                    WHERE t2.vehicle_id = NEW.vehicle_id
-                      AND t2.id         <> NEW.id
+                    WHERE t2.vehicle_id::text = NEW.vehicle_id::text
+                      AND t2.id::text         <> NEW.id::text
                       AND t2.status     = 'Active'
                );
         END IF;
@@ -144,13 +144,13 @@ BEGIN
         IF trip_rec.driver_id IS NOT NULL THEN
             UPDATE public.staff_members
                SET availability = 'Available'
-             WHERE id::text     = trip_rec.driver_id
+             WHERE id::text     = trip_rec.driver_id::text
                AND availability = 'Busy'
                -- Guard: no other Active trip for this driver
                AND NOT EXISTS (
                    SELECT 1 FROM public.trips t2
-                    WHERE t2.driver_id = trip_rec.driver_id
-                      AND t2.id        <> trip_rec.id
+                    WHERE t2.driver_id::text = trip_rec.driver_id::text
+                      AND t2.id::text        <> trip_rec.id::text
                       AND t2.status    = 'Active'
                );
             IF FOUND THEN
@@ -164,13 +164,13 @@ BEGIN
             UPDATE public.vehicles
                SET status             = 'Idle',
                    assigned_driver_id = NULL
-             WHERE id::text = trip_rec.vehicle_id
+             WHERE id::text = trip_rec.vehicle_id::text
                AND status   = 'Busy'
                -- Guard: no other Active trip for this vehicle
                AND NOT EXISTS (
                    SELECT 1 FROM public.trips t2
-                    WHERE t2.vehicle_id = trip_rec.vehicle_id
-                      AND t2.id         <> trip_rec.id
+                    WHERE t2.vehicle_id::text = trip_rec.vehicle_id::text
+                      AND t2.id::text         <> trip_rec.id::text
                       AND t2.status     = 'Active'
                );
             IF FOUND THEN

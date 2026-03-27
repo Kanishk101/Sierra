@@ -107,7 +107,7 @@ struct SierraBadge: View {
 
             if let iconName {
                 Image(systemName: iconName)
-                    .font(.system(size: size == .compact ? 9 : 10))
+                    .font(SierraFont.scaled(size == .compact ? 9 : 10))
             }
 
             Text(label)

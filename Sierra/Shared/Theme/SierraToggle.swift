@@ -29,7 +29,10 @@ struct SierraToggleRow: View {
             Toggle("", isOn: $isOn)
                 .labelsHidden()
                 .tint(SierraTheme.Colors.ember)
+                .accessibilityLabel(label)
+                .accessibilityHint(description ?? "Toggles \(label)")
         }
+        .accessibilityElement(children: .combine)
         .padding(Spacing.md)
         .background(
             SierraTheme.Colors.cardSurface,

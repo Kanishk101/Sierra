@@ -89,7 +89,7 @@ struct CreateTripView: View {
                     .frame(width: 12, height: 12)
                     .overlay {
                         if step < vm.currentStep {
-                            Image(systemName: "checkmark").font(.system(size: 7, weight: .bold)).foregroundStyle(.white)
+                            Image(systemName: "checkmark").font(SierraFont.scaled(7, weight: .bold)).foregroundStyle(.white)
                         }
                     }
                 if step < 4 {
@@ -109,7 +109,7 @@ struct CreateTripView: View {
                     HStack(spacing: 10) {
                         Button { vm.showOriginSearch = true } label: {
                             HStack(spacing: 12) {
-                                Image(systemName: "circle.fill").font(.system(size: 10)).foregroundStyle(.green)
+                                Image(systemName: "circle.fill").font(SierraFont.scaled(10)).foregroundStyle(.green)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text("Origin").font(.caption).foregroundStyle(.secondary)
                                     Text(vm.origin.isEmpty ? "Search origin address…" : vm.origin)
@@ -126,7 +126,7 @@ struct CreateTripView: View {
                                 vm.setOrigin(nil)
                             } label: {
                                 Image(systemName: "xmark.circle.fill")
-                                    .font(.system(size: 16))
+                                    .font(SierraFont.scaled(16))
                                     .foregroundStyle(.red.opacity(0.7))
                             }
                             .buttonStyle(.plain)
@@ -136,14 +136,14 @@ struct CreateTripView: View {
                     ForEach(vm.stops) { stop in
                         let index = (vm.stops.firstIndex(where: { $0.id == stop.id }) ?? 0) + 1
                         HStack(spacing: 12) {
-                            Image(systemName: "\(index).circle.fill").font(.system(size: 14)).foregroundStyle(.orange)
+                            Image(systemName: "\(index).circle.fill").font(SierraFont.scaled(14)).foregroundStyle(.orange)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Stop \(index)").font(.caption).foregroundStyle(.secondary)
                                 Text(stop.shortName).font(.subheadline).foregroundStyle(.primary)
                             }
                             Spacer()
                             Button { vm.removeStop(id: stop.id) } label: {
-                                Image(systemName: "xmark.circle.fill").font(.system(size: 16)).foregroundStyle(.red.opacity(0.7))
+                                Image(systemName: "xmark.circle.fill").font(SierraFont.scaled(16)).foregroundStyle(.red.opacity(0.7))
                             }.buttonStyle(.plain)
                         }
                     }
@@ -156,7 +156,7 @@ struct CreateTripView: View {
                     HStack(spacing: 10) {
                         Button { vm.showDestinationSearch = true } label: {
                             HStack(spacing: 12) {
-                                Image(systemName: "mappin.circle.fill").font(.system(size: 14)).foregroundStyle(.red)
+                                Image(systemName: "mappin.circle.fill").font(SierraFont.scaled(14)).foregroundStyle(.red)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text("Destination").font(.caption).foregroundStyle(.secondary)
                                     Text(vm.destination.isEmpty ? "Search destination address…" : vm.destination)
@@ -173,7 +173,7 @@ struct CreateTripView: View {
                                 vm.setDestination(nil)
                             } label: {
                                 Image(systemName: "xmark.circle.fill")
-                                    .font(.system(size: 16))
+                                    .font(SierraFont.scaled(16))
                                     .foregroundStyle(.red.opacity(0.7))
                             }
                             .buttonStyle(.plain)
@@ -236,7 +236,7 @@ struct CreateTripView: View {
                     Text("Next: Assign Driver")
                     Image(systemName: "arrow.right")
                 }
-                .font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
+                .font(SierraFont.scaled(16, weight: .semibold)).foregroundStyle(.white)
                 .frame(maxWidth: .infinity).frame(height: 50)
                 .background(Color.orange, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
@@ -251,17 +251,17 @@ struct CreateTripView: View {
         Map {
             if let o = vm.selectedOrigin {
                 Annotation(o.shortName, coordinate: o.coordinate) {
-                    Image(systemName: "circle.fill").font(.system(size: 12)).foregroundStyle(.green).background(.white, in: Circle()).shadow(radius: 2)
+                    Image(systemName: "circle.fill").font(SierraFont.scaled(12)).foregroundStyle(.green).background(.white, in: Circle()).shadow(radius: 2)
                 }
             }
             ForEach(Array(vm.stops.enumerated()), id: \.element.id) { index, stop in
                 Annotation("Stop \(index + 1)", coordinate: stop.coordinate) {
-                    Text("\(index + 1)").font(.system(size: 10, weight: .bold)).foregroundStyle(.white).frame(width: 22, height: 22).background(.orange, in: Circle()).shadow(radius: 2)
+                    Text("\(index + 1)").font(SierraFont.scaled(10, weight: .bold)).foregroundStyle(.white).frame(width: 22, height: 22).background(.orange, in: Circle()).shadow(radius: 2)
                 }
             }
             if let d = vm.selectedDestination {
                 Annotation(d.shortName, coordinate: d.coordinate) {
-                    Image(systemName: "mappin.circle.fill").font(.system(size: 16)).foregroundStyle(.red).background(.white, in: Circle()).shadow(radius: 2)
+                    Image(systemName: "mappin.circle.fill").font(SierraFont.scaled(16)).foregroundStyle(.red).background(.white, in: Circle()).shadow(radius: 2)
                 }
             }
         }
@@ -277,26 +277,26 @@ struct CreateTripView: View {
             if drivers.isEmpty {
                 VStack(spacing: 10) {
                     Spacer()
-                    Image(systemName: "person.slash.fill").font(.system(size: 36)).foregroundStyle(.gray.opacity(0.4))
-                    Text("No available drivers").font(.system(size: 16, weight: .semibold)).foregroundStyle(.secondary)
+                    Image(systemName: "person.slash.fill").font(SierraFont.scaled(36)).foregroundStyle(.gray.opacity(0.4))
+                    Text("No available drivers").font(SierraFont.scaled(16, weight: .semibold)).foregroundStyle(.secondary)
                     Text("Ensure drivers are approved and set to Available.").font(.caption).foregroundStyle(.tertiary).multilineTextAlignment(.center)
                     Spacer()
                 }.padding(.horizontal, 30)
             } else {
-                Text("Select Driver").font(.system(size: 18, weight: .bold)).padding(.top, 4)
+                Text("Select Driver").font(SierraFont.scaled(18, weight: .bold)).padding(.top, 4)
                 List {
                     ForEach(drivers) { driver in
                         Button { vm.selectedDriverId = driver.id } label: {
                             HStack(spacing: 12) {
                                 Circle().fill(Color.blue.opacity(0.12)).frame(width: 40, height: 40)
-                                    .overlay(Text(driver.initials).font(.system(size: 14, weight: .bold)).foregroundStyle(.blue))
+                                    .overlay(Text(driver.initials).font(SierraFont.scaled(14, weight: .bold)).foregroundStyle(.blue))
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(driver.displayName).font(.subheadline).foregroundStyle(.primary)
                                     Text(driver.phone ?? "No phone").font(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer()
                                 if vm.selectedDriverId == driver.id {
-                                    Image(systemName: "checkmark.circle.fill").font(.system(size: 20)).foregroundStyle(.orange)
+                                    Image(systemName: "checkmark.circle.fill").font(SierraFont.scaled(20)).foregroundStyle(.orange)
                                 }
                             }
                         }
@@ -306,7 +306,7 @@ struct CreateTripView: View {
             }
             Button { withAnimation(.easeInOut) { vm.currentStep = 3 } } label: {
                 HStack { Text("Next: Assign Vehicle"); Image(systemName: "arrow.right") }
-                    .font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
+                    .font(SierraFont.scaled(16, weight: .semibold)).foregroundStyle(.white)
                     .frame(maxWidth: .infinity).frame(height: 50)
                     .background(Color.orange, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
@@ -323,13 +323,13 @@ struct CreateTripView: View {
             if vehicles.isEmpty {
                 VStack(spacing: 10) {
                     Spacer()
-                    Image(systemName: "car.fill").font(.system(size: 36)).foregroundStyle(.gray.opacity(0.4))
-                    Text("No available vehicles").font(.system(size: 16, weight: .semibold)).foregroundStyle(.secondary)
+                    Image(systemName: "car.fill").font(SierraFont.scaled(36)).foregroundStyle(.gray.opacity(0.4))
+                    Text("No available vehicles").font(SierraFont.scaled(16, weight: .semibold)).foregroundStyle(.secondary)
                     Text("Ensure vehicles are idle and not currently assigned.").font(.caption).foregroundStyle(.tertiary).multilineTextAlignment(.center)
                     Spacer()
                 }.padding(.horizontal, 30)
             } else {
-                Text("Select Vehicle").font(.system(size: 18, weight: .bold)).padding(.top, 4)
+                Text("Select Vehicle").font(SierraFont.scaled(18, weight: .bold)).padding(.top, 4)
                 List {
                     ForEach(vehicles) { vehicle in
                         Button { vm.selectedVehicleId = vehicle.id } label: {
@@ -339,7 +339,7 @@ struct CreateTripView: View {
                                     Text("\(vehicle.name) \(vehicle.model)").font(.subheadline).foregroundStyle(.primary)
                                     HStack(spacing: 8) {
                                         Text(vehicle.licensePlate)
-                                            .font(.system(size: 12, weight: .medium, design: .monospaced)).foregroundStyle(.secondary)
+                                            .font(SierraFont.scaled(12, weight: .medium, design: .monospaced)).foregroundStyle(.secondary)
                                             .padding(.horizontal, 6).padding(.vertical, 2).background(Color.gray.opacity(0.1), in: Capsule())
                                         Text(vehicle.fuelType.description).font(.caption2).foregroundStyle(.secondary)
                                         Text("· \(vehicle.seatingCapacity) seats").font(.caption2).foregroundStyle(.secondary)
@@ -347,7 +347,7 @@ struct CreateTripView: View {
                                 }
                                 Spacer()
                                 if vm.selectedVehicleId == vehicle.id {
-                                    Image(systemName: "checkmark.circle.fill").font(.system(size: 20)).foregroundStyle(.orange)
+                                    Image(systemName: "checkmark.circle.fill").font(SierraFont.scaled(20)).foregroundStyle(.orange)
                                 }
                             }
                         }
@@ -357,7 +357,7 @@ struct CreateTripView: View {
             }
             Button { withAnimation(.easeInOut) { vm.currentStep = 4 } } label: {
                 HStack { Text("Next: Add Geofences"); Image(systemName: "arrow.right") }
-                    .font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
+                    .font(SierraFont.scaled(16, weight: .semibold)).foregroundStyle(.white)
                     .frame(maxWidth: .infinity).frame(height: 50)
                     .background(Color.orange, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
@@ -371,7 +371,7 @@ struct CreateTripView: View {
     private var step4View: some View {
         VStack(spacing: 0) {
             VStack(spacing: 4) {
-                Text("Add Geofences").font(.system(size: 18, weight: .bold))
+                Text("Add Geofences").font(SierraFont.scaled(18, weight: .bold))
                 Text("Define at least one monitoring zone for this trip").font(.caption).foregroundStyle(.secondary)
             }.padding(.top, 8).padding(.bottom, 12)
 
@@ -389,7 +389,7 @@ struct CreateTripView: View {
                             } label: {
                                 HStack(spacing: 10) {
                                     Image(systemName: alreadyAdded ? "checkmark.circle.fill" : "plus.circle")
-                                        .foregroundStyle(alreadyAdded ? .green : .teal).font(.system(size: 18))
+                                        .foregroundStyle(alreadyAdded ? .green : .teal).font(SierraFont.scaled(18))
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(name).font(.subheadline).foregroundStyle(.primary)
                                         Text("Tap to add 500m monitoring zone").font(.caption2).foregroundStyle(.tertiary)
@@ -427,7 +427,7 @@ struct CreateTripView: View {
                         if vm.isCreating { ProgressView().scaleEffect(0.9).tint(.white) }
                         else { Text("Create Trip"); Image(systemName: "checkmark") }
                     }
-                    .font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
+                    .font(SierraFont.scaled(16, weight: .semibold)).foregroundStyle(.white)
                     .frame(maxWidth: .infinity).frame(height: 50)
                     .background(vm.step4Valid ? Color.green : Color.gray.opacity(0.4),
                                 in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -532,17 +532,20 @@ struct CreateTripView: View {
             Spacer(minLength: 12)
             Toggle("", isOn: isOn)
                 .labelsHidden()
-                .tint(.orange)
+                .tint(Color.appOrange)
+                .accessibilityLabel(title)
+                .accessibilityHint("Turns \(title) on or off")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder
     private func geofenceTypeIcon(_ type: GeofenceType) -> some View {
         Image(systemName: geofenceTypeIconName(type))
-            .font(.system(size: 18)).foregroundStyle(geofenceTypeColor(type))
+            .font(SierraFont.scaled(18)).foregroundStyle(geofenceTypeColor(type))
             .frame(width: 28, height: 28)
             .background(geofenceTypeColor(type).opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
     }
@@ -601,7 +604,7 @@ struct CreateTripView: View {
             }
             Spacer()
             Button { dismiss() } label: {
-                Text("Done").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
+                Text("Done").font(SierraFont.scaled(17, weight: .semibold)).foregroundStyle(.white)
                     .frame(maxWidth: .infinity).frame(height: 50)
                     .background(Color.orange, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }.padding(.horizontal, 20).padding(.bottom, 20)
@@ -628,8 +631,6 @@ private struct RoutePinEditorSheet: View {
     @State private var draftOrigin: GeocodedAddress?
     @State private var draftDestination: GeocodedAddress?
     @State private var draftStops: [GeocodedAddress]
-    @State private var selectedStopId: UUID?
-    @State private var mapCenterCoordinate = CLLocationCoordinate2D(latitude: 20.5937, longitude: 78.9629)
 
     init(
         origin: GeocodedAddress?,
@@ -650,7 +651,9 @@ private struct RoutePinEditorSheet: View {
                     origin: draftOrigin,
                     destination: draftDestination,
                     stops: draftStops,
-                    centerCoordinate: $mapCenterCoordinate,
+                    onLongPressDrop: { coordinate in
+                        handleLongPressDrop(at: coordinate)
+                    },
                     onMoveOrigin: { coordinate in
                         draftOrigin = movedAddress(
                             from: draftOrigin,
@@ -674,7 +677,7 @@ private struct RoutePinEditorSheet: View {
                         )
                     },
                     onSelectStop: { stopId in
-                        selectedStopId = stopId
+                        _ = stopId
                     }
                 )
                 .frame(height: 350)
@@ -683,63 +686,22 @@ private struct RoutePinEditorSheet: View {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .stroke(Color.gray.opacity(0.2), lineWidth: 1)
                 )
-                .overlay(alignment: .center) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.blue.opacity(0.85))
-                        .padding(6)
-                        .background(.ultraThinMaterial, in: Circle())
+                .overlay(alignment: .topLeading) {
+                    Text("Long-press map to drop pins. First = Origin, second = Destination, then Stops.")
+                        .font(SierraFont.scaled(11, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .padding(10)
                 }
 
-                VStack(spacing: 10) {
-                    HStack(spacing: 8) {
-                        mapActionButton("Set Origin Here", icon: "circle.fill", tint: .green) {
-                            draftOrigin = movedAddress(
-                                from: draftOrigin,
-                                fallbackShortName: "Origin Pin",
-                                coordinate: mapCenterCoordinate
-                            )
-                        }
-                        mapActionButton("Set Destination Here", icon: "mappin.circle.fill", tint: .red) {
-                            draftDestination = movedAddress(
-                                from: draftDestination,
-                                fallbackShortName: "Destination Pin",
-                                coordinate: mapCenterCoordinate
-                            )
-                        }
+                HStack(spacing: 8) {
+                    simpleActionButton("Clear Origin", tint: .green) {
+                        draftOrigin = nil
                     }
-
-                    HStack(spacing: 8) {
-                        mapActionButton("Add Stop Here", icon: "plus.circle.fill", tint: .orange) {
-                            let next = draftStops.count + 1
-                            let stop = GeocodedAddress(
-                                displayName: "Stop \(next) (\(formatCoordinate(mapCenterCoordinate.latitude)), \(formatCoordinate(mapCenterCoordinate.longitude)))",
-                                shortName: "Stop \(next)",
-                                latitude: mapCenterCoordinate.latitude,
-                                longitude: mapCenterCoordinate.longitude
-                            )
-                            draftStops.append(stop)
-                            selectedStopId = stop.id
-                        }
-
-                        if let selectedStopId {
-                            mapActionButton("Remove Selected Stop", icon: "minus.circle.fill", tint: .red) {
-                                draftStops.removeAll { $0.id == selectedStopId }
-                                self.selectedStopId = nil
-                            }
-                        } else {
-                            mapActionButton("Remove Selected Stop", icon: "minus.circle.fill", tint: .gray) {}
-                                .disabled(true)
-                        }
-                    }
-
-                    HStack(spacing: 8) {
-                        mapActionButton("Clear Origin", icon: "xmark.circle.fill", tint: .green) {
-                            draftOrigin = nil
-                        }
-                        mapActionButton("Clear Destination", icon: "xmark.circle.fill", tint: .red) {
-                            draftDestination = nil
-                        }
+                    simpleActionButton("Clear Destination", tint: .red) {
+                        draftDestination = nil
                     }
                 }
 
@@ -771,58 +733,48 @@ private struct RoutePinEditorSheet: View {
             Text("Stop Order")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
+            Text("Drag to reorder. Swipe left to remove.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
 
-            ForEach(Array(draftStops.enumerated()), id: \.element.id) { index, stop in
-                HStack(spacing: 10) {
-                    Text("\(index + 1)")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 20, height: 20)
-                        .background(Color.orange, in: Circle())
+            List {
+                ForEach(Array(draftStops.enumerated()), id: \.element.id) { index, stop in
+                    HStack(spacing: 10) {
+                        Text("\(index + 1)")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 20, height: 20)
+                            .background(Color.orange, in: Circle())
 
-                    Text(stop.shortName)
-                        .font(.subheadline)
-                        .lineLimit(1)
-
-                    Spacer()
-
-                    Button {
-                        guard index > 0 else { return }
-                        draftStops.swapAt(index, index - 1)
-                    } label: {
-                        Image(systemName: "arrow.up")
-                            .font(.system(size: 12, weight: .semibold))
+                        Text(stop.shortName)
+                            .font(.subheadline)
+                            .lineLimit(1)
                     }
-                    .buttonStyle(.borderless)
-
-                    Button {
-                        guard index < draftStops.count - 1 else { return }
-                        draftStops.swapAt(index, index + 1)
-                    } label: {
-                        Image(systemName: "arrow.down")
-                            .font(.system(size: 12, weight: .semibold))
+                    .swipeActions(edge: .trailing) {
+                        Button(role: .destructive) {
+                            draftStops.removeAll { $0.id == stop.id }
+                        } label: {
+                            Label("Remove", systemImage: "trash")
+                        }
                     }
-                    .buttonStyle(.borderless)
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .onMove { source, destination in
+                    draftStops.move(fromOffsets: source, toOffset: destination)
+                }
             }
+            .frame(height: min(CGFloat(draftStops.count) * 46 + 24, 220))
+            .scrollContentBackground(.hidden)
+            .environment(\.editMode, .constant(.active))
+            .listStyle(.plain)
+            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
     }
 
-    private func mapActionButton(
-        _ title: String,
-        icon: String,
-        tint: Color,
-        action: @escaping () -> Void
-    ) -> some View {
+    private func simpleActionButton(_ title: String, tint: Color, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.system(size: 12, weight: .semibold))
                 Text(title)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(SierraFont.scaled(12, weight: .semibold))
                     .lineLimit(1)
             }
             .padding(.horizontal, 10)
@@ -836,6 +788,34 @@ private struct RoutePinEditorSheet: View {
             )
         }
         .buttonStyle(.plain)
+    }
+
+    private func handleLongPressDrop(at coordinate: CLLocationCoordinate2D) {
+        if draftOrigin == nil {
+            draftOrigin = movedAddress(
+                from: draftOrigin,
+                fallbackShortName: "Origin",
+                coordinate: coordinate
+            )
+            return
+        }
+        if draftDestination == nil {
+            draftDestination = movedAddress(
+                from: draftDestination,
+                fallbackShortName: "Destination",
+                coordinate: coordinate
+            )
+            return
+        }
+
+        let next = draftStops.count + 1
+        let stop = GeocodedAddress(
+            displayName: "Stop \(next) (\(formatCoordinate(coordinate.latitude)), \(formatCoordinate(coordinate.longitude)))",
+            shortName: "Stop \(next)",
+            latitude: coordinate.latitude,
+            longitude: coordinate.longitude
+        )
+        draftStops.append(stop)
     }
 
     private func movedAddress(
@@ -867,7 +847,7 @@ private struct RoutePinEditorMapView: UIViewRepresentable {
     var origin: GeocodedAddress?
     var destination: GeocodedAddress?
     var stops: [GeocodedAddress]
-    @Binding var centerCoordinate: CLLocationCoordinate2D
+    var onLongPressDrop: (CLLocationCoordinate2D) -> Void
     var onMoveOrigin: (CLLocationCoordinate2D) -> Void
     var onMoveDestination: (CLLocationCoordinate2D) -> Void
     var onMoveStop: (UUID, CLLocationCoordinate2D) -> Void
@@ -888,6 +868,7 @@ private struct RoutePinEditorMapView: UIViewRepresentable {
             animated: false
         )
         context.coordinator.renderAnnotations(on: mapView)
+        context.coordinator.installLongPressRecognizer(on: mapView)
         return mapView
     }
 
@@ -956,6 +937,15 @@ private struct RoutePinEditorMapView: UIViewRepresentable {
             }
         }
 
+        func installLongPressRecognizer(on mapView: MKMapView) {
+            let alreadyInstalled = mapView.gestureRecognizers?.contains(where: { $0.name == "route-pin-drop-long-press" }) ?? false
+            guard !alreadyInstalled else { return }
+            let recognizer = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
+            recognizer.minimumPressDuration = 0.45
+            recognizer.name = "route-pin-drop-long-press"
+            mapView.addGestureRecognizer(recognizer)
+        }
+
         private func fitToAnnotations(on mapView: MKMapView, pins: [RoutePinAnnotation]) {
             guard !pins.isEmpty else { return }
             let coords = pins.map(\.coordinate)
@@ -975,7 +965,6 @@ private struct RoutePinEditorMapView: UIViewRepresentable {
                 longitudeDelta: max((maxLng - minLng) * 1.8, 0.04)
             )
             mapView.setRegion(MKCoordinateRegion(center: center, span: span), animated: false)
-            parent.centerCoordinate = center
         }
 
         func mapView(_ mapView: MKMapView, viewFor annotation: any MKAnnotation) -> MKAnnotationView? {
@@ -1012,7 +1001,6 @@ private struct RoutePinEditorMapView: UIViewRepresentable {
         }
 
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
-            parent.centerCoordinate = mapView.centerCoordinate
         }
 
         func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
@@ -1049,6 +1037,15 @@ private struct RoutePinEditorMapView: UIViewRepresentable {
                 }
             }
             view.setDragState(.none, animated: false)
+        }
+
+        @objc
+        private func handleLongPress(_ recognizer: UILongPressGestureRecognizer) {
+            guard recognizer.state == .began else { return }
+            guard let mapView = recognizer.view as? MKMapView else { return }
+            let point = recognizer.location(in: mapView)
+            let coordinate = mapView.convert(point, toCoordinateFrom: mapView)
+            parent.onLongPressDrop(coordinate)
         }
     }
 }

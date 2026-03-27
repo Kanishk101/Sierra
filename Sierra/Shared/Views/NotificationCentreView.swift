@@ -51,6 +51,8 @@ struct NotificationCentreView: View {
                                 ForEach(delivered) { notif in
                                     notificationRow(notif)
                                         .onTapGesture { Task { await markRead(notif) } }
+                                        .accessibilityAddTraits(.isButton)
+                                        .accessibilityHint("Marks notification as read")
                                 }
                             } header: {
                                 if !upcomingReminders.isEmpty {
@@ -97,7 +99,7 @@ struct NotificationCentreView: View {
         VStack(spacing: 12) {
             Spacer()
             Image(systemName: "bell.slash")
-                .font(.system(size: 40, weight: .light))
+                .font(SierraFont.scaled(40, weight: .light))
                 .foregroundStyle(.secondary)
             Text("No notifications")
                 .font(.subheadline).foregroundStyle(.secondary)
@@ -171,6 +173,9 @@ struct NotificationCentreView: View {
         }
         .padding(.vertical, 4)
         .opacity(notif.isRead ? 0.7 : 1.0)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(notificationTitle(notif))
+        .accessibilityValue(notif.isRead ? "Read" : "Unread")
     }
 
     // MARK: - Helpers
@@ -178,7 +183,7 @@ struct NotificationCentreView: View {
     private func notifIcon(_ type: NotificationType) -> String {
         switch type {
         case .sosAlert:                return "sos.circle.fill"
-        case .defectAlert:             return "wrench.trianglebadge.exclamationmark"
+        case .defectAlert:             return "wrench.and.screwdriver.fill"
         case .routeDeviation:          return "location.slash.fill"
         case .maintenanceOverdue:      return "clock.badge.exclamationmark"
         case .tripAssigned:            return "map.fill"

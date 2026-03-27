@@ -138,7 +138,7 @@ struct StaffReviewSheet: View {
                 .frame(width: 64, height: 64)
                 .overlay(
                     Text(store.staffMember(for: application.staffMemberId)?.initials ?? String(application.phone.suffix(2)))
-                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .font(SierraFont.scaled(22, weight: .bold, design: .rounded))
                         .foregroundStyle(.orange)
                 )
 
@@ -175,7 +175,7 @@ struct StaffReviewSheet: View {
     private func detailSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title)
-                .font(.system(size: 14, weight: .bold))
+                .font(SierraFont.scaled(14, weight: .bold))
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
                 .tracking(0.5)
@@ -216,7 +216,7 @@ struct StaffReviewSheet: View {
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: icon)
-                    .font(.system(size: 18))
+                    .font(SierraFont.scaled(18))
                     .foregroundStyle(.orange)
                     .frame(width: 38, height: 38)
                     .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -226,7 +226,7 @@ struct StaffReviewSheet: View {
                         .font(.caption)
                         .foregroundStyle(.primary)
                     Text(number)
-                        .font(.system(size: 13, design: .monospaced))
+                        .font(SierraFont.scaled(13, design: .monospaced))
                         .foregroundStyle(.secondary)
                     if let expiry {
                         Text("Expires: \(expiry)")
@@ -238,11 +238,11 @@ struct StaffReviewSheet: View {
                 Spacer()
 
                 Image(systemName: urlString != nil ? "checkmark.shield.fill" : "exclamationmark.shield.fill")
-                    .font(.system(size: 18))
+                    .font(SierraFont.scaled(18))
                     .foregroundStyle(urlString != nil ? Color.green.opacity(0.6) : Color.red.opacity(0.6))
 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(SierraFont.scaled(14, weight: .semibold))
                     .foregroundStyle(.tertiary)
             }
             .padding(14)
@@ -342,7 +342,7 @@ struct StaffReviewSheet: View {
                     .font(.body)
                     .foregroundStyle(.red)
                 Text("Rejected")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(SierraFont.scaled(14, weight: .bold))
                     .foregroundStyle(.red)
             }
             Text(reason)
@@ -362,7 +362,7 @@ struct StaffReviewSheet: View {
     private var rejectReasonInput: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Reason for Rejection")
-                .font(.system(size: 14, weight: .bold))
+                .font(SierraFont.scaled(14, weight: .bold))
                 .foregroundStyle(.primary)
 
             TextEditor(text: $viewModel.rejectionReason)
@@ -411,9 +411,9 @@ struct StaffReviewSheet: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "xmark")
-                        .font(.system(size: 14, weight: .bold))
+                        .font(SierraFont.scaled(14, weight: .bold))
                     Text("Reject")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(SierraFont.scaled(16, weight: .semibold))
                 }
                 .foregroundStyle(.red)
                 .frame(maxWidth: .infinity)
@@ -428,9 +428,9 @@ struct StaffReviewSheet: View {
             Button { showApproveAlert = true } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 14, weight: .bold))
+                        .font(SierraFont.scaled(14, weight: .bold))
                     Text("Approve")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(SierraFont.scaled(16, weight: .semibold))
                 }
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
