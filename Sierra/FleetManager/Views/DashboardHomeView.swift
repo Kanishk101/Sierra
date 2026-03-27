@@ -117,11 +117,17 @@ struct DashboardHomeView: View {
                 .sheet(item: $quickModal) { modal in
                     switch modal {
                     case .staff:
-                        NavigationStack { StaffTabView().environment(AppDataStore.shared) }
+                        NavigationStack {
+                            StaffTabView(embedInParentNavigation: true)
+                                .environment(AppDataStore.shared)
+                        }
                     case .trips:
                         NavigationStack { TripsListView().environment(AppDataStore.shared) }
                     case .vehicles:
-                        NavigationStack { VehicleListView().environment(AppDataStore.shared) }
+                        NavigationStack {
+                            VehicleListView(embedInParentNavigation: true)
+                                .environment(AppDataStore.shared)
+                        }
                     case .alerts:
                         NavigationStack { AlertsInboxView().environment(AppDataStore.shared) }
                     }

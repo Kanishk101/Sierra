@@ -364,7 +364,7 @@ struct DriverProfileSheet: View {
                 // Sign Out
                 Section {
                     Button(role: .destructive) {
-                        AuthManager.shared.signOut(clearBiometricEnrollment: true)
+                        AuthManager.shared.signOut()
                         dismiss()
                     } label: {
                         HStack {

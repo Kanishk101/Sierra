@@ -7,6 +7,7 @@ import SwiftUI
 struct TripsAndMapContainerView: View {
     @Environment(AppDataStore.self) private var store
     let mapViewModel: FleetLiveMapViewModel
+    let embedInParentNavigation: Bool
     /// Bound to AdminDashboardView so the search tab knows the active mode.
     @Binding var mapSegment: Int
     @State private var showCreateTrip = false
@@ -14,23 +15,23 @@ struct TripsAndMapContainerView: View {
     @State private var tripsSelectedStatus: TripStatus? = nil
     @State private var liveRefreshTask: Task<Void, Never>?
 
+    init(
+        mapViewModel: FleetLiveMapViewModel,
+        mapSegment: Binding<Int>,
+        embedInParentNavigation: Bool = false
+    ) {
+        self.mapViewModel = mapViewModel
+        self._mapSegment = mapSegment
+        self.embedInParentNavigation = embedInParentNavigation
+    }
+
     var body: some View {
-        NavigationStack {
-            Group {
-                if mapSegment == 0 {
-                    FleetLiveMapView(viewModel: mapViewModel)
-                } else {
-                    TripsListView(
-                        embeddedInContainer: true,
-                        externalCreateTick: tripsCreateTick,
-                        externalSelectedStatus: $tripsSelectedStatus
-                    )
-                }
+        Group {
+            if embedInParentNavigation {
+                content
+            } else {
+                NavigationStack { content }
             }
-            .safeAreaInset(edge: .top, spacing: 0) {
-                topHeader
-            }
-            .toolbarBackground(.hidden, for: .navigationBar)
         }
         .animation(.none, value: mapSegment)
         .task {
@@ -52,99 +53,94 @@ struct TripsAndMapContainerView: View {
         }
     }
 
-    private var topHeader: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 10) {
-                Text("Trip")
-                    .font(.largeTitle.bold())
-
-                Spacer()
-
+    private var content: some View {
+        Group {
+            if mapSegment == 0 {
+                FleetLiveMapView(viewModel: mapViewModel)
+            } else {
+                TripsListView(
+                    embeddedInContainer: true,
+                    externalCreateTick: tripsCreateTick,
+                    externalSelectedStatus: $tripsSelectedStatus
+                )
+            }
+        }
+        .navigationTitle(mapSegment == 0 ? "Fleet Map" : "Trips")
+        .navigationBarTitleDisplayMode(.large)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            topHeader
+        }
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
                 if mapSegment == 0 {
-                    toolbarControlGroup(
-                        leading: {
+                    Button {
+                        showCreateTrip = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+
+                    Menu {
+                        ForEach(FleetLiveMapViewModel.VehicleFilter.allCases, id: \.self) { filter in
                             Button {
-                                showCreateTrip = true
+                                mapViewModel.selectedFilter = filter
                             } label: {
-                                Image(systemName: "plus")
-                                    .font(SierraFont.scaled(16, weight: .semibold))
-                                    .frame(width: 34, height: 34)
+                                SierraSelectionMenuRow(
+                                    title: filter.rawValue,
+                                    isSelected: mapViewModel.selectedFilter == filter
+                                )
                             }
-                            .buttonStyle(.plain)
-                        },
-                        trailing: {
-                            Menu {
-                                ForEach(FleetLiveMapViewModel.VehicleFilter.allCases, id: \.self) { filter in
-                                    Button {
-                                        mapViewModel.selectedFilter = filter
-                                    } label: {
-                                        HStack {
-                                            Text(filter.rawValue)
-                                            if mapViewModel.selectedFilter == filter {
-                                                Spacer()
-                                                Image(systemName: "checkmark")
-                                            }
-                                        }
-                                    }
-                                }
-                            } label: {
-                                Image(systemName: mapViewModel.selectedFilter == .all ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
-                                    .font(SierraFont.scaled(16, weight: .semibold))
-                                    .frame(width: 34, height: 34)
-                            }
-                            .buttonStyle(.plain)
                         }
-                    )
+                    } label: {
+                        Image(systemName: mapViewModel.selectedFilter == .all
+                            ? "line.3.horizontal.decrease.circle"
+                            : "line.3.horizontal.decrease.circle.fill")
+                    }
+                    .tint(mapViewModel.selectedFilter == .all ? .primary : .orange)
                 } else {
-                    toolbarControlGroup(
-                        leading: {
-                            Button {
-                                tripsCreateTick += 1
-                            } label: {
-                                Image(systemName: "plus")
-                                    .font(SierraFont.scaled(16, weight: .semibold))
-                                    .frame(width: 34, height: 34)
-                            }
-                            .buttonStyle(.plain)
-                        },
-                        trailing: {
-                            Menu {
-                                Button {
-                                    tripsSelectedStatus = nil
-                                } label: {
-                                    Label("All", systemImage: tripsSelectedStatus == nil ? "checkmark" : "")
-                                }
-                                Divider()
-                                ForEach([TripStatus.pendingAcceptance, .scheduled, .active, .completed, .cancelled], id: \.self) { status in
-                                    Button {
-                                        tripsSelectedStatus = status
-                                    } label: {
-                                        Label(
-                                            menuTripStatusLabel(status),
-                                            systemImage: tripsSelectedStatus == status ? "checkmark" : ""
-                                        )
-                                    }
-                                }
-                            } label: {
-                                Image(systemName: tripsSelectedStatus == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
-                                    .font(SierraFont.scaled(16, weight: .semibold))
-                                    .frame(width: 34, height: 34)
-                            }
-                            .buttonStyle(.plain)
+                    Button {
+                        tripsCreateTick += 1
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+
+                    Menu {
+                        Button {
+                            tripsSelectedStatus = nil
+                        } label: {
+                            SierraSelectionMenuRow(title: "All", isSelected: tripsSelectedStatus == nil)
                         }
-                    )
+                        Divider()
+                        ForEach([TripStatus.pendingAcceptance, .scheduled, .active, .completed, .cancelled], id: \.self) { status in
+                            Button {
+                                tripsSelectedStatus = status
+                            } label: {
+                                SierraSelectionMenuRow(
+                                    title: menuTripStatusLabel(status),
+                                    isSelected: tripsSelectedStatus == status
+                                )
+                            }
+                        }
+                    } label: {
+                        Image(systemName: tripsSelectedStatus == nil
+                            ? "line.3.horizontal.decrease.circle"
+                            : "line.3.horizontal.decrease.circle.fill")
+                    }
+                    .tint(tripsSelectedStatus == nil ? .primary : .orange)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 8)
+        }
+    }
 
+    private var topHeader: some View {
+        VStack(spacing: 0) {
             Picker("Trips Mode", selection: $mapSegment) {
                 Text("Live Map").tag(0)
                 Text("Trips").tag(1)
             }
             .pickerStyle(.segmented)
             .padding(.horizontal, 16)
+            .padding(.top, 8)
             .padding(.bottom, 8)
         }
         .background(Color(.systemGroupedBackground))
@@ -168,30 +164,9 @@ struct TripsAndMapContainerView: View {
         }
     }
 
-    private func toolbarControlGroup<Leading: View, Trailing: View>(
-        @ViewBuilder leading: () -> Leading,
-        @ViewBuilder trailing: () -> Trailing
-    ) -> some View {
-        HStack(spacing: 0) {
-            leading()
-            Divider()
-                .frame(height: 22)
-                .overlay(Color.secondary.opacity(0.18))
-                .padding(.vertical, 6)
-            trailing()
-        }
-        .padding(.horizontal, 4)
-        .padding(.vertical, 2)
-        .background(.regularMaterial, in: Capsule())
-        .overlay(
-            Capsule().stroke(Color.secondary.opacity(0.18), lineWidth: 1)
-        )
-        .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
-    }
-
     private func menuTripStatusLabel(_ status: TripStatus) -> String {
         switch status {
-        case .pendingAcceptance: return "PendingAcceptance"
+        case .pendingAcceptance: return "Pending Acceptance"
         case .scheduled: return "Scheduled"
         case .active: return "Active"
         case .completed: return "Completed"

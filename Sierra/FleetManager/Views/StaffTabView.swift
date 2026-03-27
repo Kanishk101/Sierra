@@ -8,8 +8,8 @@ struct StaffTabView: View {
     @State private var selectedAvailability: StaffAvailability? = nil
     @State private var internalSearchText = ""
 
-    var embedInParentNavigation: Bool = false
-    var externalSearchText: Binding<String>? = nil
+    private let embedInParentNavigation: Bool
+    private let externalSearchText: Binding<String>?
 
     enum StaffSegment: String, CaseIterable {
         case drivers = "Drivers"
@@ -65,11 +65,6 @@ struct StaffTabView: View {
 
     private var content: some View {
             VStack(spacing: 0) {
-                headerRow
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
-                    .padding(.bottom, 4)
-
                 Picker("Segment", selection: $segment) {
                     ForEach(StaffSegment.allCases, id: \.self) { s in
                         if s == .applications {
@@ -79,6 +74,8 @@ struct StaffTabView: View {
                     }
                 }
                 .pickerStyle(.segmented).padding(.horizontal, 20).padding(.vertical, 8)
+                .accessibilityLabel("Staff category")
+                .accessibilityHint("Switch between drivers, maintenance, and applications")
 
                 switch segment {
                 case .drivers, .maintenance: staffListContent
@@ -86,6 +83,8 @@ struct StaffTabView: View {
                 }
             }
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
+            .navigationTitle("Staff")
+            .navigationBarTitleDisplayMode(.large)
             .toolbarBackground(.hidden, for: .navigationBar)
             .animation(.easeInOut(duration: 0.2), value: segment)
             .sheet(isPresented: $showCreateStaff) { NavigationStack { CreateStaffView() } }
@@ -95,66 +94,44 @@ struct StaffTabView: View {
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
             }
-            .searchable(text: bindingSearchText, prompt: "Search by name or email…")
-    }
-
-    private var bindingSearchText: Binding<String> {
-        if let externalSearchText {
-            return externalSearchText
-        } else {
-            return $internalSearchText
-        }
-    }
-
-    private var headerRow: some View {
-        HStack(spacing: 10) {
-            Text("Staff")
-                .font(.largeTitle.bold())
-
-            Spacer()
-
-            Button {
-                showCreateStaff = true
-            } label: {
-                Image(systemName: "plus")
-                    .font(.title3.weight(.semibold))
-            }
-            .buttonStyle(.glass)
-            .buttonBorderShape(.circle)
-
-            Menu {
-                Button {
-                    selectedAvailability = nil
-                } label: {
-                    Text("All")
-                }
-                Divider()
-                ForEach(StaffAvailability.allCases, id: \.self) { availability in
+            .toolbar {
+                ToolbarItemGroup(placement: .topBarTrailing) {
                     Button {
-                        selectedAvailability = availability
+                        showCreateStaff = true
                     } label: {
-                        Text(availability.rawValue)
+                        Image(systemName: "plus")
                     }
-                }
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "line.3.horizontal.decrease.circle")
-                        .font(SierraFont.scaled(14, weight: .semibold))
-                    Text(staffFilterTitle)
-                        .font(SierraFont.scaled(13, weight: .semibold))
-                    Image(systemName: "chevron.down")
-                        .font(SierraFont.scaled(11, weight: .semibold))
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-            }
-            .buttonStyle(.glass)
-            .buttonBorderShape(.capsule)
-        }
-    }
+                    .accessibilityLabel("Add staff")
+                    .accessibilityHint("Opens create staff form")
 
-    private var staffFilterTitle: String {
-        selectedAvailability?.rawValue ?? "All"
+                    Menu {
+                        Button {
+                            selectedAvailability = nil
+                        } label: {
+                            SierraSelectionMenuRow(title: "All", isSelected: selectedAvailability == nil)
+                        }
+                        Divider()
+                        ForEach(StaffAvailability.allCases, id: \.self) { availability in
+                            Button {
+                                selectedAvailability = availability
+                            } label: {
+                                SierraSelectionMenuRow(
+                                    title: availability.rawValue,
+                                    isSelected: selectedAvailability == availability
+                                )
+                            }
+                        }
+                    } label: {
+                        Image(systemName: selectedAvailability == nil
+                            ? "line.3.horizontal.decrease.circle"
+                            : "line.3.horizontal.decrease.circle.fill")
+                    }
+                    .tint(selectedAvailability == nil ? .primary : .orange)
+                    .accessibilityLabel("Availability filter")
+                    .accessibilityValue(selectedAvailability?.rawValue ?? "All")
+                    .accessibilityHint("Filters staff by availability")
+                }
+            }
     }
 
     private var staffListContent: some View {

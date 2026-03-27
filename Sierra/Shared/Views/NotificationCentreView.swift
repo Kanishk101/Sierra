@@ -195,6 +195,12 @@ struct NotificationCentreView: View {
         case .maintenanceRejected:     return "xmark.seal.fill"
         case .geofenceAlert:           return "exclamationmark.shield.fill"
         case .inspectionFailed:        return "doc.text.fill"
+        case .preTripCompleted:        return "checkmark.seal.fill"
+        case .postTripCompleted:       return "checkmark.seal.fill"
+        case .preTripFailed:           return "exclamationmark.triangle.fill"
+        case .postTripFailed:          return "exclamationmark.triangle.fill"
+        case .preTripWarning:          return "exclamationmark.triangle.fill"
+        case .postTripWarning:         return "exclamationmark.triangle.fill"
         case .documentExpiry:          return "calendar.badge.exclamationmark"
         case .emergency:               return "exclamationmark.octagon.fill"
         case .maintenanceComplete:     return "wrench.and.screwdriver.fill"
@@ -210,20 +216,21 @@ struct NotificationCentreView: View {
     private func notifColor(_ type: NotificationType) -> Color {
         switch type {
         case .sosAlert, .defectAlert, .emergency, .tripCancelled, .maintenanceRejected:
-            return .red
+            return SierraTheme.Colors.danger
         case .routeDeviation, .geofenceAlert, .tripRejected,
-             .preInspectionReminder, .tripAcceptanceReminder:
-            return .orange
+             .preInspectionReminder, .tripAcceptanceReminder,
+             .preTripFailed, .postTripFailed, .preTripWarning, .postTripWarning:
+            return SierraTheme.Colors.warning
         case .maintenanceOverdue, .inspectionFailed, .documentExpiry:
-            return .yellow
-        case .tripAssigned, .tripAccepted, .vehicleAssigned:
-            return .blue
+            return SierraTheme.Colors.warning
+        case .tripAssigned, .tripAccepted, .vehicleAssigned, .preTripCompleted, .postTripCompleted:
+            return SierraTheme.Colors.info
         case .maintenanceApproved, .maintenanceComplete, .partsApproved:
-            return .green
+            return SierraTheme.Colors.success
         case .partsRejected:
-            return .red
+            return SierraTheme.Colors.danger
         case .maintenanceRequest:
-            return .orange
+            return SierraTheme.Colors.warning
         case .general:
             return .gray
         }

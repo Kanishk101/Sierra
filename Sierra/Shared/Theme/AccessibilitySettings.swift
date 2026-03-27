@@ -64,8 +64,14 @@ enum SierraAccessibilityPalette {
 
     static var warning: Color {
         isColorBlindModeEnabled
-            ? Color(red: 0.52, green: 0.34, blue: 0.00)
+            ? Color(red: 0.90, green: 0.62, blue: 0.00)
             : Color("Warning")
+    }
+
+    static var danger: Color {
+        isColorBlindModeEnabled
+            ? Color(red: 0.80, green: 0.47, blue: 0.65)
+            : Color("Danger")
     }
 
     static var info: Color {
@@ -73,6 +79,11 @@ enum SierraAccessibilityPalette {
             ? Color(red: 0.00, green: 0.35, blue: 0.78)
             : Color("Info")
     }
+
+    static var successUIColor: UIColor { UIColor(success) }
+    static var warningUIColor: UIColor { UIColor(warning) }
+    static var dangerUIColor: UIColor { UIColor(danger) }
+    static var infoUIColor: UIColor { UIColor(info) }
 
     static var accentUIColor: UIColor {
         UIColor(accent)

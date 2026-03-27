@@ -33,10 +33,8 @@ struct MaintenanceApprovalDetailView: View {
 
     private var currentUserId: UUID { AuthManager.shared.currentUser?.id ?? UUID() }
 
-    private var assignableMaintenanceStaff: [StaffMember] {
-        store.staff
-            .filter { $0.role == .maintenancePersonnel && $0.status == .active && $0.isApproved }
-            .sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+    private var availableStaff: [StaffMember] {
+        store.staff.filter { $0.role == .maintenancePersonnel && $0.status == .active && $0.availability == .available }
     }
     private var isApprovedAwaitingAssignment: Bool {
         task.isApprovedAwaitingAssignment
@@ -93,14 +91,10 @@ struct MaintenanceApprovalDetailView: View {
         .sheet(isPresented: $showWorkOrderSheet) {
             WorkOrderDetailSheet(task: task).environment(store)
         }
-        .sheet(isPresented: $showAssignSheet) {
-            NavigationStack {
-                AssignTechnicianScreen(candidates: assignableMaintenanceStaff) { staffId in
-                    Task { await assignApprovedTask(to: staffId) }
-                }
+        .navigationDestination(isPresented: $showAssignSheet) {
+            AssignTechnicianScreen(candidates: availableStaff) { staffId in
+                Task { await assignApprovedTask(to: staffId) }
             }
-            .presentationDetents([.large])
-            .presentationDragIndicator(.visible)
         }
         .sheet(item: $rejectPartTarget) { part in
             RejectPartReasonSheet(part: part) { reason in
@@ -980,87 +974,59 @@ private struct AssignTechnicianScreen: View {
     let onAssign: (UUID) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var selectedStaffId: UUID?
 
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 12) {
             if candidates.isEmpty {
-                VStack(spacing: 10) {
-                    Spacer()
-                    Image(systemName: "person.2.slash")
-                        .font(SierraFont.scaled(36, weight: .light))
-                        .foregroundStyle(Color.appTextSecondary.opacity(0.5))
-                    Text("No maintenance personnel found")
-                        .font(SierraFont.scaled(16, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Color.appTextSecondary)
-                    Spacer()
-                }
-                .padding(.horizontal, 20)
+                Text("No free maintenance personnel available right now.")
+                    .font(SierraFont.scaled(14, weight: .medium, design: .rounded))
+                    .foregroundStyle(Color.appTextSecondary)
+                    .padding(.top, 6)
             } else {
-                Text("Select Maintenance Personnel")
-                    .font(SierraFont.scaled(18, weight: .bold, design: .rounded))
-                    .padding(.top, 10)
-
-                List {
-                    ForEach(candidates) { staff in
-                        Button {
-                            selectedStaffId = staff.id
-                        } label: {
-                            HStack(spacing: 12) {
-                                Circle()
-                                    .fill(Color.appOrange.opacity(0.12))
-                                    .frame(width: 40, height: 40)
-                                    .overlay(
+                ScrollView {
+                    LazyVStack(spacing: 10) {
+                        ForEach(candidates) { staff in
+                            Button {
+                                onAssign(staff.id)
+                                dismiss()
+                            } label: {
+                                HStack(spacing: 10) {
+                                    ZStack {
+                                        Circle().fill(Color.appOrange.opacity(0.12)).frame(width: 34, height: 34)
                                         Text(staff.initials)
-                                            .font(SierraFont.scaled(13, weight: .bold, design: .rounded))
+                                            .font(SierraFont.scaled(12, weight: .bold, design: .rounded))
                                             .foregroundStyle(Color.appOrange)
-                                    )
-
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(staff.displayName)
-                                        .font(SierraFont.scaled(14, weight: .semibold, design: .rounded))
-                                        .foregroundStyle(Color.appTextPrimary)
-                                    Text(staff.availability.rawValue)
-                                        .font(SierraFont.scaled(11, weight: .semibold, design: .rounded))
+                                    }
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(staff.displayName)
+                                            .font(SierraFont.scaled(14, weight: .bold, design: .rounded))
+                                            .foregroundStyle(Color.appTextPrimary)
+                                        Text(staff.availability.rawValue)
+                                            .font(SierraFont.scaled(11, weight: .semibold, design: .rounded))
+                                            .foregroundStyle(Color.appTextSecondary)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(SierraFont.scaled(11, weight: .bold))
                                         .foregroundStyle(Color.appTextSecondary)
                                 }
-
-                                Spacer()
-
-                                if selectedStaffId == staff.id {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .font(SierraFont.scaled(19))
-                                        .foregroundStyle(Color.appOrange)
-                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 10)
+                                .background(Color.appCardBg, in: RoundedRectangle(cornerRadius: 12))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(Color.appDivider.opacity(0.45), lineWidth: 1)
+                                )
                             }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
-                        .listRowBackground(selectedStaffId == staff.id ? Color.appOrange.opacity(0.08) : Color.clear)
                     }
                 }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
-
-                Button {
-                    guard let selectedStaffId else { return }
-                    onAssign(selectedStaffId)
-                    dismiss()
-                } label: {
-                    Text("Assign Selected")
-                        .font(SierraFont.scaled(15, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 13)
-                        .background(
-                            Capsule().fill(selectedStaffId == nil ? Color.gray : Color.appTextPrimary)
-                        )
-                }
-                .buttonStyle(.plain)
-                .disabled(selectedStaffId == nil)
-                .padding(.horizontal, 16)
-                .padding(.bottom, 12)
             }
+
+            Spacer()
         }
+        .padding(16)
         .background(Color.appSurface.ignoresSafeArea())
         .navigationTitle("Assign Personnel")
         .navigationBarTitleDisplayMode(.inline)

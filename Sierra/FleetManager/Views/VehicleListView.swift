@@ -3,6 +3,7 @@ import SwiftUI
 struct VehicleListView: View {
     @Environment(AppDataStore.self) private var store
     private let initialMaintenanceTaskId: UUID?
+    private let embedInParentNavigation: Bool
     @State private var selectedFilter: VehicleStatus? = nil
     @State private var showAddSheet = false
     @State private var editingVehicle: Vehicle?
@@ -10,8 +11,13 @@ struct VehicleListView: View {
     @State private var navigationTarget: UUID?
     @State private var segmentMode = 0  // 0 = My Vehicles, 1 = Maintenance
 
-    init(initialSegmentMode: Int = 0, initialMaintenanceTaskId: UUID? = nil) {
+    init(
+        initialSegmentMode: Int = 0,
+        initialMaintenanceTaskId: UUID? = nil,
+        embedInParentNavigation: Bool = false
+    ) {
         self.initialMaintenanceTaskId = initialMaintenanceTaskId
+        self.embedInParentNavigation = embedInParentNavigation
         _segmentMode = State(initialValue: initialSegmentMode)
     }
 
@@ -23,41 +29,46 @@ struct VehicleListView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                if segmentMode == 0 {
-                    headerRow
-                        .padding(.horizontal, 16)
-                        .padding(.top, 12)
-
-                    modePicker
-                        .padding(.horizontal, 16)
-                        .padding(.top, 8)
-                        .padding(.bottom, 8)
-
-                    // ── My Vehicles ──
-                    Group {
-                        if store.isLoading && store.vehicles.isEmpty {
-                            vehiclesLoadingSkeleton
-                        } else if filteredVehicles.isEmpty {
-                            SierraEmptyState(icon: "car.fill", title: "No vehicles found", message: selectedFilter == nil ? "Add your first vehicle to get started." : "No vehicles match this filter.")
-                        } else {
-                            vehicleList
-                        }
-                    }
-                } else {
-                    // ── Maintenance Hub ──
-                    MaintenanceHubView(
-                        showInlineHeader: true,
-                        topAccessory: AnyView(
-                            modePicker
-                                .padding(.horizontal, 16)
-                        ),
-                        openTaskId: initialMaintenanceTaskId
-                    )
-                }
+        Group {
+            if embedInParentNavigation {
+                content
+            } else {
+                NavigationStack { content }
             }
+        }
+    }
+
+    private var content: some View {
+        VStack(spacing: 0) {
+            if segmentMode == 0 {
+                modePicker
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .padding(.bottom, 8)
+
+                Group {
+                    if store.isLoading && store.vehicles.isEmpty {
+                        vehiclesLoadingSkeleton
+                    } else if filteredVehicles.isEmpty {
+                        SierraEmptyState(icon: "car.fill", title: "No vehicles found", message: selectedFilter == nil ? "Add your first vehicle to get started." : "No vehicles match this filter.")
+                    } else {
+                        vehicleList
+                    }
+                }
+            } else {
+                MaintenanceHubView(
+                    showInlineHeader: true,
+                    topAccessory: AnyView(
+                        modePicker
+                            .padding(.horizontal, 16)
+                    ),
+                    openTaskId: initialMaintenanceTaskId
+                )
+            }
+        }
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
+            .navigationTitle("Vehicles")
+            .navigationBarTitleDisplayMode(.large)
             .toolbarBackground(.hidden, for: .navigationBar)
             .navigationDestination(for: UUID.self) { VehicleDetailView(vehicleId: $0) }
             .navigationDestination(item: $navigationTarget) { VehicleDetailView(vehicleId: $0) }
@@ -70,7 +81,38 @@ struct VehicleListView: View {
                 }
                 Button("Cancel", role: .cancel) { deleteTarget = nil }
             } message: { Text("This vehicle will be permanently removed.") }
-        }
+            .toolbar {
+                if segmentMode == 0 {
+                    ToolbarItemGroup(placement: .topBarTrailing) {
+                        Button {
+                            showAddSheet = true
+                        } label: {
+                            Image(systemName: "plus")
+                        }
+
+                        Menu {
+                            Button {
+                                selectedFilter = nil
+                            } label: {
+                                SierraSelectionMenuRow(title: "All", isSelected: selectedFilter == nil)
+                            }
+                            Divider()
+                            ForEach(VehicleStatus.allCases, id: \.self) { status in
+                                Button {
+                                    selectedFilter = status
+                                } label: {
+                                    SierraSelectionMenuRow(title: status.rawValue, isSelected: selectedFilter == status)
+                                }
+                            }
+                        } label: {
+                            Image(systemName: selectedFilter == nil
+                                ? "line.3.horizontal.decrease.circle"
+                                : "line.3.horizontal.decrease.circle.fill")
+                        }
+                        .tint(selectedFilter == nil ? .primary : .orange)
+                    }
+                }
+            }
     }
 
     private var modePicker: some View {
@@ -79,40 +121,6 @@ struct VehicleListView: View {
             Text("Maintenance").tag(1)
         }
         .pickerStyle(.segmented)
-    }
-
-    private var headerRow: some View {
-        HStack(spacing: 10) {
-            Text("Vehicles")
-                .font(.largeTitle.bold())
-
-            Spacer()
-
-            if segmentMode == 0 {
-                Button {
-                    showAddSheet = true
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.title3.weight(.semibold))
-                }
-                .buttonStyle(.glass)
-                .buttonBorderShape(.circle)
-
-                Menu {
-                    Button { selectedFilter = nil } label: { Text("All") }
-                    Divider()
-                    ForEach(VehicleStatus.allCases, id: \.self) { status in
-                        Button { selectedFilter = status } label: { Text(status.rawValue) }
-                    }
-                } label: {
-                    Image(systemName: "line.3.horizontal.decrease.circle")
-                        .font(.title3.weight(.semibold))
-                        .padding(10)
-                }
-                .buttonStyle(.glass)
-                .buttonBorderShape(.circle)
-            }
-        }
     }
 
     private var vehicleList: some View {

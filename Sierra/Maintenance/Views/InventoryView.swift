@@ -211,6 +211,7 @@ struct InventoryView: View {
         .background(Color.appSurface.ignoresSafeArea())
         .navigationTitle("Inventory")
         .navigationBarTitleDisplayMode(.large)
+        .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showVINScanner = true } label: {

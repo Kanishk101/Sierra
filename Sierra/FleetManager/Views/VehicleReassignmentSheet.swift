@@ -21,8 +21,15 @@ struct VehicleReassignmentSheet: View {
     /// Only vehicles that are currently assignable (Active or Idle).
     private var availableVehicles: [Vehicle] {
         let currentVehicleId = trip?.vehicleUUID
-        let base = store.availableVehicles().filter { v in
-            (v.status == .active || v.status == .idle) && v.id != currentVehicleId
+        let base = store.availableVehicles().filter { vehicle in
+            guard vehicle.id != currentVehicleId else { return false }
+            // Never allow selecting vehicles that are unavailable for dispatch.
+            switch vehicle.status {
+            case .inMaintenance, .outOfService, .decommissioned:
+                return false
+            default:
+                return true
+            }
         }
         guard !searchText.isEmpty else { return base }
         let query = searchText.lowercased()

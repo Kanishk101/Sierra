@@ -36,8 +36,9 @@ struct ContentView: View {
         ) { _ in
             hasCompletedOnboarding = OnboardingService.hasCompletedOnboarding
         }
-        .onChange(of: authManager.isAuthenticated) { _, isAuth in
-            if isAuth,
+        .onChange(of: authManager.shouldPresentBiometricEnrollmentAfterLogin) { _, shouldPrompt in
+            if shouldPrompt,
+               authManager.isAuthenticated,
                let user = authManager.currentUser,
                isDashboard(authManager.destination(for: user)),
                authManager.consumeBiometricEnrollmentPromptFlag(),
@@ -45,7 +46,10 @@ struct ContentView: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
                     showBiometricEnrollment = true
                 }
-            } else if !isAuth {
+            }
+        }
+        .onChange(of: authManager.isAuthenticated) { _, isAuth in
+            if !isAuth {
                 showBiometricEnrollment = false
             }
         }

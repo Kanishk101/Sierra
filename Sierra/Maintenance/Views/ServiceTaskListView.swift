@@ -62,6 +62,7 @@ struct ServiceTaskListView: View {
         .background(Color.appSurface.ignoresSafeArea())
         .navigationTitle("Service")
         .navigationBarTitleDisplayMode(.large)
+        .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) { filterMenuButton }
         }

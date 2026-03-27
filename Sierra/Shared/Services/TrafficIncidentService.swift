@@ -55,6 +55,24 @@ final class TrafficIncidentService {
         activeIncidents = []
     }
 
+    /// Inject a user-reported incident immediately (no API wait).
+    func addLocalIncident(description: String, coordinate: CLLocationCoordinate2D) {
+        let incident = TrafficIncident(
+            id: UUID().uuidString,
+            description: description,
+            severity: .moderate,
+            coordinate: TrafficIncident.IncidentCoordinate(
+                latitude: coordinate.latitude,
+                longitude: coordinate.longitude
+            ),
+            roadName: nil,
+            startTime: Date(),
+            endTime: nil,
+            distanceAheadMetres: 0
+        )
+        activeIncidents.insert(incident, at: 0)
+    }
+
     // MARK: - Fetch
 
     private func fetchIncidents() async {

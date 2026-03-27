@@ -169,8 +169,19 @@ struct BiometricLockView: View {
 
         do {
             try await biometric.authenticate(reason: "Unlock Sierra")
-            // Success - dismiss lock screen
+            try await AuthManager.shared.finalizeBiometricUnlockAndReload()
+            // Success - unlock after session/data recovery
             lifecycle.biometricUnlocked()
+        } catch let authError as AuthError {
+            switch authError {
+            case .sessionExpired:
+                errorMessage = authError.localizedDescription
+                AuthManager.shared.signOut()
+                lifecycle.passwordFallbackUsed()
+            default:
+                errorMessage = authError.localizedDescription
+                showTryAgain = true
+            }
         } catch let error as BiometricError {
             switch error {
             case .userCancelled:

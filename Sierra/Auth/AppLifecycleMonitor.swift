@@ -27,6 +27,8 @@ final class AppLifecycleMonitor {
         switch phase {
         case .background:
             backgroundedAt = Date()
+            // Persist latest Supabase session for reliable biometric restore.
+            Task { await SupabaseManager.persistCurrentSessionSnapshot() }
 
         case .active:
             guard AuthManager.shared.isAuthenticated else {

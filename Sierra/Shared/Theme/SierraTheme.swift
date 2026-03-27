@@ -65,7 +65,7 @@ public enum SierraTheme {
         /// #F59E0B - expiring docs, pending approval, in-maintenance
         public static var warning: Color { SierraAccessibilityPalette.warning }
         /// #EF4444 - destructive buttons, expired docs, cancelled, failed inspection
-        public static let danger       = Color("Danger")
+        public static var danger: Color { SierraAccessibilityPalette.danger }
         /// #3B82F6 - informational states, scheduled/pending trip
         public static var info: Color { SierraAccessibilityPalette.info }
 
@@ -161,7 +161,7 @@ extension Color {
     /// Expiring docs, pending review, in-maintenance
     static var statusWarning: Color { SierraTheme.Colors.warning }
     /// Cancelled, expired, emergency, breakdown
-    static let statusDanger    = SierraTheme.Colors.danger
+    static var statusDanger: Color { SierraTheme.Colors.danger }
     /// Trip completed, resolved
     static let statusCompleted = Color.secondary
 
@@ -190,27 +190,27 @@ extension Color {
 extension TripPriority {
     var color: Color {
         switch self {
-        case .urgent: return Color(red: 0.85, green: 0.18, blue: 0.15)
+        case .urgent: return SierraTheme.Colors.danger
         case .high:   return Color.appOrange
-        case .normal: return Color(red: 0.20, green: 0.50, blue: 0.90)
+        case .normal: return SierraTheme.Colors.info
         case .low:    return Color.appTextSecondary
         }
     }
 
     var bgColor: Color {
         switch self {
-        case .urgent: return Color(red: 0.85, green: 0.18, blue: 0.15).opacity(0.10)
+        case .urgent: return SierraTheme.Colors.danger.opacity(0.10)
         case .high:   return Color.appOrange.opacity(0.10)
-        case .normal: return Color(red: 0.20, green: 0.50, blue: 0.90).opacity(0.10)
+        case .normal: return SierraTheme.Colors.info.opacity(0.10)
         case .low:    return Color.appTextSecondary.opacity(0.10)
         }
     }
 
     var borderColor: Color {
         switch self {
-        case .urgent: return Color(red: 0.85, green: 0.18, blue: 0.15).opacity(0.35)
+        case .urgent: return SierraTheme.Colors.danger.opacity(0.35)
         case .high:   return Color.appOrange.opacity(0.35)
-        case .normal: return Color(red: 0.20, green: 0.50, blue: 0.90).opacity(0.35)
+        case .normal: return SierraTheme.Colors.info.opacity(0.35)
         case .low:    return Color.appTextSecondary.opacity(0.35)
         }
     }

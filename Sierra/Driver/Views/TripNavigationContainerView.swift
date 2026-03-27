@@ -175,10 +175,11 @@ struct TripNavigationContainerView: View {
         .task {
             while !Task.isCancelled {
                 if canStartLiveNavigation, coordinator.hasRenderableRoute, coordinator.hasConfirmedRouteSelection {
+                    print("[NAV-DEBUG] Auto-start: canStartLiveNavigation=true, hasRoute=true, confirmed=true → starting tracking")
                     startTracking()
                     break
                 }
-                try? await Task.sleep(nanoseconds: 30_000_000_000)
+                try? await Task.sleep(nanoseconds: 500_000_000)  // 0.5s poll, was 30s
             }
         }
         .onDisappear { coordinator.stopLocationPublishing(); VoiceNavigationService.shared.stop() }

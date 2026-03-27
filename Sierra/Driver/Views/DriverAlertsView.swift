@@ -5,6 +5,7 @@ import SwiftUI
 struct DriverAlertsView: View {
 
     @Environment(AppDataStore.self) private var store
+    @State private var searchText = ""
     @State private var showClearConfirm = false
     @State private var isClearing = false
 
@@ -21,25 +22,32 @@ struct DriverAlertsView: View {
         driverNotifications.filter { !$0.isRead }.count
     }
 
+    private var filteredNotifications: [SierraNotification] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !query.isEmpty else { return driverNotifications }
+
+        return driverNotifications.filter { notification in
+            let taskId = extractTaskId(from: notification.title) ?? extractTaskId(from: notification.body) ?? ""
+            let blob = [
+                notification.title,
+                notification.body,
+                alertSubtitle(for: notification),
+                taskId
+            ]
+            .joined(separator: " ")
+            .lowercased()
+            return blob.contains(query)
+        }
+    }
+
     var body: some View {
         Group {
-            if driverNotifications.isEmpty {
-                VStack(spacing: 0) {
-                    headerBar
-                        .padding(.horizontal, 20)
-                        .padding(.top, 4)
-                    Spacer()
-                    emptyState
-                        .padding(.horizontal, 24)
-                    Spacer()
-                }
+            if filteredNotifications.isEmpty {
+                emptyState
+                    .padding(.horizontal, 24)
             } else {
                 ScrollView {
                     LazyVStack(spacing: 12) {
-                        headerBar
-                            .padding(.bottom, 6)
-
-                        // Unread badge header
                         if unreadCount > 0 {
                             HStack(spacing: 8) {
                                 Circle()
@@ -58,7 +66,7 @@ struct DriverAlertsView: View {
                             .padding(.horizontal, 4)
                         }
 
-                        ForEach(driverNotifications) { notification in
+                        ForEach(filteredNotifications) { notification in
                             alertCard(notification)
                         }
                     }
@@ -69,7 +77,27 @@ struct DriverAlertsView: View {
             }
         }
         .background(Color.appSurface.ignoresSafeArea())
-        .toolbar(.hidden, for: .navigationBar)
+        .navigationTitle("Alerts")
+        .navigationBarTitleDisplayMode(.large)
+        .searchable(text: $searchText, prompt: "Search alerts")
+        .toolbar {
+            if !driverNotifications.isEmpty {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(role: .destructive) {
+                        showClearConfirm = true
+                    } label: {
+                        if isClearing {
+                            ProgressView()
+                                .tint(.red)
+                        } else {
+                            Text("Clear")
+                                .foregroundColor(.red)
+                        }
+                    }
+                    .disabled(isClearing)
+                }
+            }
+        }
         .alert("Clear all notifications?", isPresented: $showClearConfirm) {
             Button("Cancel", role: .cancel) {}
             Button("Clear All", role: .destructive) {
@@ -81,33 +109,6 @@ struct DriverAlertsView: View {
         .refreshable {
             if let id = user?.id {
                 await store.refreshDriverData(driverId: id, force: true)
-            }
-        }
-    }
-
-    // MARK: - Alert Card
-
-    @ViewBuilder
-    private var headerBar: some View {
-        HStack {
-            Text("Notifications")
-                .font(SierraFont.scaled(30, weight: .bold, design: .rounded))
-                .foregroundColor(.appTextPrimary)
-            Spacer()
-            if !driverNotifications.isEmpty {
-                Button(role: .destructive) {
-                    showClearConfirm = true
-                } label: {
-                    if isClearing {
-                        ProgressView()
-                            .tint(.red)
-                    } else {
-                        Text("Clear")
-                            .font(SierraFont.scaled(15, weight: .semibold, design: .rounded))
-                            .foregroundColor(.red)
-                    }
-                }
-                .disabled(isClearing)
             }
         }
     }
@@ -191,7 +192,9 @@ struct DriverAlertsView: View {
             Text("No Notifications")
                 .font(SierraFont.scaled(20, weight: .bold, design: .rounded))
                 .foregroundColor(.appTextPrimary)
-            Text("You're all caught up.\nNew alerts will appear here.")
+            Text(searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                 ? "You're all caught up.\nNew alerts will appear here."
+                 : "No alerts matched your search.")
                 .font(SierraFont.scaled(14, weight: .medium, design: .rounded))
                 .foregroundColor(.appTextSecondary)
                 .multilineTextAlignment(.center)
@@ -269,6 +272,12 @@ struct DriverAlertsView: View {
         case .partsRejected:           return "shippingbox.fill"
         case .maintenanceRequest:      return "exclamationmark.triangle.fill"
         case .general:                 return "bell.fill"
+        case .preTripCompleted:        return "checkmark.circle.fill"
+        case .postTripCompleted:       return "checkmark.circle.fill"
+        case .preTripFailed:           return "xmark.octagon.fill"
+        case .postTripFailed:          return "xmark.octagon.fill"
+        case .preTripWarning:          return "exclamationmark.triangle.fill"
+        case .postTripWarning:         return "exclamationmark.triangle.fill"
         case .preInspectionReminder:   return "clock.badge.checkmark.fill"
         case .tripAcceptanceReminder:  return "hand.raised.fill"
         }
@@ -287,6 +296,12 @@ struct DriverAlertsView: View {
         case .routeDeviation, .geofenceAlert:   return .orange
         case .documentExpiry:                   return .orange
         case .general:                          return .appOrange
+        case .preTripCompleted, .postTripCompleted:
+            return .green
+        case .preTripFailed, .postTripFailed:
+            return .red
+        case .preTripWarning, .postTripWarning:
+            return .orange
         case .preInspectionReminder, .tripAcceptanceReminder:
             return .appOrange
         }

@@ -61,13 +61,21 @@ struct CreateTripView: View {
                         }
                     }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
                     if vm.currentStep == 1 && !vm.showSuccess && !vm.stops.isEmpty {
                         Button(stopEditMode == .active ? "Done" : "Reorder Stops") {
                             withAnimation(.easeInOut(duration: 0.2)) {
                                 stopEditMode = stopEditMode == .active ? .inactive : .active
                             }
                         }
+                    }
+
+                    if let action = primaryToolbarAction {
+                        Button(action.title) {
+                            action.handler()
+                        }
+                        .fontWeight(.semibold)
+                        .disabled(!action.isEnabled)
                     }
                 }
             }
@@ -76,6 +84,21 @@ struct CreateTripView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(vm.errorMessage ?? "An unknown error occurred.")
+        }
+    }
+
+    private var primaryToolbarAction: (title: String, isEnabled: Bool, handler: () -> Void)? {
+        guard !vm.showSuccess else { return nil }
+
+        switch vm.currentStep {
+        case 1:
+            return ("Next", vm.step1Valid, { withAnimation(.easeInOut) { vm.currentStep = 2 } })
+        case 2:
+            return ("Next", vm.step2Valid, { withAnimation(.easeInOut) { vm.currentStep = 3 } })
+        case 3:
+            return ("Next", vm.step3Valid, { withAnimation(.easeInOut) { vm.currentStep = 4 } })
+        default:
+            return nil
         }
     }
 
@@ -212,7 +235,7 @@ struct CreateTripView: View {
                 }
             }
             .sheet(isPresented: $vm.showDestinationSearch) {
-                AddressSearchSheet(placeholder: "Search destination address…") { result in
+                AddressSearchSheet(placeholder: "Search destination address…", showMyLocation: false) { result in
                     vm.setDestination(result)
                 }
             }
@@ -230,18 +253,6 @@ struct CreateTripView: View {
                     vm.applyRoutePins(origin: origin, destination: destination, stops: stops)
                 }
             }
-
-            Button { withAnimation(.easeInOut) { vm.currentStep = 2 } } label: {
-                HStack {
-                    Text("Next: Assign Driver")
-                    Image(systemName: "arrow.right")
-                }
-                .font(SierraFont.scaled(16, weight: .semibold)).foregroundStyle(.white)
-                .frame(maxWidth: .infinity).frame(height: 50)
-                .background(Color.orange, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            }
-            .disabled(!vm.step1Valid).opacity(vm.step1Valid ? 1 : 0.5)
-            .padding(.horizontal, 20).padding(.bottom, 12)
         }
     }
 
@@ -304,14 +315,6 @@ struct CreateTripView: View {
                     }
                 }.listStyle(.plain).scrollContentBackground(.hidden)
             }
-            Button { withAnimation(.easeInOut) { vm.currentStep = 3 } } label: {
-                HStack { Text("Next: Assign Vehicle"); Image(systemName: "arrow.right") }
-                    .font(SierraFont.scaled(16, weight: .semibold)).foregroundStyle(.white)
-                    .frame(maxWidth: .infinity).frame(height: 50)
-                    .background(Color.orange, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            }
-            .disabled(!vm.step2Valid).opacity(vm.step2Valid ? 1 : 0.5)
-            .padding(.horizontal, 20).padding(.bottom, 12)
         }
     }
 
@@ -355,14 +358,6 @@ struct CreateTripView: View {
                     }
                 }.listStyle(.plain).scrollContentBackground(.hidden)
             }
-            Button { withAnimation(.easeInOut) { vm.currentStep = 4 } } label: {
-                HStack { Text("Next: Add Geofences"); Image(systemName: "arrow.right") }
-                    .font(SierraFont.scaled(16, weight: .semibold)).foregroundStyle(.white)
-                    .frame(maxWidth: .infinity).frame(height: 50)
-                    .background(Color.orange, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            }
-            .disabled(!vm.step3Valid).opacity(vm.step3Valid ? 1 : 0.5)
-            .padding(.horizontal, 20).padding(.bottom, 12)
         }
     }
 

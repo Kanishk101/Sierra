@@ -5,7 +5,7 @@ struct TripsListView: View {
     var externalCreateTick: Int = 0
     var externalSelectedStatus: Binding<TripStatus?>? = nil
     var externalSearchText: Binding<String>? = nil
-    var usesInlineNavigationTitle: Bool = true
+    var usesInlineNavigationTitle: Bool = false
     @Environment(AppDataStore.self) private var store
     @State private var selectedStatus: TripStatus? = nil
     @State private var showCreateSheet = false
@@ -73,47 +73,48 @@ struct TripsListView: View {
             content
         } else {
             content
-                .navigationTitle("Trip")
+                .navigationTitle("Trips")
                 .navigationBarTitleDisplayMode(usesInlineNavigationTitle ? .inline : .large)
                 .toolbarBackground(.hidden, for: .navigationBar)
                 .toolbar {
-                    ToolbarItemGroup(placement: .topBarTrailing) {
-                        Button {
-                            showCreateSheet = true
-                        } label: {
-                            Image(systemName: "plus")
-                        }
-
-                        Menu {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        SierraConnectedToolbar {
                             Button {
-                                setSelectedStatus(nil)
+                                showCreateSheet = true
                             } label: {
-                                HStack {
-                                    Text("All")
-                                    if activeSelectedStatus == nil {
-                                        Spacer()
-                                        Image(systemName: "checkmark")
-                                    }
-                                }
+                                SierraToolbarIconButtonLabel(systemImage: "plus")
                             }
-                            Divider()
-                            ForEach([TripStatus.pendingAcceptance, .scheduled, .active, .completed, .cancelled], id: \.self) { status in
+                            .buttonStyle(.plain)
+
+                            SierraConnectedToolbarDivider()
+
+                            Menu {
                                 Button {
-                                    setSelectedStatus(status)
+                                    setSelectedStatus(nil)
                                 } label: {
-                                    HStack {
-                                        Text(status.rawValue)
-                                        if activeSelectedStatus == status {
-                                            Spacer()
-                                            Image(systemName: "checkmark")
-                                        }
+                                    SierraSelectionMenuRow(title: "All", isSelected: activeSelectedStatus == nil)
+                                }
+                                Divider()
+                                ForEach([TripStatus.pendingAcceptance, .scheduled, .active, .completed, .cancelled], id: \.self) { status in
+                                    Button {
+                                        setSelectedStatus(status)
+                                    } label: {
+                                        SierraSelectionMenuRow(
+                                            title: statusLabel(status),
+                                            isSelected: activeSelectedStatus == status
+                                        )
                                     }
                                 }
+                            } label: {
+                                SierraToolbarIconButtonLabel(
+                                    systemImage: activeSelectedStatus == nil
+                                        ? "line.3.horizontal.decrease.circle"
+                                        : "line.3.horizontal.decrease.circle.fill",
+                                    isActive: activeSelectedStatus != nil
+                                )
                             }
-                        } label: {
-                            Image(systemName: activeSelectedStatus == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
+                            .buttonStyle(.plain)
                         }
-                        .tint(activeSelectedStatus == nil ? .primary : .orange)
                     }
                 }
         }

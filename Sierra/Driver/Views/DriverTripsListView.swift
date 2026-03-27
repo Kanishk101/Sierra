@@ -16,8 +16,6 @@ struct DriverTripsListView: View {
     @State private var searchText = ""
     @State private var selectedStatus: TripStatus? = nil
     @State private var hasAppeared = false
-    @State private var isSearchExpanded = false
-    @FocusState private var isSearchFocused: Bool
 
     // FMS_SS overlay state
     @State private var showAcceptConfetti = false
@@ -84,11 +82,9 @@ struct DriverTripsListView: View {
 
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 14) {
-                    headerSection
-
                     statsBar
                         .padding(.horizontal, 20)
-                        .padding(.top, 2)
+                        .padding(.top, 12)
                         .opacity(hasAppeared ? 1 : 0)
                         .offset(y: hasAppeared ? 0 : -20)
 
@@ -153,8 +149,8 @@ struct DriverTripsListView: View {
                 .zIndex(260)
             }
         }
-        .navigationTitle("")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("Trips")
+        .navigationBarTitleDisplayMode(.large)
         .overlay {
             if let trip = selectedDetailTrip {
                 let vehicle: Vehicle? = {
@@ -213,6 +209,12 @@ struct DriverTripsListView: View {
         .refreshable {
             if let id = driverId { await store.refreshDriverData(driverId: id, force: true) }
         }
+        .searchable(text: $searchText, prompt: "Search task ID, origin, destination…")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                filterMenuButton
+            }
+        }
         .onAppear {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 withAnimation(.spring(response: 0.7, dampingFraction: 0.8)) {
@@ -220,76 +222,6 @@ struct DriverTripsListView: View {
                 }
             }
         }
-    }
-
-    private var headerSection: some View {
-        VStack(spacing: 10) {
-            HStack(alignment: .center) {
-                Text("All Trips")
-                    .font(SierraFont.scaled(30, weight: .bold, design: .rounded))
-                    .foregroundColor(.appTextPrimary)
-                Spacer()
-
-                HStack(spacing: 10) {
-                    Button {
-                        withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
-                            isSearchExpanded.toggle()
-                            if !isSearchExpanded { searchText = "" }
-                        }
-                        if isSearchExpanded {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-                                isSearchFocused = true
-                            }
-                        } else {
-                            isSearchFocused = false
-                        }
-                    } label: {
-                        ZStack {
-                            Circle()
-                                .fill(isSearchExpanded ? Color.appOrange.opacity(0.12) : Color.clear)
-                                .frame(width: 36, height: 36)
-                            Image(systemName: "magnifyingglass")
-                                .font(SierraFont.scaled(20, weight: .semibold))
-                                .foregroundColor(.appOrange)
-                        }
-                    }
-                    .buttonStyle(.plain)
-
-                    filterMenuButton
-                }
-            }
-
-            if isSearchExpanded {
-                HStack(spacing: 10) {
-                    Image(systemName: "magnifyingglass")
-                        .font(SierraFont.scaled(18, weight: .semibold))
-                        .foregroundColor(.appTextSecondary)
-                    TextField("Search task ID, origin…", text: $searchText)
-                        .font(SierraFont.scaled(14, weight: .medium, design: .rounded))
-                        .focused($isSearchFocused)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    if !searchText.isEmpty {
-                        Button {
-                            searchText = ""
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-                .background(
-                    RoundedRectangle(cornerRadius: 18)
-                        .fill(Color(.secondarySystemGroupedBackground))
-                )
-                .transition(.move(edge: .top).combined(with: .opacity))
-            }
-        }
-        .padding(.horizontal, 20)
-        .padding(.top, 4)
     }
 
     private var filterMenuButton: some View {
@@ -309,16 +241,11 @@ struct DriverTripsListView: View {
                 }
             }
         } label: {
-            ZStack {
-                Circle()
-                    .fill(isFilterActive ? Color.appOrange.opacity(0.12) : Color.clear)
-                    .frame(width: 36, height: 36)
-                Image(systemName: isFilterActive
-                      ? "line.3.horizontal.decrease.circle.fill"
-                      : "line.3.horizontal.decrease.circle")
-                    .font(SierraFont.scaled(20, weight: .semibold))
-                    .foregroundColor(.appOrange)
-            }
+            Image(systemName: isFilterActive
+                  ? "line.3.horizontal.decrease.circle.fill"
+                  : "line.3.horizontal.decrease.circle")
+                .font(SierraFont.scaled(18, weight: .semibold))
+                .foregroundColor(.appOrange)
         }
     }
 

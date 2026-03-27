@@ -28,6 +28,13 @@ private struct NavigationSessionSnapshot: Codable {
     let updatedAt: Date
 }
 
+private struct RouteProjection {
+    let segmentIndex: Int
+    let coordinate: CLLocationCoordinate2D
+    let fractionAlongSegment: Double
+    let distanceToRoute: Double
+}
+
 // MARK: - TripNavigationCoordinator
 // Orchestrator — delegates to RouteEngine, DeviationDetector, GeofenceMonitor.
 
@@ -255,6 +262,8 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     var isUsingStoredRouteFallback: Bool        { routeEngine.isUsingStoredRouteFallback }
     var routeEngineError: String?               { routeEngine.lastBuildError }
     var activeIncidents: [TrafficIncident]      { trafficService.activeIncidents }
+    var allSteps: [RouteEngine.NavigationStepInfo] { routeEngine.allSteps }
+    var currentStepIndex: Int                    { routeEngine.currentStepIndex }
     // Cached geofences — recomputed when route anchors or geofence dataset changes.
     private var _cachedGeofences: [Geofence]?
     private var _geofenceAnchorSignature: Int = 0
@@ -474,11 +483,21 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         return max(maxRouteProgressFraction, raw)
     }
     var hasReliableLocationFix: Bool {
-        guard let location = currentLocation else { return false }
+        guard let location = currentLocation else {
+            print("[NAV-DEBUG] hasReliableLocationFix: NO — currentLocation is nil")
+            return false
+        }
         let age = Date().timeIntervalSince(location.timestamp)
         let accuracy = location.horizontalAccuracy
-        if age > 8 { return false }
-        if accuracy <= 0 || accuracy > 35 { return false }
+        if age > 15 {
+            print("[NAV-DEBUG] hasReliableLocationFix: NO — age=\(String(format: "%.1f", age))s (>15s)")
+            return false
+        }
+        if accuracy <= 0 || accuracy > 100 {
+            print("[NAV-DEBUG] hasReliableLocationFix: NO — accuracy=\(String(format: "%.1f", accuracy))m")
+            return false
+        }
+        print("[NAV-DEBUG] hasReliableLocationFix: YES — age=\(String(format: "%.1f", age))s accuracy=\(String(format: "%.1f", accuracy))m")
         return CLLocationCoordinate2DIsValid(location.coordinate)
     }
     var locationReadinessIssue: String? {
@@ -492,10 +511,10 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
             return "Waiting for GPS fix… move to an open area and keep Sierra in foreground."
         }
         let age = Date().timeIntervalSince(location.timestamp)
-        if age > 8 {
-            return "GPS fix is stale. Waiting for a fresh location update."
+        if age > 20 {
+            return "GPS fix is stale (\(Int(age))s old). Waiting for a fresh location update."
         }
-        if location.horizontalAccuracy <= 0 || location.horizontalAccuracy > 35 {
+        if location.horizontalAccuracy <= 0 || location.horizontalAccuracy > 100 {
             return "GPS accuracy is low (\(Int(location.horizontalAccuracy))m). Waiting for a stronger fix."
         }
         return nil
@@ -515,10 +534,10 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     private var locationManager: CLLocationManager?
     private var locationPublishTimer: Timer?
     private let locationPublishInterval: TimeInterval = 5.0
-    private var currentStepIndex: Int = 0
     private var lastStepChangeLocation: CLLocation?  // ISSUE-13 FIX: hysteresis tracking
     private var lastRerouteRequestedAt: Date = .distantPast  // Fix 9: reroute cooldown
     private var lastTrafficUpdateAt: Date = .distantPast     // throttle traffic service
+    private var lastIncidentRerouteAt: Date = .distantPast   // cooldown for incident-triggered reroute
     private var didAnnounceInitialInstruction = false
     private var mapboxNavigationCancellables: Set<AnyCancellable> = []
     private var mapboxSessionRouteId: RouteId?
@@ -526,6 +545,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     private var lastSpokenInstructionText: String = ""
     private var lastBreadcrumbAppendAt: Date = .distantPast
     private var lastSnapshotPersistAt: Date = .distantPast
+    private var lastMapMatchingUpdateAt: Date = .distantPast
     private var restoredSessionSnapshot: NavigationSessionSnapshot?
     private var lastSmoothedBreadcrumbCoordinate: CLLocationCoordinate2D?
     private var lastAcceptedRawLocation: CLLocation?
@@ -537,6 +557,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     private var locationPublishFailureCount: Int = 0
     private let maxReasonableJumpSpeedMetresPerSecond: Double = 75
     private let maxBreadcrumbPoints = 6000
+    private let mapMatchingFallbackTimeout: TimeInterval = 2.5
 
     // MARK: - Init / deinit
     init(trip: Trip) {
@@ -571,23 +592,26 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
             rerouteDeferredTask?.cancel()
             rerouteDeferredTask = nil
             persistSessionSnapshotIfNeeded(force: true)
+            DeviceMotionManager.shared.stop()
         }
     }
 
     // MARK: - Route Methods
     func buildRoutes() async {
+        print("[NAV-DEBUG] buildRoutes() called — currentRoute nil?=\(routeEngine.currentRoute == nil), currentLocation=\(currentLocation?.coordinate.latitude ?? 0),\(currentLocation?.coordinate.longitude ?? 0)")
         await routeEngine.buildRoutes(trip: trip, currentLocation: currentLocation)
+        print("[NAV-DEBUG] buildRoutes() complete — hasRoute=\(routeEngine.currentRoute != nil), coords=\(routeEngine.decodedRouteCoordinates.count), error=\(routeEngine.lastBuildError ?? "none")")
         refreshStateAfterRouteBuild()
     }
     // ISSUE-19 FIX: Renamed from selectGreenRoute
     func swapAlternativeRoute() {
         routeEngine.swapAlternativeRoute()
-        currentStepIndex = 0
+        routeEngine.currentStepIndex = 0
         hasConfirmedRouteSelection = true
     }
     func selectRouteChoice(at index: Int) {
         routeEngine.selectRouteChoice(at: index)
-        currentStepIndex = 0
+        routeEngine.currentStepIndex = 0
     }
     func confirmRouteSelection() {
         hasConfirmedRouteSelection = true
@@ -755,6 +779,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
 
     private func handleMapMatchingUpdate(_ state: MapMatchingState) {
         guard let enhancedLocation = acceptLocationIfValid(state.enhancedLocation) else { return }
+        lastMapMatchingUpdateAt = Date()
         currentLocation = enhancedLocation
         appendBreadcrumbCoordinateIfNeeded(enhancedLocation.coordinate)
         advanceRouteCursorUsingLocation(enhancedLocation)
@@ -800,7 +825,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         estimatedArrivalTime = Date().addingTimeInterval(max(0, progress.durationRemaining))
 
         let legProgress = progress.currentLegProgress
-        currentStepIndex = legProgress.stepIndex
+        routeEngine.currentStepIndex = legProgress.stepIndex
         currentStepManeuver = legProgress.currentStep.maneuverType.rawValue
         routeEngine.currentStepInstruction = legProgress.currentStep.instructions
         nextStepInstruction = legProgress.upcomingStep?.instructions ?? ""
@@ -846,19 +871,23 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
 
     // MARK: - Location Manager
     func startEarlyLocationUpdates() {
-        guard locationManager == nil, !simulated else { return }
+        guard locationManager == nil, !simulated else {
+            print("[NAV-DEBUG] startEarlyLocationUpdates: SKIPPED (manager exists or simulated)")
+            return
+        }
         let manager = CLLocationManager()
         manager.delegate = self
-        manager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
-        manager.distanceFilter = 5
+        configureLocationManager(manager, forBackgroundTracking: false)
 
         let status = manager.authorizationStatus
         locationAuthorizationStatus = status
+        print("[NAV-DEBUG] startEarlyLocationUpdates: authStatus=\(status.rawValue)")
         if status == .notDetermined || status == .authorizedWhenInUse {
             manager.requestWhenInUseAuthorization()
         }
         manager.startUpdatingLocation()
         locationManager = manager
+        print("[NAV-DEBUG] startEarlyLocationUpdates: location updates started")
     }
 
     func startLocationTracking() {
@@ -867,10 +896,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
             startEarlyLocationUpdates()
         }
         guard let manager = locationManager else { return }
-        manager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
-        manager.allowsBackgroundLocationUpdates = true
-        manager.showsBackgroundLocationIndicator = true
-        manager.distanceFilter = 5
+        configureLocationManager(manager, forBackgroundTracking: true)
 
         let status = manager.authorizationStatus
         locationAuthorizationStatus = status
@@ -895,6 +921,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
 
         // GAP-1: Start traffic incident polling
         trafficService.startPolling(routeCoordinates: routeEngine.decodedRouteCoordinates)
+        DeviceMotionManager.shared.start()
         geofenceMonitor.register(
             activeGeofences,
             locationManager: manager,
@@ -906,12 +933,30 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let rawLocation = locations.last else { return }
         Task { @MainActor in
-            guard let location = self.acceptLocationIfValid(rawLocation) else { return }
+            let age = abs(rawLocation.timestamp.timeIntervalSinceNow)
+            print("[NAV-DEBUG] didUpdateLocations: lat=\(String(format: "%.6f", rawLocation.coordinate.latitude)) lon=\(String(format: "%.6f", rawLocation.coordinate.longitude)) accuracy=\(String(format: "%.1f", rawLocation.horizontalAccuracy))m age=\(String(format: "%.1f", age))s speed=\(String(format: "%.1f", rawLocation.speed))m/s")
+            guard let location = self.acceptLocationIfValid(rawLocation) else {
+                print("[NAV-DEBUG] didUpdateLocations: REJECTED by acceptLocationIfValid")
+                return
+            }
+            print("[NAV-DEBUG] didUpdateLocations: ACCEPTED — isNavCore=\(self.isUsingMapboxNavigationCore)")
             if self.isUsingMapboxNavigationCore {
-                // Preserve high-frequency breadcrumb updates while SDK drives guidance.
+                let previousLocation = self.currentLocation
+                self.currentLocation = location
+                // Compute speed (same fallback as updateLocation) so breadcrumb filter works
+                if location.speed >= 0 {
+                    self.currentSpeedKmh = location.speed * 3.6
+                } else if let prev = previousLocation {
+                    let dt = max(0.5, location.timestamp.timeIntervalSince(prev.timestamp))
+                    let dist = location.distance(from: prev)
+                    self.currentSpeedKmh = (dist / dt) * 3.6
+                }
                 self.appendBreadcrumbCoordinateIfNeeded(location.coordinate)
                 self.advanceRouteCursorUsingLocation(location)
-                self.currentLocation = location
+                let mapMatchingIsFresh = Date().timeIntervalSince(self.lastMapMatchingUpdateAt) <= self.mapMatchingFallbackTimeout
+                if !mapMatchingIsFresh {
+                    self.updateNavigationProgress(location: location)
+                }
             } else {
                 self.updateLocation(location)
             }
@@ -963,16 +1008,27 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     }
 
     private func acceptLocationIfValid(_ location: CLLocation) -> CLLocation? {
-        guard CLLocationCoordinate2DIsValid(location.coordinate) else { return nil }
-        guard location.horizontalAccuracy > 0, location.horizontalAccuracy <= 120 else { return nil }
+        guard CLLocationCoordinate2DIsValid(location.coordinate) else {
+            print("[NAV-DEBUG] acceptLocation: REJECT invalid coordinate")
+            return nil
+        }
+        guard location.horizontalAccuracy > 0, location.horizontalAccuracy <= 100 else {
+            print("[NAV-DEBUG] acceptLocation: REJECT accuracy=\(String(format: "%.1f", location.horizontalAccuracy))m (>100m or <=0)")
+            return nil
+        }
         let age = abs(location.timestamp.timeIntervalSinceNow)
-        guard age <= 10 else { return nil }
+        guard age <= 15 else {
+            print("[NAV-DEBUG] acceptLocation: REJECT age=\(String(format: "%.1f", age))s (>15s)")
+            return nil
+        }
 
         if let last = lastAcceptedRawLocation {
             let dt = max(0.2, location.timestamp.timeIntervalSince(last.timestamp))
             let dist = location.distance(from: last)
             let impliedSpeed = dist / dt
-            if dist > 120, impliedSpeed > maxReasonableJumpSpeedMetresPerSecond {
+            let accuracySlack = max(location.horizontalAccuracy, last.horizontalAccuracy)
+            if dist > max(45, accuracySlack * 1.8), impliedSpeed > maxReasonableJumpSpeedMetresPerSecond {
+                print("[NAV-DEBUG] acceptLocation: REJECT spike dist=\(String(format: "%.1f", dist))m speed=\(String(format: "%.1f", impliedSpeed))m/s")
                 return nil
             }
         }
@@ -1034,9 +1090,20 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
 
     // MARK: - Location Update
     func updateLocation(_ location: CLLocation) {
+        let previousLocation = currentLocation
         currentLocation = location
         appendBreadcrumbCoordinateIfNeeded(location.coordinate)
-        currentSpeedKmh = max(0, location.speed * 3.6)
+        // GPS speed is often -1 (unavailable); compute from distance/time as fallback
+        if location.speed >= 0 {
+            currentSpeedKmh = location.speed * 3.6
+        } else if let prev = previousLocation {
+            let dt = max(0.5, location.timestamp.timeIntervalSince(prev.timestamp))
+            let dist = location.distance(from: prev)
+            currentSpeedKmh = (dist / dt) * 3.6
+        } else {
+            currentSpeedKmh = 0
+        }
+        print("[NAV-DEBUG] updateLocation: lat=\(String(format: "%.6f", location.coordinate.latitude)) lon=\(String(format: "%.6f", location.coordinate.longitude)) speed=\(String(format: "%.1f", currentSpeedKmh))kmh gpsSpeed=\(String(format: "%.1f", location.speed))m/s breadcrumbs=\(breadcrumbCoordinates.count) routeCursor=\(routeCursorIndex)")
         let now = Date()
         if now.timeIntervalSince(lastTrafficUpdateAt) >= 15 {
             lastTrafficUpdateAt = now
@@ -1047,10 +1114,16 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         }
         checkDeviation(from: location)
 
-        // GAP-1: Auto-reroute on severe incident nearby
-        if !isUsingMapboxNavigationCore,
-           trafficService.hasSevereIncidentNearby() {
-            requestReroute(reason: "severe_incident")
+        // GAP-1: Auto-reroute on severe incident nearby (cooldown: once per 60s)
+        if trafficService.hasSevereIncidentNearby(),
+           Date().timeIntervalSince(lastIncidentRerouteAt) > 60 {
+            lastIncidentRerouteAt = Date()
+            VoiceNavigationService.shared.announce("Traffic incident ahead. Rerouting.")
+            if isUsingMapboxNavigationCore {
+                Task { @MainActor in await self.rebuildRoutes() }
+            } else {
+                requestReroute(reason: "severe_incident")
+            }
         }
     }
 
@@ -1060,62 +1133,10 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     private func updateNavigationProgress(location: CLLocation) {
         let routeCoords = routeEngine.decodedRouteCoordinates
         guard routeCoords.count >= 2 else { return }
+        guard let projection = routeProjection(for: location.coordinate, routeCoordinates: routeCoords) else { return }
+        updateRouteCursor(using: projection)
 
-        // Hybrid snap: local window for performance + global recovery when desynced.
-        let lastSegmentIndex = routeCoords.count - 2
-        let currentIndex = min(max(routeCursorIndex, 0), lastSegmentIndex)
-        let forwardStart = min(max(currentIndex - 20, 0), lastSegmentIndex)
-        let forwardEnd = min(currentIndex + 80, lastSegmentIndex)
-        let candidateRange = forwardStart...forwardEnd
-
-        let driverLat = location.coordinate.latitude
-        let driverLon = location.coordinate.longitude
-
-        let currentDist = fastSegmentDistance(
-            pLat: driverLat, pLon: driverLon,
-            aLat: routeCoords[currentIndex].latitude, aLon: routeCoords[currentIndex].longitude,
-            bLat: routeCoords[currentIndex + 1].latitude, bLon: routeCoords[currentIndex + 1].longitude
-        )
-
-        var minDist = Double.greatestFiniteMagnitude
-        var closestSegIndex = currentIndex
-        for i in candidateRange {
-            let dist = fastSegmentDistance(
-                pLat: driverLat, pLon: driverLon,
-                aLat: routeCoords[i].latitude, aLon: routeCoords[i].longitude,
-                bLat: routeCoords[i + 1].latitude, bLon: routeCoords[i + 1].longitude
-            )
-            if dist < minDist {
-                minDist = dist
-                closestSegIndex = i
-            }
-        }
-
-        if minDist > 120 {
-            // Recovery scan: catches drift where local window misses the true segment.
-            for i in 0...lastSegmentIndex {
-                let dist = fastSegmentDistance(
-                    pLat: driverLat, pLon: driverLon,
-                    aLat: routeCoords[i].latitude, aLon: routeCoords[i].longitude,
-                    bLat: routeCoords[i + 1].latitude, bLon: routeCoords[i + 1].longitude
-                )
-                if dist < minDist {
-                    minDist = dist
-                    closestSegIndex = i
-                }
-            }
-        }
-
-        if closestSegIndex >= currentIndex {
-            routeCursorIndex = closestSegIndex
-        } else {
-            let backwardJump = currentIndex - closestSegIndex
-            if backwardJump >= 6, minDist + 20 < currentDist {
-                routeCursorIndex = closestSegIndex
-            }
-        }
-
-        let remaining = cumulativeRemainingDistance(from: routeCursorIndex, driverLocation: location, routeCoords: routeCoords)
+        let remaining = cumulativeRemainingDistance(from: projection, driverLocation: location, routeCoords: routeCoords)
         routeEngine.distanceRemainingMetres = max(0, remaining)
         maxRouteProgressFraction = max(maxRouteProgressFraction, routeProgressFraction)
         Self.savePersistedProgress(maxRouteProgressFraction, for: trip.id)
@@ -1168,14 +1189,14 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
             if let shape = step.shape, let firstCoord = shape.coordinates.first {
                 let stepLoc = CLLocation(latitude: firstCoord.latitude, longitude: firstCoord.longitude)
                 let distToStep = stepLoc.distance(from: location)
-                if distToStep < 100 && idx >= currentStepIndex {
-                    let wasNewStep = idx > currentStepIndex
+                if distToStep < 100 && idx >= routeEngine.currentStepIndex {
+                    let wasNewStep = idx > routeEngine.currentStepIndex
                     // ISSUE-13 FIX: Require minimum travel distance before accepting new step
                     if wasNewStep, let lastChange = lastStepChangeLocation,
                        location.distance(from: lastChange) < TripConstants.stepChangeHysteresisMetres {
                         continue  // Too close to last step change — likely oscillation
                     }
-                    currentStepIndex = idx
+                    routeEngine.currentStepIndex = idx
                     if wasNewStep { lastStepChangeLocation = location }
                     routeEngine.currentStepInstruction = step.instructions
                     currentStepManeuver = step.maneuverType.rawValue
@@ -1374,7 +1395,7 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
             breadcrumbCoordinates = [coordinate]
             lastSmoothedBreadcrumbCoordinate = coordinate
             lastBreadcrumbAppendAt = Date()
-            persistSessionSnapshotIfNeeded()
+            print("[NAV-DEBUG] breadcrumb: FIRST point at \(String(format: "%.6f", coordinate.latitude)),\(String(format: "%.6f", coordinate.longitude))")
             return
         }
 
@@ -1388,7 +1409,6 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
             trimBreadcrumbsIfNeeded()
             lastSmoothedBreadcrumbCoordinate = adjustedCoordinate
             lastBreadcrumbAppendAt = Date()
-            persistSessionSnapshotIfNeeded()
             return
         }
 
@@ -1397,65 +1417,41 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         let distance = current.distance(from: previous)
         let now = Date()
         let elapsed = now.timeIntervalSince(lastBreadcrumbAppendAt)
-        // Keep breadcrumbs responsive at low speeds (walking/testing).
-        if distance < 0.45, elapsed < 0.35 { return }
+
+        // Minimum distance/time gate to avoid micro-jitter.
+        // 3m is tight enough for walking pace (~1.4m/s) with 1s GPS interval.
+        if distance < 3.0, elapsed < 1.5 {
+            print("[NAV-DEBUG] breadcrumb: SKIP dist=\(String(format: "%.1f", distance))m elapsed=\(String(format: "%.1f", elapsed))s (too close/recent)")
+            return
+        }
+
+        // Stationary filter: only skip when BOTH computed speed is low AND movement is tiny.
+        // Use distance/time as speed proxy since GPS speed is often unavailable (-1).
+        let computedSpeedKmh = elapsed > 0.3 ? (distance / elapsed) * 3.6 : currentSpeedKmh
+        if computedSpeedKmh < 1.0, distance < 2.0 {
+            print("[NAV-DEBUG] breadcrumb: SKIP stationary computedSpeed=\(String(format: "%.1f", computedSpeedKmh))kmh dist=\(String(format: "%.1f", distance))m")
+            return
+        }
+
         // Reject obvious GPS spikes that draw unrealistic breadcrumb jumps.
-        let speedAwareSpikeThreshold = max(35.0, currentSpeedKmh * 3.0)
-        if distance > speedAwareSpikeThreshold, elapsed < 1.8 { return }
+        let spikeSpeedRef = max(computedSpeedKmh, currentSpeedKmh)
+        let speedAwareSpikeThreshold = max(35.0, spikeSpeedRef * 3.0)
+        if distance > speedAwareSpikeThreshold, elapsed < 1.8 {
+            print("[NAV-DEBUG] breadcrumb: SKIP spike dist=\(String(format: "%.1f", distance))m threshold=\(String(format: "%.1f", speedAwareSpikeThreshold))m")
+            return
+        }
         breadcrumbCoordinates.append(adjustedCoordinate)
         trimBreadcrumbsIfNeeded()
         lastSmoothedBreadcrumbCoordinate = adjustedCoordinate
         lastBreadcrumbAppendAt = now
-        persistSessionSnapshotIfNeeded()
+        print("[NAV-DEBUG] breadcrumb: APPENDED #\(breadcrumbCoordinates.count) at \(String(format: "%.6f", adjustedCoordinate.latitude)),\(String(format: "%.6f", adjustedCoordinate.longitude)) dist=\(String(format: "%.1f", distance))m speed=\(String(format: "%.1f", computedSpeedKmh))kmh")
     }
 
     private func advanceRouteCursorUsingLocation(_ location: CLLocation) {
         let routeCoords = routeEngine.decodedRouteCoordinates
         guard routeCoords.count >= 2 else { return }
-
-        let lastSegmentIndex = routeCoords.count - 2
-        let currentIndex = min(max(routeCursorIndex, 0), lastSegmentIndex)
-        let forwardStart = min(max(currentIndex - 24, 0), lastSegmentIndex)
-        let forwardEnd = min(currentIndex + 90, lastSegmentIndex)
-
-        let lat = location.coordinate.latitude
-        let lon = location.coordinate.longitude
-
-        var bestIndex = currentIndex
-        var bestDistance = Double.greatestFiniteMagnitude
-
-        for i in forwardStart...forwardEnd {
-            let dist = fastSegmentDistance(
-                pLat: lat, pLon: lon,
-                aLat: routeCoords[i].latitude, aLon: routeCoords[i].longitude,
-                bLat: routeCoords[i + 1].latitude, bLon: routeCoords[i + 1].longitude
-            )
-            if dist < bestDistance {
-                bestDistance = dist
-                bestIndex = i
-            }
-        }
-
-        // Recovery when local window misses the actual segment.
-        if bestDistance > 75 {
-            for i in 0...lastSegmentIndex {
-                let dist = fastSegmentDistance(
-                    pLat: lat, pLon: lon,
-                    aLat: routeCoords[i].latitude, aLon: routeCoords[i].longitude,
-                    bLat: routeCoords[i + 1].latitude, bLon: routeCoords[i + 1].longitude
-                )
-                if dist < bestDistance {
-                    bestDistance = dist
-                    bestIndex = i
-                }
-            }
-        }
-
-        if bestIndex >= routeCursorIndex {
-            routeCursorIndex = min(bestIndex, routeCursorIndex + maxCursorAdvancePerTick)
-        } else if routeCursorIndex - bestIndex > 14 {
-            routeCursorIndex = bestIndex
-        }
+        guard let projection = routeProjection(for: location.coordinate, routeCoordinates: routeCoords) else { return }
+        updateRouteCursor(using: projection)
     }
 
     private var maxCursorAdvancePerTick: Int {
@@ -1520,14 +1516,24 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     private func smoothedBreadcrumbCoordinate(for raw: CLLocationCoordinate2D) -> CLLocationCoordinate2D? {
         guard let previous = lastSmoothedBreadcrumbCoordinate else { return raw }
 
+        // Increased low-speed alpha from 0.22 to 0.55 so breadcrumbs track pointer
+        // closely matching reference commit's responsive behavior.
         let alpha: Double
         switch currentSpeedKmh {
         case ..<6:
-            alpha = 0.42
+            alpha = 0.55
         case ..<25:
-            alpha = 0.50
+            alpha = 0.65
         default:
-            alpha = 0.62
+            alpha = 0.80
+        }
+
+        // FIX-4: If the new position is > 200m away, it's likely a GPS re-acquisition
+        // after a tunnel or signal loss — snap directly instead of smoothing.
+        let rawLoc = CLLocation(latitude: raw.latitude, longitude: raw.longitude)
+        let prevLoc = CLLocation(latitude: previous.latitude, longitude: previous.longitude)
+        if rawLoc.distance(from: prevLoc) > 200 {
+            return raw
         }
 
         let latitude = previous.latitude + (raw.latitude - previous.latitude) * alpha
@@ -1606,62 +1612,95 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
         for liveCoordinate: CLLocationCoordinate2D,
         routeCoordinates: [CLLocationCoordinate2D]
     ) -> (coordinate: CLLocationCoordinate2D, segmentIndex: Int)? {
+        guard let projection = routeProjection(for: liveCoordinate, routeCoordinates: routeCoordinates) else { return nil }
+        return (projection.coordinate, projection.segmentIndex)
+    }
+
+    private func configureLocationManager(_ manager: CLLocationManager, forBackgroundTracking: Bool) {
+        manager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
+        manager.distanceFilter = kCLDistanceFilterNone
+        // .otherNavigation works for both walking + driving; .automotiveNavigation
+        // aggressively throttles updates when iOS detects walking speed, causing
+        // the puck and breadcrumbs to lag behind real movement.
+        manager.activityType = .otherNavigation
+        manager.pausesLocationUpdatesAutomatically = false
+        manager.allowsBackgroundLocationUpdates = forBackgroundTracking
+        manager.showsBackgroundLocationIndicator = forBackgroundTracking
+    }
+
+    private func routeProjection(
+        for location: CLLocationCoordinate2D,
+        routeCoordinates: [CLLocationCoordinate2D]
+    ) -> RouteProjection? {
         guard routeCoordinates.count >= 2 else { return nil }
 
         let lastSegmentIndex = routeCoordinates.count - 2
         let currentIndex = min(max(routeCursorIndex, 0), lastSegmentIndex)
-        let start = min(max(currentIndex - 30, 0), lastSegmentIndex)
-        let end = min(currentIndex + 120, lastSegmentIndex)
+        let start = min(max(currentIndex - 24, 0), lastSegmentIndex)
+        let end = min(currentIndex + 90, lastSegmentIndex)
 
-        var bestSegment = currentIndex
-        var bestDistance = Double.greatestFiniteMagnitude
-        var bestProjection = routeCoordinates[currentIndex]
+        var bestProjection = projection(on: currentIndex, point: location, routeCoordinates: routeCoordinates)
 
-        for i in start...end {
-            let projection = projectedCoordinateOnSegment(
-                point: liveCoordinate,
-                a: routeCoordinates[i],
-                b: routeCoordinates[i + 1]
-            )
-            let distance = CLLocation(
-                latitude: liveCoordinate.latitude,
-                longitude: liveCoordinate.longitude
-            ).distance(from: CLLocation(
-                latitude: projection.latitude,
-                longitude: projection.longitude
-            ))
-
-            if distance < bestDistance {
-                bestDistance = distance
-                bestSegment = i
-                bestProjection = projection
-            }
-        }
-
-        if bestDistance > 120 {
-            for i in 0...lastSegmentIndex {
-                let projection = projectedCoordinateOnSegment(
-                    point: liveCoordinate,
-                    a: routeCoordinates[i],
-                    b: routeCoordinates[i + 1]
-                )
-                let distance = CLLocation(
-                    latitude: liveCoordinate.latitude,
-                    longitude: liveCoordinate.longitude
-                ).distance(from: CLLocation(
-                    latitude: projection.latitude,
-                    longitude: projection.longitude
-                ))
-
-                if distance < bestDistance {
-                    bestDistance = distance
-                    bestSegment = i
-                    bestProjection = projection
+        if start <= end {
+            for i in start...end {
+                let candidate = projection(on: i, point: location, routeCoordinates: routeCoordinates)
+                if candidate.distanceToRoute < bestProjection.distanceToRoute {
+                    bestProjection = candidate
                 }
             }
         }
 
-        return (bestProjection, bestSegment)
+        if bestProjection.distanceToRoute > 75 {
+            for i in 0...lastSegmentIndex {
+                let candidate = projection(on: i, point: location, routeCoordinates: routeCoordinates)
+                if candidate.distanceToRoute < bestProjection.distanceToRoute {
+                    bestProjection = candidate
+                }
+            }
+        }
+
+        return bestProjection
+    }
+
+    private func projection(
+        on segmentIndex: Int,
+        point: CLLocationCoordinate2D,
+        routeCoordinates: [CLLocationCoordinate2D]
+    ) -> RouteProjection {
+        let a = routeCoordinates[segmentIndex]
+        let b = routeCoordinates[segmentIndex + 1]
+        let projected = projectedCoordinateOnSegment(point: point, a: a, b: b)
+        let segmentLength = haversineDistance(
+            lat1: a.latitude, lon1: a.longitude,
+            lat2: b.latitude, lon2: b.longitude
+        )
+        let projectedDistance = haversineDistance(
+            lat1: a.latitude, lon1: a.longitude,
+            lat2: projected.latitude, lon2: projected.longitude
+        )
+        let distanceToRoute = haversineDistance(
+            lat1: point.latitude, lon1: point.longitude,
+            lat2: projected.latitude, lon2: projected.longitude
+        )
+
+        return RouteProjection(
+            segmentIndex: segmentIndex,
+            coordinate: projected,
+            fractionAlongSegment: segmentLength > 0 ? min(1, max(0, projectedDistance / segmentLength)) : 0,
+            distanceToRoute: distanceToRoute
+        )
+    }
+
+    private func updateRouteCursor(using projection: RouteProjection) {
+        if projection.segmentIndex >= routeCursorIndex {
+            routeCursorIndex = min(projection.segmentIndex, routeCursorIndex + maxCursorAdvancePerTick)
+        } else if routeCursorIndex - projection.segmentIndex > 200 {
+            // FIX-6: Only allow backward jumps when genuinely > 200 segments behind
+            // (indicating a reroute or significant course correction). The previous
+            // threshold of 14 caused cursor oscillation on roundabouts and U-turns,
+            // making the route progress bar and distance remaining jitter back and forth.
+            routeCursorIndex = projection.segmentIndex
+        }
     }
 
     private func normalizedCongestionLevels(
@@ -1712,23 +1751,20 @@ final class TripNavigationCoordinator: NSObject, CLLocationManagerDelegate {
     private var _cumulativeDistFromEnd: [Double] = []
     private var _cumulativeRouteCount: Int = 0
 
-    private func cumulativeRemainingDistance(from fromIndex: Int, driverLocation: CLLocation, routeCoords: [CLLocationCoordinate2D]) -> Double {
+    private func cumulativeRemainingDistance(from projection: RouteProjection, driverLocation: CLLocation, routeCoords: [CLLocationCoordinate2D]) -> Double {
         if _cumulativeRouteCount != routeCoords.count {
             rebuildCumulativeDistances(routeCoords)
         }
         guard !_cumulativeDistFromEnd.isEmpty else { return 0 }
-        let idx = min(max(fromIndex, 0), routeCoords.count - 1)
-        var dist: Double = 0
-        if idx + 1 < routeCoords.count {
-            dist += haversineDistance(
-                lat1: driverLocation.coordinate.latitude, lon1: driverLocation.coordinate.longitude,
-                lat2: routeCoords[idx + 1].latitude, lon2: routeCoords[idx + 1].longitude
-            )
-        }
-        if idx + 1 < _cumulativeDistFromEnd.count {
-            dist += _cumulativeDistFromEnd[idx + 1]
-        }
-        return dist
+        let idx = min(max(projection.segmentIndex, 0), routeCoords.count - 2)
+        let nextIndex = idx + 1
+        let onRouteRemaining = haversineDistance(
+            lat1: projection.coordinate.latitude, lon1: projection.coordinate.longitude,
+            lat2: routeCoords[nextIndex].latitude, lon2: routeCoords[nextIndex].longitude
+        )
+        let tailRemaining = nextIndex < _cumulativeDistFromEnd.count ? _cumulativeDistFromEnd[nextIndex] : 0
+        let snapPenalty = min(projection.distanceToRoute, 35)
+        return max(0, onRouteRemaining + tailRemaining + snapPenalty)
     }
 
     private func rebuildCumulativeDistances(_ coords: [CLLocationCoordinate2D]) {

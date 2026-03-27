@@ -68,6 +68,7 @@ struct RepairTaskListView: View {
         .background(Color.appSurface.ignoresSafeArea())
         .navigationTitle("Repairs")
         .navigationBarTitleDisplayMode(.large)
+        .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) { filterMenuButton }
         }

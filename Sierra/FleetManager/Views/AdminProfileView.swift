@@ -122,7 +122,7 @@ struct AdminProfileView: View {
                 }
             }
             .navigationTitle("Profile")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarTitleDisplayMode(.large)
             .toolbarBackground(.hidden, for: .navigationBar)
             .scrollContentBackground(.hidden)
             .background(Color(.systemGroupedBackground))

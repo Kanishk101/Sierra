@@ -125,11 +125,11 @@ struct VehicleStatusView: View {
             let expired = docs.filter { $0.isExpired }
             if !expired.isEmpty {
                 Label("\(expired.count) expired doc(s)", systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption2.weight(.bold)).foregroundStyle(.red)
+                    .font(.caption2.weight(.bold)).foregroundStyle(SierraTheme.Colors.danger)
             }
             if !expiring.isEmpty {
                 Label("\(expiring.count) expiring soon", systemImage: "clock.badge.exclamationmark")
-                    .font(.caption2.weight(.medium)).foregroundStyle(.orange)
+                    .font(.caption2.weight(.medium)).foregroundStyle(SierraTheme.Colors.warning)
             }
         }
         .padding(14)
@@ -141,11 +141,11 @@ struct VehicleStatusView: View {
 
     private func statusColor(_ s: VehicleStatus) -> Color {
         switch s {
-        case .active: return .green
-        case .idle: return .blue
-        case .busy: return .purple
-        case .inMaintenance: return .orange
-        case .outOfService: return .red
+        case .active: return SierraTheme.Colors.success
+        case .idle: return SierraTheme.Colors.info
+        case .busy: return SierraTheme.Colors.emberDark
+        case .inMaintenance: return SierraTheme.Colors.warning
+        case .outOfService: return SierraTheme.Colors.danger
         case .decommissioned: return .gray
         }
     }

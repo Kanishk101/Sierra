@@ -27,9 +27,23 @@ enum NotificationType: String, Codable, CaseIterable {
     case partsRejected           = "Parts Rejected"
     case maintenanceRequest      = "Maintenance Request"
     case general                 = "General"
+    // Inspection lifecycle
+    case preTripCompleted        = "Pre-Trip Completed"
+    case postTripCompleted       = "Post-Trip Completed"
+    case preTripFailed           = "Pre-Trip Failed"
+    case postTripFailed          = "Post-Trip Failed"
+    case preTripWarning          = "Pre-Trip Warning"
+    case postTripWarning         = "Post-Trip Warning"
     // Scheduled notifications (queued by DB trigger, delivered at scheduled_for time)
     case preInspectionReminder   = "Pre-Inspection Reminder"
     case tripAcceptanceReminder  = "Trip Acceptance Reminder"
+
+    // Graceful fallback for any future/unknown types to avoid drop on decode.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let raw = try container.decode(String.self)
+        self = NotificationType(rawValue: raw) ?? .general
+    }
 }
 
 // MARK: - SierraNotification

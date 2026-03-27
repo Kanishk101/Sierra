@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Groq Configuration
 
-private let groqAPIKey   = "groq_key"
+private let groqAPIKey   = "."
 private let groqEndpoint = URL(string: "https://api.groq.com/openai/v1/responses")!
 private let groqModel    = "llama-3.3-70b-versatile"
 

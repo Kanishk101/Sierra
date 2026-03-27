@@ -2,6 +2,7 @@ import SwiftUI
 import MapKit
 import CoreLocation
 import Combine
+import Contacts
 
 struct GeocodedAddress: Identifiable, Hashable, Codable {
     let id: UUID
@@ -98,6 +99,10 @@ struct AddressSearchSheet: View {
     @State private var isSearching = false
     @State private var debounceTask: Task<Void, Never>?
     @StateObject private var locationProvider = AddressSearchLocationProvider()
+
+    private let indiaLatitudeRange = 6.0...38.5
+    private let indiaLongitudeRange = 68.0...98.5
+    private let indiaBoundingBox = "68.0,6.0,98.5,38.5"
 
     var body: some View {
         NavigationStack {
@@ -199,12 +204,12 @@ struct AddressSearchSheet: View {
             .onChange(of: query) { _, newValue in
                 debounceTask?.cancel()
                 let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard trimmed.count >= 2 else {
+                guard trimmed.count >= 1 else {
                     results = []
                     return
                 }
                 debounceTask = Task {
-                    try? await Task.sleep(for: .milliseconds(300))
+                    try? await Task.sleep(for: .milliseconds(220))
                     guard !Task.isCancelled else { return }
                     await search(trimmed)
                 }
@@ -216,22 +221,32 @@ struct AddressSearchSheet: View {
 
     @MainActor
     private func search(_ text: String) async {
-        guard let token = Bundle.main.object(forInfoDictionaryKey: "MBXAccessToken") as? String,
-              !token.isEmpty else {
-            // Fallback to MKLocalSearch if no Mapbox token
-            await searchAppleMaps(text)
-            return
-        }
+        isSearching = true
+        defer { isSearching = false }
 
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let token = Bundle.main.object(forInfoDictionaryKey: "MBXAccessToken") as? String
+        let hasMapboxToken = (token?.isEmpty == false)
+
+        async let appleResults = searchAppleMapsResults(trimmed)
+        async let mapboxResults = hasMapboxToken ? searchMapboxResults(trimmed, token: token ?? "") : []
+
+        let merged = deduplicateResults((await mapboxResults) + (await appleResults))
+        results = Array(merged.prefix(30))
+    }
+
+    private func searchMapboxResults(_ text: String, token: String) async -> [GeocodedAddress] {
         let encoded = text.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
         var components = URLComponents(string: "https://api.mapbox.com/geocoding/v5/mapbox.places/\(encoded).json")
         var queryItems: [URLQueryItem] = [
             URLQueryItem(name: "access_token", value: token),
-            URLQueryItem(name: "limit", value: "10"),
+            URLQueryItem(name: "limit", value: "25"),
             URLQueryItem(name: "autocomplete", value: "true"),
             URLQueryItem(name: "country", value: "IN"),
+            URLQueryItem(name: "bbox", value: indiaBoundingBox),
             URLQueryItem(name: "language", value: "en"),
             URLQueryItem(name: "fuzzyMatch", value: "true"),
+            URLQueryItem(name: "routing", value: "true"),
             URLQueryItem(name: "types", value: "poi,address,place,locality,neighborhood,district,region,postcode")
         ]
         if let location = locationProvider.currentLocation {
@@ -243,71 +258,113 @@ struct AddressSearchSheet: View {
             )
         }
         components?.queryItems = queryItems
-        guard let url = components?.url else { return }
-
-        isSearching = true
-        defer { isSearching = false }
+        guard let url = components?.url else { return [] }
 
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
             let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
             let features = json?["features"] as? [[String: Any]] ?? []
 
-            results = features.compactMap { feature -> GeocodedAddress? in
+            return features.compactMap { feature -> GeocodedAddress? in
                 guard let geometry = feature["geometry"] as? [String: Any],
                       let coords = geometry["coordinates"] as? [Double],
                       coords.count >= 2 else { return nil }
+
+                let latitude = coords[1]
+                let longitude = coords[0]
+                guard isInsideIndia(latitude: latitude, longitude: longitude) else { return nil }
+
                 let placeName = feature["place_name"] as? String ?? ""
                 let text = feature["text"] as? String ?? placeName
                 return GeocodedAddress(
-                    displayName: placeName,
-                    shortName: text,
-                    latitude: coords[1],
-                    longitude: coords[0]
+                    displayName: cleanedDisplayName(placeName),
+                    shortName: cleanedShortName(text, fallback: placeName),
+                    latitude: latitude,
+                    longitude: longitude
                 )
             }
         } catch {
             print("[AddressSearch] Geocoding error: \(error)")
-            // Fallback to Apple Maps on error
-            await searchAppleMaps(text)
+            return []
         }
     }
 
     // MARK: - Apple Maps Fallback
 
-    @MainActor
-    private func searchAppleMaps(_ text: String) async {
-        isSearching = true
-        defer { isSearching = false }
-
+    private func searchAppleMapsResults(_ text: String) async -> [GeocodedAddress] {
         let request = MKLocalSearch.Request()
         request.naturalLanguageQuery = text
         request.region = MKCoordinateRegion(
             center: CLLocationCoordinate2D(latitude: 20.5937, longitude: 78.9629),
             latitudinalMeters: 3_000_000, longitudinalMeters: 3_000_000
         )
+        request.resultTypes = [.address, .pointOfInterest]
         let search = MKLocalSearch(request: request)
         if let response = try? await search.start() {
-            results = response.mapItems
+            return response.mapItems
                 .filter { item in
                     let coordinate = item.location.coordinate
-                    return coordinate.latitude >= 6.0
-                        && coordinate.latitude <= 38.0
-                        && coordinate.longitude >= 68.0
-                        && coordinate.longitude <= 98.0
+                    return isInsideIndia(latitude: coordinate.latitude, longitude: coordinate.longitude)
                 }
                 .map { item in
                     let coordinate = item.location.coordinate
+                    let title = item.name?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let formattedAddress = item.placemark.postalAddress.map {
+                        CNPostalAddressFormatter.string(from: $0, style: .mailingAddress)
+                            .replacingOccurrences(of: "\n", with: ", ")
+                    } ?? item.placemark.title ?? title ?? "Unknown location"
+
                     return GeocodedAddress(
-                        displayName: item.name ?? "Unknown location",
-                        shortName: item.name ?? "Unknown",
+                        displayName: cleanedDisplayName(formattedAddress),
+                        shortName: cleanedShortName(title, fallback: formattedAddress),
                         latitude: coordinate.latitude,
                         longitude: coordinate.longitude
                     )
                 }
+                .sorted { lhs, rhs in
+                    lhs.shortName.localizedCaseInsensitiveCompare(rhs.shortName) == .orderedAscending
+                }
         } else {
-            results = []
+            return []
         }
+    }
+
+    private func deduplicateResults(_ items: [GeocodedAddress]) -> [GeocodedAddress] {
+        var seen = Set<String>()
+        var merged: [GeocodedAddress] = []
+
+        for item in items {
+            let key = [
+                item.shortName.lowercased(),
+                item.displayName.lowercased(),
+                String(format: "%.4f", item.latitude),
+                String(format: "%.4f", item.longitude)
+            ].joined(separator: "|")
+
+            if seen.insert(key).inserted {
+                merged.append(item)
+            }
+        }
+
+        return merged
+    }
+
+    private func isInsideIndia(latitude: Double, longitude: Double) -> Bool {
+        indiaLatitudeRange.contains(latitude) && indiaLongitudeRange.contains(longitude)
+    }
+
+    private func cleanedDisplayName(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "  ", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func cleanedShortName(_ value: String?, fallback: String) -> String {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let trimmed, !trimmed.isEmpty {
+            return trimmed
+        }
+        return cleanedDisplayName(fallback.components(separatedBy: ",").first ?? fallback)
     }
 
     private func selectMyLocation() {

@@ -23,6 +23,13 @@ final class RouteEngine {
         let isGreen: Bool
     }
 
+    struct NavigationStepInfo: Identifiable {
+        let id: Int                 // step index
+        let instruction: String
+        let distance: Double        // metres
+        let maneuverType: String    // raw maneuver type
+    }
+
     private struct RouteBuildSnapshot {
         let currentRoute: MapboxDirections.Route?
         let alternativeRoute: MapboxDirections.Route?
@@ -56,6 +63,28 @@ final class RouteEngine {
     var avoidHighways: Bool = false
     var lastBuildError: String? = nil
     var isUsingStoredRouteFallback: Bool = false
+    var currentStepIndex: Int = 0
+
+    /// All steps across all legs of the current route.
+    var allSteps: [NavigationStepInfo] {
+        guard let route = currentRoute else { return [] }
+        var steps: [NavigationStepInfo] = []
+        var idx = 0
+        for leg in route.legs {
+            for step in leg.steps {
+                // Skip arrival placeholders with zero distance
+                guard !step.instructions.isEmpty else { continue }
+                steps.append(NavigationStepInfo(
+                    id: idx,
+                    instruction: step.instructions,
+                    distance: step.distance,
+                    maneuverType: step.maneuverType.rawValue
+                ))
+                idx += 1
+            }
+        }
+        return steps
+    }
 
     // MARK: - Internal State
     private(set) var decodedRouteCoordinates: [CLLocationCoordinate2D] = []
@@ -162,40 +191,42 @@ final class RouteEngine {
                 return
             }
 
-            if let fastestIndex = routes.indices.min(by: { routes[$0].expectedTravelTime < routes[$1].expectedTravelTime }) {
-                let remaining = routes.indices.filter { $0 != fastestIndex }
-                let greenIndex = remaining.min(by: { routes[$0].distance < routes[$1].distance })
-                let extras = remaining
-                    .filter { $0 != greenIndex }
-                    .sorted { routes[$0].expectedTravelTime < routes[$1].expectedTravelTime }
-                var rankedIndices: [Int] = [fastestIndex]
-                if let greenIndex {
-                    rankedIndices.append(greenIndex)
-                }
-                rankedIndices.append(contentsOf: extras)
-                rankedIndices = Array(rankedIndices.prefix(3))
+            // Select greenest (shortest distance = least fuel) as primary,
+            // fastest as secondary. SRS: "green route - consuming least fuel"
+            let greenIndex = routes.indices.min(by: { routes[$0].distance < routes[$1].distance })!
+            let remaining = routes.indices.filter { $0 != greenIndex }
+            let fastestIndex = remaining.min(by: { routes[$0].expectedTravelTime < routes[$1].expectedTravelTime })
+            let extras = remaining
+                .filter { $0 != fastestIndex }
+                .sorted { routes[$0].distance < routes[$1].distance }
 
-                routeChoices = rankedIndices.enumerated().map { _, sourceIndex in
-                    RouteChoice(
-                        route: routes[sourceIndex],
-                        sourceRouteIndex: sourceIndex,
-                        isFastest: sourceIndex == fastestIndex,
-                        isGreen: sourceIndex == greenIndex
-                    )
-                }
-                selectedChoiceIndex = 0
-                let fastest = routeChoices.first?.route ?? routes[fastestIndex]
-                latestRouteResponse = response
-                selectedRouteIndex = fastestIndex
-                currentRoute = fastest
-                isUsingStoredRouteFallback = false
-                distanceRemainingMetres = fastest.distance
-                totalRouteDistanceMetres = fastest.distance
-                estimatedArrivalTime = Date().addingTimeInterval(fastest.expectedTravelTime)
-                if let firstStep = fastest.legs.first?.steps.first { currentStepInstruction = firstStep.instructions }
-
-                alternativeRoute = routeChoices.dropFirst().first?.route
+            var rankedIndices: [Int] = [greenIndex]
+            if let fastestIndex {
+                rankedIndices.append(fastestIndex)
             }
+            rankedIndices.append(contentsOf: extras)
+            rankedIndices = Array(rankedIndices.prefix(3))
+
+            routeChoices = rankedIndices.map { sourceIndex in
+                RouteChoice(
+                    route: routes[sourceIndex],
+                    sourceRouteIndex: sourceIndex,
+                    isFastest: sourceIndex == fastestIndex,
+                    isGreen: sourceIndex == greenIndex
+                )
+            }
+            selectedChoiceIndex = 0
+            let greenRoute = routes[greenIndex]
+            latestRouteResponse = response
+            selectedRouteIndex = greenIndex
+            currentRoute = greenRoute
+            isUsingStoredRouteFallback = false
+            distanceRemainingMetres = greenRoute.distance
+            totalRouteDistanceMetres = greenRoute.distance
+            estimatedArrivalTime = Date().addingTimeInterval(greenRoute.expectedTravelTime)
+            if let firstStep = greenRoute.legs.first?.steps.first { currentStepInstruction = firstStep.instructions }
+
+            alternativeRoute = routeChoices.dropFirst().first?.route
             if let shape = currentRoute?.shape { decodedRouteCoordinates = shape.coordinates }
             if hasDeviated { hasDeviated = false }
 

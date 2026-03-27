@@ -1,5 +1,6 @@
 import SwiftUI
 import Supabase
+import CoreLocation
 
 /// HUD overlay on top of TripNavigationView.
 /// Shows instruction banner, stats, speed badge, off-route warning, and action bar.
@@ -20,6 +21,7 @@ struct NavigationHUDOverlay: View {
     @State private var endTripError: String?
     @State private var showFuelUnavailableAlert = false
     @State private var fuelUnavailableMessage = ""
+    @State private var showAllDirections = false
     #if DEBUG
     // Debug simulation state kept for developer builds, but no in-UI trigger.
     @State private var showSimPanel = false
@@ -34,6 +36,8 @@ struct NavigationHUDOverlay: View {
                 if !coordinator.currentStepInstruction.isEmpty {
                     instructionBanner
                 }
+
+                directionsPanel
 
                 Spacer()
 
@@ -162,6 +166,12 @@ struct NavigationHUDOverlay: View {
                 }
             }
             Spacer()
+
+            // Expand/collapse chevron
+            Image(systemName: showAllDirections ? "chevron.up" : "chevron.down")
+                .font(SierraFont.scaled(14, weight: .bold))
+                .foregroundColor(.white.opacity(0.5))
+                .frame(width: 28, height: 28)
         }
         .padding(18)
         .background(
@@ -177,6 +187,103 @@ struct NavigationHUDOverlay: View {
         .padding(.leading, 64)
         .padding(.trailing, 64)
         .padding(.top, 44)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                showAllDirections.toggle()
+            }
+        }
+    }
+
+    // MARK: - Expanded Directions Panel
+
+    @ViewBuilder
+    private var directionsPanel: some View {
+        let steps = coordinator.allSteps
+        let currentIdx = coordinator.currentStepIndex
+        if showAllDirections, !steps.isEmpty {
+            VStack(spacing: 0) {
+                HStack {
+                    Text("All Directions")
+                        .font(SierraFont.scaled(16, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
+                    Spacer()
+                    Text("\(steps.count) steps")
+                        .font(SierraFont.scaled(12, weight: .medium, design: .rounded))
+                        .foregroundColor(.white.opacity(0.5))
+                    Button {
+                        withAnimation(.spring(response: 0.3)) { showAllDirections = false }
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(SierraFont.scaled(20))
+                            .foregroundColor(.white.opacity(0.5))
+                    }
+                }
+                .padding(.horizontal, 18)
+                .padding(.top, 14)
+                .padding(.bottom, 8)
+
+                ScrollViewReader { proxy in
+                    ScrollView(.vertical, showsIndicators: true) {
+                        LazyVStack(spacing: 0) {
+                            ForEach(steps) { step in
+                                directionRow(step: step, isCurrent: step.id == currentIdx)
+                                    .id(step.id)
+                                if step.id != steps.last?.id {
+                                    Divider().background(Color.white.opacity(0.08))
+                                }
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 320)
+                    .onAppear {
+                        proxy.scrollTo(currentIdx, anchor: .center)
+                    }
+                    .onChange(of: currentIdx) { _, newIdx in
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            proxy.scrollTo(newIdx, anchor: .center)
+                        }
+                    }
+                }
+            }
+            .background(
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(Color(red: 0.09, green: 0.09, blue: 0.11).opacity(0.97))
+                    .shadow(color: .black.opacity(0.4), radius: 16, x: 0, y: 6)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 20)
+                    .stroke(Color.white.opacity(0.06), lineWidth: 1)
+            )
+            .padding(.horizontal, 16)
+            .transition(.move(edge: .top).combined(with: .opacity))
+        }
+    }
+
+    private func directionRow(step: RouteEngine.NavigationStepInfo, isCurrent: Bool) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: maneuverIcon(for: step.maneuverType))
+                .font(SierraFont.scaled(16, weight: .bold))
+                .foregroundColor(isCurrent ? .appOrange : .white.opacity(0.6))
+                .frame(width: 32, height: 32)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(isCurrent ? Color.appOrange.opacity(0.2) : Color.white.opacity(0.06))
+                )
+
+            Text(step.instruction)
+                .font(SierraFont.scaled(14, weight: isCurrent ? .bold : .medium, design: .rounded))
+                .foregroundColor(isCurrent ? .white : .white.opacity(0.7))
+                .lineLimit(2)
+            Spacer()
+
+            Text(formatDistance(step.distance))
+                .font(SierraFont.scaled(12, weight: .semibold, design: .rounded))
+                .foregroundColor(isCurrent ? .appOrange : .white.opacity(0.45))
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 10)
+        .background(isCurrent ? Color.appOrange.opacity(0.08) : Color.clear)
     }
 
     private func maneuverIcon(for instruction: String) -> String {
@@ -851,6 +958,13 @@ struct NavigationHUDOverlay: View {
                         body: "Trip \(coordinator.trip.taskId): \(text.prefix(100))",
                         entityType: "trip",
                         entityId: coordinator.trip.id
+                    )
+                }
+                // Inject locally so the badge appears immediately
+                if let loc = coordinator.currentLocation?.coordinate {
+                    coordinator.trafficService.addLocalIncident(
+                        description: text,
+                        coordinate: loc
                     )
                 }
                 await MainActor.run {

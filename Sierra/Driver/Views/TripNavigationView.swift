@@ -405,15 +405,21 @@ struct TripNavigationView: UIViewRepresentable {
         }
 
         private func updateBreadcrumbTrail(mapView: MapView, coordinates: [CLLocationCoordinate2D]) {
+            // High-precision hash (~0.1m) so sub-meter walking movements trigger updates.
             var hasher = Hasher()
             hasher.combine(coordinates.count)
             if let first = coordinates.first {
-                hasher.combine(Int(first.latitude * 100_000))
-                hasher.combine(Int(first.longitude * 100_000))
+                hasher.combine(Int(first.latitude * 1_000_000))
+                hasher.combine(Int(first.longitude * 1_000_000))
+            }
+            if coordinates.count > 2 {
+                let mid = coordinates[coordinates.count / 2]
+                hasher.combine(Int(mid.latitude * 1_000_000))
+                hasher.combine(Int(mid.longitude * 1_000_000))
             }
             if let last = coordinates.last {
-                hasher.combine(Int(last.latitude * 100_000))
-                hasher.combine(Int(last.longitude * 100_000))
+                hasher.combine(Int(last.latitude * 1_000_000))
+                hasher.combine(Int(last.longitude * 1_000_000))
             }
             let hash = hasher.finalize()
             guard hash != lastBreadcrumbHash else { return }

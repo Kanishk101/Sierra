@@ -22,7 +22,6 @@ struct AdminDashboardView: View {
     @State private var showCreateMaintenance = false
     @State private var vehiclesInitialSegmentMode: Int = 0
     @State private var vehiclesOpenMaintenanceTaskId: UUID?
-    @State private var staffInitialSegment: StaffTabView.StaffSegment = .drivers
 
     private var mapSearchMatches: [Vehicle] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -51,7 +50,7 @@ struct AdminDashboardView: View {
             }
 
             Tab("Staff", systemImage: "person.2.fill", value: 2) {
-                StaffTabView(initialSegment: staffInitialSegment)
+                StaffTabView()
             }
             .badge(store.pendingCount)
 
@@ -87,10 +86,6 @@ struct AdminDashboardView: View {
             vehiclesOpenMaintenanceTaskId = taskId
             vehiclesInitialSegmentMode = 1
             selectedTab = 1
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .sierraOpenStaffMaintenance)) { _ in
-            staffInitialSegment = .maintenance
-            selectedTab = 2
         }
         .onChange(of: selectedTab) { _, newValue in
             if newValue == 4 && lastContentTab == 0 {
@@ -157,12 +152,13 @@ struct AdminDashboardView: View {
                 .searchable(text: $searchText, isPresented: $isSearchPresented, prompt: "Search vehicles\u{2026}")
 
         case 2:
-            StaffTabView(
-                initialSegment: staffInitialSegment,
-                embedInParentNavigation: true,
-                externalSearchText: $searchText
-            )
-                .searchable(text: $searchText, isPresented: $isSearchPresented, prompt: "Search staff\u{2026}")
+            NavigationStack {
+                StaffTabView(
+                    embedInParentNavigation: true,
+                    externalSearchText: $searchText
+                )
+            }
+            .searchable(text: $searchText, isPresented: $isSearchPresented, prompt: "Search staff\u{2026}")
 
         case 3:
             if tripsMapSegment == 0 {
@@ -206,7 +202,7 @@ struct AdminDashboardView: View {
                     }
                     .listStyle(.insetGrouped)
                     .navigationTitle("Find on Live Map")
-                    .navigationBarTitleDisplayMode(.inline)
+                    .navigationBarTitleDisplayMode(.large)
                 }
                 .searchable(text: $searchText, isPresented: $isSearchPresented, prompt: "Find vehicle on map…")
             } else {

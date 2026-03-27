@@ -705,7 +705,44 @@ final class AuthManager {
 
     func reauthCompleted() {
         needsReauth = false
-        Task { _ = try? await supabase.auth.session }
+        Task {
+            _ = try? await supabase.auth.session
+            await SupabaseManager.persistCurrentSessionSnapshot()
+        }
+    }
+
+    /// Called after a successful biometric prompt (lock screen or quick sign-in).
+    /// Ensures JWT/session recovery is complete and forces a fresh data hydrate so
+    /// stale/expired tokens do not leave the UI partially loaded.
+    func finalizeBiometricUnlockAndReload() async throws {
+        guard let user = currentUser else {
+            throw AuthError.sessionExpired
+        }
+
+        do {
+            _ = try await SupabaseManager.ensureValidSession(expectedUserId: user.id)
+        } catch {
+            if SupabaseManager.isLikelyConnectivityError(error) {
+                throw AuthError.networkError("Network unavailable. Please reconnect and try again.")
+            }
+            if SupabaseManager.isSessionRecoveryError(error) {
+                throw AuthError.sessionExpired
+            }
+            throw AuthError.networkError(error.localizedDescription)
+        }
+
+        isAuthenticated = true
+        needsReauth = false
+        await SupabaseManager.persistCurrentSessionSnapshot()
+
+        switch user.role {
+        case .fleetManager:
+            await AppDataStore.shared.loadAll(force: true)
+        case .driver:
+            await AppDataStore.shared.refreshDriverData(driverId: user.id, force: true)
+        case .maintenancePersonnel:
+            await AppDataStore.shared.loadMaintenanceData(staffId: user.id)
+        }
     }
 
     /// One-shot read used by ContentView to present the enrollment prompt only
