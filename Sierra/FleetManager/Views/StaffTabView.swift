@@ -6,11 +6,29 @@ struct StaffTabView: View {
     @State private var selectedStaffMember: StaffMember?
     @State private var showCreateStaff = false
     @State private var selectedAvailability: StaffAvailability? = nil
+    @State private var internalSearchText = ""
+
+    var embedInParentNavigation: Bool = false
+    var externalSearchText: Binding<String>? = nil
 
     enum StaffSegment: String, CaseIterable {
         case drivers = "Drivers"
         case maintenance = "Maintenance"
         case applications = "Applications"
+    }
+
+    init(
+        initialSegment: StaffSegment = .drivers,
+        embedInParentNavigation: Bool = false,
+        externalSearchText: Binding<String>? = nil
+    ) {
+        _segment = State(initialValue: initialSegment)
+        self.embedInParentNavigation = embedInParentNavigation
+        self.externalSearchText = externalSearchText
+    }
+
+    private var activeSearchText: String {
+        externalSearchText?.wrappedValue ?? internalSearchText
     }
 
     private func staffFor(_ segment: StaffSegment) -> [StaffMember] {
@@ -19,12 +37,27 @@ struct StaffTabView: View {
             $0.role == role && $0.isApproved && $0.status != .pendingApproval
             && (selectedAvailability == nil || $0.availability == selectedAvailability)
         }.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
-        return all
+
+        let query = activeSearchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !query.isEmpty else { return all }
+        return all.filter { member in
+            member.displayName.lowercased().contains(query)
+            || member.email.lowercased().contains(query)
+        }
     }
 
     private var visibleStaff: [StaffMember] { staffFor(segment) }
     var body: some View {
-        NavigationStack {
+        Group {
+            if embedInParentNavigation {
+                content
+            } else {
+                NavigationStack { content }
+            }
+        }
+    }
+
+    private var content: some View {
             VStack(spacing: 0) {
                 headerRow
                     .padding(.horizontal, 16)
@@ -56,7 +89,6 @@ struct StaffTabView: View {
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
             }
-        }
     }
 
     private var headerRow: some View {
@@ -118,7 +150,13 @@ struct StaffTabView: View {
                 VStack(spacing: 16) {
                     Spacer(minLength: 60)
                     Image(systemName: "person.2.slash").font(SierraFont.scaled(44, weight: .light)).foregroundStyle(.secondary)
-                    Text("No \(segment.rawValue.lowercased()) yet").font(.body).foregroundStyle(.secondary)
+                    Text(
+                        activeSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            ? "No \(segment.rawValue.lowercased()) yet"
+                            : "No results for \"\(activeSearchText)\""
+                    )
+                    .font(.body)
+                    .foregroundStyle(.secondary)
                     Spacer()
                 }
                 .frame(maxWidth: .infinity)

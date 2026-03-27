@@ -46,11 +46,16 @@ enum StaffAvailability: String, CaseIterable, Codable {
 
     init(from decoder: Decoder) throws {
         let raw = try decoder.singleValueContainer().decode(String.self)
-        switch raw {
-        case "On Trip", "On Task":
+        let normalized = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch normalized {
+        case "available":
+            self = .available
+        case "busy", "on trip", "on task":
             self = .busy
+        case "unavailable":
+            self = .unavailable
         default:
-            self = StaffAvailability(rawValue: raw) ?? .busy
+            self = .busy
         }
     }
 

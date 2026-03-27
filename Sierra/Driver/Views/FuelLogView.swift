@@ -5,6 +5,7 @@ import PhotosUI
 /// Phase 11: Added OCR receipt scanning, auto-calculation, validation warnings.
 struct FuelLogView: View {
 
+    @Environment(AppDataStore.self) private var store
     @State private var vm: FuelLogViewModel
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var showCamera = false
@@ -18,6 +19,7 @@ struct FuelLogView: View {
     var body: some View {
         NavigationStack {
             Form {
+                fuelStatsSection
                 fuelDetailsSection
                 odometerSection
                 receiptSection
@@ -69,6 +71,32 @@ struct FuelLogView: View {
     }
 
     // MARK: - Sections
+
+    private var vehicleLogs: [FuelLog] {
+        store.fuelLogs
+            .filter { $0.vehicleId == vm.vehicleId }
+            .sorted { $0.loggedAt > $1.loggedAt }
+    }
+
+    private var fuelStatsSection: some View {
+        Section {
+            if let last = vehicleLogs.first {
+                statRow("Last Fill", value: dateFormatter.string(from: last.loggedAt))
+                statRow("Last Qty", value: String(format: "%.1f L", last.fuelQuantityLitres))
+                statRow("Last Total", value: "₹\(String(format: "%.0f", last.fuelCost))")
+            } else {
+                Text("No previous fuel logs for this vehicle yet.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            let monthly = vehicleLogs.filter { Calendar.current.isDate($0.loggedAt, equalTo: Date(), toGranularity: .month) }
+            statRow("This Month Logs", value: "\(monthly.count)")
+            statRow("This Month Fuel", value: String(format: "%.1f L", monthly.reduce(0) { $0 + $1.fuelQuantityLitres }))
+        } header: {
+            Label("Fuel Stats", systemImage: "chart.bar.fill")
+        }
+    }
 
     private var fuelDetailsSection: some View {
         Section {
@@ -167,5 +195,21 @@ struct FuelLogView: View {
         .background(Color.green.gradient, in: Capsule())
         .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
         .padding(.top, 8)
+    }
+
+    private func statRow(_ label: String, value: String) -> some View {
+        HStack {
+            Text(label)
+            Spacer()
+            Text(value)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var dateFormatter: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
     }
 }

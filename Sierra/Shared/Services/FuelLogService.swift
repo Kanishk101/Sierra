@@ -15,6 +15,7 @@ struct FuelLogPayload: Encodable {
     let odometerAtFill: Double
     let fuelStation: String?
     let receiptImageUrl: String?
+    let notes: String?
     let loggedAt: String
 
     enum CodingKeys: String, CodingKey {
@@ -27,6 +28,7 @@ struct FuelLogPayload: Encodable {
         case odometerAtFill     = "odometer_at_fill"
         case fuelStation        = "fuel_station"
         case receiptImageUrl    = "receipt_image_url"
+        case notes              = "fuel_notes"
         case loggedAt           = "logged_at"
     }
 
@@ -42,6 +44,7 @@ struct FuelLogPayload: Encodable {
         self.odometerAtFill     = log.odometerAtFill
         self.fuelStation        = log.fuelStation
         self.receiptImageUrl    = log.receiptImageUrl
+        self.notes              = log.notes
         self.loggedAt           = fmt.string(from: log.loggedAt)
     }
 }

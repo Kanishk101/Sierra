@@ -21,6 +21,9 @@ final class AuthManagerOTPVerificationService: OTPVerificationServiceProtocol {
     // MARK: - sendOTP
 
     func sendOTP(context: TwoFactorContext) async throws -> OTPSendResult {
+#if DEBUG
+        print("🛡️ [OTPService] sendOTP() | userID=\(context.userID) destination=\(context.maskedDestination)")
+#endif
         // OTP was pre-generated in LoginViewModel.signIn() before screen appeared.
         // Do NOT call generateOTP() again — it would overwrite the already-sent OTP.
         guard AuthManager.shared.currentUser != nil else { throw AuthError.userNotFound }
@@ -35,8 +38,14 @@ final class AuthManagerOTPVerificationService: OTPVerificationServiceProtocol {
     // MARK: - verifyOTP
 
     func verifyOTP(code: String, context: TwoFactorContext) async throws -> OTPVerifyResult {
+#if DEBUG
+        print("🛡️ [OTPService] verifyOTP() | entered=\(code) attemptsUsed=\(attemptsUsed) lockedUntil=\(String(describing: lockedUntil)) userID=\(context.userID)")
+#endif
         // Check if currently locked out
         if let lockEnd = lockedUntil, Date() < lockEnd {
+#if DEBUG
+            print("🛡️ [OTPService] verifyOTP() locked until \(lockEnd)")
+#endif
             return OTPVerifyResult(
                 success: false,
                 attemptsRemaining: 0,
@@ -47,6 +56,9 @@ final class AuthManagerOTPVerificationService: OTPVerificationServiceProtocol {
         }
 
         let correct = AuthManager.shared.verifyOTP(code)
+#if DEBUG
+        print("🛡️ [OTPService] verifyOTP() comparison result correct=\(correct)")
+#endif
 
         if correct {
             attemptsUsed = 0
@@ -61,6 +73,9 @@ final class AuthManagerOTPVerificationService: OTPVerificationServiceProtocol {
         } else {
             attemptsUsed += 1
             let remaining = max(0, maxAttempts - attemptsUsed)
+#if DEBUG
+            print("🛡️ [OTPService] verifyOTP() incorrect | attemptsUsed=\(attemptsUsed) remaining=\(remaining)")
+#endif
 
             if remaining == 0 {
                 // Lock for 15 minutes after exhausting all attempts
@@ -88,12 +103,18 @@ final class AuthManagerOTPVerificationService: OTPVerificationServiceProtocol {
     // MARK: - resendOTP
 
     func resendOTP(context: TwoFactorContext) async throws -> OTPSendResult {
+#if DEBUG
+        print("🛡️ [OTPService] resendOTP() | userID=\(context.userID)")
+#endif
         guard AuthManager.shared.currentUser != nil else { throw AuthError.userNotFound }
         // Resend: generate a fresh OTP and fire a new email via the send-email edge function.
         // Also reset the attempt counter — a new code means a fresh session.
         attemptsUsed = 0
         lockedUntil = nil
         _ = AuthManager.shared.generateOTP()
+#if DEBUG
+        print("🛡️ [OTPService] resendOTP() generated new OTP and reset attempts")
+#endif
         return OTPSendResult(
             success: true,
             maskedDestination: context.maskedDestination,

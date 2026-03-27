@@ -100,6 +100,53 @@ final class AppDataStore {
         }
     }
 
+    private func auditLoadedIDs(context: String) {
+        let unknownTripDrivers = trips.filter { trip in
+            guard let idText = trip.driverId else { return false }
+            return staffMember(forIdText: idText) == nil
+        }
+        let unknownTripVehicles = trips.filter { trip in
+            guard let idText = trip.vehicleId else { return false }
+            return vehicle(forIdText: idText) == nil
+        }
+        let vehiclesWithUnknownAssignedDriver = vehicles.filter { vehicle in
+            guard let assigned = vehicle.assignedDriverId else { return false }
+            return staffMember(forIdText: assigned) == nil
+        }
+
+        if !unknownTripDrivers.isEmpty || !unknownTripVehicles.isEmpty || !vehiclesWithUnknownAssignedDriver.isEmpty {
+            print("[AppDataStore.\(context)] ID audit warnings: unknown trip drivers=\(unknownTripDrivers.count), unknown trip vehicles=\(unknownTripVehicles.count), unknown assigned drivers=\(vehiclesWithUnknownAssignedDriver.count)")
+        }
+    }
+
+    // MARK: - Timeouts to improve UX on bad networks
+
+    struct TimeoutError: Error, LocalizedError {
+        let label: String
+        let seconds: Double
+        var errorDescription: String? { "\(label) timed out after \(Int(seconds))s" }
+    }
+
+    /// Wrap a network fetch with a hard timeout to avoid long hangs on bad Wi‑Fi.
+    private func fetchWithTimeout<T>(
+        seconds: Double,
+        label: String,
+        operation: @escaping () async throws -> T
+    ) async throws -> T {
+        try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask { try await operation() }
+            group.addTask { @MainActor in
+                try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                throw TimeoutError(label: label, seconds: seconds)
+            }
+            guard let first = try await group.next() else {
+                throw TimeoutError(label: label, seconds: seconds)
+            }
+            group.cancelAll()
+            return first
+        }
+    }
+
     // MARK: - loadAll (Fleet Manager)
 
     func loadAll(force: Bool = false) async {
@@ -116,74 +163,134 @@ final class AppDataStore {
         isLoading = true
         loadError = nil
 
-        async let staffTask        = StaffMemberService.fetchAllStaffMembers()
-        async let driverProfsTask  = DriverProfileService.fetchAllDriverProfiles()
-        async let maintProfsTask   = MaintenanceProfileService.fetchAllMaintenanceProfiles()
-        async let appsTask         = StaffApplicationService.fetchAllStaffApplications()
-        async let vehiclesTask     = VehicleService.fetchAllVehicles()
-        async let partLifeTask     = VehiclePartLifeService.fetchAllProfiles()
-        async let vehicleDocsTask  = VehicleDocumentService.fetchAllVehicleDocuments()
-        async let tripsTask        = TripService.fetchAllTrips()
-        async let fuelLogsTask     = FuelLogService.fetchAllFuelLogs()
-        async let inspectionsTask  = VehicleInspectionService.fetchAllInspections()
-        async let podsTask         = ProofOfDeliveryService.fetchAllProofsOfDelivery()
-        async let alertsTask       = EmergencyAlertService.fetchAllEmergencyAlerts()
-        async let maintTasksTask   = MaintenanceTaskService.fetchAllMaintenanceTasks()
-        async let workOrdersTask   = WorkOrderService.fetchAllWorkOrders()
-        async let maintRecsTask    = MaintenanceRecordService.fetchAllMaintenanceRecords()
-        async let partsTask        = PartUsedService.fetchAllPartsUsed()
-        async let geofencesTask    = GeofenceService.fetchAllGeofences()
-        async let geoEventsTask    = GeofenceEventService.fetchAllGeofenceEvents()
-        async let activityTask     = ActivityLogService.fetchRecentLogs(limit: 100)
-        async let routeDevsTask    = RouteDeviationService.fetchAllDeviations()
-        async let sparePartsTask   = SparePartsRequestService.fetchAllSparePartsRequests()
-        async let inventoryTask    = InventoryPartService.fetchAllInventoryParts()
-
+        // Phase 1: essentials to paint UI quickly (12s cap each)
         var errors: [String] = []
-        do { staff               = try await staffTask }        catch { errors.append("staff: \(error.localizedDescription)") }
-        do { driverProfiles      = try await driverProfsTask }  catch { errors.append("driverProfiles: \(error.localizedDescription)") }
-        do { maintenanceProfiles = try await maintProfsTask }   catch { errors.append("maintenanceProfiles: \(error.localizedDescription)") }
-        do { staffApplications   = try await appsTask }         catch { errors.append("staffApplications: \(error.localizedDescription)") }
-        do {
-            vehicles = try await vehiclesTask
-            rememberVehicleCoordinateTimestamps(from: vehicles)
-        } catch {
-            errors.append("vehicles: \(error.localizedDescription)")
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { @MainActor in
+                do { self.staff = try await self.fetchWithTimeout(seconds: 12, label: "staff") { try await StaffMemberService.fetchAllStaffMembers() } }
+                catch { errors.append("staff: \(error.localizedDescription)") }
+            }
+            group.addTask { @MainActor in
+                do {
+                    self.vehicles = try await self.fetchWithTimeout(seconds: 12, label: "vehicles") { try await VehicleService.fetchAllVehicles() }
+                    self.rememberVehicleCoordinateTimestamps(from: self.vehicles)
+                } catch { errors.append("vehicles: \(error.localizedDescription)") }
+            }
+            group.addTask { @MainActor in
+                do { self.trips = try await self.fetchWithTimeout(seconds: 12, label: "trips") { try await TripService.fetchAllTrips() }; self.sortTripsByAssignmentRecency() }
+                catch { errors.append("trips: \(error.localizedDescription)") }
+            }
+            group.addTask { @MainActor in
+                do { self.maintenanceTasks = try await self.fetchWithTimeout(seconds: 12, label: "maintenanceTasks") { try await MaintenanceTaskService.fetchAllMaintenanceTasks() } }
+                catch { errors.append("maintenanceTasks: \(error.localizedDescription)") }
+            }
+            group.addTask { @MainActor in
+                do { self.driverProfiles = try await self.fetchWithTimeout(seconds: 12, label: "driverProfiles") { try await DriverProfileService.fetchAllDriverProfiles() } }
+                catch { errors.append("driverProfiles: \(error.localizedDescription)") }
+            }
+            group.addTask { @MainActor in
+                do { self.emergencyAlerts = try await self.fetchWithTimeout(seconds: 12, label: "emergencyAlerts") { try await EmergencyAlertService.fetchAllEmergencyAlerts() } }
+                catch { errors.append("emergencyAlerts: \(error.localizedDescription)") }
+            }
         }
-        do { vehiclePartLifeProfiles = try await partLifeTask } catch { errors.append("vehiclePartLifeProfiles: \(error.localizedDescription)") }
-        do { vehicleDocuments    = try await vehicleDocsTask }  catch { errors.append("vehicleDocuments: \(error.localizedDescription)") }
-        do { trips               = try await tripsTask; sortTripsByAssignmentRecency() }        catch { errors.append("trips: \(error.localizedDescription)") }
-        do { fuelLogs            = try await fuelLogsTask }     catch { errors.append("fuelLogs: \(error.localizedDescription)") }
-        do { vehicleInspections  = try await inspectionsTask }  catch { errors.append("vehicleInspections: \(error.localizedDescription)") }
-        do { proofOfDeliveries   = try await podsTask }         catch { errors.append("proofOfDeliveries: \(error.localizedDescription)") }
-        do { emergencyAlerts     = try await alertsTask }       catch { errors.append("emergencyAlerts: \(error.localizedDescription)") }
-        do { maintenanceTasks    = try await maintTasksTask }   catch { errors.append("maintenanceTasks: \(error.localizedDescription)") }
-        do { workOrders          = try await workOrdersTask }   catch { errors.append("workOrders: \(error.localizedDescription)") }
-        do { maintenanceRecords  = try await maintRecsTask }    catch { errors.append("maintenanceRecords: \(error.localizedDescription)") }
-        do { partsUsed           = try await partsTask }        catch { errors.append("partsUsed: \(error.localizedDescription)") }
-        do { geofences           = normalizeLoadedGeofences(try await geofencesTask) }    catch { errors.append("geofences: \(error.localizedDescription)") }
-        do { geofenceEvents      = try await geoEventsTask }    catch { errors.append("geofenceEvents: \(error.localizedDescription)") }
-        do { activityLogs        = try await activityTask }     catch { errors.append("activityLogs: \(error.localizedDescription)") }
-        do { routeDeviationEvents = try await routeDevsTask }   catch { errors.append("routeDeviationEvents: \(error.localizedDescription)") }
-        do { sparePartsRequests  = try await sparePartsTask }   catch { errors.append("sparePartsRequests: \(error.localizedDescription)") }
-        do { inventoryParts      = try await inventoryTask }    catch { errors.append("inventoryParts: \(error.localizedDescription)") }
 
-        if !errors.isEmpty {
-            loadError = "Partial load failure: \(errors.joined(separator: "; "))"
-            print("[AppDataStore.loadAll] Partial errors: \(errors)")
-        }
-        await refreshWorkOrderPhases()
+        // Release the loading spinner as soon as essentials are in.
         isLoading = false
+        auditLoadedIDs(context: "loadAll")
 
-        subscribeToEmergencyAlerts()
-        subscribeToStaffMemberUpdates()
-        subscribeToVehicleUpdates()
-        subscribeToVehicleLocationHistoryInserts()
-        subscribeToTripUpdates()
-        subscribeToMaintenanceRealtime(staffId: nil)
-        if let userId = AuthManager.shared.currentUser?.id {
-            await loadAndSubscribeNotifications(for: userId)
+        // Phase 2: non-critical data in background with shorter caps
+        Task { @MainActor in
+            var bgErrors: [String] = []
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask { @MainActor in
+                    do { self.maintenanceProfiles = try await self.fetchWithTimeout(seconds: 10, label: "maintenanceProfiles") { try await MaintenanceProfileService.fetchAllMaintenanceProfiles() } }
+                    catch { bgErrors.append("maintenanceProfiles: \(error.localizedDescription)") }
+                }
+                group.addTask { @MainActor in
+                    do { self.staffApplications = try await self.fetchWithTimeout(seconds: 10, label: "staffApplications") { try await StaffApplicationService.fetchAllStaffApplications() } }
+                    catch { bgErrors.append("staffApplications: \(error.localizedDescription)") }
+                }
+                group.addTask { @MainActor in
+                    do { self.vehiclePartLifeProfiles = try await self.fetchWithTimeout(seconds: 10, label: "vehiclePartLifeProfiles") { try await VehiclePartLifeService.fetchAllProfiles() } }
+                    catch { bgErrors.append("vehiclePartLifeProfiles: \(error.localizedDescription)") }
+                }
+                group.addTask { @MainActor in
+                    do { self.vehicleDocuments = try await self.fetchWithTimeout(seconds: 10, label: "vehicleDocuments") { try await VehicleDocumentService.fetchAllVehicleDocuments() } }
+                    catch { bgErrors.append("vehicleDocuments: \(error.localizedDescription)") }
+                }
+                group.addTask { @MainActor in
+                    do { self.fuelLogs = try await self.fetchWithTimeout(seconds: 10, label: "fuelLogs") { try await FuelLogService.fetchAllFuelLogs() } }
+                    catch { bgErrors.append("fuelLogs: \(error.localizedDescription)") }
+                }
+                group.addTask { @MainActor in
+                    do { self.vehicleInspections = try await self.fetchWithTimeout(seconds: 10, label: "vehicleInspections") { try await VehicleInspectionService.fetchAllInspections() } }
+                    catch { bgErrors.append("vehicleInspections: \(error.localizedDescription)") }
+                }
+                group.addTask { @MainActor in
+                    do { self.proofOfDeliveries = try await self.fetchWithTimeout(seconds: 10, label: "proofOfDeliveries") { try await ProofOfDeliveryService.fetchAllProofsOfDelivery() } }
+                    catch { bgErrors.append("proofOfDeliveries: \(error.localizedDescription)") }
+                }
+                group.addTask { @MainActor in
+                    do { self.workOrders = try await self.fetchWithTimeout(seconds: 10, label: "workOrders") { try await WorkOrderService.fetchAllWorkOrders() } }
+                    catch { bgErrors.append("workOrders: \(error.localizedDescription)") }
+                }
+                group.addTask { @MainActor in
+                    do { self.maintenanceRecords = try await self.fetchWithTimeout(seconds: 10, label: "maintenanceRecords") { try await MaintenanceRecordService.fetchAllMaintenanceRecords() } }
+                    catch { bgErrors.append("maintenanceRecords: \(error.localizedDescription)") }
+                }
+                group.addTask { @MainActor in
+                    do { self.partsUsed = try await self.fetchWithTimeout(seconds: 10, label: "partsUsed") { try await PartUsedService.fetchAllPartsUsed() } }
+                    catch { bgErrors.append("partsUsed: \(error.localizedDescription)") }
+                }
+                group.addTask { @MainActor in
+                    do { self.geofences = self.normalizeLoadedGeofences(try await self.fetchWithTimeout(seconds: 10, label: "geofences") { try await GeofenceService.fetchAllGeofences() }) }
+                    catch { bgErrors.append("geofences: \(error.localizedDescription)") }
+                }
+                group.addTask { @MainActor in
+                    do { self.geofenceEvents = try await self.fetchWithTimeout(seconds: 8, label: "geofenceEvents") { try await GeofenceEventService.fetchAllGeofenceEvents() } }
+                    catch { bgErrors.append("geofenceEvents: \(error.localizedDescription)") }
+                }
+                group.addTask { @MainActor in
+                    do { self.activityLogs = try await self.fetchWithTimeout(seconds: 8, label: "activityLogs") { try await ActivityLogService.fetchRecentLogs(limit: 100) } }
+                    catch { bgErrors.append("activityLogs: \(error.localizedDescription)") }
+                }
+                group.addTask { @MainActor in
+                    do { self.routeDeviationEvents = try await self.fetchWithTimeout(seconds: 8, label: "routeDeviationEvents") { try await RouteDeviationService.fetchAllDeviations() } }
+                    catch { bgErrors.append("routeDeviationEvents: \(error.localizedDescription)") }
+                }
+                group.addTask { @MainActor in
+                    do { self.sparePartsRequests = try await self.fetchWithTimeout(seconds: 8, label: "sparePartsRequests") { try await SparePartsRequestService.fetchAllSparePartsRequests() } }
+                    catch { bgErrors.append("sparePartsRequests: \(error.localizedDescription)") }
+                }
+                group.addTask { @MainActor in
+                    do { self.inventoryParts = try await self.fetchWithTimeout(seconds: 8, label: "inventoryParts") { try await InventoryPartService.fetchAllInventoryParts() } }
+                    catch { bgErrors.append("inventoryParts: \(error.localizedDescription)") }
+                }
+            }
+
+            let combinedErrors = errors + bgErrors
+            if !combinedErrors.isEmpty {
+                let combinedMessage = combinedErrors.joined(separator: "; ")
+                self.loadError = "Partial load failure: \(combinedMessage)"
+                print("[AppDataStore.loadAll] Partial errors: \(combinedMessage)")
+            }
+
+            self.subscribeToEmergencyAlerts()
+            self.subscribeToStaffMemberUpdates()
+            self.subscribeToVehicleUpdates()
+            self.subscribeToVehicleLocationHistoryInserts()
+            self.subscribeToTripUpdates()
+            self.subscribeToMaintenanceRealtime(staffId: nil)
+            Task { @MainActor in
+                await self.refreshWorkOrderPhases()
+            }
+            if let userId = AuthManager.shared.currentUser?.id {
+                await self.loadAndSubscribeNotifications(for: userId)
+            }
         }
+
+        // Early return; background task continues subscriptions.
+        return
     }
 
     // MARK: - loadDriverData
@@ -293,6 +400,7 @@ final class AppDataStore {
         if !errors.isEmpty {
             print("[AppDataStore.refreshAdminTripsLiveData] Partial errors: \(errors)")
         }
+        auditLoadedIDs(context: "refreshAdminTripsLiveData")
     }
 
     // MARK: - loadMaintenanceData
@@ -692,7 +800,17 @@ final class AppDataStore {
     // MARK: - Fuel Logs
 
     func addFuelLog(_ log: FuelLog) async throws {
-        try await FuelLogService.addFuelLog(log); fuelLogs.insert(log, at: 0)
+        let hasSession = await ensureAuthenticatedSession(for: "addFuelLog")
+        guard hasSession else {
+            throw NSError(
+                domain: "AppDataStore",
+                code: 401,
+                userInfo: [NSLocalizedDescriptionKey: "Your session expired. Please sign in again and retry."]
+            )
+        }
+        try await FuelLogService.addFuelLog(log)
+        fuelLogs.removeAll { $0.id == log.id }
+        fuelLogs.insert(log, at: 0)
     }
     func deleteFuelLog(id: UUID) async throws {
         try await FuelLogService.deleteFuelLog(id: id); fuelLogs.removeAll { $0.id == id }
@@ -843,16 +961,27 @@ final class AppDataStore {
     ) async throws {
         guard let taskIndex = maintenanceTasks.firstIndex(where: { $0.id == taskId }) else {
             try await MaintenanceTaskService.assignApprovedTask(taskId: taskId, assignedToId: assignedToId)
+            try? await MaintenanceTaskService.updateMaintenanceTaskStatus(id: taskId, status: .inProgress)
             return
         }
 
         let task = maintenanceTasks[taskIndex]
         try await MaintenanceTaskService.assignApprovedTask(taskId: taskId, assignedToId: assignedToId)
+        try? await MaintenanceTaskService.updateMaintenanceTaskStatus(id: taskId, status: .inProgress)
 
         maintenanceTasks[taskIndex].assignedToId = assignedToId
+        maintenanceTasks[taskIndex].status = .inProgress
         maintenanceTasks[taskIndex].updatedAt = Date()
 
-        if workOrder(forMaintenanceTask: taskId) == nil {
+        if let existingIdx = workOrders.firstIndex(where: { $0.maintenanceTaskId == taskId }) {
+            workOrders[existingIdx].assignedToId = assignedToId
+            workOrders[existingIdx].status = .inProgress
+            if workOrders[existingIdx].startedAt == nil {
+                workOrders[existingIdx].startedAt = Date()
+            }
+            workOrders[existingIdx].updatedAt = Date()
+            try? await WorkOrderService.updateWorkOrder(workOrders[existingIdx])
+        } else {
             let now = Date()
             let created = WorkOrder(
                 id: UUID(),
@@ -861,12 +990,12 @@ final class AppDataStore {
                 assignedToId: assignedToId,
                 workOrderType: task.taskType == .scheduled ? .service : .repair,
                 partsSubStatus: .none,
-                status: .open,
+                status: .inProgress,
                 repairDescription: "",
                 labourCostTotal: 0,
                 partsCostTotal: 0,
                 totalCost: 0,
-                startedAt: nil,
+                startedAt: now,
                 completedAt: nil,
                 technicianNotes: nil,
                 vinScanned: false,
@@ -1278,6 +1407,16 @@ final class AppDataStore {
 
     // MARK: - Lookup Helpers
 
+    private func canonicalUUIDText(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if let uuid = UUID(uuidString: trimmed) {
+            return uuid.uuidString.lowercased()
+        }
+        return trimmed.lowercased()
+    }
+
     func driverProfile(for staffId: UUID) -> DriverProfile? { driverProfiles.first { $0.staffMemberId == staffId } }
     func maintenanceProfile(for staffId: UUID) -> MaintenanceProfile? { maintenanceProfiles.first { $0.staffMemberId == staffId } }
     func vehicleDocuments(forVehicle vehicleId: UUID) -> [VehicleDocument] { vehicleDocuments.filter { $0.vehicleId == vehicleId } }
@@ -1300,7 +1439,15 @@ final class AppDataStore {
     func recentActivityLogs(limit: Int = 20) -> [ActivityLog] { Array(activityLogs.prefix(limit)) }
     func documentsExpiringSoon() -> [VehicleDocument] { vehicleDocuments.filter { $0.isExpiringSoon || $0.isExpired } }
     func vehicle(for id: UUID) -> Vehicle? { vehicles.first { $0.id == id } }
+    func vehicle(forIdText rawId: String?) -> Vehicle? {
+        guard let id = canonicalUUIDText(rawId) else { return nil }
+        return vehicles.first { $0.id.uuidString.lowercased() == id }
+    }
     func staffMember(for id: UUID) -> StaffMember? { staff.first { $0.id == id } }
+    func staffMember(forIdText rawId: String?) -> StaffMember? {
+        guard let id = canonicalUUIDText(rawId) else { return nil }
+        return staff.first { $0.id.uuidString.lowercased() == id }
+    }
     func trip(for id: UUID) -> Trip? { trips.first { $0.id == id } }
     func application(for staffMemberId: UUID) -> StaffApplication? {
         staffApplications.filter { $0.staffMemberId == staffMemberId }.sorted { $0.createdAt > $1.createdAt }.first

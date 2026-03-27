@@ -77,6 +77,18 @@ final class FuelLogViewModel {
     // MARK: - Submit
 
     func submit() async {
+        if AuthManager.shared.currentUser?.role == .driver {
+            guard let activeTripId = tripId else {
+                submitError = "Fuel logging is only available during an active trip."
+                return
+            }
+            if let trip = AppDataStore.shared.trips.first(where: { $0.id == activeTripId }),
+               trip.status.normalized != .active {
+                submitError = "Fuel can only be logged while the trip is Active."
+                return
+            }
+        }
+
         guard let qty = Double(quantity), qty > 0 else {
             submitError = "Please enter a valid fuel quantity."
             return
@@ -109,8 +121,23 @@ final class FuelLogViewModel {
             try await AppDataStore.shared.addFuelLog(log)
             submitSuccess = true
         } catch {
-            submitError = error.localizedDescription
+            submitError = userFriendlySubmitError(error)
         }
+    }
+
+    private func userFriendlySubmitError(_ error: Error) -> String {
+        let message = error.localizedDescription
+        let lower = message.lowercased()
+        if lower.contains("drivers must link a fuel log to an active trip") {
+            return "Fuel logging requires an active trip. Start navigation and try again."
+        }
+        if lower.contains("fuel can only be logged for an active trip") {
+            return "This trip is no longer active. Please log fuel from an active trip."
+        }
+        if lower.contains("session expired") || lower.contains("unauthorized") || lower.contains("jwt") {
+            return "Your session expired. Please sign in again and retry."
+        }
+        return message
     }
 
     // MARK: - Receipt Upload

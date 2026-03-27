@@ -43,11 +43,15 @@ final class DashboardViewModel {
     }
 
     var tripSlices: [(Double, Color)] {
+        let normalizedCounts = store.trips.reduce(into: [TripStatus: Int]()) { result, trip in
+            result[trip.status.normalized, default: 0] += 1
+        }
         let s: [(Double, Color)] = [
-            (Double(store.trips.filter { $0.status == .active }.count),    .green),
-            (Double(store.trips.filter { $0.status == .scheduled }.count), .blue),
-            (Double(store.trips.filter { $0.status == .completed }.count), Color.secondary),
-            (Double(store.trips.filter { $0.status == .cancelled }.count), .red)
+            (Double(normalizedCounts[.pendingAcceptance, default: 0]), .orange),
+            (Double(normalizedCounts[.active, default: 0]),            .green),
+            (Double(normalizedCounts[.scheduled, default: 0]),         .blue),
+            (Double(normalizedCounts[.completed, default: 0]),         Color.secondary),
+            (Double(normalizedCounts[.cancelled, default: 0]),         .red)
         ]
         return s.filter { $0.0 > 0 }
     }

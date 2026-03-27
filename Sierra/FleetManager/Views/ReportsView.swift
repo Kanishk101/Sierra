@@ -1,7 +1,5 @@
 import SwiftUI
 import Charts
-import UIKit
-import UniformTypeIdentifiers
 
 /// Full reports view with 5 paginated pages and CSV export.
 /// Safeguard 1: stats computed from AppDataStore in-memory.
@@ -20,6 +18,7 @@ struct ReportsView: View {
     @State private var currentPage = 0
     @State private var selectedRange: DateRange = .month
     @State private var selectedDriverId: UUID?
+    @State private var exportErrorMessage: String?
 
     // MARK: - AI Summary State
 
@@ -101,6 +100,52 @@ struct ReportsView: View {
     private var drivers: [StaffMember] {
         store.staff.filter { $0.role == .driver && $0.status == .active }
     }
+
+    private struct VehicleDistanceSummary: Identifiable {
+        let idText: String
+        let distance: Double
+        let trips: Int
+
+        var id: String {
+            idText.isEmpty ? "unknown" : idText
+        }
+    }
+
+    private var topVehicleDistanceSummaries: [VehicleDistanceSummary] {
+        var grouped: [String: (distance: Double, trips: Int)] = [:]
+        for trip in completedTripsInRange {
+            let key = trip.vehicleUUID?.uuidString.lowercased() ?? ""
+            let distance = (trip.endMileage ?? 0) - (trip.startMileage ?? 0)
+            var current = grouped[key] ?? (0, 0)
+            current.distance += distance
+            current.trips += 1
+            grouped[key] = current
+        }
+
+        return grouped
+            .map { key, value in
+                VehicleDistanceSummary(idText: key, distance: value.distance, trips: value.trips)
+            }
+            .sorted { $0.distance > $1.distance }
+            .prefix(5)
+            .map { $0 }
+    }
+
+    private var topVehicleSnapshot: [[String: Any]] {
+        topVehicleDistanceSummaries.map { item in
+            let name = store.vehicle(forIdText: item.idText)?.name ?? "Unknown"
+            return [
+                "vehicle": name,
+                "distance_km": Int(item.distance),
+                "trips": item.trips
+            ]
+        }
+    }
+
+    private var topChartVehicles: [Vehicle] {
+        Array(store.vehicles.sorted { $0.totalTrips > $1.totalTrips }.prefix(8))
+    }
+
     private var tripStatusBreakdown: [String: Int] {
         var active = 0
         var scheduled = 0
@@ -134,19 +179,6 @@ struct ReportsView: View {
         fleetSummaryState = .loading
 
 
-        // Build a compact data snapshot from in-memory store
-        let topVehicles = Dictionary(grouping: completedTripsInRange, by: { $0.vehicleId ?? "" })
-            .map { (id: $0.key,
-                    dist: $0.value.compactMap { t -> Double? in
-                        guard let s = t.startMileage, let e = t.endMileage else { return nil }
-                        return e - s }.reduce(0, +),
-                    trips: $0.value.count) }
-            .sorted { $0.dist > $1.dist }.prefix(5)
-            .map { item -> [String: Any] in
-                let name = store.vehicles.first(where: { $0.id.uuidString == item.id })?.name ?? "Unknown"
-                return ["vehicle": name, "distance_km": Int(item.dist), "trips": item.trips]
-            }
-
         let totalLitres = fuelLogsInRange.map(\.fuelQuantityLitres).reduce(0, +)
         let totalFuelSpend = fuelLogsInRange.map(\.fuelCost).reduce(0, +)
         let activeVehicles = store.vehicles.filter { $0.status == .active }.count
@@ -161,7 +193,7 @@ struct ReportsView: View {
             "completed_trips":     completedTripsInRange.count,
             "fuel_litres":         Int(totalLitres),
             "fuel_spend_inr":      Int(totalFuelSpend),
-            "top_vehicles_by_distance": topVehicles
+            "top_vehicles_by_distance": topVehicleSnapshot
         ]
 
         do {
@@ -221,6 +253,39 @@ struct ReportsView: View {
                     Image(systemName: "square.and.arrow.up")
                 }
             }
+            ToolbarItemGroup(placement: .bottomBar) {
+                if let exportAction = activeExportAction {
+                    Button {
+                        exportAction()
+                    } label: {
+                        Label("Export CSV", systemImage: "square.and.arrow.up")
+                    }
+                }
+                Menu {
+                    Button("Trip Report CSV") {
+                        shareCSV(generateFleetCSV(), filename: "trips_report.csv")
+                    }
+                    Button("Fuel Log CSV") {
+                        shareCSV(generateFuelCSV(), filename: "fuel_report.csv")
+                    }
+                    Button("Maintenance CSV") {
+                        shareCSV(generateMaintenanceCSV(), filename: "maintenance_report.csv")
+                    }
+                    Button("Driver Activity CSV") {
+                        shareCSV(generateDriverCSV(completedTripsInRange), filename: "driver_report.csv")
+                    }
+                } label: {
+                    Label("More Exports", systemImage: "ellipsis.circle")
+                }
+            }
+        }
+        .alert("Export Failed", isPresented: Binding(
+            get: { exportErrorMessage != nil },
+            set: { if !$0 { exportErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { exportErrorMessage = nil }
+        } message: {
+            Text(exportErrorMessage ?? "Unable to export CSV.")
         }
         .task {
             if store.trips.isEmpty || store.vehicles.isEmpty || store.maintenanceTasks.isEmpty {
@@ -290,7 +355,7 @@ struct ReportsView: View {
                 // Vehicle utilisation chart
                 if !store.vehicles.isEmpty {
                     Chart {
-                        ForEach(store.vehicles.sorted { $0.totalTrips > $1.totalTrips }.prefix(8), id: \.id) { v in
+                        ForEach(topChartVehicles, id: \.id) { v in
                             BarMark(
                                 x: .value("Vehicle", v.licensePlate),
                                 y: .value("Trips", v.totalTrips)
@@ -308,21 +373,13 @@ struct ReportsView: View {
                 // Top 5 vehicles by distance
                 VStack(alignment: .leading, spacing: 8) {
                     Text("TOP VEHICLES BY DISTANCE").font(.caption.weight(.bold)).foregroundStyle(.secondary).kerning(1)
-                    let vehicleDistances = Dictionary(grouping: completedTripsInRange, by: { $0.vehicleId ?? "" })
-                        .map { (key: $0.key, dist: $0.value.compactMap { t -> Double? in
-                            guard let s = t.startMileage, let e = t.endMileage else { return nil }
-                            return e - s
-                        }.reduce(0, +), trips: $0.value.count) }
-                        .sorted { $0.dist > $1.dist }
-                        .prefix(5)
-
-                    ForEach(Array(vehicleDistances), id: \.key) { item in
-                        let vehicle = store.vehicles.first(where: { $0.id.uuidString == item.key })
+                    ForEach(topVehicleDistanceSummaries) { item in
+                        let vehicle = store.vehicle(forIdText: item.idText)
                         HStack {
                             Text(vehicle?.name ?? "Unknown").font(.subheadline.weight(.medium))
                             Text(vehicle?.licensePlate ?? "").font(.caption).foregroundStyle(.secondary)
                             Spacer()
-                            Text("\(Int(item.dist)) km").font(.caption.weight(.bold)).foregroundStyle(.orange)
+                            Text("\(Int(item.distance)) km").font(.caption.weight(.bold)).foregroundStyle(.orange)
                             Text("· \(item.trips) trips").font(.caption2).foregroundStyle(.tertiary)
                         }
                         .padding(12)
@@ -375,7 +432,7 @@ struct ReportsView: View {
 
                 let driverTrips = selectedDriverId == nil
                     ? completedTripsInRange
-                    : completedTripsInRange.filter { $0.driverId == selectedDriverId?.uuidString }
+                    : completedTripsInRange.filter { $0.driverUUID == selectedDriverId }
 
                 // Stats row
                 HStack(spacing: 12) {
@@ -394,7 +451,7 @@ struct ReportsView: View {
                 if selectedDriverId == nil {
                     // All drivers table
                     ForEach(drivers) { d in
-                        let trips = completedTripsInRange.filter { $0.driverId == d.id.uuidString }
+                        let trips = completedTripsInRange.filter { $0.driverUUID == d.id }
                         HStack {
                             Circle()
                                 .fill(Color(.systemGray5))
@@ -678,13 +735,31 @@ struct ReportsView: View {
         .buttonStyle(.plain)
     }
 
+    private var activeExportAction: (() -> Void)? {
+        switch currentPage {
+        case 0, 1:
+            return { shareCSV(generateFleetCSV(), filename: "fleet_report.csv") }
+        case 2:
+            let trips = selectedDriverId == nil
+                ? completedTripsInRange
+                : completedTripsInRange.filter { $0.driverUUID == selectedDriverId }
+            return { shareCSV(generateDriverCSV(trips), filename: "driver_report.csv") }
+        case 3:
+            return { shareCSV(generateMaintenanceCSV(), filename: "maintenance_report.csv") }
+        case 4:
+            return { shareCSV(generateFleetCSV(), filename: "trips_report.csv") }
+        default:
+            return nil
+        }
+    }
+
     // MARK: - CSV Generators (Safeguard 3: in-memory string, shared via UIActivityViewController)
 
     private func generateFleetCSV() -> String {
         var csv = "Task ID,Driver,Vehicle Plate,Origin,Destination,Scheduled Date,Actual Start,Actual End,Distance (km),Status,Priority\n"
         for trip in tripsInRange {
-            let driver = store.staff.first(where: { $0.id.uuidString == trip.driverId })?.name ?? ""
-            let vehicle = store.vehicles.first(where: { $0.id.uuidString == (trip.vehicleId ?? "") })
+            let driver = store.staffMember(forIdText: trip.driverId)?.name ?? ""
+            let vehicle = store.vehicle(forIdText: trip.vehicleId)
             let plate = vehicle?.licensePlate ?? ""
             let dist = (trip.endMileage ?? 0) - (trip.startMileage ?? 0)
             csv += "\(csvEscape(trip.taskId)),\(csvEscape(driver)),\(csvEscape(plate)),\(csvEscape(trip.origin)),\(csvEscape(trip.destination)),\(csvDate(trip.scheduledDate)),\(csvDate(trip.actualStartDate)),\(csvDate(trip.actualEndDate)),\(Int(dist)),\(trip.status.rawValue),\(trip.priority.rawValue)\n"
@@ -729,18 +804,11 @@ struct ReportsView: View {
 
     // Safeguard 3: temp file shared via UIActivityViewController
     private func shareCSV(_ csv: String, filename: String = "report.csv") {
-        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
         do {
-            try csv.write(to: tempURL, atomically: true, encoding: .utf8)
+            try CSVExportHelper.presentShareSheet(csv: csv, filename: filename)
         } catch {
-            print("[ReportsView] CSV write error: \(error)")
-            return
+            exportErrorMessage = error.localizedDescription
         }
-        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-              let root = scene.windows.first?.rootViewController else { return }
-        let activityVC = UIActivityViewController(activityItems: [tempURL], applicationActivities: nil)
-        activityVC.popoverPresentationController?.sourceView = root.view
-        root.present(activityVC, animated: true)
     }
 }
 

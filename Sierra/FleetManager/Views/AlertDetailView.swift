@@ -12,7 +12,6 @@ struct AlertDetailView: View {
     @Environment(AppDataStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
-    @State private var showReassignment = false
     @State private var isOpeningMaintenance = false
     @State private var isDriverExpanded = true
     @State private var isVehicleExpanded = true
@@ -83,11 +82,6 @@ struct AlertDetailView: View {
             Button("OK") {}
         } message: {
             Text(errorMessage ?? "Something went wrong")
-        }
-        .sheet(isPresented: $showReassignment) {
-            if let tripId = currentAlert.tripId {
-                VehicleReassignmentSheet(tripId: tripId)
-            }
         }
     }
 
@@ -231,7 +225,20 @@ struct AlertDetailView: View {
 
     private var actions: some View {
         VStack(spacing: 12) {
-            if canOpenMaintenance {
+            if canReassignVehicle {
+                Button {
+                    routeToStaffMaintenance()
+                } label: {
+                    HStack {
+                        Image(systemName: "wrench.and.screwdriver")
+                        Text("Go to maintenance")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity).frame(height: 46)
+                    .background(SierraTheme.Colors.info, in: RoundedRectangle(cornerRadius: 12))
+                }
+            } else if canOpenMaintenance {
                 Button {
                     Task { await openLinkedMaintenanceTask() }
                 } label: {
@@ -249,22 +256,6 @@ struct AlertDetailView: View {
                     .background(SierraTheme.Colors.info, in: RoundedRectangle(cornerRadius: 12))
                 }
                 .disabled(isOpeningMaintenance)
-            }
-
-            // Vehicle reassignment for inspection failures
-            if canReassignVehicle {
-                Button {
-                    showReassignment = true
-                } label: {
-                    HStack {
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                        Text("Reassign Vehicle")
-                            .font(.subheadline.weight(.semibold))
-                    }
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity).frame(height: 46)
-                    .background(SierraTheme.Colors.ember, in: RoundedRectangle(cornerRadius: 12))
-                }
             }
         }
     }
@@ -306,6 +297,11 @@ struct AlertDetailView: View {
         }
     }
 
+    private func routeToStaffMaintenance() {
+        NotificationCenter.default.post(name: .sierraOpenStaffMaintenance, object: nil)
+        dismiss()
+    }
+
     private func infoLine(_ label: String, _ value: String) -> some View {
         HStack(alignment: .firstTextBaseline) {
             Text(label)
@@ -321,4 +317,5 @@ struct AlertDetailView: View {
 
 extension Notification.Name {
     static let sierraOpenVehicleMaintenance = Notification.Name("sierraOpenVehicleMaintenance")
+    static let sierraOpenStaffMaintenance = Notification.Name("sierraOpenStaffMaintenance")
 }

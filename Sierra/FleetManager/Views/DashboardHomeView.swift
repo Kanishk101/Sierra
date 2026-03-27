@@ -29,8 +29,8 @@ struct AnimatedCounterView: View {
         let startValue = displayedValue
         let delta = abs(value - startValue)
 
-        // Fast count-up/down that settles within ~0.45s...1.8s based on distance.
-        let duration = min(1.8, max(0.45, Double(delta) * 0.012))
+        // Keep KPI counters responsive on first load.
+        let duration = min(0.55, max(0.14, Double(delta) * 0.0035))
         let frames = max(12, Int(duration * 60))
 
         animationTask = Task { @MainActor in
@@ -38,7 +38,7 @@ struct AnimatedCounterView: View {
                 if Task.isCancelled { return }
                 let progress = Double(frame) / Double(frames)
                 displayedValue = startValue + Int((Double(value - startValue) * progress).rounded())
-                try? await Task.sleep(for: .milliseconds(16))
+                try? await Task.sleep(for: .milliseconds(12))
             }
             displayedValue = value
         }

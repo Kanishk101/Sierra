@@ -18,6 +18,8 @@ struct NavigationHUDOverlay: View {
     @State private var showIncidentBanner = true
     @State private var isEndingTrip = false
     @State private var endTripError: String?
+    @State private var showFuelUnavailableAlert = false
+    @State private var fuelUnavailableMessage = ""
     #if DEBUG
     // Debug simulation state kept for developer builds, but no in-UI trigger.
     @State private var showSimPanel = false
@@ -73,6 +75,11 @@ struct NavigationHUDOverlay: View {
                    let driverId = AuthManager.shared.currentUser?.id {
                     FuelLogView(vehicleId: vehicleId, driverId: driverId, tripId: coordinator.trip.id)
                 }
+            }
+            .alert("Fuel Log Unavailable", isPresented: $showFuelUnavailableAlert) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(fuelUnavailableMessage)
             }
 
             // Dark overlay modals
@@ -382,6 +389,17 @@ struct NavigationHUDOverlay: View {
                 showSOSAlert = true
             }
             actionButton("Fuel", icon: "fuelpump.fill", color: .appOrange) {
+                guard let vehicleIdStr = coordinator.trip.vehicleId,
+                      UUID(uuidString: vehicleIdStr) != nil else {
+                    fuelUnavailableMessage = "This trip is missing a valid vehicle assignment."
+                    showFuelUnavailableAlert = true
+                    return
+                }
+                guard AuthManager.shared.currentUser?.id != nil else {
+                    fuelUnavailableMessage = "Your session is unavailable. Please sign in again."
+                    showFuelUnavailableAlert = true
+                    return
+                }
                 showFuelLog = true
             }
             actionButton("Incident", icon: "exclamationmark.triangle.fill", color: .appOrange) {

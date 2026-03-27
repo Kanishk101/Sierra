@@ -76,7 +76,12 @@ struct MaintenanceProfileView: View {
                 }
             }
         }
-        .onAppear { isBiometricEnabled = BiometricPreference.isEnabled }
+        .onAppear {
+            isBiometricEnabled = BiometricPreference.isEnabled
+            if let currentUserId {
+                Task { await store.loadMaintenanceData(staffId: currentUserId) }
+            }
+        }
     }
 
     private var headerCard: some View {

@@ -14,6 +14,7 @@ let supabase = SupabaseClient(
             )
         )
 )
+private let supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxkcWNkbmdkbGJiaW9qbG5ibmpnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzODUzMjMsImV4cCI6MjA4ODk2MTMyM30.gQm6e-Uafm5bXfpbNEDCbl6bFgi1Cweg-tHE58nNdRE"
 
 // MARK: - SupabaseManager (Wrapper for legacy code compatibility)
 
@@ -203,6 +204,7 @@ extension SupabaseManager {
             headers: [
                 "Authorization": bearerToken,
                 "Content-Type":  "application/json",
+                "apikey":        supabaseAnonKey,
             ],
             body: body
         )
@@ -214,6 +216,7 @@ extension SupabaseManager {
             headers: [
                 "Authorization": bearerToken,
                 "Content-Type":  "application/json",
+                "apikey":        supabaseAnonKey,
             ]
         )
     }

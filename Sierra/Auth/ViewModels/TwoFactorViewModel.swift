@@ -103,6 +103,9 @@ final class TwoFactorViewModel {
     // MARK: - Actions
 
     func onAppear() {
+#if DEBUG
+        print("🛡️ [TwoFactorViewModel] onAppear – starting sendOTP for user=\(context.userID) role=\(context.role.rawValue) method=\(context.method)")
+#endif
         Task { await sendOTP() }
     }
 
@@ -114,15 +117,24 @@ final class TwoFactorViewModel {
     }
 
     func sendOTP() async {
+#if DEBUG
+        print("🛡️ [TwoFactorViewModel] sendOTP() starting | userID=\(context.userID) destination=\(context.maskedDestination)")
+#endif
         state = .sending
         isLoading = true
         do {
             let result = try await service.sendOTP(context: context)
+#if DEBUG
+            print("🛡️ [TwoFactorViewModel] sendOTP() success | expiresAt=\(result.expiresAt) cooldownUntil=\(result.cooldownUntil)")
+#endif
             state = .awaitingEntry
             isLoading = false
             startExpiryCountdown(until: result.expiresAt)
             startResendCooldown(until: result.cooldownUntil)
         } catch let authErr as AuthError {
+#if DEBUG
+            print("🛡️ [TwoFactorViewModel] sendOTP() AuthError=\(authErr)")
+#endif
             state = .idle
             isLoading = false
             switch authErr {
@@ -139,6 +151,9 @@ final class TwoFactorViewModel {
                 banner = .error("Failed to send code. Please try again.")
             }
         } catch {
+#if DEBUG
+            print("🛡️ [TwoFactorViewModel] sendOTP() unexpected error=\(error)")
+#endif
             state = .idle
             isLoading = false
             banner = .error("Failed to send code: \(error.localizedDescription)")
@@ -147,11 +162,17 @@ final class TwoFactorViewModel {
 
     func verifyCode() {
         guard isCodeComplete else { return }
+#if DEBUG
+        print("🛡️ [TwoFactorViewModel] verifyCode() starting | code=\(enteredCode) userID=\(context.userID) role=\(context.role.rawValue)")
+#endif
         state = .verifying
         isLoading = true
         Task {
             do {
                 let result = try await service.verifyOTP(code: enteredCode, context: context)
+#if DEBUG
+                print("🛡️ [TwoFactorViewModel] verifyOTP result | success=\(result.success) locked=\(result.isLocked) attemptsRemaining=\(String(describing: result.attemptsRemaining)) lockUntil=\(String(describing: result.lockUntil)) fullSessionToken length=\(result.fullSessionToken?.count ?? 0)")
+#endif
                 isLoading = false
                 if result.success {
                     expiryTimer?.cancel()
@@ -160,19 +181,31 @@ final class TwoFactorViewModel {
                         token: result.fullSessionToken ?? "",
                         role: context.role
                     )
+#if DEBUG
+                    print("🛡️ [TwoFactorViewModel] verifyCode SUCCESS | state=success, tokenSaved=\(result.fullSessionToken != nil)")
+#endif
                     onVerified?()
                 } else if result.isLocked, let lockUntil = result.lockUntil {
                     state = .locked(unlockAt: lockUntil)
                     banner = .error("Too many incorrect attempts. Account temporarily locked.")
                     startLockoutCountdown(until: lockUntil)
+#if DEBUG
+                    print("🛡️ [TwoFactorViewModel] verifyCode LOCKED until \(lockUntil)")
+#endif
                 } else {
                     let remaining = result.attemptsRemaining ?? 0
                     state = .failed(attemptsRemaining: remaining)
                     clearDigits()
                     banner = .warning("Incorrect code. \(remaining) attempt\(remaining == 1 ? "" : "s") remaining.")
+#if DEBUG
+                    print("🛡️ [TwoFactorViewModel] verifyCode FAILED | remaining=\(remaining)")
+#endif
                 }
             } catch let authErr as AuthError {
                 isLoading = false
+#if DEBUG
+                print("🛡️ [TwoFactorViewModel] verifyCode AuthError=\(authErr)")
+#endif
                 switch authErr {
                 case .otpExpired:
                     state = .expired
@@ -197,6 +230,9 @@ final class TwoFactorViewModel {
                 state = .awaitingEntry
                 isLoading = false
                 banner = .error("Verification failed: \(error.localizedDescription)")
+#if DEBUG
+                print("🛡️ [TwoFactorViewModel] verifyCode unexpected error=\(error)")
+#endif
             }
         }
     }
@@ -209,12 +245,18 @@ final class TwoFactorViewModel {
 
     func resendCode() {
         guard canResend else { return }
+#if DEBUG
+        print("🛡️ [TwoFactorViewModel] resendCode() starting for userID=\(context.userID)")
+#endif
         clearDigits()
         Task {
             state = .sending
             isLoading = true
             do {
                 let result = try await service.resendOTP(context: context)
+#if DEBUG
+                print("🛡️ [TwoFactorViewModel] resendCode() success | expiresAt=\(result.expiresAt) cooldownUntil=\(result.cooldownUntil)")
+#endif
                 state = .awaitingEntry
                 isLoading = false
                 startExpiryCountdown(until: result.expiresAt)
@@ -224,6 +266,9 @@ final class TwoFactorViewModel {
                 state = .awaitingEntry
                 isLoading = false
                 banner = .error("Could not resend code. Please try again.")
+#if DEBUG
+                print("🛡️ [TwoFactorViewModel] resendCode() error=\(error)")
+#endif
             }
         }
     }

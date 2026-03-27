@@ -204,7 +204,9 @@ struct AnalyticsDashboardView: View {
     @MainActor
     private func fetchTripOverviewSummary() async {
         tripOverviewSummaryState = .loading
-        let statusCounts = Dictionary(grouping: store.trips, by: \.status).mapValues { $0.count }
+        let statusCounts = store.trips.reduce(into: [TripStatus: Int]()) { result, trip in
+            result[trip.status.normalized, default: 0] += 1
+        }
         let snapshot: [String: Any] = [
             "total_trips": store.trips.count,
             "status_breakdown": Dictionary(uniqueKeysWithValues: statusCounts.map { ($0.key.rawValue, $0.value) })
@@ -381,13 +383,17 @@ struct AnalyticsDashboardView: View {
 
     private var tripSlices: [TripStatusSlice] {
         let statuses: [(TripStatus, Color)] = [
+            (.pendingAcceptance, .orange),
             (.active,    .green),
             (.scheduled, .blue),
             (.completed, .gray),
             (.cancelled, .red),
         ]
+        let normalizedCounts = store.trips.reduce(into: [TripStatus: Int]()) { result, trip in
+            result[trip.status.normalized, default: 0] += 1
+        }
         return statuses.compactMap { (status, color) in
-            let count = store.trips.filter { $0.status == status }.count
+            let count = normalizedCounts[status, default: 0]
             guard count > 0 else { return nil }
             return TripStatusSlice(status: status, count: count, color: color)
         }
@@ -450,8 +456,7 @@ struct AnalyticsDashboardView: View {
         let allCompleted = store.trips.filter { $0.status == .completed }
 
         var rows = drivers.compactMap { driver -> DriverActivityRow? in
-            let idStr = driver.id.uuidString
-            let dTrips = allCompleted.filter { $0.driverId == idStr }
+            let dTrips = allCompleted.filter { $0.driverUUID == driver.id }
 
             // Distance
             let totalDist = dTrips.compactMap { trip -> Double? in
@@ -1090,7 +1095,7 @@ struct AnalyticsDashboardView: View {
                     .background(Color(.secondarySystemGroupedBackground))
 
                     ForEach(drivers) { driver in
-                        let dTrips = tripsInRange.filter { $0.driverId == driver.id.uuidString }
+                        let dTrips = tripsInRange.filter { $0.driverUUID == driver.id }
                         let ratedTrips = dTrips.filter { $0.driverRating != nil }
                         let avgRating: String = {
                             guard !ratedTrips.isEmpty else { return "—" }

@@ -55,11 +55,11 @@ struct InventoryAdminView: View {
                     .padding(.top, 18)
                     .padding(.bottom, 14)
 
-                summaryRow
-                    .padding(.horizontal, 20)
+                filterChips
                     .padding(.bottom, 14)
 
-                filterChips
+                summaryRow
+                    .padding(.horizontal, 20)
                     .padding(.bottom, 14)
 
                 if store.isLoading && store.inventoryParts.isEmpty {
@@ -89,6 +89,9 @@ struct InventoryAdminView: View {
                         .padding(.top, 2)
                         .padding(.bottom, 24)
                     }
+                    .refreshable {
+                        await store.loadAll(force: true)
+                    }
                 }
             }
             .background(Color.appSurface.ignoresSafeArea())
@@ -111,9 +114,6 @@ struct InventoryAdminView: View {
                 if store.inventoryParts.isEmpty {
                     await store.loadAll()
                 }
-            }
-            .refreshable {
-                await store.loadAll(force: true)
             }
             .sheet(isPresented: $showOrderPart) {
                 InventoryPartEditorSheet(part: nil)

@@ -99,39 +99,20 @@ struct VehicleListView: View {
                 .buttonBorderShape(.circle)
 
                 Menu {
-                    Button {
-                        selectedFilter = nil
-                    } label: {
-                        Text("All")
-                    }
+                    Button { selectedFilter = nil } label: { Text("All") }
                     Divider()
                     ForEach(VehicleStatus.allCases, id: \.self) { status in
-                        Button {
-                            selectedFilter = status
-                        } label: {
-                            Text(status.rawValue)
-                        }
+                        Button { selectedFilter = status } label: { Text(status.rawValue) }
                     }
                 } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "line.3.horizontal.decrease.circle")
-                            .font(SierraFont.scaled(14, weight: .semibold))
-                        Text(vehicleFilterTitle)
-                            .font(SierraFont.scaled(13, weight: .semibold))
-                        Image(systemName: "chevron.down")
-                            .font(SierraFont.scaled(11, weight: .semibold))
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
+                    Image(systemName: "line.3.horizontal.decrease.circle")
+                        .font(.title3.weight(.semibold))
+                        .padding(10)
                 }
                 .buttonStyle(.glass)
-                .buttonBorderShape(.capsule)
+                .buttonBorderShape(.circle)
             }
         }
-    }
-
-    private var vehicleFilterTitle: String {
-        selectedFilter?.rawValue ?? "All"
     }
 
     private var vehicleList: some View {

@@ -179,9 +179,16 @@ extension StaffMemberDB {
     // Collapse legacy "On Trip" / "On Task" → .busy so the UI never sees
     // fragmented states for what is semantically the same thing.
     private func canonicalAvailability(_ raw: String) -> StaffAvailability {
-        switch raw {
-        case "On Trip", "On Task", "Busy": return .busy
-        default: return StaffAvailability(rawValue: raw) ?? .unavailable
+        let normalized = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch normalized {
+        case "available":
+            return .available
+        case "busy", "on trip", "on task":
+            return .busy
+        case "unavailable":
+            return .unavailable
+        default:
+            return .unavailable
         }
     }
 }

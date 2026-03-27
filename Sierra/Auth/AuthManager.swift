@@ -57,8 +57,8 @@ final class AuthManager {
     //
     // Two-step login:
     //   1. supabase.auth.signIn() — Supabase Auth validates credentials.
-    //   2. sign-in edge function (verify_jwt: true) — fetches staff profile.
-    //      JWT payload decoded inside to get user ID — no redundant getUser() call.
+    //   2. sign-in edge function (verify_jwt: false) — fetches staff profile.
+    //      Function validates Authorization token via GoTrue getUser(token).
 
     func signIn(email: String, password: String) async throws -> UserRole {
         // Preserve resend cooldown for repeated attempts on the same account so
@@ -177,7 +177,8 @@ final class AuthManager {
 
         let profile: StaffProfile
         do {
-            profile = try await supabase.functions.invoke("sign-in", options: FunctionInvokeOptions())
+            // Use the shared edge helper to attach the bearer token and retry on 401.
+            profile = try await SupabaseManager.invokeEdgeWithSessionRecovery("sign-in")
             #if DEBUG
             let edgeFnMs = Int(Date().timeIntervalSince(edgeFnStart) * 1000)
             print("🔐 [AuthManager.signIn] ✅ T+\(t("s3ok"))ms: Edge fn succeeded in \(edgeFnMs)ms")

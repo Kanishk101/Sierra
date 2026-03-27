@@ -10,7 +10,10 @@ struct StaffDetailSheet: View {
     @State private var statusError: String?
 
     private var assignedVehicle: Vehicle? {
-        store.vehicles.first { $0.assignedDriverId == member.id.uuidString }
+        store.vehicles.first {
+            guard let assigned = $0.assignedDriverId else { return false }
+            return UUID(uuidString: assigned)?.uuidString.lowercased() == member.id.uuidString.lowercased()
+        }
     }
 
     private var activeTrip: Trip? {
