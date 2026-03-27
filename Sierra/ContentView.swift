@@ -40,6 +40,7 @@ struct ContentView: View {
             if isAuth,
                let user = authManager.currentUser,
                isDashboard(authManager.destination(for: user)),
+               authManager.consumeBiometricEnrollmentPromptFlag(),
                BiometricEnrollmentSheet.shouldPrompt() {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
                     showBiometricEnrollment = true

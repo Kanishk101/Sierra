@@ -38,6 +38,7 @@ final class AuthManager {
     var isAuthenticated: Bool = false
     var needsReauth: Bool = false
     var hasCompletedFullAuth: Bool = false
+    private(set) var shouldPresentBiometricEnrollmentAfterLogin: Bool = false
     private var currentOTP: String = ""
     private var otpGeneratedAt: Date?
     private let otpValidSeconds: TimeInterval = 600
@@ -252,6 +253,7 @@ final class AuthManager {
     func beginCredentialSignInAttempt() {
         isAuthenticated = false
         needsReauth = false
+        shouldPresentBiometricEnrollmentAfterLogin = false
         setFullAuthState(false, for: nil)
         KeychainService.delete(key: Keys.sessionToken)
     }
@@ -262,9 +264,13 @@ final class AuthManager {
     /// - Parameter markFullAuthCompleted:
     ///   Set to `true` only when the user has completed the full login chain,
     ///   including required 2FA for dashboard entry.
-    func completeAuthentication(markFullAuthCompleted: Bool = true) {
+    func completeAuthentication(
+        markFullAuthCompleted: Bool = true,
+        triggerBiometricEnrollmentPrompt: Bool = false
+    ) {
         isAuthenticated = true
         setFullAuthState(markFullAuthCompleted, for: markFullAuthCompleted ? currentUser?.id : nil)
+        shouldPresentBiometricEnrollmentAfterLogin = triggerBiometricEnrollmentPrompt
         
         saveSessionToken()
         guard let user = currentUser else { return }
@@ -302,6 +308,7 @@ final class AuthManager {
         currentUser = nil
         isAuthenticated = false
         needsReauth = false
+        shouldPresentBiometricEnrollmentAfterLogin = false
         setFullAuthState(false, for: nil)
         pendingOTPEmail = nil
         pendingResetToken = ""
@@ -315,9 +322,9 @@ final class AuthManager {
         KeychainService.delete(key: Keys.sessionToken)
         KeychainService.delete(key: Keys.backgroundTS)
         SecureSessionStore.shared.clearSupabaseSession()
-        // Biometric preference is intentionally NOT cleared on signOut —
-        // keeping it enables the biometric button to reappear on next login.
-        // See BiometricPreference.clearSessionData() for rationale.
+        // Reset biometric enrollment preference on explicit sign-out so the
+        // post-login enrollment sheet appears again on next fresh login.
+        BiometricPreference.clearSessionData()
         AppDataStore.shared.unsubscribeAll()
         Task { try? await supabase.auth.signOut() }
     }
@@ -696,6 +703,14 @@ final class AuthManager {
     func reauthCompleted() {
         needsReauth = false
         Task { _ = try? await supabase.auth.session }
+    }
+
+    /// One-shot read used by ContentView to present the enrollment prompt only
+    /// after a fully successful 2FA login.
+    func consumeBiometricEnrollmentPromptFlag() -> Bool {
+        let value = shouldPresentBiometricEnrollmentAfterLogin
+        shouldPresentBiometricEnrollmentAfterLogin = false
+        return value
     }
 }
 

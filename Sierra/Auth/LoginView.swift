@@ -57,7 +57,10 @@ struct LoginView: View {
                     service: viewModel.otpService,
                     onVerified: {
                         twoFactorRoute = nil
-                        AuthManager.shared.completeAuthentication(markFullAuthCompleted: true)
+                        AuthManager.shared.completeAuthentication(
+                            markFullAuthCompleted: true,
+                            triggerBiometricEnrollmentPrompt: true
+                        )
                     },
                     onCancelled: {
                         twoFactorRoute = nil

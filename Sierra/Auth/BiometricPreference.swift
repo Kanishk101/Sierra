@@ -33,10 +33,10 @@ enum BiometricPreference {
         }
     }
 
-    /// Called on signOut. Does NOT wipe enabled/prompted flags — the user's
-    /// preference persists across sessions deliberately so the biometric button
-    /// reappears after sign-out without requiring re-enrollment.
+    /// Called on signOut. Wipes enrollment so the post-login Face ID prompt
+    /// appears again on each fresh credential + 2FA sign-in flow.
     static func clearSessionData() {
-        // Intentionally empty. Preference is permanent until the user disables it.
+        KeychainService.delete(key: enabledKey)
+        KeychainService.delete(key: promptedKey)
     }
 }
