@@ -140,6 +140,45 @@ struct DashboardHomeView: View {
                             .presentationDetents([.large])
                             .presentationDragIndicator(.visible)
                     }
+                .toolbar {
+                    ToolbarItemGroup(placement: .topBarTrailing) {
+                        Button {
+                            showNotifications = true
+                        } label: {
+                            ZStack(alignment: .topTrailing) {
+                                Image(systemName: "bell.fill")
+                                    .font(SierraFont.scaled(15, weight: .semibold))
+                                if store.unreadNotificationCount > 0 {
+                                    Text("\(min(store.unreadNotificationCount, 9))")
+                                        .font(SierraFont.scaled(9, weight: .bold))
+                                        .foregroundStyle(.white)
+                                        .frame(width: 16, height: 16)
+                                        .background(.red, in: Circle())
+                                        .offset(x: 8, y: -8)
+                                }
+                            }
+                        }
+                        .accessibilityLabel("Notifications")
+
+                        Button {
+                            showReports = true
+                        } label: {
+                            Image(systemName: "chart.bar.doc.horizontal")
+                                .font(SierraFont.scaled(15, weight: .semibold))
+                        }
+                        .accessibilityLabel("Reports")
+
+                        Button {
+                            showProfile = true
+                        } label: {
+                            Text(adminInitials)
+                                .font(SierraFont.scaled(13, weight: .bold, design: .rounded))
+                                .frame(width: 28, height: 28)
+                                .background(Color(.secondarySystemGroupedBackground), in: Circle())
+                        }
+                        .accessibilityLabel("Profile")
+                    }
+                }
             }
         }
     }
@@ -148,59 +187,7 @@ struct DashboardHomeView: View {
         HStack {
             Text("Dashboard")
                 .font(.largeTitle.bold())
-
             Spacer()
-
-            HStack(spacing: 0) {
-                Button {
-                    showNotifications = true
-                } label: {
-                    ZStack(alignment: .topTrailing) {
-                        Image(systemName: "bell.fill")
-                            .font(SierraFont.scaled(15, weight: .semibold))
-                            .frame(width: 36, height: 32)
-                        if store.unreadNotificationCount > 0 {
-                            Text("\(min(store.unreadNotificationCount, 9))")
-                                .font(SierraFont.scaled(9, weight: .bold))
-                                .foregroundStyle(.white)
-                                .frame(width: 16, height: 16)
-                                .background(.red, in: Circle())
-                                .offset(x: 8, y: -8)
-                        }
-                    }
-                }
-                .accessibilityLabel("Notifications")
-
-                Divider()
-                    .frame(height: 20)
-                    .padding(.vertical, 6)
-
-                Button {
-                    showReports = true
-                } label: {
-                    Image(systemName: "chart.bar.doc.horizontal")
-                        .font(SierraFont.scaled(15, weight: .semibold))
-                        .frame(width: 36, height: 32)
-                }
-                .accessibilityLabel("Reports")
-
-                Divider()
-                    .frame(height: 20)
-                    .padding(.vertical, 6)
-
-                Button {
-                    showProfile = true
-                } label: {
-                    Text(adminInitials)
-                        .font(SierraFont.scaled(13, weight: .bold, design: .rounded))
-                        .frame(width: 36, height: 32)
-                }
-                .accessibilityLabel("Profile")
-            }
-            .foregroundStyle(.primary)
-            .padding(.horizontal, 4)
-            .background(.ultraThinMaterial, in: Capsule())
-            .overlay(Capsule().stroke(Color.primary.opacity(0.12), lineWidth: 1))
         }
     }
 

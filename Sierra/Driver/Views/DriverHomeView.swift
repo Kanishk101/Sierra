@@ -14,7 +14,6 @@ struct DriverHomeView: View {
     @State private var availabilitySwitch = false
     @State private var isUpdatingAvailability = false
     @State private var showProfile = false
-    @State private var showLoadErrorBanner = false
     @State private var toastPulseScale: CGFloat = 1.0
 
     // FMS_SS card action state
@@ -99,11 +98,6 @@ struct DriverHomeView: View {
                     headerSection
 
                     VStack(spacing: 16) {
-                        if showLoadErrorBanner, let err = store.loadError {
-                            loadErrorBanner(err)
-                                .padding(.top, 12)
-                        }
-
                         if store.isLoading {
                             ProgressView("Loading assignments\u{2026}")
                                 .frame(maxWidth: .infinity)
@@ -229,14 +223,8 @@ struct DriverHomeView: View {
         }
         .onAppear {
             availabilitySwitch = isAvailable
-            if store.loadError != nil { showLoadErrorBanner = true }
         }
         .onChange(of: isAvailable) { _, newValue in availabilitySwitch = newValue }
-        .onChange(of: store.loadError) { _, err in
-            withAnimation(.easeOut(duration: 0.2)) {
-                showLoadErrorBanner = (err != nil)
-            }
-        }
         .sheet(isPresented: $showProfile) {
             DriverProfileSheet()
                 .environment(AppDataStore.shared)
@@ -326,35 +314,6 @@ struct DriverHomeView: View {
                 bottomTrailingRadius: 32,
                 topTrailingRadius: 0
             )
-        )
-    }
-
-    // MARK: - Load Error Banner
-
-    private func loadErrorBanner(_ message: String) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
-            Text("Some data failed to load. Pull to refresh.")
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.primary)
-            Spacer()
-            Button {
-                withAnimation { showLoadErrorBanner = false }
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.orange.opacity(0.1))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(Color.orange.opacity(0.3), lineWidth: 1)
-                )
         )
     }
 

@@ -61,6 +61,7 @@ final class AppDataStore {
     private var lastFleetRefreshAt: Date?
     private var sentOverdueTripResponseAlerts: Set<UUID> = []
     private var deliveredRealtimeNotificationIds: Set<UUID> = []
+    private let seenNotificationIdsKey = "sierra.seenNotificationIds"
     private var latestVehicleCoordinateAtById: [UUID: Date] = [:]
 
     /// Shared refresh cadence for driver screens.
@@ -271,7 +272,6 @@ final class AppDataStore {
             let combinedErrors = errors + bgErrors
             if !combinedErrors.isEmpty {
                 let combinedMessage = combinedErrors.joined(separator: "; ")
-                self.loadError = "Partial load failure: \(combinedMessage)"
                 print("[AppDataStore.loadAll] Partial errors: \(combinedMessage)")
             }
 
@@ -337,9 +337,8 @@ final class AppDataStore {
             catch { errors.append("Profile: \(error.localizedDescription)") }
 
         if surfaceErrors {
-            loadError = errors.isEmpty
-                ? nil
-                : "Some data failed to load: \(errors.joined(separator: "; "))"
+            // Intentionally suppress partial-load UI alerts.
+            loadError = nil
         }
 
         if showLoadingIndicator {
@@ -452,7 +451,6 @@ final class AppDataStore {
             catch { errors.append("Inventory parts: \(error.localizedDescription)") }
 
         if !errors.isEmpty {
-            loadError = "Some maintenance data failed to load: \(errors.joined(separator: "; "))"
             print("[loadMaintenanceData] Partial errors: \(errors)")
         }
 
@@ -1433,6 +1431,24 @@ final class AppDataStore {
     func partsUsed(forWorkOrder workOrderId: UUID) -> [PartUsed] { partsUsed.filter { $0.workOrderId == workOrderId } }
     func inspections(forTrip tripId: UUID) -> [VehicleInspection] { vehicleInspections.filter { $0.tripId == tripId } }
     func preInspection(forTrip tripId: UUID) -> VehicleInspection? { vehicleInspections.first { $0.tripId == tripId && $0.type == .preTripInspection } }
+
+    // MARK: - Targeted fetch helpers
+
+    func refreshVehicleDocuments(vehicleId: UUID) async {
+        guard await ensureAuthenticatedSession(for: "vehicleDocuments") else { return }
+        do {
+            let fresh = try await VehicleDocumentService.fetchVehicleDocuments(vehicleId: vehicleId)
+            for doc in fresh {
+                if let idx = vehicleDocuments.firstIndex(where: { $0.id == doc.id }) {
+                    vehicleDocuments[idx] = doc
+                } else {
+                    vehicleDocuments.append(doc)
+                }
+            }
+        } catch {
+            print("[AppDataStore.refreshVehicleDocuments] \(error.localizedDescription)")
+        }
+    }
     func postInspection(forTrip tripId: UUID) -> VehicleInspection? { vehicleInspections.first { $0.tripId == tripId && $0.type == .postTripInspection } }
     func activeEmergencyAlerts() -> [EmergencyAlert] { emergencyAlerts.filter { $0.status == .active } }
     func geofenceEvents(forVehicle vehicleId: UUID) -> [GeofenceEvent] { geofenceEvents.filter { $0.vehicleId == vehicleId } }
@@ -2113,6 +2129,7 @@ final class AppDataStore {
         }
         do {
             notifications = try await NotificationService.fetchNotifications(for: userId)
+            applyPersistedSeenNotifications()
             notifications.sort { $0.sentAt > $1.sentAt }
         } catch {
             print("[AppDataStore] Failed to fetch notifications: \(error)")
@@ -2129,6 +2146,7 @@ final class AppDataStore {
                             LocalNotificationService.notifyFromSierraNotification(newNotification)
                         }
                     }
+                    self.applyPersistedSeenNotifications()
                     self.notifications.sort { $0.sentAt > $1.sentAt }
 
                     // Driver UX: when FM reassigns vehicle, refresh trips immediately
@@ -2147,10 +2165,35 @@ final class AppDataStore {
     func markNotificationRead(id: UUID) async throws {
         try await NotificationService.markAsRead(id: id)
         if let idx = notifications.firstIndex(where: { $0.id == id }) { notifications[idx].isRead = true }
+        persistSeenNotification(id)
     }
     func clearAllNotifications(userId: UUID) async throws {
         try await supabase.from("notifications").delete().eq("recipient_id", value: userId.uuidString).execute()
         notifications = []
+    }
+
+    // MARK: - Notification Persistence
+
+    private func applyPersistedSeenNotifications() {
+        let seen = persistedSeenNotificationIds()
+        guard !seen.isEmpty else { return }
+        for i in notifications.indices {
+            if seen.contains(notifications[i].id) {
+                notifications[i].isRead = true
+            }
+        }
+    }
+
+    private func persistSeenNotification(_ id: UUID) {
+        var seen = persistedSeenNotificationIds()
+        if seen.insert(id).inserted {
+            UserDefaults.standard.set(seen.map { $0.uuidString }, forKey: seenNotificationIdsKey)
+        }
+    }
+
+    private func persistedSeenNotificationIds() -> Set<UUID> {
+        guard let raw = UserDefaults.standard.array(forKey: seenNotificationIdsKey) as? [String] else { return [] }
+        return Set(raw.compactMap(UUID.init))
     }
 
     /// Driver-side waiting state after pre-trip failure until FM reassigns vehicle.

@@ -75,16 +75,6 @@ struct AdminDashboardView: View {
         .task {
             if store.vehicles.isEmpty || store.staff.isEmpty { await store.loadAll() }
         }
-        .overlay(alignment: .top) {
-            if let error = store.loadError {
-                LoadErrorBanner(message: error) {
-                    Task { await store.loadAll(force: true) }
-                }
-                .padding(.top, 6)
-                .transition(.move(edge: .top).combined(with: .opacity))
-                .animation(.spring(response: 0.35, dampingFraction: 0.9), value: error)
-            }
-        }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
             Task { await store.loadAll() }
         }
@@ -239,43 +229,6 @@ struct AdminDashboardView: View {
             }
                 .searchable(text: $searchText, isPresented: $isSearchPresented, prompt: "Search\u{2026}")
         }
-    }
-}
-
-// MARK: - Lightweight banner for partial/timeout loads
-
-private struct LoadErrorBanner: View {
-    let message: String
-    let onRetry: () -> Void
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.white)
-                .frame(width: 24, height: 24)
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Some data didn’t load")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
-                Text(message)
-                    .font(.footnote)
-                    .foregroundStyle(.white.opacity(0.92))
-                    .lineLimit(3)
-                Button(action: onRetry) {
-                    Text("Retry now")
-                        .font(.footnote.weight(.semibold))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(.white.opacity(0.18), in: Capsule())
-                }
-                .buttonStyle(.plain)
-            }
-            Spacer()
-        }
-        .padding(14)
-        .background(.red.opacity(0.92), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .shadow(color: .black.opacity(0.25), radius: 10, y: 6)
-        .padding(.horizontal, 12)
     }
 }
 

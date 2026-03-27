@@ -34,7 +34,13 @@ struct StaffTabView: View {
     private func staffFor(_ segment: StaffSegment) -> [StaffMember] {
         let role: UserRole = segment == .drivers ? .driver : .maintenancePersonnel
         let all = store.staff.filter {
-            $0.role == role && $0.isApproved && $0.status != .pendingApproval
+            $0.role == role
+            && (
+                // Keep existing approved/active behavior, but ensure unavailable
+                // staff are still visible in Staff tab even if pending/unapproved.
+                ($0.isApproved && $0.status != .pendingApproval)
+                || $0.availability == .unavailable
+            )
             && (selectedAvailability == nil || $0.availability == selectedAvailability)
         }.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
 
@@ -89,6 +95,15 @@ struct StaffTabView: View {
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
             }
+            .searchable(text: bindingSearchText, prompt: "Search by name or email…")
+    }
+
+    private var bindingSearchText: Binding<String> {
+        if let externalSearchText {
+            return externalSearchText
+        } else {
+            return $internalSearchText
+        }
     }
 
     private var headerRow: some View {

@@ -33,6 +33,7 @@ struct FleetStatusSlice: Identifiable {
     let id    = UUID()
     let status: VehicleStatus
     let count:  Int
+    let chartValue: Int
     let color:  Color
 }
 
@@ -82,6 +83,7 @@ struct AnalyticsDashboardView: View {
     @State private var appeared  = false
     @State private var selectedDays: Int = 30   // date range filter: 7, 30, 90
     @State private var selectedPage = 0
+    @State private var exportErrorMessage: String?
 
     // MARK: - AI Summary State
     @State private var fleetStatusSummaryState: AISummaryCard.SummaryState = .idle
@@ -131,6 +133,18 @@ struct AnalyticsDashboardView: View {
             .toolbarTitleDisplayMode(.inline)
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Menu {
+                        Button("Trip Report CSV") { Task { await exportTripsCSV() } }
+                        Button("Fuel Log CSV") { Task { await exportFuelCSV() } }
+                        Button("Maintenance CSV") { Task { await exportMaintenanceCSV() } }
+                        Button("Driver Activity CSV") { Task { await exportDriverCSV() } }
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(SierraFont.scaled(18, weight: .semibold))
+                            .foregroundStyle(.orange)
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         dismiss()
@@ -163,6 +177,19 @@ struct AnalyticsDashboardView: View {
                     if case .idle = tripVolumeSummaryState   { Task { await fetchTripVolumeSummary() } }
                     if case .idle = completedTripsSummaryState { Task { await fetchCompletedTripsSummary() } }
                 }
+            }
+            .task {
+                if store.vehicles.isEmpty || store.staff.isEmpty || store.trips.isEmpty {
+                    await store.loadAll()
+                }
+            }
+            .alert("Export Failed", isPresented: Binding(
+                get: { exportErrorMessage != nil },
+                set: { if !$0 { exportErrorMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) { exportErrorMessage = nil }
+            } message: {
+                Text(exportErrorMessage ?? "Unable to export CSV.")
             }
         }
     }
@@ -369,15 +396,17 @@ struct AnalyticsDashboardView: View {
     private var fleetSlices: [FleetStatusSlice] {
         let statuses: [(VehicleStatus, Color)] = [
             (.active,          .green),
+            (.busy,            .purple),
             (.idle,            .blue),
             (.inMaintenance,   .orange),
             (.outOfService,    .red),
             (.decommissioned,  .gray),
         ]
-        return statuses.compactMap { (status, color) in
+        let totalVehicles = store.vehicles.count
+        return statuses.map { (status, color) in
             let count = store.vehicles.filter { $0.status == status }.count
-            guard count > 0 else { return nil }
-            return FleetStatusSlice(status: status, count: count, color: color)
+            let chartValue = totalVehicles == 0 ? 1 : count
+            return FleetStatusSlice(status: status, count: count, chartValue: chartValue, color: color)
         }
     }
 
@@ -388,24 +417,25 @@ struct AnalyticsDashboardView: View {
             (.scheduled, .blue),
             (.completed, .gray),
             (.cancelled, .red),
+            (.accepted,  .blue),
+            (.rejected,  .red),
         ]
         let normalizedCounts = store.trips.reduce(into: [TripStatus: Int]()) { result, trip in
             result[trip.status.normalized, default: 0] += 1
         }
-        return statuses.compactMap { (status, color) in
+        return statuses.map { (status, color) in
             let count = normalizedCounts[status, default: 0]
-            guard count > 0 else { return nil }
             return TripStatusSlice(status: status, count: count, color: color)
         }
     }
 
     private var staffSlices: [StaffSlice] {
         [
-            StaffSlice(label: "Drivers",     count: store.staff.filter { $0.role == .driver && $0.status == .active }.count,              color: .blue),
+            StaffSlice(label: "Drivers",     count: store.staff.filter { $0.role == .driver && $0.status == .active }.count,                color: .blue),
             StaffSlice(label: "Maintenance", count: store.staff.filter { $0.role == .maintenancePersonnel && $0.status == .active }.count, color: .orange),
-            StaffSlice(label: "Pending",     count: store.staff.filter { $0.status == .pendingApproval }.count,                           color: Color(.systemOrange)),
-            StaffSlice(label: "Suspended",   count: store.staff.filter { $0.status == .suspended }.count,                                 color: .red),
-        ].filter { $0.count > 0 }
+            StaffSlice(label: "Pending",     count: store.staff.filter { $0.status == .pendingApproval }.count,                             color: Color(.systemOrange)),
+            StaffSlice(label: "Suspended",   count: store.staff.filter { $0.status == .suspended }.count,                                   color: .red),
+        ]
     }
 
     private var monthlyData: [MonthlyTripData] {
@@ -535,7 +565,7 @@ struct AnalyticsDashboardView: View {
                 ZStack {
                     Chart(fleetSlices) { slice in
                         SectorMark(
-                            angle: .value("Count", slice.count),
+                            angle: .value("Count", slice.chartValue),
                             innerRadius: .ratio(0.55),
                             angularInset: 2
                         )
@@ -1214,6 +1244,90 @@ struct AnalyticsDashboardView: View {
         )
         .scaleEffect(isSelected ? 1.05 : 1.0)
         .animation(.spring(duration: 0.25, bounce: 0.15), value: isSelected)
+    }
+
+    // MARK: - CSV Export
+
+    private var csvDateFormatter: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        return formatter
+    }
+
+    private func csvDate(_ date: Date?) -> String {
+        guard let date else { return "" }
+        return csvDateFormatter.string(from: date)
+    }
+
+    private func csvEscape(_ value: String) -> String {
+        if value.contains(",") || value.contains("\"") || value.contains("\n") {
+            return "\"\(value.replacingOccurrences(of: "\"", with: "\"\""))\""
+        }
+        return value
+    }
+
+    @MainActor
+    private func exportTripsCSV() async {
+        await store.loadAll(force: true)
+        var csv = "Task ID,Driver,Vehicle Plate,Origin,Destination,Scheduled Date,Actual Start,Actual End,Distance (km),Status,Priority\n"
+        for trip in store.trips {
+            let driver = store.staffMember(forIdText: trip.driverId)?.name ?? ""
+            let vehicle = store.vehicle(forIdText: trip.vehicleId)
+            let plate = vehicle?.licensePlate ?? ""
+            let dist = max(0, (trip.endMileage ?? 0) - (trip.startMileage ?? 0))
+            csv += "\(csvEscape(trip.taskId)),\(csvEscape(driver)),\(csvEscape(plate)),\(csvEscape(trip.origin)),\(csvEscape(trip.destination)),\(csvDate(trip.scheduledDate)),\(csvDate(trip.actualStartDate)),\(csvDate(trip.actualEndDate)),\(Int(dist)),\(trip.status.rawValue),\(trip.priority.rawValue)\n"
+        }
+        shareCSV(csv, filename: "trips_report.csv")
+    }
+
+    @MainActor
+    private func exportFuelCSV() async {
+        await store.loadAll(force: true)
+        var csv = "Date,Driver,Vehicle Plate,Litres,Cost,Price/Litre,Odometer,Fuel Station\n"
+        for log in store.fuelLogs {
+            let driver = store.staffMember(for: log.driverId)?.name ?? ""
+            let vehicle = store.vehicle(for: log.vehicleId)
+            let plate = vehicle?.licensePlate ?? ""
+            csv += "\(csvDate(log.loggedAt)),\(csvEscape(driver)),\(csvEscape(plate)),\(String(format: "%.1f", log.fuelQuantityLitres)),\(String(format: "%.0f", log.fuelCost)),\(String(format: "%.2f", log.pricePerLitre)),\(String(format: "%.0f", log.odometerAtFill)),\(csvEscape(log.fuelStation ?? ""))\n"
+        }
+        shareCSV(csv, filename: "fuel_report.csv")
+    }
+
+    @MainActor
+    private func exportMaintenanceCSV() async {
+        await store.loadAll(force: true)
+        var csv = "Title,Vehicle,Vehicle Plate,Assigned To,Status,Due Date,Completed,Labour Cost,Parts Cost,Total Cost\n"
+        for task in store.maintenanceTasks {
+            let vehicle = store.vehicles.first(where: { $0.id == task.vehicleId })
+            let assignee = task.assignedToId.flatMap { store.staffMember(for: $0) }
+            let record = store.maintenanceRecords.first(where: { $0.maintenanceTaskId == task.id })
+            let labourCost = record.map { String(format: "%.0f", $0.labourCost) } ?? ""
+            let partsCost  = record.map { String(format: "%.0f", $0.partsCost) } ?? ""
+            let totalCost  = record.map { String(format: "%.0f", $0.totalCost) } ?? ""
+            csv += "\(csvEscape(task.title)),\(csvEscape(vehicle?.name ?? "")),\(csvEscape(vehicle?.licensePlate ?? "")),\(csvEscape(assignee?.name ?? "")),\(task.status.rawValue),\(csvDate(task.dueDate)),\(csvDate(task.completedAt)),\(labourCost),\(partsCost),\(totalCost)\n"
+        }
+        shareCSV(csv, filename: "maintenance_report.csv")
+    }
+
+    @MainActor
+    private func exportDriverCSV() async {
+        await store.loadAll(force: true)
+        let completedTrips = store.trips.filter { $0.status == .completed }
+        var csv = "Task ID,Origin,Destination,Distance (km),Duration (h),Rating\n"
+        for trip in completedTrips {
+            let dist = max(0, (trip.endMileage ?? 0) - (trip.startMileage ?? 0))
+            let dur = (trip.actualEndDate?.timeIntervalSince(trip.actualStartDate ?? Date()) ?? 0) / 3600
+            csv += "\(csvEscape(trip.taskId)),\(csvEscape(trip.origin)),\(csvEscape(trip.destination)),\(Int(dist)),\(String(format: "%.1f", dur)),\(trip.driverRating.map(String.init) ?? "N/A")\n"
+        }
+        shareCSV(csv, filename: "driver_report.csv")
+    }
+
+    private func shareCSV(_ csv: String, filename: String) {
+        do {
+            try CSVExportHelper.presentShareSheet(csv: csv, filename: filename)
+        } catch {
+            exportErrorMessage = error.localizedDescription
+        }
     }
 }
 

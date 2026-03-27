@@ -282,7 +282,7 @@ struct MaintenanceProfileView: View {
             .accessibilityLabel("Edit profile")
 
             Button(role: .destructive) {
-                AuthManager.shared.signOut()
+                AuthManager.shared.signOut(clearBiometricEnrollment: true)
                 dismiss()
             } label: {
                 HStack {

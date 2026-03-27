@@ -11,8 +11,10 @@ struct StaffListView: View {
         let byRole = store.staff.filter {
             $0.role != .fleetManager
             && $0.role == selectedSegment
-            && $0.status != .pendingApproval
-            && $0.isApproved
+            && (
+                ($0.status != .pendingApproval && $0.isApproved)
+                || $0.availability == .unavailable
+            )
         }
         guard !searchText.isEmpty else { return byRole }
         let q = searchText.lowercased()

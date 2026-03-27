@@ -16,6 +16,7 @@ struct VehicleDetailView: View {
     @State private var selectedDocumentURL: URL?
     @State private var showDocumentLoadError = false
     @State private var documentLoadErrorMessage = ""
+    @State private var isLoadingDocuments = false
 
     private var vehicle: Vehicle? {
         store.vehicles.first { $0.id == vehicleId }
@@ -72,6 +73,7 @@ struct VehicleDetailView: View {
         } message: {
             Text(documentLoadErrorMessage)
         }
+        .task { await loadVehicleDocumentsIfNeeded() }
     }
 
     // MARK: - Content
@@ -110,6 +112,13 @@ struct VehicleDetailView: View {
             // Section 2 — Document Status
             let docs = store.vehicleDocuments(forVehicle: vehicleId)
             Section("Document Status") {
+                if isLoadingDocuments {
+                    HStack {
+                        ProgressView()
+                        Text("Loading documents…")
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 if docs.isEmpty {
                     Text("No documents on file")
                         .foregroundStyle(.secondary)
@@ -263,6 +272,16 @@ struct VehicleDetailView: View {
             return
         }
         selectedDocumentURL = url
+    }
+
+    // MARK: - Data Loading
+
+    @MainActor
+    private func loadVehicleDocumentsIfNeeded() async {
+        guard store.vehicleDocuments(forVehicle: vehicleId).isEmpty else { return }
+        isLoadingDocuments = true
+        await store.refreshVehicleDocuments(vehicleId: vehicleId)
+        isLoadingDocuments = false
     }
 }
 

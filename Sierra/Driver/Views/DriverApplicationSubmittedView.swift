@@ -256,7 +256,7 @@ struct DriverApplicationSubmittedView: View {
 
     private var signOutButton: some View {
         Button {
-            AuthManager.shared.signOut()
+            AuthManager.shared.signOut(clearBiometricEnrollment: true)
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "rectangle.portrait.and.arrow.right")

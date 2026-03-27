@@ -48,7 +48,8 @@ final class SecureSessionStore {
             kSecClass as String:       kSecClassGenericPassword,
             kSecAttrAccount as String: profileKey,
             kSecValueData as String:   data,
-            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            // Allow Face ID / device-unlock restores right after boot.
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         ]
         SecItemAdd(query as CFDictionary, nil)
     }
@@ -138,7 +139,8 @@ final class SecureSessionStore {
             kSecClass as String:       kSecClassGenericPassword,
             kSecAttrAccount as String: key,
             kSecValueData as String:   data,
-            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            // After-first-unlock lets us read during Face ID quick unlock flows.
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         ]
         SecItemAdd(query as CFDictionary, nil)
     }

@@ -32,7 +32,7 @@ struct QuickActionsSheet: View {
         QuickAction(icon: "arrow.triangle.swap",          label: "Create Trip",         color: .blue,   tag: "trip"),
         QuickAction(icon: "car.badge.gearshape",          label: "Add Vehicle",         color: .green,  tag: "vehicle"),
         QuickAction(icon: "person.badge.plus",            label: "Add Staff",           color: .indigo, tag: "staff"),
-        QuickAction(icon: "wrench.and.screwdriver.fill",  label: "Maint. Request",      color: .orange, tag: "maintenance"),
+        QuickAction(icon: "wrench.and.screwdriver.fill",  label: "Maintenance",      color: .orange, tag: "maintenance"),
     ]
 
     var body: some View {

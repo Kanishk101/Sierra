@@ -301,7 +301,7 @@ final class AuthManager {
 
     // MARK: - Sign Out
 
-    func signOut() {
+    func signOut(clearBiometricEnrollment: Bool = false) {
         #if DEBUG
         print("🔐 [AuthManager.signOut] Signing out user: \(currentUser?.email ?? "unknown")")
         #endif
@@ -322,9 +322,12 @@ final class AuthManager {
         KeychainService.delete(key: Keys.sessionToken)
         KeychainService.delete(key: Keys.backgroundTS)
         SecureSessionStore.shared.clearSupabaseSession()
-        // Reset biometric enrollment preference on explicit sign-out so the
-        // post-login enrollment sheet appears again on next fresh login.
-        BiometricPreference.clearSessionData()
+        // Keep biometric enrollment for non-user-initiated sign-outs
+        // (e.g. stale/invalid session recovery). Explicit user sign-out can
+        // opt in to clearing enrollment so next full login prompts again.
+        if clearBiometricEnrollment {
+            BiometricPreference.clearSessionData()
+        }
         AppDataStore.shared.unsubscribeAll()
         Task { try? await supabase.auth.signOut() }
     }

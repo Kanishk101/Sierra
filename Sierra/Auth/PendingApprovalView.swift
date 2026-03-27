@@ -52,7 +52,7 @@ struct PendingApprovalView: View {
                         Spacer()
 
                         Button {
-                            AuthManager.shared.signOut()
+                            AuthManager.shared.signOut(clearBiometricEnrollment: true)
                         } label: {
                             Text("Sign Out")
                                 .font(SierraFont.body(16, weight: .semibold))

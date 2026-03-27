@@ -54,11 +54,13 @@ struct VehicleStatusView: View {
     private var statusBarChart: some View {
         let counts: [(VehicleStatus, Int)] = [
             (.active, store.vehicles.filter { $0.status == .active }.count),
+            (.busy, store.vehicles.filter { $0.status == .busy }.count),
             (.idle, store.vehicles.filter { $0.status == .idle }.count),
             (.inMaintenance, store.vehicles.filter { $0.status == .inMaintenance }.count),
             (.outOfService, store.vehicles.filter { $0.status == .outOfService }.count),
-        ].filter { $0.1 > 0 }
-        let maxCount = max(counts.map(\.1).max() ?? 1, 1)
+            (.decommissioned, store.vehicles.filter { $0.status == .decommissioned }.count),
+        ]
+        let maxCount = max(counts.map(\.1).max() ?? 0, 1)
 
         return VStack(alignment: .leading, spacing: 12) {
             Text("FLEET BREAKDOWN").font(.caption.weight(.bold)).foregroundStyle(.secondary).kerning(1)

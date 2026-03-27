@@ -17,6 +17,7 @@ final class AlertsViewModel {
     // MARK: - Filter
 
     var selectedFilter: AlertFilter = .all
+    var selectedStatus: AlertStatus = .active
 
     enum AlertFilter: String, CaseIterable {
         case all = "All"
@@ -25,10 +26,23 @@ final class AlertsViewModel {
         case maintenance = "Overdue Maintenance"
     }
 
+    enum AlertStatus: String, CaseIterable {
+        case active = "Active"
+        case acknowledged = "Acknowledged"
+    }
+
     // MARK: - Computed
 
     var activeAlerts: [EmergencyAlert] {
-        let base = emergencyAlerts.filter { $0.status == .active }
+        filteredAlerts(withStatus: .active)
+    }
+
+    var acknowledgedAlerts: [EmergencyAlert] {
+        filteredAlerts(withStatus: .acknowledged)
+    }
+
+    private func filteredAlerts(withStatus status: AlertStatus) -> [EmergencyAlert] {
+        let base = emergencyAlerts.filter { status == .active ? $0.status == .active : $0.status == .acknowledged }
         switch selectedFilter {
         case .all: return base
         case .sos: return base.filter { $0.alertType == .sos }
@@ -36,8 +50,8 @@ final class AlertsViewModel {
         }
     }
 
-    var unacknowledgedDeviations: [RouteDeviationEvent] {
-        let base = routeDeviations.filter { !$0.isAcknowledged }
+    func deviations(for status: AlertStatus) -> [RouteDeviationEvent] {
+        let base = routeDeviations.filter { status == .active ? !$0.isAcknowledged : $0.isAcknowledged }
         switch selectedFilter {
         case .all: return base
         case .deviation: return base
@@ -65,9 +79,8 @@ final class AlertsViewModel {
             let deviations: [RouteDeviationEvent] = try await supabase
                 .from("route_deviation_events")
                 .select()
-                .eq("is_acknowledged", value: false)
                 .order("detected_at", ascending: false)
-                .limit(50)
+                .limit(100)
                 .execute()
                 .value
             routeDeviations = deviations

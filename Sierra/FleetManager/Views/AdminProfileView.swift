@@ -108,7 +108,7 @@ struct AdminProfileView: View {
 
                 Section {
                     Button(role: .destructive) {
-                        AuthManager.shared.signOut()
+                        AuthManager.shared.signOut(clearBiometricEnrollment: true)
                         dismiss()
                     } label: {
                         HStack {

@@ -19,6 +19,7 @@ struct ReportsView: View {
     @State private var selectedRange: DateRange = .month
     @State private var selectedDriverId: UUID?
     @State private var exportErrorMessage: String?
+    @State private var isRefreshingData = false
 
     // MARK: - AI Summary State
 
@@ -263,16 +264,16 @@ struct ReportsView: View {
                 }
                 Menu {
                     Button("Trip Report CSV") {
-                        shareCSV(generateFleetCSV(), filename: "trips_report.csv")
+                        Task { await exportTripsCSV() }
                     }
                     Button("Fuel Log CSV") {
-                        shareCSV(generateFuelCSV(), filename: "fuel_report.csv")
+                        Task { await exportFuelCSV() }
                     }
                     Button("Maintenance CSV") {
-                        shareCSV(generateMaintenanceCSV(), filename: "maintenance_report.csv")
+                        Task { await exportMaintenanceCSV() }
                     }
                     Button("Driver Activity CSV") {
-                        shareCSV(generateDriverCSV(completedTripsInRange), filename: "driver_report.csv")
+                        Task { await exportDriverCSV() }
                     }
                 } label: {
                     Label("More Exports", systemImage: "ellipsis.circle")
@@ -287,11 +288,51 @@ struct ReportsView: View {
         } message: {
             Text(exportErrorMessage ?? "Unable to export CSV.")
         }
-        .task {
-            if store.trips.isEmpty || store.vehicles.isEmpty || store.maintenanceTasks.isEmpty {
-                await store.loadAll()
+        .task { await refreshReportsData() }
+        .overlay(alignment: .top) {
+            if isRefreshingData {
+                ProgressView("Refreshing latest data…")
+                    .padding(12)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .padding(.top, 12)
             }
         }
+    }
+
+    // MARK: - Data Refresh
+
+    @MainActor
+    private func refreshReportsData() async {
+        guard !isRefreshingData else { return }
+        isRefreshingData = true
+        await store.loadAll(force: true)
+        isRefreshingData = false
+    }
+
+    // MARK: - Export helpers that always refresh first
+
+    @MainActor
+    private func exportTripsCSV() async {
+        await refreshReportsData()
+        shareCSV(generateFleetCSV(), filename: "trips_report.csv")
+    }
+
+    @MainActor
+    private func exportFuelCSV() async {
+        await refreshReportsData()
+        shareCSV(generateFuelCSV(), filename: "fuel_report.csv")
+    }
+
+    @MainActor
+    private func exportMaintenanceCSV() async {
+        await refreshReportsData()
+        shareCSV(generateMaintenanceCSV(), filename: "maintenance_report.csv")
+    }
+
+    @MainActor
+    private func exportDriverCSV() async {
+        await refreshReportsData()
+        shareCSV(generateDriverCSV(completedTripsInRange), filename: "driver_report.csv")
     }
 
     // MARK: - Page 0: Overview / KPI Summary
@@ -738,16 +779,19 @@ struct ReportsView: View {
     private var activeExportAction: (() -> Void)? {
         switch currentPage {
         case 0, 1:
-            return { shareCSV(generateFleetCSV(), filename: "fleet_report.csv") }
+            return { Task { await exportTripsCSV() } }
         case 2:
             let trips = selectedDriverId == nil
                 ? completedTripsInRange
                 : completedTripsInRange.filter { $0.driverUUID == selectedDriverId }
-            return { shareCSV(generateDriverCSV(trips), filename: "driver_report.csv") }
+            return { Task {
+                await refreshReportsData()
+                shareCSV(generateDriverCSV(trips), filename: "driver_report.csv")
+            } }
         case 3:
-            return { shareCSV(generateMaintenanceCSV(), filename: "maintenance_report.csv") }
+            return { Task { await exportMaintenanceCSV() } }
         case 4:
-            return { shareCSV(generateFleetCSV(), filename: "trips_report.csv") }
+            return { Task { await exportTripsCSV() } }
         default:
             return nil
         }

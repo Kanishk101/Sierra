@@ -9,13 +9,6 @@ struct StaffDetailSheet: View {
     @State private var isUpdatingStatus = false
     @State private var statusError: String?
 
-    private var assignedVehicle: Vehicle? {
-        store.vehicles.first {
-            guard let assigned = $0.assignedDriverId else { return false }
-            return UUID(uuidString: assigned)?.uuidString.lowercased() == member.id.uuidString.lowercased()
-        }
-    }
-
     private var activeTrip: Trip? {
         guard member.role == .driver else { return nil }
         return store.activeTrip(forDriverId: member.id)
@@ -34,23 +27,6 @@ struct StaffDetailSheet: View {
 
                     statusRow
                         .padding(.horizontal, 20)
-
-                    if let vehicle = assignedVehicle {
-                        infoCard(title: "Assigned Vehicle", icon: "car.fill", color: .blue) {
-                            labeledRow("Name", vehicle.name)
-                            labeledRow("Plate", vehicle.licensePlate)
-                            labeledRow("Model", vehicle.model)
-                            labeledRow("Status", vehicle.status.rawValue)
-                        }
-                        .padding(.horizontal, 20)
-                    } else if member.role == .driver {
-                        infoCard(title: "Assigned Vehicle", icon: "car.fill", color: .secondary) {
-                            Text("No vehicle assigned")
-                                .font(.body)
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(.horizontal, 20)
-                    }
 
                     if let trip = activeTrip {
                         infoCard(title: "Current Trip", icon: "arrow.triangle.swap", color: .green) {

@@ -77,6 +77,7 @@ struct SierraApp: App {
         WindowGroup {
             ZStack {
                 ContentView()
+                    .id(accessibilitySettings.appearanceVersion)
                     .applySierraTheme()
 
                 if lifecycle.showBiometricLock {

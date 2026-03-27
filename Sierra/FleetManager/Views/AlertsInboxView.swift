@@ -20,20 +20,33 @@ struct AlertsInboxView: View {
 
     var body: some View {
         List {
-            // Filter picker
+            // Header controls: status segment + filter menu
             Section {
-                Picker("Filter", selection: $vm.selectedFilter) {
-                    ForEach(AlertsViewModel.AlertFilter.allCases, id: \.self) { filter in
-                        Text(filter.rawValue).tag(filter)
+                HStack {
+                    Picker("Status", selection: $vm.selectedStatus) {
+                        ForEach(AlertsViewModel.AlertStatus.allCases, id: \.self) { status in
+                            Text(status.rawValue).tag(status)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    Menu {
+                        ForEach(AlertsViewModel.AlertFilter.allCases, id: \.self) { filter in
+                            Button {
+                                vm.selectedFilter = filter
+                            } label: {
+                                Label(filter.rawValue, systemImage: vm.selectedFilter == filter ? "checkmark" : "")
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "line.3.horizontal.decrease.circle")
+                            .font(.title3.weight(.semibold))
+                            .padding(8)
                     }
                 }
-                .pickerStyle(.segmented)
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets())
-                .padding(.horizontal, -4)
             }
 
-            if vm.isLoading && vm.activeAlerts.isEmpty && vm.unacknowledgedDeviations.isEmpty && overdueMaintenanceTasks.isEmpty {
+            if vm.isLoading && vm.activeAlerts.isEmpty && vm.deviations(for: .active).isEmpty && overdueMaintenanceTasks.isEmpty {
                 Section {
                     ForEach(0..<5, id: \.self) { _ in
                         VStack(alignment: .leading, spacing: 8) {
@@ -54,8 +67,9 @@ struct AlertsInboxView: View {
                     }
                 }
             } else {
-                let activeSosAlerts = vm.activeAlerts.filter { !isPreTripReassignmentAlert($0) }
-                let reassignmentAlerts = vm.activeAlerts.filter(isPreTripReassignmentAlert)
+                let alerts = vm.selectedStatus == .active ? vm.activeAlerts : vm.acknowledgedAlerts
+                let activeSosAlerts = alerts.filter { !isPreTripReassignmentAlert($0) }
+                let reassignmentAlerts = alerts.filter(isPreTripReassignmentAlert)
 
                 // Priority / SOS alerts
                 if !activeSosAlerts.isEmpty {
@@ -83,14 +97,14 @@ struct AlertsInboxView: View {
                     }
                 }
 
-                // Route deviations
-                if !vm.unacknowledgedDeviations.isEmpty {
+                let deviations = vm.deviations(for: vm.selectedStatus)
+                if !deviations.isEmpty {
                     Section {
-                        ForEach(vm.unacknowledgedDeviations) { dev in
+                        ForEach(deviations) { dev in
                             deviationRow(dev)
                         }
                     } header: {
-                        sectionHeader("Route Deviations", count: vm.unacknowledgedDeviations.count, color: .yellow)
+                        sectionHeader("Route Deviations", count: deviations.count, color: .yellow)
                     }
                 }
 
@@ -105,7 +119,7 @@ struct AlertsInboxView: View {
                     }
                 }
 
-                if activeSosAlerts.isEmpty && reassignmentAlerts.isEmpty && vm.unacknowledgedDeviations.isEmpty && overdueMaintenanceTasks.isEmpty {
+                if activeSosAlerts.isEmpty && reassignmentAlerts.isEmpty && deviations.isEmpty && overdueMaintenanceTasks.isEmpty {
                     Section {
                         VStack(spacing: 12) {
                             Image(systemName: "checkmark.shield.fill")

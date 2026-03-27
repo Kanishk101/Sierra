@@ -130,7 +130,7 @@ struct CreateStaffView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(16)
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, minHeight: 220)
             .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
