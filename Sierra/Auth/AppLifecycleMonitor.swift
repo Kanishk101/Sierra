@@ -6,3 +6,8 @@ import SwiftUI
 @MainActor @Observable
 final class AppLifecycleMonitor {
 
+    static let shared = AppLifecycleMonitor()
+
+    var showBiometricLock: Bool = false
+
+    /// Seconds before requiring biometric on resume.
