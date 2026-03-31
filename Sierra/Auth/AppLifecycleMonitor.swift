@@ -14,3 +14,6 @@ final class AppLifecycleMonitor {
     /// Keep this aligned with AuthManager's auto-lock window to avoid
     /// aggressive prompts for short app switches/screen sleeps.
     private let lockThresholdSeconds: TimeInterval = 300
+    private var backgroundedAt: Date?
+    private var suppressUntil: Date = .distantPast
+
