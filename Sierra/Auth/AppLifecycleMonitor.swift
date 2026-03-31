@@ -11,3 +11,6 @@ final class AppLifecycleMonitor {
     var showBiometricLock: Bool = false
 
     /// Seconds before requiring biometric on resume.
+    /// Keep this aligned with AuthManager's auto-lock window to avoid
+    /// aggressive prompts for short app switches/screen sleeps.
+    private let lockThresholdSeconds: TimeInterval = 300
