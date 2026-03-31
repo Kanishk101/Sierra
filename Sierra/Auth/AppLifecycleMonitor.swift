@@ -19,3 +19,7 @@ final class AppLifecycleMonitor {
 
     private init() {}
 
+    // MARK: - Scene Phase
+
+    func handleScenePhaseChange(to phase: ScenePhase, hasSession: Bool) {
+        guard hasSession else { return }
