@@ -31,3 +31,7 @@ final class AppLifecycleMonitor {
             Task { await SupabaseManager.persistCurrentSessionSnapshot() }
 
         case .active:
+            guard AuthManager.shared.isAuthenticated else {
+                backgroundedAt = nil
+                return
+            }
