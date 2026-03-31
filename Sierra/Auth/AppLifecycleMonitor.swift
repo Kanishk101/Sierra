@@ -35,3 +35,7 @@ final class AppLifecycleMonitor {
                 backgroundedAt = nil
                 return
             }
+            guard Date() >= suppressUntil else {
+                backgroundedAt = nil
+                return
+            }
