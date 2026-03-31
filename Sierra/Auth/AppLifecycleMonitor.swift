@@ -23,3 +23,5 @@ final class AppLifecycleMonitor {
 
     func handleScenePhaseChange(to phase: ScenePhase, hasSession: Bool) {
         guard hasSession else { return }
+
+        switch phase {
