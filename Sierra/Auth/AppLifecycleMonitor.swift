@@ -17,3 +17,5 @@ final class AppLifecycleMonitor {
     private var backgroundedAt: Date?
     private var suppressUntil: Date = .distantPast
 
+    private init() {}
+
