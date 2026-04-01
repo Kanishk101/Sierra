@@ -43,3 +43,9 @@ final class AppLifecycleMonitor {
             guard BiometricPreference.isEnabled, BiometricManager.shared.canUseBiometrics() else {
                 backgroundedAt = nil
                 showBiometricLock = false
+                return
+            }
+            if let bg = backgroundedAt,
+               Date().timeIntervalSince(bg) > lockThresholdSeconds {
+                showBiometricLock = true
+            }
