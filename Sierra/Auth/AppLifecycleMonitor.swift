@@ -39,3 +39,7 @@ final class AppLifecycleMonitor {
                 backgroundedAt = nil
                 return
             }
+            guard !showBiometricLock else { return }
+            guard BiometricPreference.isEnabled, BiometricManager.shared.canUseBiometrics() else {
+                backgroundedAt = nil
+                showBiometricLock = false
