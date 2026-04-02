@@ -51,3 +51,8 @@ final class AppLifecycleMonitor {
             }
             backgroundedAt = nil
 
+        default:
+            break
+        }
+    }
+
