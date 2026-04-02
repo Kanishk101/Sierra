@@ -56,3 +56,8 @@ final class AppLifecycleMonitor {
         }
     }
 
+    // MARK: - Legacy API (backward compat)
+
+    func didEnterBackground() {
+        backgroundedAt = Date()
+    }
