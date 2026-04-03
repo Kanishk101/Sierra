@@ -64,3 +64,6 @@ final class AppLifecycleMonitor {
 
     func didBecomeActive() {
         guard AuthManager.shared.isAuthenticated else { return }
+        guard BiometricPreference.isEnabled, BiometricManager.shared.canUseBiometrics() else {
+            backgroundedAt = nil
+            showBiometricLock = false
