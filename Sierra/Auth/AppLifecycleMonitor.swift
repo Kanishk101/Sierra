@@ -61,3 +61,6 @@ final class AppLifecycleMonitor {
     func didEnterBackground() {
         backgroundedAt = Date()
     }
+
+    func didBecomeActive() {
+        guard AuthManager.shared.isAuthenticated else { return }
