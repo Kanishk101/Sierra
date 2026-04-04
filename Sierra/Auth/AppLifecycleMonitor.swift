@@ -71,3 +71,8 @@ final class AppLifecycleMonitor {
         }
         if let bg = backgroundedAt,
            Date().timeIntervalSince(bg) > lockThresholdSeconds {
+            showBiometricLock = true
+        }
+        backgroundedAt = nil
+    }
+
