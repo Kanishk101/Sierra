@@ -79,3 +79,9 @@ final class AppLifecycleMonitor {
     // MARK: - Actions
 
     func biometricUnlocked() {
+        showBiometricLock = false
+        suppressUntil = Date().addingTimeInterval(2)
+        // Also clear needsReauth so ContentView doesn't fall back to LoginView.
+        // Both AppLifecycleMonitor (60s threshold) and AuthManager (300s threshold)
+        // set their respective flags on foreground. Unlocking the overlay must
+        // resolve both, otherwise ContentView's guard (isAuthenticated &&
