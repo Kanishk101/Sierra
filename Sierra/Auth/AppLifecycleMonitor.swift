@@ -87,3 +87,6 @@ final class AppLifecycleMonitor {
         // resolve both, otherwise ContentView's guard (isAuthenticated &&
         // !needsReauth) fails and the user is forced to authenticate a second time.
         AuthManager.shared.reauthCompleted()
+    }
+
+    func passwordFallbackUsed() {
