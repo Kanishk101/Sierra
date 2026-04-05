@@ -85,3 +85,5 @@ final class AppLifecycleMonitor {
         // Both AppLifecycleMonitor (60s threshold) and AuthManager (300s threshold)
         // set their respective flags on foreground. Unlocking the overlay must
         // resolve both, otherwise ContentView's guard (isAuthenticated &&
+        // !needsReauth) fails and the user is forced to authenticate a second time.
+        AuthManager.shared.reauthCompleted()
