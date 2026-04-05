@@ -76,3 +76,6 @@ final class AppLifecycleMonitor {
         backgroundedAt = nil
     }
 
+    // MARK: - Actions
+
+    func biometricUnlocked() {
