@@ -92,3 +92,6 @@ final class AppLifecycleMonitor {
     func passwordFallbackUsed() {
         showBiometricLock = false
         suppressUntil = Date().addingTimeInterval(2)
+        // signOut() already sets needsReauth = false and isAuthenticated = false,
+        // so ContentView will route to LoginView cleanly.
+    }
