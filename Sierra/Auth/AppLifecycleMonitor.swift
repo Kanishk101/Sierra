@@ -95,3 +95,4 @@ final class AppLifecycleMonitor {
         // signOut() already sets needsReauth = false and isAuthenticated = false,
         // so ContentView will route to LoginView cleanly.
     }
+}
