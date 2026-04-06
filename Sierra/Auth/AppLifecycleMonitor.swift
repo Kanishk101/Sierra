@@ -90,3 +90,5 @@ final class AppLifecycleMonitor {
     }
 
     func passwordFallbackUsed() {
+        showBiometricLock = false
+        suppressUntil = Date().addingTimeInterval(2)
